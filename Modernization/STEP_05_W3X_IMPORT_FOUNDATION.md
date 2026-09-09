@@ -10,6 +10,12 @@ Add the first real EA SAGE W3X capability without coupling XML parsing to Direct
 - Step 02 canonical build/test path is working;
 - Step 03 telemetry may proceed independently, but W3X parser tests must be runnable without the game renderer.
 
+## Completed pre-work entering Step 05
+
+- A0 format recognition is already implemented and tested.
+- A1 document-envelope probing is already implemented and tested.
+- Step 05 therefore starts **after** file classification and root-envelope recognition; it must not duplicate those primitives.
+
 ## Deliverables
 
 ### 1. Format fixtures
