@@ -40,3 +40,15 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - Added standalone synthetic tests; no proprietary W3X asset is committed.
 - No asset-manager, W3D loader, renderer, simulation, CRC, or CMake behavior changed.
 - Child-element parsing and actual W3X importing remain Step 05 work.
+
+## 2026-09-10 — W3X pre-step A2: top-level child-element discovery
+
+- Added a dependency-free, C++98-compatible direct-child discovery seam for validated SAGE `AssetDeclaration` documents.
+- Classifies `W3DMesh`, `W3DHierarchy`, `W3DContainer`, `W3DAnimation`, and `W3DCollisionBox`; unknown direct child types are preserved as `Unknown`.
+- Reports child qualified/local names and resolved namespace URI, including default, inherited, alternate-prefix, and child-local namespace bindings.
+- Ignores comments/whitespace/processing instructions for discovery and validates nested tag closure without decoding nested asset data.
+- Added bounded nesting protection and safe malformed/unsupported-DOCTYPE handling.
+- Added standalone synthetic A2 tests; A0 and A1 remain unchanged.
+- GCC C++98, Clang C++98, AddressSanitizer, and UBSan standalone validation pass for A0/A1/A2.
+- No asset-manager routing, W3D loader, renderer, gameplay, CRC, Xfer, replay, network, or CMake behavior changed.
+- Includes/references, child-content decoding, neutral import structures, and runtime W3X loading remain Step 05 work.
