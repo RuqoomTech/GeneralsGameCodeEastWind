@@ -108,3 +108,13 @@ EA has not endorsed and does not support this product. All trademarks are the pr
 This project is licensed under the [GPL-3.0 License](https://www.gnu.org/licenses/gpl-3.0.html), which allows you to
 freely modify and distribute the source code under the terms of this license. Please see [LICENSE.md](LICENSE.md) 
 for details.
+
+---
+
+## Modernization Program
+
+This repository is also the authoritative baseline for a long-term engine modernization track focused on high-poly/HD mod performance, x64, Direct3D 12, and W3D/W3X asset support.
+
+Start with [`MODERNIZATION.md`](MODERNIZATION.md) and [`PROJECT_STATE.md`](PROJECT_STATE.md). The ordered implementation roadmap is in [`Modernization/ROADMAP.md`](Modernization/ROADMAP.md).
+
+The Evolution renderer target is **x64 + Direct3D 12**. The existing Direct3D 8-era path remains a temporary compatibility/reference renderer during migration; no D3D9 or D3D11 intermediate renderer is planned.
