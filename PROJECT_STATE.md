@@ -60,7 +60,7 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 |---|---|
 | Baseline documentation and roadmap | **Done** |
 | Existing upstream renderer backend seam | **Partial / already present** |
-| Determinism/CRC/Xfer characterization | Planned — Step 01 |
+| Determinism/CRC/Xfer characterization | **In progress — Step 01; CRC primitive characterized** |
 | MinGW-w64 GCC + Ninja canonical build | Planned — Step 02 |
 | HD performance telemetry | Planned — Step 03 |
 | x86 memory-survival work | Planned — Step 04 |
@@ -88,6 +88,8 @@ None of these pre-steps is wired into the runtime asset manager. They do not cha
 
 ## Next implementation milestone
 
-**Step 01 — Determinism / CRC / Xfer Characterization**.
+**Step 01 — Determinism / CRC / Xfer Characterization** remains in progress.
 
-This is deliberately before the primary GCC/Ninja compiler migration acceptance gate. Compiler changes must not silently change simulation bytes or replay CRC behavior.
+The first isolated slice now locks representative vectors for the production `Common/crc.h` primitive, including incremental processing and carry/high-bit behavior. The next small slice should characterize deterministic game-logic RNG state/sequence behavior without redesigning the RNG.
+
+This remains deliberately before the primary GCC/Ninja compiler migration acceptance gate. Compiler changes must not silently change simulation bytes or replay CRC behavior.
