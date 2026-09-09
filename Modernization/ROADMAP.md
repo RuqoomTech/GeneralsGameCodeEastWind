@@ -56,6 +56,8 @@ Improve memory diagnostics, Large Address Aware strategy where appropriate, reso
 
 ### Step 05 — W3X Phase A: Parser / Import Foundation
 
+**Pre-step A0 already complete:** dependency-free `.w3d` / `.w3x` recognition plus conservative XML sniffing and a standalone characterization test. Runtime routing and XML parsing remain Step 05 work.
+
 - EA SAGE W3X format discovery and fixtures;
 - XML parser component;
 - format routing;

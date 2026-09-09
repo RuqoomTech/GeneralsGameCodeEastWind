@@ -24,7 +24,18 @@ The goal is not merely "open an XML file". The goal is to make W3X a first-class
 
 ## Existing baseline
 
-No W3X loader was found in the current GeneralsGameCode baseline.
+No W3X loader was found in the original GeneralsGameCode baseline.
+
+### Implemented pre-step: format recognition
+
+A first dependency-free routing primitive now exists at `Core/Libraries/Include/rts/asset_3d_format.h`. It:
+
+- distinguishes `.w3d` and `.w3x` paths case-insensitively;
+- recognizes probable XML content for W3X;
+- rejects an obviously binary `.w3x` payload rather than treating every `.w3x` extension as EA SAGE W3X;
+- has a standalone characterization test at `Core/Tests/W3XAssetFormatTest.cpp`.
+
+This pre-step deliberately does **not** connect W3X to `WW3DAssetManager`, parse XML, create runtime assets, or change W3D loading behavior.
 
 Legacy W3D loading currently enters through `WW3DAssetManager::Load_3D_Assets`, uses `ChunkLoadClass`, and dispatches to hierarchy/animation/prototype loaders.
 
