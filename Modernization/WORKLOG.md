@@ -52,3 +52,15 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - GCC C++98, Clang C++98, AddressSanitizer, and UBSan standalone validation pass for A0/A1/A2.
 - No asset-manager routing, W3D loader, renderer, gameplay, CRC, Xfer, replay, network, or CMake behavior changed.
 - Includes/references, child-content decoding, neutral import structures, and runtime W3X loading remain Step 05 work.
+
+## 2026-09-10 — W3X A2R: parser seam consolidation
+
+- Performed a maintenance/refactor step before adding any new W3X capability.
+- Removed the implementation-heavy `Core/Libraries/Include/rts/w3x_document_probe.h` and `w3x_child_discovery.h`.
+- Added one public `Core/Libraries/Include/rts/w3x_document.h` containing the existing A1/A2 contracts.
+- Centralized A1/A2 implementation in `Core/Libraries/Source/rts/w3x_document.cpp`, sharing XML name/tag/namespace scanning rather than maintaining parallel helper families.
+- Kept `asset_3d_format.h` separate because format routing/sniffing is a distinct responsibility from W3X document parsing.
+- Updated A1/A2 tests to consume the consolidated API; no additional test source file was created for the refactor.
+- GCC and Clang C++98 standalone validation pass for A0/A1/A2 after the consolidation.
+- No runtime asset-manager routing, W3D loader, renderer, gameplay, CRC, Xfer, replay, network, or CMake behavior changed.
+- Established a project guardrail to prefer consolidation/refactoring over overlapping shared/Core files as modernization work expands.

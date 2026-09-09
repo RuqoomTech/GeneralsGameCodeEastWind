@@ -1,4 +1,4 @@
-#include "rts/w3x_child_discovery.h"
+#include "rts/w3x_document.h"
 
 #include <stdio.h>
 #include <string.h>

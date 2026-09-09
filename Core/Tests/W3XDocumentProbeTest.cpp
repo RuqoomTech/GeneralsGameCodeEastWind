@@ -1,4 +1,4 @@
-#include "rts/w3x_document_probe.h"
+#include "rts/w3x_document.h"
 
 #include <stdio.h>
 #include <string.h>

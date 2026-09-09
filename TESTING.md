@@ -38,7 +38,9 @@ W3X-A1 remains standalone until the command-line test harness is modernized in S
 From the repository root with GCC available:
 
 ```sh
-g++ -std=c++98 -Wall -Wextra -pedantic -I Core/Libraries/Include Core/Tests/W3XDocumentProbeTest.cpp -o w3x_document_probe_test
+g++ -std=c++98 -Wall -Wextra -pedantic -I Core/Libraries/Include \
+  Core/Tests/W3XDocumentProbeTest.cpp Core/Libraries/Source/rts/w3x_document.cpp \
+  -o w3x_document_probe_test
 ./w3x_document_probe_test
 ```
 
@@ -49,3 +51,24 @@ W3X document-probe tests passed.
 ```
 
 The test uses synthetic XML and verifies only document-envelope handling: BOM/declaration/comments, root-name extraction, namespace resolution, SAGE `AssetDeclaration` recognition, and predictable failure for malformed/unsupported envelope constructs. It does not parse mesh/material/animation content or load runtime assets.
+
+## W3X top-level child discovery pre-step
+
+W3X-A2 uses the same consolidated W3X document implementation as A1.
+
+From the repository root with GCC available:
+
+```sh
+g++ -std=c++98 -Wall -Wextra -pedantic -I Core/Libraries/Include \
+  Core/Tests/W3XChildDiscoveryTest.cpp Core/Libraries/Source/rts/w3x_document.cpp \
+  -o w3x_child_discovery_test
+./w3x_child_discovery_test
+```
+
+Expected result:
+
+```text
+W3X top-level child-discovery tests passed.
+```
+
+A1 and A2 deliberately share one implementation source. Adding another standalone W3X scanner/header for subsequent XML features is not the intended architecture; extend or replace the consolidated document component during Step 05.

@@ -53,6 +53,14 @@ The existing `IRenderBackend` seam is useful migration groundwork, but it is not
 
 `.w3x` is also used by Warcraft III map files. In this project, W3X means **EA SAGE W3X model/asset XML**. Loader validation should inspect content/schema/root structure rather than trusting only the extension.
 
+## Code organization and consolidation
+
+- Before adding a new shared/Core file, search for an existing module with the same responsibility.
+- Prefer extending/refactoring one coherent module over creating parallel helper headers or duplicate scanners.
+- Public headers should expose API and data contracts, not large implementation bodies, unless header-only behavior is materially justified.
+- New files should represent a distinct architectural responsibility, not simply the next incremental step number.
+- Exploratory pre-step code should be consolidated before runtime integration so temporary seams do not harden into permanent architecture.
+
 ## Build portability
 
 - CMake is the build definition.
