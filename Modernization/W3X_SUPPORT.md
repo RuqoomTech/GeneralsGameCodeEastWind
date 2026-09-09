@@ -39,7 +39,7 @@ This pre-step deliberately does **not** connect W3X to `WW3DAssetManager`, parse
 
 ### Implemented pre-step A1: document-envelope probe
 
-A second dependency-free primitive now exists at `Core/Libraries/Include/rts/w3x_document_probe.h`. It performs only the safe front edge of XML handling:
+The A1 envelope API is exposed from the consolidated `Core/Libraries/Include/rts/w3x_document.h` interface, with implementation in `Core/Libraries/Source/rts/w3x_document.cpp`. It performs only the safe front edge of XML handling:
 
 - consumes an in-memory buffer without requiring null termination;
 - handles UTF-8 BOM, XML declarations, processing instructions, comments, whitespace, and quoted root attributes;
@@ -55,7 +55,7 @@ A1 is a **probe, not a general XML parser**. It does not walk child elements, re
 
 ### Implemented pre-step A2: top-level child-element discovery
 
-A third dependency-free primitive now exists at `Core/Libraries/Include/rts/w3x_child_discovery.h`. Given a document that passes the A1 SAGE-envelope gate, it:
+The A2 direct-child API is exposed from the same `rts/w3x_document.h` interface and uses the same shared scanner implementation. Given a document that passes the SAGE-envelope gate, it:
 
 - discovers and counts only direct child elements of `AssetDeclaration`;
 - classifies `W3DMesh`, `W3DHierarchy`, `W3DContainer`, `W3DAnimation`, and `W3DCollisionBox`;
@@ -66,6 +66,18 @@ A third dependency-free primitive now exists at `Core/Libraries/Include/rts/w3x_
 - keeps a bounded nesting guard and performs no child-content decoding.
 
 The standalone synthetic test is `Core/Tests/W3XChildDiscoveryTest.cpp`. A2 remains C++98-compatible and does not follow includes, allocate meshes, create runtime prototypes, touch `WW3DAssetManager`, or alter W3D/rendering/simulation behavior.
+
+### A2R maintenance refactor: consolidated parser seam
+
+Before adding more W3X features, A1 and A2 were consolidated to prevent the exploratory pre-steps from becoming a permanent collection of overlapping header-only parsers. The refactor:
+
+- replaces `w3x_document_probe.h` and `w3x_child_discovery.h` with one public `rts/w3x_document.h`;
+- moves implementation into one `Core/Libraries/Source/rts/w3x_document.cpp`;
+- uses a shared tag/name/namespace scanner for A1 and A2 instead of reparsing the same structures through separate helper families;
+- keeps the existing A1/A2 function/type names and C++98 behavior;
+- adds no runtime asset-manager, renderer, W3D, simulation, CRC, Xfer, replay, network, or build-system integration.
+
+This is the preferred pattern going forward: extend a coherent parser/import module when responsibilities overlap, and create another file only when it represents a distinct architectural responsibility.
 
 Legacy W3D loading currently enters through `WW3DAssetManager::Load_3D_Assets`, uses `ChunkLoadClass`, and dispatches to hierarchy/animation/prototype loaders.
 

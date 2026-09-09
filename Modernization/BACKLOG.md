@@ -13,6 +13,7 @@ Status values: `DONE`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKED`.
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |
 | W3X-A1 | W3X document-envelope probe | DONE | Root/namespace/SAGE envelope recognition |
 | W3X-A2 | W3X top-level child-element discovery | DONE | Direct-child classification without content decoding |
+| W3X-A2R | Consolidate W3X A1/A2 parser seam | DONE | One public API + one shared implementation; no duplicate parser headers |
 | 05 | W3X-A parser/import foundation | PLANNED | Parse/validate child content without renderer |
 | 06 | HD texture pipeline | PLANNED | Efficient/correct 2K/4K assets |
 | 07 | High-poly / 32-bit geometry | PLANNED | >65k-class geometry path where needed |
@@ -39,6 +40,7 @@ Status values: `DONE`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKED`.
 These are not separate numbered milestones but must be addressed as their owning step touches them:
 
 - Generals / GeneralsMD duplication reduction;
+- consolidation before expansion: reuse or refactor shared/Core modules instead of adding overlapping headers/helpers;
 - test-only configurations that avoid unrelated dependency fetches;
 - target-scoped dependencies;
 - resource lifetime/ownership clarity;

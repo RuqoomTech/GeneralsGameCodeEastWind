@@ -60,7 +60,8 @@ Improve memory diagnostics, Large Address Aware strategy where appropriate, reso
 
 - **A0:** dependency-free `.w3d` / `.w3x` recognition plus conservative XML sniffing;
 - **A1:** dependency-free XML document-envelope probe that extracts root name/namespace and recognizes the canonical SAGE `AssetDeclaration` envelope.
-- **A2:** dependency-free discovery/classification of direct `AssetDeclaration` child elements, including namespace-aware recognition of the initial W3D element kinds while preserving unknown direct children.
+- **A2:** dependency-free discovery/classification of direct `AssetDeclaration` child elements, including namespace-aware recognition of the initial W3D element kinds while preserving unknown direct children;
+- **A2R:** maintenance consolidation of A1/A2 into one public W3X document API and one shared implementation source, removing the two implementation-heavy parser headers before further feature growth.
 
 Runtime routing, includes/references, child-content decoding, neutral import structures, and actual W3X asset creation remain Step 05 work.
 
