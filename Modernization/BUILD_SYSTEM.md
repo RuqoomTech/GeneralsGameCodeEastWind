@@ -8,7 +8,6 @@ The project must configure, build, test, and eventually package from the command
 
 ```text
 CMake -> CMake Presets -> Ninja -> MinGW-w64 GCC
-```
 
 Secondary compiler work may use Clang. Standalone MSVC Build Tools remain an optional comparison path; the Visual Studio IDE is not a project dependency.
 

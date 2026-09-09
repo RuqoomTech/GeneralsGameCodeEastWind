@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts plus accepted modernization changes through completed Step 03 and Step 04A on 2026-09-11.
+This document records verified source facts plus accepted modernization changes through completed Step 03 and Step 04A on 2026-09-11. It is grounded in the 2026-09-09 authoritative baseline while recording the current working state after the Step 03/Step 04A updates.
 
 ## Build system
 
@@ -96,7 +96,10 @@ The Step 01G Windows gate remains signed off: on 2026-09-10, `z_determinismcheck
 ## Modernization risk areas
 
 - deterministic behavior across compilers;
-- x86/32-bit address assumptions while x64 is brought up;
+- x86/32-bit memory ceiling and x64 migration correctness;
+- legacy binary/on-disk layout assumptions;
+- 16-bit geometry assumptions in legacy W3D rendering paths;
+- DX8 state-machine coupling;
 - legacy binary/on-disk layout assumptions;
 - 16-bit geometry assumptions in legacy W3D rendering paths;
 - DX8 state-machine coupling;

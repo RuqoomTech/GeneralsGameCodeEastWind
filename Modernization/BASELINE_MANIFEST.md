@@ -28,7 +28,6 @@ When a future source update is adopted:
 3. record upstream changes in `WORKLOG.md`;
 4. update this manifest only after the new baseline is intentionally accepted;
 5. forward-merge modernization work rather than replacing newer upstream source with an older full ZIP.
-
 ## Current modernization working baseline
 
 - Declared Step 01G handoff archive: `GeneralsGameCode-Step01G-Windows-Signoff-Baseline-Seal-full.zip`.

@@ -32,7 +32,6 @@ The repository-owned capture is CSV schema v2 from `PerformanceTelemetry`. Use a
 Use `scripts/perf-summary.py <capture.csv>` for dependency-free mean/p50/p95/p99/max summaries, or add `--json` for machine-readable output. This schema is the completed Step 03 CPU/render baseline. Native GPU timestamps are intentionally deferred to the D3D12 renderer rather than expanded inside the temporary D3D8 path; resident/process memory accounting belongs with the x64 migration where address-space pressure is being removed.
 
 For before/after work, prefer a fixed replay or scripted scene and preserve the CSV together with build/compiler/hardware metadata. Capture overhead must be held constant between compared runs, and no timing value may feed deterministic simulation behavior.
-
 ## Heavy-mod asset metrics
 
 Development diagnostics should identify:

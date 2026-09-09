@@ -48,14 +48,18 @@ When goals conflict, use this order:
 1. deterministic simulation / replay / CRC safety;
 2. reproducible command-line builds;
 3. measurement and profiling;
-4. x64 engine/runtime correctness and memory headroom;
+4. x64 engine/runtime correctness, memory headroom, and resource correctness;
+5. asset compatibility and W3D/W3X loading correctness;
+6. high-poly geometry scalability;
+7. HD texture efficiency;
 5. asset compatibility and W3D/W3X loading correctness;
 6. high-poly geometry scalability;
 7. HD texture efficiency;
 8. draw-call, batching, LOD, and visibility efficiency;
-9. renderer separation;
-10. D3D12 correctness and performance;
-11. advanced visual features.
+9. x64 Evolution runtime;
+10. renderer separation;
+11. D3D12 correctness and performance;
+12. advanced visual features.
 
 ## Runtime tracks
 

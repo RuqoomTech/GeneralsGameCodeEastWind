@@ -47,7 +47,6 @@ Simulation/game state produces renderable state. Renderer frame rate, GPU query 
 ## 2026-09-09 — Performance architecture before eye candy
 
 Measurement, memory, geometry, batching, LOD, x64, and renderer architecture come before optional effects such as bloom/AO/advanced lighting. Visual features must be built on a scalable renderer rather than hiding structural bottlenecks.
-
 ## 2026-09-11 — Begin x64 migration immediately after Step 03
 
 The prior roadmap deferred the main x64 port until Step 10 and placed a standalone x86-memory-survival milestone at Step 04. That sequencing is superseded.

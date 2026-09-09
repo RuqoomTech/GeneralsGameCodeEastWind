@@ -60,7 +60,6 @@ The existing `IRenderBackend` seam is useful migration groundwork, but it is not
 - Public headers should expose API and data contracts, not large implementation bodies, unless header-only behavior is materially justified.
 - New files should represent a distinct architectural responsibility, not simply the next incremental step number.
 - Exploratory pre-step code should be consolidated before runtime integration so temporary seams do not harden into permanent architecture.
-
 ## Build portability
 
 - CMake is the build definition.

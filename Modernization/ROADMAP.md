@@ -109,7 +109,6 @@ See `STEP_04_X64_MIGRATION.md`.
 - **A2R:** maintenance consolidation of A1/A2 into one public W3X document API and one shared implementation source, removing the two implementation-heavy parser headers before further feature growth.
 
 Runtime routing, includes/references, child-content decoding, neutral import structures, and actual W3X asset creation remain Step 05 work.
-
 - EA SAGE W3X format discovery and fixtures;
 - XML parser component;
 - format routing;
@@ -145,9 +144,9 @@ Expand repeated-asset batching/instancing for units, buildings, props, vegetatio
 
 Strengthen geometry LOD, shadow LOD, distance/material choices, frustum/occlusion strategy as appropriate, and profiler warnings for expensive assets.
 
-## Phase 3 — x64 stabilization / modern client convergence
+## Phase 3 — x64 stabilization / break the x86 ceiling
 
-### Step 10 — x64 Runtime Stabilization
+### Step 10 — x64 Runtime Stabilization / Evolution Runtime
 
 Step 10 no longer begins the x64 port; that work moved forward into Step 04 by project decision on 2026-09-11. Step 10 is reserved for stabilization after the intervening asset/geometry/visibility work has exercised the 64-bit engine:
 

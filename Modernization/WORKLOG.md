@@ -119,6 +119,7 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - Added a known 19-byte replay `MSG_LOGIC_CRC` command-record fixture with production CRC and XferCRC checkpoints.
 - W3X A0/A1/A2 regressions remain green.
 - Step 01 characterization implementation was complete at this point; final Win32 sign-off was still pending and was completed after the focused-target stabilization recorded below.
+
 ## 2026-09-10 — Step 01F: Windows sign-off harness decoupling
 
 - User MinGW-w64 GCC 16.2 + Ninja validation reached all 653 compilation steps and failed only at final `z_determinismtest` linkage because the target linked the monolithic `z_gameengine` archive.
@@ -130,7 +131,6 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - Made the i686 toolchain discover native MSYS2 MINGW32 `gcc/g++/ar/ranlib/windres/dlltool` as well as conventional cross-prefixed tool names.
 - Removed duplicate `_com_util` conversion implementations from `comsupp_compat.h` because modern MinGW-w64 already provides them.
 - Local GCC/Clang lightweight determinism and W3X A0/A1/A2 regressions remained green; final focused Win32 execution was completed successfully after the final linker-isolation correction.
-
 
 ## 2026-09-10 — Step 01G: Windows sign-off and baseline seal
 
