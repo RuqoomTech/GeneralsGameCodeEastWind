@@ -199,3 +199,4 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - No Windows x86_64 test pass is claimed; `mingw64-tests` remains the Step 04A Windows validation gate.
 - Final local validation also passed GCC/Clang `-O0`/`-O2`/`-O3` focused suites (7/7 each), GCC ASan and UBSan (7/7 each), schema-v2 summary text/JSON checks, and telemetry compile-definition isolation.
 - The validation container did not provide an x86_64 MinGW-w64 compiler, so no Win64 execution/build result was inferred from the host-native 64-bit pass.
+

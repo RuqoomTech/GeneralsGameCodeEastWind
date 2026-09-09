@@ -79,6 +79,10 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | 32-bit/high-poly geometry path | Planned — Step 07 |
 | Expanded instancing/batching | Planned — Step 08 |
 | Modern LOD/visibility | Planned — Step 09 |
+| x64 Evolution runtime | Planned — Step 10 |
+| Renderer boundary completion | Planned — Step 11 |
+| D3D12 renderer | Planned — Steps 12+ |
+
 ## Next implementation milestone
 
 **Step 04 — x64 Engine Migration — is active.**

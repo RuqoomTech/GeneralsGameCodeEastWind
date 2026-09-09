@@ -109,6 +109,7 @@ See `STEP_04_X64_MIGRATION.md`.
 - **A2R:** maintenance consolidation of A1/A2 into one public W3X document API and one shared implementation source, removing the two implementation-heavy parser headers before further feature growth.
 
 Runtime routing, includes/references, child-content decoding, neutral import structures, and actual W3X asset creation remain Step 05 work.
+
 - EA SAGE W3X format discovery and fixtures;
 - XML parser component;
 - format routing;
