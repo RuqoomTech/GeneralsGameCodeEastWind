@@ -29,3 +29,14 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - Added a standalone C++98-compatible characterization test.
 - No asset-manager, renderer, W3D loader, CRC, simulation, or CMake behavior changed.
 - W3X XML parsing remains future work under Step 05.
+
+## 2026-09-09 — W3X pre-step A1: document-envelope probe
+
+- Added a dependency-free, C++98-compatible W3X XML envelope probe.
+- Added root qualified/local-name extraction and root namespace resolution.
+- Recognizes the SAGE `AssetDeclaration` + `uri:ea.com:eala:asset` envelope used by later-SAGE asset documents.
+- Handles UTF-8 BOM, XML declaration, processing instructions, comments, whitespace, and quoted root attributes.
+- Explicitly rejects `DOCTYPE` in this narrow probe to avoid accidental entity/parser scope expansion.
+- Added standalone synthetic tests; no proprietary W3X asset is committed.
+- No asset-manager, W3D loader, renderer, simulation, CRC, or CMake behavior changed.
+- Child-element parsing and actual W3X importing remain Step 05 work.

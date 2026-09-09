@@ -65,6 +65,7 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | HD performance telemetry | Planned — Step 03 |
 | x86 memory-survival work | Planned — Step 04 |
 | W3X format-recognition pre-step | **Done — A0** |
+| W3X document-envelope probe | **Done — A1** |
 | W3X XML parser/import foundation | Planned — Step 05 |
 | HD texture pipeline | Planned — Step 06 |
 | 32-bit/high-poly geometry path | Planned — Step 07 |
@@ -74,9 +75,12 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | Renderer boundary completion | Planned — Step 11 |
 | D3D12 renderer | Planned — Steps 12+ |
 
-## Small W3X pre-step completed after baseline adoption
+## Small W3X pre-steps completed after baseline adoption
 
-W3X-A0 adds only a dependency-free W3D/W3X format-recognition primitive and standalone test. It is intentionally not wired into the runtime asset manager yet. This does not change the main milestone order.
+- **W3X-A0** adds only a dependency-free W3D/W3X format-recognition primitive and standalone test.
+- **W3X-A1** adds a dependency-free document-envelope probe that recognizes the XML root name/namespace, XML declaration presence, and the canonical SAGE `AssetDeclaration` envelope. It deliberately stops before child-element parsing.
+
+Neither pre-step is wired into the runtime asset manager. They do not change the main milestone order.
 
 ## Next implementation milestone
 

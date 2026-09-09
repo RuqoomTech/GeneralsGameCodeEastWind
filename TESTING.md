@@ -30,3 +30,22 @@ W3X asset-format recognition tests passed.
 ```
 
 This test verifies only W3D/W3X recognition and conservative XML sniffing. It does not exercise runtime asset loading or XML parsing.
+
+## W3X document-envelope probe pre-step
+
+W3X-A1 remains standalone until the command-line test harness is modernized in Step 02.
+
+From the repository root with GCC available:
+
+```sh
+g++ -std=c++98 -Wall -Wextra -pedantic -I Core/Libraries/Include Core/Tests/W3XDocumentProbeTest.cpp -o w3x_document_probe_test
+./w3x_document_probe_test
+```
+
+Expected result:
+
+```text
+W3X document-probe tests passed.
+```
+
+The test uses synthetic XML and verifies only document-envelope handling: BOM/declaration/comments, root-name extraction, namespace resolution, SAGE `AssetDeclaration` recognition, and predictable failure for malformed/unsupported envelope constructs. It does not parse mesh/material/animation content or load runtime assets.

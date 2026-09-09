@@ -37,6 +37,22 @@ A first dependency-free routing primitive now exists at `Core/Libraries/Include/
 
 This pre-step deliberately does **not** connect W3X to `WW3DAssetManager`, parse XML, create runtime assets, or change W3D loading behavior.
 
+### Implemented pre-step A1: document-envelope probe
+
+A second dependency-free primitive now exists at `Core/Libraries/Include/rts/w3x_document_probe.h`. It performs only the safe front edge of XML handling:
+
+- consumes an in-memory buffer without requiring null termination;
+- handles UTF-8 BOM, XML declarations, processing instructions, comments, whitespace, and quoted root attributes;
+- extracts the root qualified/local name;
+- resolves the namespace binding used by the root element;
+- recognizes the canonical SAGE envelope `AssetDeclaration` in `uri:ea.com:eala:asset`;
+- rejects malformed root start tags predictably;
+- explicitly rejects `DOCTYPE` at this stage rather than expanding parser scope or entity behavior.
+
+The standalone test is `Core/Tests/W3XDocumentProbeTest.cpp` and uses synthetic fixtures only.
+
+A1 is a **probe, not a general XML parser**. It does not walk child elements, resolve includes, decode meshes, construct a DOM, or create runtime assets.
+
 Legacy W3D loading currently enters through `WW3DAssetManager::Load_3D_Assets`, uses `ChunkLoadClass`, and dispatches to hierarchy/animation/prototype loaders.
 
 W3X should **not** be implemented by pretending XML is a W3D chunk stream.
