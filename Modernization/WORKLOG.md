@@ -22,3 +22,10 @@ Actions:
 ### Existing upstream work recognized
 
 The baseline already contains a partial renderer abstraction (`IRenderBackend` + `DX8Backend`) routing a subset of WW3D operations. This work is recorded as `PARTIAL`; it is not claimed as newly implemented by the modernization docs pass.
+## 2026-09-09 — W3X pre-step A0: asset-format recognition
+
+- Added dependency-free W3D/W3X path recognition.
+- Added conservative XML sniffing for `.w3x` so unrelated binary formats using the same extension are not routed to the future SAGE W3X parser.
+- Added a standalone C++98-compatible characterization test.
+- No asset-manager, renderer, W3D loader, CRC, simulation, or CMake behavior changed.
+- W3X XML parsing remains future work under Step 05.

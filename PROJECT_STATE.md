@@ -64,7 +64,8 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | MinGW-w64 GCC + Ninja canonical build | Planned — Step 02 |
 | HD performance telemetry | Planned — Step 03 |
 | x86 memory-survival work | Planned — Step 04 |
-| W3X import foundation | Planned — Step 05 |
+| W3X format-recognition pre-step | **Done — A0** |
+| W3X XML parser/import foundation | Planned — Step 05 |
 | HD texture pipeline | Planned — Step 06 |
 | 32-bit/high-poly geometry path | Planned — Step 07 |
 | Expanded instancing/batching | Planned — Step 08 |
@@ -72,6 +73,10 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | x64 Evolution runtime | Planned — Step 10 |
 | Renderer boundary completion | Planned — Step 11 |
 | D3D12 renderer | Planned — Steps 12+ |
+
+## Small W3X pre-step completed after baseline adoption
+
+W3X-A0 adds only a dependency-free W3D/W3X format-recognition primitive and standalone test. It is intentionally not wired into the runtime asset manager yet. This does not change the main milestone order.
 
 ## Next implementation milestone
 
