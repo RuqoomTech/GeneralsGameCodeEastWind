@@ -53,6 +53,20 @@ The standalone test is `Core/Tests/W3XDocumentProbeTest.cpp` and uses synthetic 
 
 A1 is a **probe, not a general XML parser**. It does not walk child elements, resolve includes, decode meshes, construct a DOM, or create runtime assets.
 
+### Implemented pre-step A2: top-level child-element discovery
+
+A third dependency-free primitive now exists at `Core/Libraries/Include/rts/w3x_child_discovery.h`. Given a document that passes the A1 SAGE-envelope gate, it:
+
+- discovers and counts only direct child elements of `AssetDeclaration`;
+- classifies `W3DMesh`, `W3DHierarchy`, `W3DContainer`, `W3DAnimation`, and `W3DCollisionBox`;
+- preserves other direct child types as `Unknown` while reporting qualified/local names and the resolved namespace URI;
+- handles inherited default namespaces, root prefix bindings, alternate root-declared prefixes, and child-local namespace bindings;
+- ignores whitespace, comments, processing instructions, and CDATA for discovery purposes;
+- validates nested element closure so malformed nesting fails safely;
+- keeps a bounded nesting guard and performs no child-content decoding.
+
+The standalone synthetic test is `Core/Tests/W3XChildDiscoveryTest.cpp`. A2 remains C++98-compatible and does not follow includes, allocate meshes, create runtime prototypes, touch `WW3DAssetManager`, or alter W3D/rendering/simulation behavior.
+
 Legacy W3D loading currently enters through `WW3DAssetManager::Load_3D_Assets`, uses `ChunkLoadClass`, and dispatches to hierarchy/animation/prototype loaders.
 
 W3X should **not** be implemented by pretending XML is a W3D chunk stream.

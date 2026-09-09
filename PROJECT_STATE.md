@@ -66,6 +66,7 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | x86 memory-survival work | Planned — Step 04 |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
+| W3X top-level child-element discovery | **Done — A2** |
 | W3X XML parser/import foundation | Planned — Step 05 |
 | HD texture pipeline | Planned — Step 06 |
 | 32-bit/high-poly geometry path | Planned — Step 07 |
@@ -79,8 +80,9 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 
 - **W3X-A0** adds only a dependency-free W3D/W3X format-recognition primitive and standalone test.
 - **W3X-A1** adds a dependency-free document-envelope probe that recognizes the XML root name/namespace, XML declaration presence, and the canonical SAGE `AssetDeclaration` envelope. It deliberately stops before child-element parsing.
+- **W3X-A2** adds dependency-free discovery of direct child elements under a validated SAGE `AssetDeclaration`. It classifies `W3DMesh`, `W3DHierarchy`, `W3DContainer`, `W3DAnimation`, and `W3DCollisionBox`, preserves other direct children as `Unknown`, resolves direct-child namespace prefixes/default namespaces, and validates nesting without decoding asset contents.
 
-Neither pre-step is wired into the runtime asset manager. They do not change the main milestone order.
+None of these pre-steps is wired into the runtime asset manager. They do not change the main milestone order.
 
 ## Next implementation milestone
 
