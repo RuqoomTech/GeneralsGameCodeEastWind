@@ -14,7 +14,8 @@ Add the first real EA SAGE W3X capability without coupling XML parsing to Direct
 
 - A0 format recognition is already implemented and tested.
 - A1 document-envelope probing is already implemented and tested.
-- Step 05 therefore starts **after** file classification and root-envelope recognition; it must not duplicate those primitives.
+- A2 top-level child-element discovery is already implemented and tested for the initial W3D child kinds plus unknown preservation.
+- Step 05 therefore starts **after** file classification, root-envelope recognition, and direct-child discovery; it must not duplicate those primitives.
 
 ## Deliverables
 
