@@ -13,7 +13,7 @@ This roadmap is authoritative for the project unless superseded by a dated decis
 - W3X support added to the program;
 - project-state/worklog rules established.
 
-### Step 01 — Determinism / CRC / Xfer Characterization — NEXT
+### Step 01 — Determinism / CRC / Xfer Characterization — IN PROGRESS
 
 Protect compiler/ABI migration with characterization tests for:
 
@@ -22,6 +22,11 @@ Protect compiler/ABI migration with characterization tests for:
 - Xfer/snapshot bytes where relevant;
 - critical integer/layout assumptions;
 - replay command/CRC behavior.
+
+Progress:
+
+- CRC primitive characterization vectors are now locked against the production `Common/crc.h` implementation, including incremental and carry/high-bit behavior.
+- RNG, Xfer/snapshot, layout, and replay characterization are still pending.
 
 Exit gate: enough coverage exists to detect compiler-induced deterministic changes.
 

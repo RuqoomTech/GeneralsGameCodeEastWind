@@ -6,7 +6,7 @@ Status values: `DONE`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKED`.
 |---|---|---|---|
 | 00 | Repository modernization baseline/docs | DONE | Docs/state stored in authoritative tree |
 | F0 | Existing `IRenderBackend` / `DX8Backend` seam | PARTIAL | Already present upstream; incomplete abstraction |
-| 01 | Determinism / CRC / Xfer characterization | NEXT | Detect compiler/ABI replay changes |
+| 01 | Determinism / CRC / Xfer characterization | PARTIAL | CRC primitive vectors locked; RNG/Xfer/replay coverage still required |
 | 02 | MinGW-w64 GCC + Ninja canonical build | PLANNED | No Visual Studio IDE dependency |
 | 03 | HD-mod performance telemetry | PLANNED | Repeatable CPU/GPU/memory metrics |
 | 04 | x86 memory survival | PLANNED | Better headroom/diagnostics before x64 |

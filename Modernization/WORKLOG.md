@@ -64,3 +64,14 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - GCC and Clang C++98 standalone validation pass for A0/A1/A2 after the consolidation.
 - No runtime asset-manager routing, W3D loader, renderer, gameplay, CRC, Xfer, replay, network, or CMake behavior changed.
 - Established a project guardrail to prefer consolidation/refactoring over overlapping shared/Core files as modernization work expands.
+
+## 2026-09-10 — Step 01A: CRC primitive characterization
+
+- Began Step 01 with one isolated characterization slice and no production behavior changes.
+- Added `Core/Tests/DeterminismPrimitivesTest.cpp` as the shared home for small determinism primitive vectors, avoiding one test file per sub-step.
+- Locked the production `Common/crc.h` primitive's initial/no-op/clear behavior, representative byte vectors, incremental processing, and carry/high-bit behavior.
+- Clang 17 passes the vectors at `-O0`, `-O2`, and `-O3`.
+- GCC 14.2 passes at `-O0`; optimized `-O2`/`-O3`, ASan, and UBSan runs pass the CRC vectors with `-Wno-strict-aliasing` to suppress pre-existing warnings from unrelated `Lib/BaseType.h` float helpers.
+- The strict-aliasing warning is retained as a Step 01 investigation item; no deterministic float behavior was changed in this CRC slice.
+- No RNG, Xfer, snapshot, replay, simulation, renderer, W3D/W3X runtime, asset-manager, or build-system implementation changed.
+- Step 01 remains `PARTIAL`; the next small target is deterministic game-logic RNG sequence/state characterization.
