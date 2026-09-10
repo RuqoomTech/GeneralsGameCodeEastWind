@@ -114,7 +114,7 @@ $test = Get-ChildItem build/mingw-w64-i686 -Filter z_determinismtest.exe -Recurs
 Expected final line:
 
 ```text
-Determinism CRC, game-logic RNG, and Xfer primitive characterization tests passed.
+Determinism CRC, game-logic RNG, Xfer primitive, and snapshot characterization tests passed.
 ```
 
 #### Windows MSVC/reference run
@@ -135,9 +135,29 @@ $test = Get-ChildItem build/win32 -Filter z_determinismtest.exe -Recurse |
 & $test.FullName
 ```
 
-Windows execution is intentionally recorded as pending until the target is run on the reference platform. The Linux lightweight CRC/RNG test remains green and the engine-linked Xfer branch has been compiled for syntax against the real headers with only temporary host compatibility shims.
+Windows execution is intentionally recorded as pending until the target is run on the reference platform. The Linux lightweight CRC/RNG test remains green.
 
-Next small slice after Windows confirmation: snapshot/compound-Xfer field ordering or one layout-sensitive deterministic structure.
+### 01D — representative snapshot field-order characterization — IMPLEMENTED, WINDOWS RUN PENDING
+
+Extended the existing engine-linked branch of `Core/Tests/DeterminismPrimitivesTest.cpp`; no new test source, snapshot type, or serialization helper was added. The test derives an in-memory capture sink from the production `XferSave` class and sends a real `DamageInfoOutput` snapshot through the production `XferSave::xferSnapshot()` dispatch.
+
+This first snapshot slice locks:
+
+- snapshot version byte first (`DamageInfoOutput` version 1);
+- `m_actualDamageDealt` immediately after the version;
+- `m_actualDamageClipped` immediately after dealt damage;
+- `m_noEffect` last;
+- exact 32-bit Windows little-endian bytes for the representative values `1.0f`, `-2.0f`, and `true`.
+
+The expected stream is deliberately only 10 bytes, keeping this gate easy to audit. It exercises the actual `DamageInfoOutput::xfer()` and `XferSave::xferSnapshot()` production methods while overriding only the final byte sink in the test. No changes were made to `Damage.cpp`, `XferSave.cpp`, `Xfer.cpp`, snapshot classes, save-game format, replay format, gameplay, or renderer behavior.
+
+The same Windows `z_determinismtest` commands above run both 01C and 01D. A successful run now ends with:
+
+```text
+Determinism CRC, game-logic RNG, Xfer primitive, and snapshot characterization tests passed.
+```
+
+Next small slice after Windows confirmation: characterize one layout-sensitive deterministic structure or establish the first replay/command CRC checkpoint.
 
 ## Acceptance criteria
 

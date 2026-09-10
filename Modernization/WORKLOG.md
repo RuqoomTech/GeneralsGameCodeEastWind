@@ -95,3 +95,12 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - The lightweight Linux CRC/RNG characterization remains green. The engine-linked Xfer test requires Windows because the production Xfer/GameEngine header graph is tied to legacy Win32/ATL infrastructure.
 - Windows MinGW-w64 i686 and MSVC reference execution commands are documented in `STEP_01_DETERMINISM_GUARD.md`; reference execution remains pending user validation.
 - No Xfer serialization implementation, snapshot behavior, replay format, gameplay, renderer, asset manager, or W3D/W3X runtime behavior changed.
+
+## 2026-09-10 — Step 01D: representative snapshot field-order characterization
+
+- Reused `Core/Tests/DeterminismPrimitivesTest.cpp` and the existing `z_determinismtest` target; no new source/test module was created.
+- Added an in-memory `XferSave` capture subclass so the production `XferSave::xferSnapshot()` dispatch can be exercised without writing a test file to disk.
+- Characterized the real production `DamageInfoOutput::xfer()` snapshot path with representative non-zero values.
+- Locked the exact 10-byte Windows stream and field order: version, actual damage dealt, actual damage clipped, then no-effect flag.
+- No Xfer, XferSave, Damage, Snapshot, save-game, replay, gameplay, renderer, W3D, or W3X production behavior changed.
+- Lightweight Linux CRC/RNG and W3X regressions remain part of the local gate; the engine-linked primitive/snapshot test remains a Windows execution gate for MinGW-w64 i686 and MSVC reference builds.
