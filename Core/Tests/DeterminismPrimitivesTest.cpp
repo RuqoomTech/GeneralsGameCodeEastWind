@@ -5,7 +5,10 @@
 #if defined(RTS_ENGINE_DETERMINISM_TEST)
 #include "Common/Xfer.h"
 #include "Common/XferSave.h"
+#include "Common/XferCRC.h"
 #include "GameLogic/Damage.h"
+#include "GameNetwork/NetworkDefs.h"
+#include <stddef.h>
 #include <vector>
 #endif
 
@@ -32,6 +35,25 @@ void Expect_Int(const char *case_name, Int expected, Int actual)
             case_name, static_cast<int>(expected), static_cast<int>(actual));
         ++g_failures;
     }
+}
+
+UnsignedInt Real_Bits(Real value)
+{
+    UnsignedInt bits = 0;
+    memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+Real Real_From_Bits(UnsignedInt bits)
+{
+    Real value = 0.0f;
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+void Expect_Real_Bits(const char *case_name, UnsignedInt expected_bits, Real actual)
+{
+    Expect_Unsigned(case_name, expected_bits, Real_Bits(actual));
 }
 
 void Check_Buffer(const char *case_name, const void *data, Int size, UnsignedInt expected)
@@ -231,7 +253,119 @@ void Check_Xfer_Snapshot_Characterization()
         xfer.bytes(), expected, sizeof(expected));
 }
 
+void Check_Xfer_CRC_Characterization()
+{
+    // XferCRC is the production state-CRC transport. Lock both its 32-bit
+    // network-order folding and its partial-tail behavior across separate xfer calls.
+    XferCRC xfer;
+    xfer.open("determinism-characterization");
+    Expect_Unsigned("XferCRC initial state", 0x00000000U, xfer.getCRC());
+
+    UnsignedInt word = 0x12345678U;
+    xfer.xferUnsignedInt(&word);
+    Expect_Unsigned("XferCRC 32-bit word", 0x12345678U, xfer.getCRC());
+
+    UnsignedShort short_value = 0x9abcU;
+    xfer.xferUnsignedShort(&short_value);
+    Expect_Unsigned("XferCRC 16-bit tail", 0xe002adf0U, xfer.getCRC());
+
+    UnsignedByte byte_value = 0xefU;
+    xfer.xferUnsignedByte(&byte_value);
+    Expect_Unsigned("XferCRC 8-bit tail", 0xb0065ae1U, xfer.getCRC());
+
+    Real real_value = 1.0f;
+    xfer.xferReal(&real_value);
+    Expect_Unsigned("XferCRC Real word", 0xa08db4c2U, xfer.getCRC());
+}
+
+void Check_ABI_And_Replay_Characterization()
+{
+    // These are compatibility/reference Win32 ABI assumptions that feed raw network/replay
+    // formats. They are intentionally strict: x64/Evolution must introduce explicit wire
+    // layouts instead of silently inheriting different native sizes.
+    Expect_Size("reference pointer width", 4U, sizeof(void *));
+    Expect_Size("WideChar replay width", 2U, sizeof(WideChar));
+    Expect_Size("ObjectID replay width", 4U, sizeof(ObjectID));
+    Expect_Size("DrawableID replay width", 4U, sizeof(DrawableID));
+    Expect_Size("Coord3D replay width", 12U, sizeof(Coord3D));
+    Expect_Size("ICoord2D replay width", 8U, sizeof(ICoord2D));
+    Expect_Size("IRegion2D replay width", 16U, sizeof(IRegion2D));
+    Expect_Size("GameMessage::Type replay width", 4U, sizeof(GameMessage::Type));
+    Expect_Size("GameMessageArgumentDataType replay width", 4U, sizeof(GameMessageArgumentDataType));
+    Expect_Size("GameMessageArgumentType union width", 16U, sizeof(GameMessageArgumentType));
+
+    Expect_Int("network message enum base", 1000, static_cast<Int>(GameMessage::MSG_BEGIN_NETWORK_MESSAGES));
+    Expect_Int("logic CRC message enum", 1093, static_cast<Int>(GameMessage::MSG_LOGIC_CRC));
+    Expect_Int("network message enum end", 1999, static_cast<Int>(GameMessage::MSG_END_NETWORK_MESSAGES));
+    Expect_Int("integer replay argument tag", 0, static_cast<Int>(ARGUMENTDATATYPE_INTEGER));
+    Expect_Int("location replay argument tag", 6, static_cast<Int>(ARGUMENTDATATYPE_LOCATION));
+    Expect_Int("wide-char replay argument tag", 10, static_cast<Int>(ARGUMENTDATATYPE_WIDECHAR));
+
+    Expect_Size("TransportMessageHeader size", 6U, sizeof(TransportMessageHeader));
+    Expect_Size("TransportMessageHeader crc offset", 0U, offsetof(TransportMessageHeader, crc));
+    Expect_Size("TransportMessageHeader magic offset", 4U, offsetof(TransportMessageHeader, magic));
+
+    // GameMessage's native size currently participates in command-packet capacity. Locking
+    // this catches STL/ABI/compiler drift before it silently changes the network packet shape.
+    Expect_Size("GameMessage Win32 ABI size", 36U, sizeof(GameMessage));
+    Expect_Int("commands per retail command packet", 28, numCommandsPerCommandPacket);
+    Expect_Size("CommandPacket frame offset", 0U, offsetof(CommandPacket, m_frame));
+    Expect_Size("CommandPacket count offset", 4U, offsetof(CommandPacket, m_numCommands));
+    Expect_Size("CommandPacket command offset", 6U, offsetof(CommandPacket, m_commands));
+    Expect_Size("CommandPacket retail size", 1014U, sizeof(CommandPacket));
+
+    // Known replay command-record fixture following RecorderClass::writeToFile():
+    // frame 0x11223344, MSG_LOGIC_CRC, player 2, one INTEGER argument 0x89abcdef.
+    const UnsignedByte replay_logic_crc_record[] = {
+        0x44, 0x33, 0x22, 0x11,
+        0x45, 0x04, 0x00, 0x00,
+        0x02, 0x00, 0x00, 0x00,
+        0x01,
+        0x00, 0x01,
+        0xef, 0xcd, 0xab, 0x89
+    };
+    CRC replay_crc;
+    replay_crc.computeCRC(replay_logic_crc_record, sizeof(replay_logic_crc_record));
+    Expect_Unsigned("replay logic-CRC record byte checkpoint", 0x01b254dbU, replay_crc.get());
+
+    XferCRC xfer_crc;
+    xfer_crc.open("replay-record-checkpoint");
+    xfer_crc.xferUser(const_cast<UnsignedByte *>(replay_logic_crc_record), sizeof(replay_logic_crc_record));
+    Expect_Unsigned("replay record XferCRC checkpoint", 0xc1d0db75U, xfer_crc.getCRC());
+}
+
 #endif
+
+void Check_Fast_Float_Characterization()
+{
+    // Lock the legacy bit-level trunc/floor/ceil behavior before compiler migration.
+    // Some edge behavior differs from std::floor/std::ceil and is intentionally preserved.
+    struct FloatCase {
+        UnsignedInt input;
+        UnsignedInt trunc_value;
+        UnsignedInt floor_value;
+        UnsignedInt ceil_value;
+    };
+    const FloatCase cases[] = {
+        { 0x00000000U, 0x00000000U, 0x00000000U, 0x00000000U },
+        { 0x80000000U, 0x00000000U, 0x00000000U, 0x00000000U },
+        { 0x3f000000U, 0x00000000U, 0x00000000U, 0x3f800000U },
+        { 0xbf000000U, 0x00000000U, 0xbf800000U, 0x00000000U },
+        { 0x3f800000U, 0x3f800000U, 0x3f800000U, 0x40000000U },
+        { 0xbf800000U, 0xbf800000U, 0xc0000000U, 0xbf800000U },
+        { 0x3fc00000U, 0x3f800000U, 0x3f800000U, 0x40000000U },
+        { 0xbfc00000U, 0xbf800000U, 0xc0000000U, 0xbf800000U },
+        { 0x41280000U, 0x41200000U, 0x41200000U, 0x41300000U },
+        { 0xc1280000U, 0xc1200000U, 0xc1300000U, 0xc1200000U }
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        const Real input = Real_From_Bits(cases[i].input);
+        Expect_Real_Bits("fast_float_trunc bits", cases[i].trunc_value, fast_float_trunc(input));
+        Expect_Real_Bits("fast_float_floor bits", cases[i].floor_value, fast_float_floor(input));
+        Expect_Real_Bits("fast_float_ceil bits", cases[i].ceil_value, fast_float_ceil(input));
+    }
+}
 
 void Check_CRC_Characterization()
 {
@@ -340,17 +474,41 @@ void Check_Game_Logic_RNG_Characterization()
     InitRandom(0x12345678U);
     Expect_Int("RNG reset reproduced value", 823, GameLogicRandomValue(0, 1000));
     Expect_Unsigned("RNG reset reproduced state CRC", 0xa87859d4U, GetGameLogicRandomSeedCRC());
+
+    // Real-valued RNG is compared by IEEE-754 bits, not formatted decimal output.
+    const UnsignedInt real_bits[] = {
+        0x3f05a8b2U, 0x3e966700U, 0x3f4735c4U,
+        0xbe1c38d4U, 0xbe2afd10U, 0x3f0ab9c6U
+    };
+    const UnsignedInt real_state_crcs[] = {
+        0xa87859d4U, 0xb904045cU, 0x6f39fa84U,
+        0x76b75e0cU, 0x45b82a34U, 0x9eef5cdcU
+    };
+    InitRandom(0x12345678U);
+    for (size_t i = 0; i < sizeof(real_bits) / sizeof(real_bits[0]); ++i) {
+        Expect_Real_Bits("RNG real value bits", real_bits[i], GameLogicRandomValueReal(-1.0f, 1.0f));
+        Expect_Unsigned("RNG real state CRC", real_state_crcs[i], GetGameLogicRandomSeedCRC());
+    }
+
+    // Unlike the retail-compatible integer equal-range path, non-positive real delta returns
+    // immediately and must not consume RNG state.
+    InitRandom(0x12345678U);
+    Expect_Real_Bits("RNG real equal-range return", 0x40e00000U, GameLogicRandomValueReal(7.0f, 7.0f));
+    Expect_Unsigned("RNG real equal-range state unchanged", 0x933b34acU, GetGameLogicRandomSeedCRC());
 }
 
 } // namespace
 
 int main()
 {
+    Check_Fast_Float_Characterization();
     Check_CRC_Characterization();
     Check_Game_Logic_RNG_Characterization();
 #if defined(RTS_ENGINE_DETERMINISM_TEST)
     Check_Xfer_Primitive_Characterization();
     Check_Xfer_Snapshot_Characterization();
+    Check_Xfer_CRC_Characterization();
+    Check_ABI_And_Replay_Characterization();
 #endif
 
     if (g_failures != 0) {
@@ -359,9 +517,9 @@ int main()
     }
 
 #if defined(RTS_ENGINE_DETERMINISM_TEST)
-    puts("Determinism CRC, game-logic RNG, Xfer primitive, and snapshot characterization tests passed.");
+    puts("Step 01 determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.");
 #else
-    puts("Determinism CRC and game-logic RNG characterization tests passed.");
+    puts("Determinism float-helper, CRC, and game-logic RNG characterization tests passed.");
 #endif
     return 0;
 }

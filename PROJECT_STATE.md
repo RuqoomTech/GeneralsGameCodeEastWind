@@ -60,7 +60,7 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 |---|---|
 | Baseline documentation and roadmap | **Done** |
 | Existing upstream renderer backend seam | **Partial / already present** |
-| Determinism/CRC/Xfer characterization | **In progress — Step 01; CRC + game-logic RNG characterized; Xfer primitive + representative snapshot ordering gates implemented, Windows run pending** |
+| Determinism/CRC/Xfer characterization | **Step 01 implementation complete; Windows engine-linked sign-off pending** |
 | MinGW-w64 GCC + Ninja canonical build | Planned — Step 02 |
 | HD performance telemetry | Planned — Step 03 |
 | x86 memory-survival work | Planned — Step 04 |
@@ -88,16 +88,12 @@ None of these pre-steps is wired into the runtime asset manager. They do not cha
 
 ## Next implementation milestone
 
-**Step 01 — Determinism / CRC / Xfer Characterization** remains in progress.
+**Step 01 implementation is complete and awaiting Windows sign-off.**
 
-The first two isolated slices now lock representative vectors for the production `Common/crc.h` primitive and the production game-logic RNG in `Common/RandomValue.cpp`. RNG coverage includes explicit-seed initialization, replay/base-seed stability, state CRC transitions, repeatable integer sequences, signed ranges, equal-range retail behavior, and the retail-compatible `GameLogicRandomValueUnchanged` state advance.
+The consolidated `Core/Tests/DeterminismPrimitivesTest.cpp` now covers production CRC, integer and real game-logic RNG state/sequences, legacy float helper bit behavior, Xfer primitive bytes, representative snapshot ordering, production `XferCRC`, critical Win32 replay/network ABI assumptions, and a known `MSG_LOGIC_CRC` replay-record byte/CRC checkpoint. No additional per-topic determinism test files were introduced.
 
-The RNG test reuses `Core/Tests/DeterminismPrimitivesTest.cpp`; no parallel RNG test module or copied RNG implementation was added. `RandomValue.cpp` gained only a compile-time `RTS_STANDALONE_DETERMINISM_TEST` include seam so the actual production implementation can be linked into the lightweight harness without the legacy ATL/Win32 precompiled-header dependency. Normal production builds remain on the existing `PreRTS.h` path.
+The only deterministic production-code correction in the completion pass removes modern C++ strict-aliasing violations from the non-VC6 float bit-conversion path in `Lib/BaseType.h` by using `memcpy`. The legacy arithmetic/mask behavior is unchanged, the VC6 assembly branch is untouched, and a 199,122-input before/after probe was bit-identical. GCC no longer requires the prior `-Wno-strict-aliasing` test workaround.
 
-Step 01C adds an engine-linked Xfer primitive characterization mode to the same `Core/Tests/DeterminismPrimitivesTest.cpp`. It exercises the production `Xfer::xferVersion`, byte/bool/integer/real primitive wrappers and `xferUser` through a capture implementation, locking the legacy 32-bit Windows widths and little-endian byte stream without copying the production wrapper logic. No new test source or Xfer implementation was added.
+The engine-linked Windows target remains `z_determinismtest`, enabled only by `RTS_BUILD_ZEROHOUR_EXTRAS`. It must pass on the Win32 compatibility/reference configuration before Step 02 accepts compiler/build migration changes. Linux GCC/Clang optimization and sanitizer gates are green; W3X A0/A1/A2 regressions remain green.
 
-Step 01D extends that same engine-linked test with one deliberately small real snapshot path: `DamageInfoOutput` is dispatched through the production `XferSave::xferSnapshot()` implementation into an in-memory capture sink. The gate locks its version-first field ordering and exact Windows byte stream for dealt damage, clipped damage, and the no-effect flag. `Damage.cpp`, `XferSave.cpp`, and snapshot/runtime serialization behavior are unchanged.
-
-The Windows CMake test target remains `z_determinismtest`, enabled only by the existing `RTS_BUILD_ZEROHOUR_EXTRAS` option. Linux can still run the lightweight CRC/RNG path; the Xfer/snapshot gate intentionally links the real Zero Hour GameEngine and therefore requires a Windows build. Windows reference execution is pending user validation.
-
-The next Step 01 slice should characterize one layout-sensitive deterministic structure or replay/command checkpoint. Compiler changes must not silently change simulation bytes or replay CRC behavior.
+After Windows sign-off, **Step 02 — Command-Line Build System Foundation** becomes the active milestone. Its first goal is to make MinGW-w64 GCC + Ninja the canonical Windows command-line path without altering the deterministic contracts locked by Step 01.

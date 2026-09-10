@@ -165,6 +165,24 @@ __forceinline long fast_float2long_round(float f)
 	return i;
 }
 
+#if !(defined(_MSC_VER) && _MSC_VER < 1300)
+// Preserve the legacy IEEE-754 bit algorithm without violating modern C++ aliasing rules.
+// memcpy is optimized to register moves by current compilers and keeps the exact bit pattern.
+__forceinline unsigned base_type_float_bits(float value)
+{
+  unsigned bits;
+  memcpy(&bits, &value, sizeof(bits));
+  return bits;
+}
+
+__forceinline float base_type_float_from_bits(unsigned bits)
+{
+  float value;
+  memcpy(&value, &bits, sizeof(value));
+  return value;
+}
+#endif
+
 // super fast float trunc routine, works always (independent of any FPU modes)
 // code courtesy of Martin Hoffesommer (grin)
 __forceinline float fast_float_trunc(float f)
@@ -183,13 +201,13 @@ __forceinline float fast_float_trunc(float f)
   }
   return f;
 #else
-  unsigned x = *(unsigned *)&f;
+  unsigned x = base_type_float_bits(f);
   unsigned char exp = x >> 23;
   int mask = exp < 127 ? 0 : 0xff800000;
   exp -= 127;
   mask >>= exp & 31;
   x &= mask;
-  return *(float *)&x;
+  return base_type_float_from_bits(x);
 #endif
 }
 
@@ -197,8 +215,13 @@ __forceinline float fast_float_trunc(float f)
 __forceinline float fast_float_floor(float f)
 {
   static unsigned almost1=(126<<23)|0x7fffff;
+#if defined(_MSC_VER) && _MSC_VER < 1300
   if (*(unsigned *)&f &0x80000000)
     f-=*(float *)&almost1;
+#else
+  if (base_type_float_bits(f) & 0x80000000)
+    f-=base_type_float_from_bits(almost1);
+#endif
   return fast_float_trunc(f);
 }
 
@@ -206,8 +229,13 @@ __forceinline float fast_float_floor(float f)
 __forceinline float fast_float_ceil(float f)
 {
   static unsigned almost1=(126<<23)|0x7fffff;
+#if defined(_MSC_VER) && _MSC_VER < 1300
   if ( (*(unsigned *)&f &0x80000000)==0)
     f+=*(float *)&almost1;
+#else
+  if ((base_type_float_bits(f) & 0x80000000)==0)
+    f+=base_type_float_from_bits(almost1);
+#endif
   return fast_float_trunc(f);
 }
 

@@ -13,25 +13,23 @@ This roadmap is authoritative for the project unless superseded by a dated decis
 - W3X support added to the program;
 - project-state/worklog rules established.
 
-### Step 01 — Determinism / CRC / Xfer Characterization — IN PROGRESS
+### Step 01 — Determinism / CRC / Xfer Characterization — IMPLEMENTATION COMPLETE / WINDOWS SIGN-OFF PENDING
 
-Protect compiler/ABI migration with characterization tests for:
+The consolidated determinism guard now protects:
 
-- RNG primitives;
-- CRC behavior;
-- Xfer/snapshot bytes where relevant;
-- critical integer/layout assumptions;
-- replay command/CRC behavior.
+- CRC primitive vectors and incremental/carry behavior;
+- integer and real game-logic RNG values plus seed-state CRC transitions;
+- legacy float trunc/floor/ceil bit behavior without modern strict-aliasing UB;
+- Xfer primitive Win32 bytes;
+- representative `DamageInfoOutput` snapshot ordering;
+- production `XferCRC` folding;
+- Win32 replay/network ABI widths and packed packet offsets;
+- network/replay enum anchors;
+- a known `MSG_LOGIC_CRC` replay-record byte/CRC checkpoint.
 
-Progress:
+The prior GCC strict-aliasing suppression is no longer required. No new determinism test module was added; coverage remains in `Core/Tests/DeterminismPrimitivesTest.cpp`.
 
-- CRC primitive characterization vectors are locked against the production `Common/crc.h` implementation, including incremental and carry/high-bit behavior.
-- Deterministic game-logic RNG vectors are locked against the production `Common/RandomValue.cpp` implementation for explicit seed initialization, base-seed stability, state CRC transitions, integer sequences, signed ranges, equal-range retail behavior, reset reproducibility, and retail-compatible `GameLogicRandomValueUnchanged` behavior.
-- Xfer primitive width/little-endian characterization is implemented as an engine-linked Windows extras target; Windows reference execution is pending.
-- A first production snapshot ordering gate is implemented for `DamageInfoOutput` through `XferSave::xferSnapshot()`, locking its version/field byte sequence without changing serialization. Windows reference execution is pending.
-- Broader layout-sensitive structures, real-valued RNG, and replay characterization are still pending.
-
-Exit gate: enough coverage exists to detect compiler-induced deterministic changes.
+Exit/sign-off gate: run the engine-linked `z_determinismtest` on the Win32 compatibility/reference build before Step 02 accepts compiler/build-system changes. Any MinGW/MSVC ABI disagreement must be resolved explicitly rather than hidden by relaxing the test.
 
 ### Step 02 — Command-Line Build System Foundation
 
