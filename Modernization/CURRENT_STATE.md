@@ -58,6 +58,14 @@ No W3X runtime loader was found in this baseline.
 
 The modernization program defines W3X as the EA SAGE XML-based evolution of W3D used by later SAGE games. W3X support therefore starts as a new additive asset path.
 
+## Determinism guard
+
+Step 01 now has a consolidated characterization harness in `Core/Tests/DeterminismPrimitivesTest.cpp`. The lightweight path directly exercises production CRC, game-logic RNG, and compiler-sensitive float helpers under GCC/Clang and optimization/sanitizer variants. The Windows engine-linked `z_determinismtest` extends that same harness through production Xfer, XferCRC, a representative snapshot, Win32 ABI/network assumptions, and a replay command-record checkpoint.
+
+One concrete compiler hazard was removed without changing the legacy numeric algorithm: modern/non-VC6 `fast_float_trunc`, `fast_float_floor`, and `fast_float_ceil` now move IEEE-754 bits with `memcpy` rather than aliasing a `float` through an `unsigned *`. A 199,122-input before/after probe produced identical output bits; the VC6/reference assembly branch remains untouched.
+
+The engine-linked portion still requires execution on the Windows compatibility/reference build before Step 01 is signed off and Step 02 compiler/build migration is accepted.
+
 ## Modernization risk areas
 
 - deterministic behavior across compilers;

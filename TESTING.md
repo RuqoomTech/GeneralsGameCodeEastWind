@@ -72,3 +72,31 @@ W3X top-level child-discovery tests passed.
 ```
 
 A1 and A2 deliberately share one implementation source. Adding another standalone W3X scanner/header for subsequent XML features is not the intended architecture; extend or replace the consolidated document component during Step 05.
+
+## Step 01 determinism guard
+
+The lightweight gate runs production CRC/RNG code plus the compiler-sensitive float-helper characterization. Modern GCC no longer needs a strict-aliasing suppression.
+
+```sh
+g++ -std=c++20 -O2 -Wall -Wextra -Werror \
+  -Wno-unknown-pragmas -Wno-unused-parameter -pedantic \
+  -DRTS_STANDALONE_DETERMINISM_TEST \
+  -IDependencies/Utility \
+  -ICore/Libraries/Include \
+  -ICore/Libraries/Source/WWVegas \
+  -ICore/GameEngine/Include \
+  Core/Tests/DeterminismPrimitivesTest.cpp \
+  Core/GameEngine/Source/Common/RandomValue.cpp \
+  -o DeterminismPrimitivesTest
+./DeterminismPrimitivesTest
+```
+
+The full compatibility gate is Windows-only because it links the real Zero Hour GameEngine/Xfer path. Configure with `RTS_BUILD_ZEROHOUR_EXTRAS=ON`, build `z_determinismtest`, then run the produced executable. It covers Xfer, XferCRC, snapshot ordering, Win32 packet/replay ABI assumptions, and the replay command-record checkpoint in addition to the lightweight tests.
+
+Expected final line:
+
+```text
+Step 01 determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.
+```
+
+See `Modernization/STEP_01_DETERMINISM_GUARD.md` for exact MinGW-w64 i686 and MSVC Win32 commands.

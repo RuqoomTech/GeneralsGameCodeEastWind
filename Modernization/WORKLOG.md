@@ -104,3 +104,18 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - Locked the exact 10-byte Windows stream and field order: version, actual damage dealt, actual damage clipped, then no-effect flag.
 - No Xfer, XferSave, Damage, Snapshot, save-game, replay, gameplay, renderer, W3D, or W3X production behavior changed.
 - Lightweight Linux CRC/RNG and W3X regressions remain part of the local gate; the engine-linked primitive/snapshot test remains a Windows execution gate for MinGW-w64 i686 and MSVC reference builds.
+
+## 2026-09-10 — Step 01E: determinism guard completion
+
+- Completed the remaining Step 01 characterization in the existing `Core/Tests/DeterminismPrimitivesTest.cpp`; no new determinism test file/module was created.
+- Added exact IEEE-754 game-logic real-RNG vectors and per-draw RNG-state CRCs.
+- Characterized the legacy fast float trunc/floor/ceil bit behavior, including historical edge behavior.
+- Removed modern C++ strict-aliasing UB from the non-VC6 float bit-conversion path in `Lib/BaseType.h` using `memcpy`; the VC6 assembly branch and legacy bit-mask/arithmetic algorithm are unchanged.
+- Compared 199,122 deterministic finite float inputs before/after the alias-safe change; the trunc/floor/ceil output stream/hash was identical.
+- GCC 14.2 now passes the lightweight determinism test at `-O0`, `-O2`, and `-O3` with `-Werror` and no `-Wno-strict-aliasing`; Clang 17 passes the same matrix; ASan and UBSan pass.
+- Added production `XferCRC` checkpoints for full-word and partial-tail folding.
+- Added strict Win32 ABI guards for replay/network primitive widths, packed `TransportMessageHeader`, native `GameMessage` size, command-packet capacity, and `CommandPacket` offsets/size.
+- Locked replay/network enum anchors, including `MSG_BEGIN_NETWORK_MESSAGES = 1000`, `MSG_LOGIC_CRC = 1093`, and `MSG_END_NETWORK_MESSAGES = 1999`.
+- Added a known 19-byte replay `MSG_LOGIC_CRC` command-record fixture with production CRC and XferCRC checkpoints.
+- W3X A0/A1/A2 regressions remain green.
+- Step 01 characterization implementation is complete; the engine-linked `z_determinismtest` still requires Win32 user execution for final sign-off before Step 02 compiler/build migration is accepted.
