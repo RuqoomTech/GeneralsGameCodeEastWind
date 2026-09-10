@@ -75,3 +75,23 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - The strict-aliasing warning is retained as a Step 01 investigation item; no deterministic float behavior was changed in this CRC slice.
 - No RNG, Xfer, snapshot, replay, simulation, renderer, W3D/W3X runtime, asset-manager, or build-system implementation changed.
 - Step 01 remains `PARTIAL`; the next small target is deterministic game-logic RNG sequence/state characterization.
+
+## 2026-09-10 — Step 01B: deterministic game-logic RNG characterization
+
+- Extended the existing `Core/Tests/DeterminismPrimitivesTest.cpp`; no additional RNG test file or copied RNG implementation was introduced.
+- Added a narrow `RTS_STANDALONE_DETERMINISM_TEST` include seam in `Core/GameEngine/Source/Common/RandomValue.cpp` so the production RNG implementation can be linked into the lightweight Linux/GCC/Clang harness without pulling ATL/Win32 through `PreRTS.h`. Normal production builds retain the existing `PreRTS.h` path.
+- Locked explicit-seed initialization, replay/base-seed stability, initial/per-draw RNG state CRCs, two deterministic integer sequences, signed-range behavior, same-seed reset reproducibility, equal-range retail state consumption, and retail-compatible `GameLogicRandomValueUnchanged` state advancement.
+- GCC 14.2 and Clang 17 pass the combined CRC/RNG characterization at `-O0`, `-O2`, and `-O3`; ASan and UBSan also pass.
+- The pre-existing optimized GCC strict-aliasing warning from `Lib/BaseType.h` remains suppressed only for this lightweight gate and is not changed by this step.
+- Real-valued RNG, Xfer/snapshot bytes, layout-sensitive structures, and replay fixtures remain future Step 01 work.
+
+## 2026-09-10 — Step 01C: Xfer primitive serialization / byte-order characterization
+
+- Extended the existing `Core/Tests/DeterminismPrimitivesTest.cpp`; no new determinism test source was created.
+- Added an engine-linked Xfer mode that derives a capture sink from `Xfer` and calls the production base-class primitive wrappers rather than copying their behavior.
+- Locked the legacy Windows primitive widths and exact little-endian byte stream for version, byte/bool, 16/32/64-bit integers, `Real`, and `xferUser` raw bytes.
+- Added `z_determinismtest` directly to the existing Zero Hour extras CMake path instead of creating another CMake subdirectory/module.
+- The target is opt-in through the existing `RTS_BUILD_ZEROHOUR_EXTRAS` switch; normal game/build behavior is unchanged when extras are off.
+- The lightweight Linux CRC/RNG characterization remains green. The engine-linked Xfer test requires Windows because the production Xfer/GameEngine header graph is tied to legacy Win32/ATL infrastructure.
+- Windows MinGW-w64 i686 and MSVC reference execution commands are documented in `STEP_01_DETERMINISM_GUARD.md`; reference execution remains pending user validation.
+- No Xfer serialization implementation, snapshot behavior, replay format, gameplay, renderer, asset manager, or W3D/W3X runtime behavior changed.

@@ -25,8 +25,9 @@ Protect compiler/ABI migration with characterization tests for:
 
 Progress:
 
-- CRC primitive characterization vectors are now locked against the production `Common/crc.h` implementation, including incremental and carry/high-bit behavior.
-- RNG, Xfer/snapshot, layout, and replay characterization are still pending.
+- CRC primitive characterization vectors are locked against the production `Common/crc.h` implementation, including incremental and carry/high-bit behavior.
+- Deterministic game-logic RNG vectors are locked against the production `Common/RandomValue.cpp` implementation for explicit seed initialization, base-seed stability, state CRC transitions, integer sequences, signed ranges, equal-range retail behavior, reset reproducibility, and retail-compatible `GameLogicRandomValueUnchanged` behavior.
+- Xfer primitive width/little-endian characterization is implemented as an engine-linked Windows extras target; Windows reference execution is pending. Snapshot/compound ordering, layout, real-valued RNG, and replay characterization are still pending.
 
 Exit gate: enough coverage exists to detect compiler-induced deterministic changes.
 
