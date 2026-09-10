@@ -4,6 +4,8 @@
 
 #if defined(RTS_ENGINE_DETERMINISM_TEST)
 #include "Common/Xfer.h"
+#include "Common/XferSave.h"
+#include "GameLogic/Damage.h"
 #include <vector>
 #endif
 
@@ -84,6 +86,26 @@ public:
     virtual void skip(Int dataSize) override { (void)dataSize; }
     virtual void xferSnapshot(Snapshot *snapshot) override { (void)snapshot; }
 
+    const std::vector<UnsignedByte> &bytes() const { return m_bytes; }
+
+protected:
+    virtual void xferImplementation(void *data, Int dataSize) override
+    {
+        if (data == nullptr || dataSize <= 0) {
+            return;
+        }
+
+        const UnsignedByte *begin = static_cast<const UnsignedByte *>(data);
+        m_bytes.insert(m_bytes.end(), begin, begin + dataSize);
+    }
+
+private:
+    std::vector<UnsignedByte> m_bytes;
+};
+
+class CaptureSaveXfer : public XferSave
+{
+public:
     const std::vector<UnsignedByte> &bytes() const { return m_bytes; }
 
 protected:
@@ -182,6 +204,30 @@ void Check_Xfer_Primitive_Characterization()
     };
 
     Expect_Bytes("Xfer primitive little-endian byte stream",
+        xfer.bytes(), expected, sizeof(expected));
+}
+
+void Check_Xfer_Snapshot_Characterization()
+{
+    // Exercise a real production Snapshot implementation through XferSave's
+    // production snapshot dispatch. DamageInfoOutput is deliberately small but
+    // determinism-relevant: its serialized order is version, dealt, clipped, no-effect.
+    DamageInfoOutput output;
+    output.m_actualDamageDealt = 1.0f;
+    output.m_actualDamageClipped = -2.0f;
+    output.m_noEffect = true;
+
+    CaptureSaveXfer xfer;
+    xfer.xferSnapshot(&output);
+
+    const UnsignedByte expected[] = {
+        0x01,
+        0x00, 0x00, 0x80, 0x3f,
+        0x00, 0x00, 0x00, 0xc0,
+        0x01
+    };
+
+    Expect_Bytes("DamageInfoOutput snapshot field order",
         xfer.bytes(), expected, sizeof(expected));
 }
 
@@ -304,6 +350,7 @@ int main()
     Check_Game_Logic_RNG_Characterization();
 #if defined(RTS_ENGINE_DETERMINISM_TEST)
     Check_Xfer_Primitive_Characterization();
+    Check_Xfer_Snapshot_Characterization();
 #endif
 
     if (g_failures != 0) {
@@ -312,7 +359,7 @@ int main()
     }
 
 #if defined(RTS_ENGINE_DETERMINISM_TEST)
-    puts("Determinism CRC, game-logic RNG, and Xfer primitive characterization tests passed.");
+    puts("Determinism CRC, game-logic RNG, Xfer primitive, and snapshot characterization tests passed.");
 #else
     puts("Determinism CRC and game-logic RNG characterization tests passed.");
 #endif
