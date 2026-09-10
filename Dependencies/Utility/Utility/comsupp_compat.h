@@ -18,28 +18,15 @@
 
 /**
  * @file comsupp_compat.h
- * @brief COM Support compatibility layer for MinGW-w64
+ * @brief Small COM support compatibility shim for MinGW-w64.
  *
- * Provides _com_util::ConvertStringToBSTR() and ConvertBSTRToString()
- * as header-only implementations for MinGW-w64 builds.
+ * Modern MinGW-w64 already provides _com_util::ConvertStringToBSTR() and
+ * _com_util::ConvertBSTRToString() through <comutil.h>/<comdef.h>. This shim
+ * therefore must not redefine those helpers. It only provides the vtMissing
+ * storage expected by legacy Generals/Zero Hour COM call sites.
  *
- * These functions are required by the _bstr_t class (from ReactOS comutil.h)
- * for char* <-> BSTR conversions. They are called internally when constructing
- * _bstr_t objects from C strings or converting _bstr_t back to char*.
- *
- * Used indirectly by:
- * - Core/Libraries/Source/WWVegas/WW3D2/dx8webbrowser.cpp (8+ _bstr_t constructions)
- * - Core/GameEngine/Include/GameNetwork/WOLBrowser/FEBDispatch.h (_bstr_t usage)
- *
- * MinGW-w64 provides COM error handling (comdef.h) but lacks the string
- * conversion utilities. ReactOS provides comsupp.cpp with implementations,
- * but we use this header-only version to avoid building/linking an extra
- * library. This must be included BEFORE comutil.h to provide definitions
- * before _bstr_t's inline methods are instantiated.
- *
- * @note Include this header before <comutil.h> in MinGW builds to provide
- *       symbol definitions for _bstr_t's internal string conversion calls.
- *       Without this, you will get "undefined reference" linker errors.
+ * Keep this header intentionally small: COM conversion behavior belongs to the
+ * platform headers, not to a second project-owned implementation.
  */
 
 #pragma once
@@ -51,90 +38,8 @@
 #include <oleauto.h>
 #include <comdef.h>
 
-namespace _com_util
-{
-
-inline BSTR WINAPI ConvertStringToBSTR(const char *pSrc)
-{
-    DWORD cwch;
-    BSTR wsOut = nullptr;
-
-    if (!pSrc)
-        return nullptr;
-
-    // Compute the needed size with the null terminator
-    cwch = MultiByteToWideChar(CP_ACP, 0, pSrc, -1, nullptr, 0);
-    if (cwch == 0)
-        return nullptr;
-
-    // Allocate the BSTR (without the null terminator)
-    wsOut = SysAllocStringLen(nullptr, cwch - 1);
-    if (!wsOut)
-    {
-        _com_issue_error(HRESULT_FROM_WIN32(ERROR_OUTOFMEMORY));
-        return nullptr;
-    }
-
-    // Convert the string
-    if (MultiByteToWideChar(CP_ACP, 0, pSrc, -1, wsOut, cwch) == 0)
-    {
-        // We failed, clean everything up
-        cwch = GetLastError();
-
-        SysFreeString(wsOut);
-        wsOut = nullptr;
-
-        _com_issue_error(!IS_ERROR(cwch) ? HRESULT_FROM_WIN32(cwch) : cwch);
-    }
-
-    return wsOut;
-}
-
-inline char* WINAPI ConvertBSTRToString(BSTR pSrc)
-{
-    DWORD cb, cwch;
-    char *szOut = nullptr;
-
-    if (!pSrc)
-        return nullptr;
-
-    // Retrieve the size of the BSTR with the null terminator
-    cwch = SysStringLen(pSrc) + 1;
-
-    // Compute the needed size with the null terminator
-    cb = WideCharToMultiByte(CP_ACP, 0, pSrc, cwch, nullptr, 0, nullptr, nullptr);
-    if (cb == 0)
-    {
-        cwch = GetLastError();
-        _com_issue_error(!IS_ERROR(cwch) ? HRESULT_FROM_WIN32(cwch) : cwch);
-        return nullptr;
-    }
-
-    // Allocate the string
-    szOut = (char*)::operator new(cb * sizeof(char));
-    if (!szOut)
-    {
-        _com_issue_error(HRESULT_FROM_WIN32(ERROR_OUTOFMEMORY));
-        return nullptr;
-    }
-
-    // Convert the string and null-terminate
-    szOut[cb - 1] = '\0';
-    if (WideCharToMultiByte(CP_ACP, 0, pSrc, cwch, szOut, cb, nullptr, nullptr) == 0)
-    {
-        // We failed, clean everything up
-        cwch = GetLastError();
-
-        ::operator delete(szOut);
-        szOut = nullptr;
-
-        _com_issue_error(!IS_ERROR(cwch) ? HRESULT_FROM_WIN32(cwch) : cwch);
-    }
-
-    return szOut;
-}
-
-}
+// Modern MinGW-w64 provides _com_util::ConvertStringToBSTR() and
+// _com_util::ConvertBSTRToString() in <comutil.h>. Do not redefine them here.
 
 // Provide vtMissing global variable
 // Use inline variable (C++17) to avoid multiple definition errors

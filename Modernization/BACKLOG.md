@@ -1,13 +1,13 @@
 # Modernization Backlog
 
-Status values: `DONE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKED`.
+Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKED`.
 
 | ID | Work item | Status | Primary gate |
 |---|---|---|---|
 | 00 | Repository modernization baseline/docs | DONE | Docs/state stored in authoritative tree |
 | F0 | Existing `IRenderBackend` / `DX8Backend` seam | PARTIAL | Already present upstream; incomplete abstraction |
-| 01 | Determinism / CRC / Xfer characterization | VERIFY | Implementation complete: CRC/RNG/float/Xfer/XferCRC/snapshot/Win32 ABI/replay-record checkpoints; run `z_determinismtest` on Windows for sign-off |
-| 02 | MinGW-w64 GCC + Ninja canonical build | NEXT | Begins after Step 01 Windows sign-off; no Visual Studio IDE dependency |
+| 01 | Determinism / CRC / Xfer characterization | DONE | Windows MinGW-w64 i686 / GCC 16.2 + Ninja `z_determinismcheck` passed on 2026-09-10 |
+| 02 | MinGW-w64 GCC + Ninja canonical build | ACTIVE | Normalize the proven GCC + Ninja path into the canonical command-line workflow |
 | 03 | HD-mod performance telemetry | PLANNED | Repeatable CPU/GPU/memory metrics |
 | 04 | x86 memory survival | PLANNED | Better headroom/diagnostics before x64 |
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |

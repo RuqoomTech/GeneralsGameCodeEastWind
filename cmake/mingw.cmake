@@ -69,10 +69,10 @@ if(MINGW)
         imm32       # Input Method Manager (IME)
     )
     
-    # Note: MinGW-w64 does not provide comsuppw (COM support utilities library).
-    # COM support utilities (_com_util::ConvertStringToBSTR, ConvertBSTRToString)
-    # are provided by Dependencies/Utility/Utility/comsupp_compat.h as header-only
-    # implementations. No library linking required.
+    # MinGW-w64 does not provide Microsoft's comsuppw library, but modern
+    # MinGW-w64 headers already provide _com_util string/BSTR conversion helpers.
+    # Dependencies/Utility/Utility/comsupp_compat.h only supplies the remaining
+    # vtMissing compatibility storage. No comsuppw link library is required.
     
     # MinGW-w64 compatibility: Create d3dx8 as an alias to d3dx8d
     # MinGW-w64 only provides libd3dx8d.a (debug library), not libd3dx8.a

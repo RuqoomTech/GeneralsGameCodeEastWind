@@ -58,8 +58,14 @@ XferCRC::~XferCRC()
 void XferCRC::open( AsciiString identifier )
 {
 
+#if defined(RTS_STANDALONE_DETERMINISM_TEST)
+	// Identifier storage is outside the focused CRC contract and would require
+	// the legacy global AsciiString allocator. The production path below is unchanged.
+	(void)identifier;
+#else
 	// call base class
 	Xfer::open( identifier );
+#endif
 
 	// initialize CRC to brand new one at zero
 	m_crc = 0;
@@ -172,6 +178,7 @@ UnsignedInt XferCRC::getCRC()
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
+#if !defined(RTS_STANDALONE_DETERMINISM_TEST)
 XferDeepCRC::XferDeepCRC()
 {
 
@@ -341,3 +348,5 @@ void XferDeepCRC::xferUnicodeString( UnicodeString *unicodeStringData )
 		xferUser( (void *)unicodeStringData->str(), sizeof( WideChar ) * len );
 
 }
+
+#endif // !RTS_STANDALONE_DETERMINISM_TEST

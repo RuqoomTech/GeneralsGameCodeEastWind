@@ -26,13 +26,29 @@
 // Pseudo-random number generators
 // Author: Michael S. Booth, January 1998
 
+#if defined(RTS_STANDALONE_DETERMINISM_TEST)
+#include <climits>
+#include <cstring>
+#include <ctime>
+#include <Utility/CppMacros.h>
+#include "Common/GameDefines.h"
+#include "GameClient/ClientRandomValue.h"
+#include "GameLogic/LogicRandomValue.h"
+
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
+#endif
+#else
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
+#endif
 
 #include "Lib/BaseType.h"
 #include "Common/RandomValue.h"
 #include "Common/crc.h"
 #include "Common/Debug.h"
+#if !defined(RTS_STANDALONE_DETERMINISM_TEST)
 #include "GameLogic/GameLogic.h"
+#endif
 
 #undef DEBUG_RANDOM_AUDIO
 #undef DEBUG_RANDOM_CLIENT

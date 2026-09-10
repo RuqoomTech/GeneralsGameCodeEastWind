@@ -91,7 +91,7 @@ g++ -std=c++20 -O2 -Wall -Wextra -Werror \
 ./DeterminismPrimitivesTest
 ```
 
-The full compatibility gate is Windows-only because it links the real Zero Hour GameEngine/Xfer path. Configure with `RTS_BUILD_ZEROHOUR_EXTRAS=ON`, build `z_determinismtest`, then run the produced executable. It covers Xfer, XferCRC, snapshot ordering, Win32 packet/replay ABI assumptions, and the replay command-record checkpoint in addition to the lightweight tests.
+The full compatibility gate is Windows-only. It now compiles the production RandomValue/Snapshot/Xfer/XferCRC/Damage implementation units directly rather than linking the monolithic Zero Hour GameEngine archive. This keeps the gate focused on Xfer, XferCRC, `DamageInfoOutput` snapshot ordering, Win32 packet/replay ABI assumptions, and the replay command-record checkpoint without dragging renderer/UI/network executable globals into the test.
 
 Expected final line:
 
@@ -99,4 +99,6 @@ Expected final line:
 Step 01 determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.
 ```
 
-See `Modernization/STEP_01_DETERMINISM_GUARD.md` for exact MinGW-w64 i686 and MSVC Win32 commands.
+For MinGW-w64 i686, configure with `cmake --preset mingw-w64-i686-determinism` and run `cmake --build --preset mingw-w64-i686-determinism --target z_determinismcheck`. See `Modernization/STEP_01_DETERMINISM_GUARD.md` for the MSVC Win32 comparison command.
+
+**Windows sign-off:** passed on 2026-09-10 with MinGW-w64 i686 / GCC 16.2 + Ninja. This command remains a mandatory regression gate for Step 02 and later modernization work.

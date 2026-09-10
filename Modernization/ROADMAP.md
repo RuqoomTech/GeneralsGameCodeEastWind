@@ -13,7 +13,7 @@ This roadmap is authoritative for the project unless superseded by a dated decis
 - W3X support added to the program;
 - project-state/worklog rules established.
 
-### Step 01 — Determinism / CRC / Xfer Characterization — IMPLEMENTATION COMPLETE / WINDOWS SIGN-OFF PENDING
+### Step 01 — Determinism / CRC / Xfer Characterization — DONE
 
 The consolidated determinism guard now protects:
 
@@ -29,9 +29,9 @@ The consolidated determinism guard now protects:
 
 The prior GCC strict-aliasing suppression is no longer required. No new determinism test module was added; coverage remains in `Core/Tests/DeterminismPrimitivesTest.cpp`.
 
-Exit/sign-off gate: run the engine-linked `z_determinismtest` on the Win32 compatibility/reference build before Step 02 accepts compiler/build-system changes. Any MinGW/MSVC ABI disagreement must be resolved explicitly rather than hidden by relaxing the test.
+Exit/sign-off gate: **PASSED on Windows MinGW-w64 i686 / GCC 16.2 + Ninja on 2026-09-10.** The focused `z_determinismcheck` target compiled and ran successfully and emitted the expected Step 01 success line. The target compiles only the production determinism/Xfer units it characterizes and no longer links the monolithic game archive. Any future compiler/ABI disagreement must be resolved explicitly rather than hidden by relaxing the test.
 
-### Step 02 — Command-Line Build System Foundation
+### Step 02 — Command-Line Build System Foundation — ACTIVE
 
 Primary path:
 
