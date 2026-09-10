@@ -162,48 +162,75 @@
             "displayName": "Unix 32bit VCPKG Release"
         },
         {
-            "name": "mingw-w64-i686",
-            "displayName": "MinGW-w64 32-bit (i686) Release",
+            "name": "mingw32-base",
+            "displayName": "MinGW-w64 32-bit base (do not use directly)",
+            "hidden": true,
             "generator": "Ninja",
-            "hidden": false,
             "binaryDir": "${sourceDir}/build/${presetName}",
             "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-i686.cmake",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "RTS_BUILD_ZEROHOUR": "ON",
+                "RTS_BUILD_GENERALS": "OFF",
+                "RTS_BUILD_CORE_TOOLS": "OFF",
+                "RTS_BUILD_ZEROHOUR_TOOLS": "OFF"
+            }
+        },
+        {
+            "name": "mingw32-release",
+            "displayName": "MinGW-w64 i686 / Ninja \u2014 Zero Hour Release",
+            "inherits": "mingw32-base",
+            "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
             }
         },
         {
-            "name": "mingw-w64-i686-determinism",
-            "displayName": "MinGW-w64 32-bit Determinism Gate",
-            "hidden": false,
-            "inherits": "mingw-w64-i686",
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "cacheVariables": {
-                "RTS_BUILD_ZEROHOUR_EXTRAS": "ON",
-                "RTS_BUILD_ZEROHOUR_TOOLS": "OFF",
-                "RTS_BUILD_CORE_TOOLS": "OFF",
-                "RTS_BUILD_GENERALS": "OFF"
-            }
-        },
-        {
-            "name": "mingw-w64-i686-debug",
-            "displayName": "MinGW-w64 32-bit (i686) Debug",
-            "hidden": false,
-            "inherits": "mingw-w64-i686",
+            "name": "mingw32-debug",
+            "displayName": "MinGW-w64 i686 / Ninja \u2014 Zero Hour Debug",
+            "inherits": "mingw32-base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "RTS_BUILD_OPTION_DEBUG": "ON"
             }
         },
         {
-            "name": "mingw-w64-i686-profile",
-            "displayName": "MinGW-w64 32-bit (i686) Profile",
-            "hidden": false,
-            "inherits": "mingw-w64-i686",
+            "name": "mingw32-profile",
+            "displayName": "MinGW-w64 i686 / Ninja \u2014 Zero Hour Profile",
+            "inherits": "mingw32-base",
             "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
                 "RTS_BUILD_OPTION_PROFILE": "ON"
             }
+        },
+        {
+            "name": "mingw32-tests",
+            "displayName": "MinGW-w64 i686 / Ninja \u2014 Modernization Tests",
+            "inherits": "mingw32-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "RTS_BUILD_TESTS_ONLY": "ON",
+                "RTS_BUILD_TESTS": "ON"
+            }
+        },
+        {
+            "name": "mingw-w64-i686",
+            "displayName": "Compatibility alias: mingw32-release",
+            "inherits": "mingw32-release"
+        },
+        {
+            "name": "mingw-w64-i686-debug",
+            "displayName": "Compatibility alias: mingw32-debug",
+            "inherits": "mingw32-debug"
+        },
+        {
+            "name": "mingw-w64-i686-profile",
+            "displayName": "Compatibility alias: mingw32-profile",
+            "inherits": "mingw32-profile"
+        },
+        {
+            "name": "mingw-w64-i686-determinism",
+            "displayName": "Compatibility alias: mingw32-tests",
+            "inherits": "mingw32-tests"
         }
     ],
     "buildPresets": [
@@ -287,28 +314,48 @@
             "configuration": "Release"
         },
         {
-            "name": "mingw-w64-i686",
-            "configurePreset": "mingw-w64-i686",
-            "displayName": "Build MinGW-w64 32-bit (i686) Release",
-            "description": "Build MinGW-w64 32-bit (i686) Release"
+            "name": "mingw32-release",
+            "configurePreset": "mingw32-release",
+            "displayName": "Build canonical MinGW Zero Hour Release",
+            "description": "Build canonical MinGW Zero Hour Release"
         },
         {
-            "name": "mingw-w64-i686-determinism",
-            "configurePreset": "mingw-w64-i686-determinism",
-            "displayName": "Build MinGW-w64 32-bit Determinism Gate",
-            "description": "Build the focused Step 01 determinism executable"
+            "name": "mingw32-debug",
+            "configurePreset": "mingw32-debug",
+            "displayName": "Build canonical MinGW Zero Hour Debug",
+            "description": "Build canonical MinGW Zero Hour Debug"
+        },
+        {
+            "name": "mingw32-profile",
+            "configurePreset": "mingw32-profile",
+            "displayName": "Build canonical MinGW Zero Hour Profile",
+            "description": "Build canonical MinGW Zero Hour Profile"
+        },
+        {
+            "name": "mingw32-tests",
+            "configurePreset": "mingw32-tests",
+            "displayName": "Build focused modernization tests",
+            "description": "Build focused modernization tests"
+        },
+        {
+            "name": "mingw-w64-i686",
+            "configurePreset": "mingw-w64-i686",
+            "displayName": "Compatibility build preset: mingw-w64-i686"
         },
         {
             "name": "mingw-w64-i686-debug",
             "configurePreset": "mingw-w64-i686-debug",
-            "displayName": "Build MinGW-w64 32-bit (i686) Debug",
-            "description": "Build MinGW-w64 32-bit (i686) Debug"
+            "displayName": "Compatibility build preset: mingw-w64-i686-debug"
         },
         {
             "name": "mingw-w64-i686-profile",
             "configurePreset": "mingw-w64-i686-profile",
-            "displayName": "Build MinGW-w64 32-bit (i686) Profile",
-            "description": "Build MinGW-w64 32-bit (i686) Profile"
+            "displayName": "Compatibility build preset: mingw-w64-i686-profile"
+        },
+        {
+            "name": "mingw-w64-i686-determinism",
+            "configurePreset": "mingw-w64-i686-determinism",
+            "displayName": "Compatibility build preset: mingw-w64-i686-determinism"
         }
     ],
     "workflowPresets": [
@@ -469,43 +516,78 @@
             ]
         },
         {
-            "name": "mingw-w64-i686",
+            "name": "mingw32-release",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "mingw-w64-i686"
+                    "name": "mingw32-release"
                 },
                 {
                     "type": "build",
-                    "name": "mingw-w64-i686"
+                    "name": "mingw32-release"
                 }
             ]
         },
         {
-            "name": "mingw-w64-i686-debug",
+            "name": "mingw32-debug",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "mingw-w64-i686-debug"
+                    "name": "mingw32-debug"
                 },
                 {
                     "type": "build",
-                    "name": "mingw-w64-i686-debug"
+                    "name": "mingw32-debug"
                 }
             ]
         },
         {
-            "name": "mingw-w64-i686-profile",
+            "name": "mingw32-profile",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "mingw-w64-i686-profile"
+                    "name": "mingw32-profile"
                 },
                 {
                     "type": "build",
-                    "name": "mingw-w64-i686-profile"
+                    "name": "mingw32-profile"
                 }
             ]
+        },
+        {
+            "name": "mingw32-tests",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "mingw32-tests"
+                },
+                {
+                    "type": "build",
+                    "name": "mingw32-tests"
+                },
+                {
+                    "type": "test",
+                    "name": "mingw32-tests"
+                }
+            ]
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "mingw32-tests",
+            "configurePreset": "mingw32-tests",
+            "displayName": "Run focused MinGW modernization tests",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "mingw-w64-i686-determinism",
+            "configurePreset": "mingw-w64-i686-determinism",
+            "displayName": "Compatibility test preset for Step 01",
+            "output": {
+                "outputOnFailure": true
+            }
         }
     ]
 }

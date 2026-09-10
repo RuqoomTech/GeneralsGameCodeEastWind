@@ -21,21 +21,26 @@ This is the **GeneralsGameCode** project - a community-driven effort to fix and 
 ## Build System
 
 ### CMake Presets (Critical)
-- **vc6**: Visual Studio 6 compatible build (retail compatibility required)
-- **win32**: Modern Visual Studio 2022 build
-- **vc6-debug/vc6-profile**: Debug/profiling variants
-- Use `cmake --preset <preset-name>` followed by `cmake --build build/<preset>`
+- **mingw32-release / mingw32-debug / mingw32-profile**: canonical Zero Hour command-line builds using Ninja + MinGW-w64 GCC.
+- **mingw32-tests**: focused modernization regression graph; does not configure the full runtime dependency tree.
+- **vc6**: historical Visual Studio 6 compatible build used for retail replay comparison.
+- **win32**: MSVC comparison build.
+- Prefer `cmake --preset <preset-name>` followed by `cmake --build --preset <preset-name>`.
 
 ### Build Commands
 ```bash
-# Configure with specific preset
+# Canonical Zero Hour release
+cmake --preset mingw32-release
+cmake --build --preset mingw32-release --target z_generals
+
+# Focused modernization tests
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests
+ctest --preset mingw32-tests --output-on-failure
+
+# Historical VC6 comparison
 cmake --preset vc6
-
-# Build (from project root)
-cmake --build build/vc6
-
-# Build with tools and extras
-cmake --build build/vc6 --target <game>_tools <game>_extras
+cmake --build --preset vc6
 ```
 
 ### Retail Compatibility
@@ -106,7 +111,8 @@ Core/
 
 ### Required for Building
 - **VC6 builds**: Requires MSVC 6.0 toolchain (automated in CI via itsmattkc/MSVC600)
-- **Modern builds**: Visual Studio 2022, Ninja generator
+- **Canonical modernization build**: MinGW-w64 i686 GCC + Ninja (MSYS2 MINGW32 by default)
+- **MSVC comparison builds**: Visual Studio 2022 Build Tools / existing `win32` presets
 - **vcpkg** (optional): zlib, ffmpeg for enhanced builds
 
 ### Platform-Specific

@@ -7,100 +7,57 @@ The project must configure, build, test, and eventually package from the command
 ## Primary Windows path
 
 ```text
-CMake
-  -> CMake Presets
-  -> Ninja
-  -> MinGW-w64 GCC
+CMake -> CMake Presets -> Ninja -> MinGW-w64 GCC
 ```
 
-Secondary path:
+Secondary compiler work may use Clang. Standalone MSVC Build Tools remain an optional comparison path; the Visual Studio IDE is not a project dependency.
 
-```text
-CMake + Ninja + Clang
-```
+## Canonical i686 compatibility presets
 
-Optional comparison path:
+Step 02A establishes these primary names:
 
-```text
-CMake + Ninja + standalone MSVC Build Tools
-```
-
-The Visual Studio IDE is not a project dependency.
-
-## Existing groundwork
-
-This baseline already contains:
-
-- MinGW-w64 i686 toolchain support;
-- MinGW presets;
-- ReactOS ATL compatibility support;
-- WIDL support;
-- MinGW release debug-symbol handling;
-- Ninja-based standard/VC6 preset infrastructure.
-
-The main gap is making MinGW + Ninja the canonical and reliably tested Windows path.
-
-## Planned preset families
-
-Initial x86/reference development:
-
-- `mingw32-debug`
 - `mingw32-release`
+- `mingw32-debug`
 - `mingw32-profile`
 - `mingw32-tests`
-- later `clang32-*`
 
-Future Evolution runtime:
+The older `mingw-w64-i686*` names remain compatibility aliases so Step 01 scripts/commands do not break.
 
-- `mingw64-*`
-- `clang64-*`
+The i686 runtime presets are deliberately Zero Hour-first: Generals and MFC-dependent legacy tools are disabled unless explicitly requested/supported. The long-term Evolution runtime remains x64 + D3D12; these are compatibility/reference presets, not the final renderer architecture.
 
-## Required work
+## Focused test path
 
-### 1. Canonical Ninja presets
+`mingw32-tests` sets `RTS_BUILD_TESTS_ONLY=ON`. The root CMake graph then configures only `core_config`, Utility compatibility headers, ReactOS ATL on MinGW, and `Core/Tests`.
 
-Move the MinGW path away from `Unix Makefiles` and standardize cache/build/test presets.
+This prevents a determinism/W3X regression run from fetching or configuring unrelated renderer/runtime dependencies. CTest owns W3X A0/A1/A2 and the Step 01 gate.
 
-### 2. Generator-neutral CMake
+## Dependency and warning policy
 
-Audit assumptions tied to multi-config generators, Visual Studio, and MSVC-only flags.
+Project compiler compatibility is propagated through `core_config` wherever practical. C++-only warnings use generator expressions so they do not reach C files. Fetched/vendor code should not inherit project-only warnings, and vendor include boundaries may be marked `SYSTEM`; warnings in our own source must remain visible.
 
-### 3. Runtime/tool separation
+Source-only FetchContent dependencies use the modern declare/make-available flow rather than direct `FetchContent_Populate()`.
 
-The game runtime and automated tests must configure without requiring legacy GUI/MFC tools. Unsupported old tools should be optional, not blockers.
+## Tool discovery
 
-### 4. Target-scoped dependencies
+Native Windows MinGW defaults to the MSYS2 MINGW32 root. `RTS_MINGW_ROOT` can override it explicitly. The toolchain validates the compiler target triplet before the full graph is configured.
 
-Windows/DirectX/third-party include and library paths should be target-scoped instead of globally injected where practical.
+WIDL is normally discovered from the selected MSYS2 MINGW32 root (`mingw-w64-i686-tools`, included in the i686 toolchain group). `RTS_WIDL_ROOT`/`WIDL_ROOT` can override the tool root, and `RTS_WIDL_INCLUDE_DIR` can override the directory containing `oaidl.idl`. Linux cross-host Wine include layouts remain supported. The focused test preset intentionally does not require WIDL.
 
-### 5. Actionable dependency discovery
+## Required Windows commands
 
-Avoid one-machine absolute SDK paths. Support explicit cache/environment roots and clear errors.
+Focused regression:
 
-### 6. Test presets
+```text
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests
+ctest --preset mingw32-tests --output-on-failure
+```
 
-`ctest --preset ...` should work for deterministic/asset/build tests without needing to launch the full game.
+Real Zero Hour release build:
 
-## Determinism gate
+```text
+cmake --preset mingw32-release
+cmake --build --preset mingw32-release --target z_generals
+```
 
-Compiler migration is not complete because an executable launches.
-
-Before GCC becomes the accepted reference development compiler, verify:
-
-- deterministic RNG behavior;
-- CRC vectors/state;
-- Xfer/snapshot representation where relevant;
-- critical layout assumptions;
-- replay CRC/command behavior.
-
-Any mismatch must be understood before acceptance.
-
-## Relationship to D3D12 and W3X
-
-The build system must prepare for:
-
-- x64 toolchains;
-- D3D12/DXGI and DXC dependencies;
-- asset-parser tests independent of the renderer;
-- W3X XML parsing as a target-scoped dependency/component;
-- offline asset tools and validation utilities.
+Step 02 remains active until those real Windows paths are verified and remaining concrete runtime blockers are resolved.

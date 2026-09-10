@@ -8,8 +8,17 @@ option(RTS_BUILD_OPTION_PROFILE_TRACY "Build code with Tracy profiling enabled."
 option(RTS_BUILD_OPTION_DEBUG "Build code with the \"Debug\" configuration." OFF)
 option(RTS_BUILD_OPTION_ASAN "Build code with Address Sanitizer." OFF)
 option(RTS_BUILD_OPTION_VC6_FULL_DEBUG "Build VC6 with full debug info." OFF)
+option(RTS_BUILD_TESTS "Build modernization characterization/regression tests." OFF)
+option(RTS_BUILD_TESTS_ONLY "Configure only the lightweight modernization test graph." OFF)
 
-if(NOT RTS_BUILD_ZEROHOUR AND NOT RTS_BUILD_GENERALS)
+if(RTS_BUILD_TESTS_ONLY)
+    set(RTS_BUILD_TESTS ON CACHE BOOL "Build modernization characterization/regression tests." FORCE)
+    set(RTS_BUILD_CORE_TOOLS OFF CACHE BOOL "Build core tools" FORCE)
+    set(RTS_BUILD_ZEROHOUR OFF CACHE BOOL "Build Zero Hour code." FORCE)
+    set(RTS_BUILD_GENERALS OFF CACHE BOOL "Build Generals code." FORCE)
+endif()
+
+if(NOT RTS_BUILD_ZEROHOUR AND NOT RTS_BUILD_GENERALS AND NOT RTS_BUILD_TESTS_ONLY)
     set(RTS_BUILD_ZEROHOUR TRUE)
     message("You must select one project to build, building Zero Hour by default.")
 endif()
@@ -22,6 +31,8 @@ add_feature_info(ProfileBuild RTS_BUILD_OPTION_PROFILE "Building as a \"Profile\
 add_feature_info(DebugBuild RTS_BUILD_OPTION_DEBUG "Building as a \"Debug\" build")
 add_feature_info(AddressSanitizer RTS_BUILD_OPTION_ASAN "Building with address sanitizer")
 add_feature_info(Vc6FullDebug RTS_BUILD_OPTION_VC6_FULL_DEBUG "Building VC6 with full debug info")
+add_feature_info(ModernizationTests RTS_BUILD_TESTS "Build modernization characterization/regression tests")
+add_feature_info(TestsOnly RTS_BUILD_TESTS_ONLY "Configure only the lightweight modernization test graph")
 add_feature_info(FFmpegSupport RTS_BUILD_OPTION_FFMPEG "Building with FFmpeg support")
 
 set(RTS_BUILD_OUTPUT_SUFFIX "" CACHE STRING "Suffix appended to output names of installable targets")
@@ -34,6 +45,12 @@ if(RTS_BUILD_ZEROHOUR)
     add_feature_info(ZeroHourTools RTS_BUILD_ZEROHOUR_TOOLS "Build Zero Hour Mod Tools")
     add_feature_info(ZeroHourExtras RTS_BUILD_ZEROHOUR_EXTRAS "Build Zero Hour Extra Tools/Tests")
     add_feature_info(ZeroHourDocs RTS_BUILD_ZEROHOUR_DOCS "Build Zero Hour Documentation")
+
+    # The historical extras switch includes characterization tests. Keep that
+    # behavior while centralizing the tests under Core/Tests.
+    if(RTS_BUILD_ZEROHOUR_EXTRAS)
+        set(RTS_BUILD_TESTS ON CACHE BOOL "Build modernization characterization/regression tests." FORCE)
+    endif()
 endif()
 
 if(RTS_BUILD_GENERALS)
@@ -49,6 +66,13 @@ endif()
 if(NOT IS_VS6_BUILD)
     # Because we set CMAKE_CXX_STANDARD_REQUIRED and CMAKE_CXX_EXTENSIONS in the compilers.cmake this should be enforced.
     target_compile_features(core_config INTERFACE cxx_std_20)
+
+    # Keep C++-only diagnostics off C translation units and off vendored targets.
+    if(NOT MSVC)
+        target_compile_options(core_config INTERFACE
+            $<$<COMPILE_LANGUAGE:CXX>:-Wsuggest-override>
+        )
+    endif()
 endif()
 
 if(IS_VS6_BUILD AND RTS_BUILD_OPTION_VC6_FULL_DEBUG)

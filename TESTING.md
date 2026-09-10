@@ -12,93 +12,47 @@ echo %errorlevel%
 PAUSE
 ```
 It will run the game in the background and check that each replay is compatible. You need to use a VC6 build with optimizations and RTS_BUILD_OPTION_DEBUG = OFF, otherwise the game won't be compatible.
-## W3X asset-format recognition pre-step
+## Modernization characterization tests
 
-The W3X-A0 characterization test is intentionally standalone until the command-line test harness is modernized in Step 02.
+Step 02A integrates the W3X A0/A1/A2 tests and Step 01 determinism characterization into CTest through `Core/Tests/CMakeLists.txt`. The focused graph avoids configuring the full runtime/dependency tree.
 
-From the repository root with GCC available:
-
-```sh
-g++ -std=c++98 -Wall -Wextra -pedantic -I Core/Libraries/Include Core/Tests/W3XAssetFormatTest.cpp -o w3x_asset_format_test
-./w3x_asset_format_test
-```
-
-Expected result:
-
-```text
-W3X asset-format recognition tests passed.
-```
-
-This test verifies only W3D/W3X recognition and conservative XML sniffing. It does not exercise runtime asset loading or XML parsing.
-
-## W3X document-envelope probe pre-step
-
-W3X-A1 remains standalone until the command-line test harness is modernized in Step 02.
-
-From the repository root with GCC available:
+Host-native GCC/Clang smoke path:
 
 ```sh
-g++ -std=c++98 -Wall -Wextra -pedantic -I Core/Libraries/Include \
-  Core/Tests/W3XDocumentProbeTest.cpp Core/Libraries/Source/rts/w3x_document.cpp \
-  -o w3x_document_probe_test
-./w3x_document_probe_test
+cmake -S . -B build/local-modernization-tests -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DRTS_BUILD_TESTS_ONLY=ON
+cmake --build build/local-modernization-tests
+ctest --test-dir build/local-modernization-tests --output-on-failure
 ```
 
-Expected result:
+This runs:
 
-```text
-W3X document-probe tests passed.
-```
+- `w3x_asset_format_test` — W3X A0;
+- `w3x_document_probe_test` — W3X A1;
+- `w3x_child_discovery_test` — W3X A2;
+- `determinism_step01` — lightweight CRC/RNG/float characterization on non-Windows hosts.
 
-The test uses synthetic XML and verifies only document-envelope handling: BOM/declaration/comments, root-name extraction, namespace resolution, SAGE `AssetDeclaration` recognition, and predictable failure for malformed/unsupported envelope constructs. It does not parse mesh/material/animation content or load runtime assets.
-
-## W3X top-level child discovery pre-step
-
-W3X-A2 uses the same consolidated W3X document implementation as A1.
-
-From the repository root with GCC available:
-
-```sh
-g++ -std=c++98 -Wall -Wextra -pedantic -I Core/Libraries/Include \
-  Core/Tests/W3XChildDiscoveryTest.cpp Core/Libraries/Source/rts/w3x_document.cpp \
-  -o w3x_child_discovery_test
-./w3x_child_discovery_test
-```
-
-Expected result:
-
-```text
-W3X top-level child-discovery tests passed.
-```
-
-A1 and A2 deliberately share one implementation source. Adding another standalone W3X scanner/header for subsequent XML features is not the intended architecture; extend or replace the consolidated document component during Step 05.
+The W3X targets remain C++98-compatible and still use the consolidated `rts/w3x_document.h` / `w3x_document.cpp` seam. No runtime W3X importer is exercised.
 
 ## Step 01 determinism guard
 
-The lightweight gate runs production CRC/RNG code plus the compiler-sensitive float-helper characterization. Modern GCC no longer needs a strict-aliasing suppression.
+The full compatibility branch remains Win32-only. It compiles the production RandomValue/Snapshot/Xfer/XferCRC/Damage implementation units directly rather than linking the monolithic Zero Hour GameEngine archive. Step 02A relocates only the CMake wiring into `Core/Tests`; it preserves the Zero Hour header precedence, `Utility/CppMacros.h` prelude, and MinGW IPO/LTO isolation used by the successful Step 01G run.
 
-```sh
-g++ -std=c++20 -O2 -Wall -Wextra -Werror \
-  -Wno-unknown-pragmas -Wno-unused-parameter -pedantic \
-  -DRTS_STANDALONE_DETERMINISM_TEST \
-  -IDependencies/Utility \
-  -ICore/Libraries/Include \
-  -ICore/Libraries/Source/WWVegas \
-  -ICore/GameEngine/Include \
-  Core/Tests/DeterminismPrimitivesTest.cpp \
-  Core/GameEngine/Source/Common/RandomValue.cpp \
-  -o DeterminismPrimitivesTest
-./DeterminismPrimitivesTest
-```
-
-The full compatibility gate is Windows-only. It now compiles the production RandomValue/Snapshot/Xfer/XferCRC/Damage implementation units directly rather than linking the monolithic Zero Hour GameEngine archive. This keeps the gate focused on Xfer, XferCRC, `DamageInfoOutput` snapshot ordering, Win32 packet/replay ABI assumptions, and the replay command-record checkpoint without dragging renderer/UI/network executable globals into the test.
-
-Expected final line:
+Expected Windows final line:
 
 ```text
 Step 01 determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.
 ```
 
-For MinGW-w64 i686, configure with `cmake --preset mingw-w64-i686-determinism` and run `cmake --build --preset mingw-w64-i686-determinism --target z_determinismcheck`. See `Modernization/STEP_01_DETERMINISM_GUARD.md` for the MSVC Win32 comparison command.
+Canonical Step 02A MinGW test workflow:
 
-**Windows sign-off:** passed on 2026-09-10 with MinGW-w64 i686 / GCC 16.2 + Ninja. This command remains a mandatory regression gate for Step 02 and later modernization work.
+```powershell
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests
+ctest --preset mingw32-tests --output-on-failure
+cmake --build --preset mingw32-tests --target z_determinismcheck
+```
+
+The historical Step 01 command remains valid through the `mingw-w64-i686-determinism` compatibility alias.
+
+**Step 01G Windows sign-off:** passed on 2026-09-10 with MinGW-w64 i686 / GCC 16.2 + Ninja. **Step 02A Windows verification:** pending fresh user output; do not infer it from the Step 01G result.

@@ -18,4 +18,4 @@ if(NOT Stb_FOUND)
 endif()
 
 add_library(stb INTERFACE)
-target_include_directories(stb INTERFACE ${Stb_INCLUDE_DIR})
+target_include_directories(stb SYSTEM INTERFACE ${Stb_INCLUDE_DIR})

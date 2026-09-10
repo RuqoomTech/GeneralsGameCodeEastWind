@@ -35,8 +35,9 @@ This is **not a rewrite of the game simulation**. The strategy is to preserve pr
 12. [`Modernization/WORKLOG.md`](Modernization/WORKLOG.md) — chronological record of completed modernization work.
 13. [`Modernization/REFERENCES.md`](Modernization/REFERENCES.md) — external format/API references used for validation.
 14. [`Modernization/STEP_01_DETERMINISM_GUARD.md`](Modernization/STEP_01_DETERMINISM_GUARD.md) — deterministic compatibility contract and Windows sign-off gate.
-15. [`Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md`](Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md) — first W3X implementation specification.
-16. [`Modernization/BASELINE_MANIFEST.md`](Modernization/BASELINE_MANIFEST.md) — accepted source hash and anchor-file hashes.
+15. [`Modernization/STEP_02_BUILD_SYSTEM_FOUNDATION.md`](Modernization/STEP_02_BUILD_SYSTEM_FOUNDATION.md) — active MinGW/Ninja command-line build milestone.
+16. [`Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md`](Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md) — first W3X implementation specification.
+17. [`Modernization/BASELINE_MANIFEST.md`](Modernization/BASELINE_MANIFEST.md) — accepted source hash and anchor-file hashes.
 
 ## Priority order
 

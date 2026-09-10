@@ -67,11 +67,13 @@ Docker, CLion, and links to forks supporting additional versions.
 
 ### Quick Start
 
-**Windows (Visual Studio 2022)**
+**Windows — canonical command-line path (MinGW-w64 i686 + Ninja)**
 ```bash
-cmake --preset win32
-cmake --build build/win32 --config Release
+cmake --preset mingw32-release
+cmake --build --preset mingw32-release --target z_generals
 ```
+
+Focused modernization tests use `mingw32-tests` with `ctest --preset mingw32-tests --output-on-failure`. The Visual Studio IDE is not required for the modernization path. The existing `win32`/MSVC presets remain available as comparison builds.
 
 **Linux (via Docker)**
 ```bash

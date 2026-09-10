@@ -39,14 +39,16 @@ Primary path:
 CMake + Ninja + MinGW-w64 GCC
 ```
 
-Goals:
+Step 02A implemented the first coherent foundation slice:
 
-- Visual Studio IDE not required;
-- canonical MinGW/Ninja presets;
-- debug/release/profile/test presets;
-- optional Clang path;
-- runtime independent of legacy tool dependencies;
-- deterministic gates run under the new compiler path.
+- canonical `mingw32-release`, `mingw32-debug`, `mingw32-profile`, and `mingw32-tests` Ninja presets;
+- compatibility aliases for the Step 01 `mingw-w64-i686*` names;
+- focused `RTS_BUILD_TESTS_ONLY` graph and CTest integration for W3X A0/A1/A2 + Step 01 determinism;
+- C/C++ warning separation for `-Wsuggest-override` and target-scoped MinGW compatibility/link settings;
+- removal of deprecated direct FetchContent population in source-only ATL/zlib/LZHL paths;
+- improved i686 compiler/binutils/WIDL discovery without PATH surgery.
+
+Windows verification of the new presets and the real `z_generals` target is pending. Step 02 remains ACTIVE until concrete MinGW runtime blockers are resolved and the canonical workflow is signed off. Clang remains secondary work rather than a blocker for this slice.
 
 ## Phase 1 — Measure and stabilize the current x86 runtime
 
