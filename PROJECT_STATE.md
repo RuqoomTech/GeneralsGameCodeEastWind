@@ -1,13 +1,15 @@
-# Project State — Authoritative Modernization Baseline
+# Project State — Authoritative Modernization Working State
 
 This file is the authoritative state marker for modernization work. Read it before applying patches or beginning a new milestone.
 
 ## Baseline identity
 
-- Authoritative source upload: `GeneralsGameCode-main(2).zip`
-- Baseline SHA-256: `3fa2e6807e842ba51cfa67b5251e4c7f0bdaaedc3dbea5c1f69ddfdde94f08fd`
-- Baseline adoption date: 2026-09-09
-- This repository replaces older modernization planning snapshots as the source of truth.
+- Step 02 implementation base: sealed Step 01G Windows-signoff repository supplied on 2026-09-10.
+- User-declared archive name: `GeneralsGameCode-Step01G-Windows-Signoff-Baseline-Seal-full.zip`.
+- User-declared SHA-256: `bb179526f5a093397375220025e265ffc66ad223e8569a30b4d933562ac8718a`.
+- SHA-256 of the archive bytes actually received for this Step 02A implementation: `796c7e5642d655bebdf0ca079d7a099a5af46d82cb11a9b27282021f800fce07`.
+- Because the received bytes do not match the declared checksum, Step 02A was based strictly on the received archive and did not fall back to any remembered/older repository.
+- Historical upstream provenance remains recorded in `Modernization/BASELINE_MANIFEST.md`.
 
 ## What was changed when establishing this baseline
 
@@ -21,8 +23,8 @@ Only documentation files were added/updated to establish the roadmap and project
 - Modern non-VC6 builds request C++20.
 - Visual Studio 6 remains a historical build path.
 - Modern Windows presets already use Ninja Multi-Config for the standard configuration family.
-- A MinGW-w64 i686 toolchain and presets already exist, but currently use `Unix Makefiles` rather than the target Ninja workflow.
-- MinGW-specific ATL/WIDL/debug-symbol support exists.
+- The sealed Step 01G MinGW-w64 i686 path uses Ninja and passed the focused Windows determinism gate.
+- Step 02A adds canonical `mingw32-*` Ninja presets, a focused CTest graph, target-scoped MinGW compatibility flags, and improved ATL/WIDL/binutils discovery.
 
 ### Renderer separation groundwork
 
@@ -61,7 +63,7 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | Baseline documentation and roadmap | **Done** |
 | Existing upstream renderer backend seam | **Partial / already present** |
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
-| MinGW-w64 GCC + Ninja canonical build | **Active — Step 02** |
+| MinGW-w64 GCC + Ninja canonical build | **Active — Step 02A implemented locally; Windows runtime verification pending** |
 | HD performance telemetry | Planned — Step 03 |
 | x86 memory-survival work | Planned — Step 04 |
 | W3X format-recognition pre-step | **Done — A0** |
@@ -94,6 +96,6 @@ The consolidated `Core/Tests/DeterminismPrimitivesTest.cpp` now covers productio
 
 The only deterministic production-code correction in the completion pass removes modern C++ strict-aliasing violations from the non-VC6 float bit-conversion path in `Lib/BaseType.h` by using `memcpy`. The legacy arithmetic/mask behavior is unchanged, the VC6 assembly branch is untouched, and a 199,122-input before/after probe was bit-identical. GCC no longer requires the prior `-Wno-strict-aliasing` test workaround.
 
-The Windows target remains `z_determinismtest`, enabled only by `RTS_BUILD_ZEROHOUR_EXTRAS`, but it is now a focused standalone compatibility gate instead of linking the monolithic `z_gameengine` archive. It compiles the production RandomValue/Snapshot/Xfer/XferCRC/Damage implementation units directly with a narrow standalone seam, avoiding unrelated renderer/UI/network executable globals. The MinGW preset uses Ninja and discovers native MSYS2 MINGW32 tools directly. On 2026-09-10 the focused `z_determinismcheck` gate passed on Windows with MinGW-w64 i686 / GCC 16.2, producing the expected full Step 01 success line. Linux GCC/Clang optimization gates remain green; W3X A0/A1/A2 regressions remain green.
+The Windows target remains `z_determinismtest`, but Step 02A moves its CMake ownership from the Zero Hour extras subtree to the focused `Core/Tests` graph. It still compiles the production RandomValue/Snapshot/Xfer/XferCRC/Damage implementation units directly with the same narrow standalone seam, avoiding unrelated renderer/UI/network executable globals. The signed-off Step 01 command remains available through a compatibility preset alias. On 2026-09-10 the Step 01G `z_determinismcheck` gate passed on Windows with MinGW-w64 i686 / GCC 16.2; Step 02A requires a fresh Windows run before its own sign-off.
 
-**Step 02 — Command-Line Build System Foundation** is now active. Its first goal is to turn the proven MinGW-w64 GCC + Ninja path into the canonical Windows command-line workflow without altering the deterministic contracts locked by Step 01.
+**Step 02 — Command-Line Build System Foundation** is active. Step 02A now provides the canonical `mingw32-release`, `mingw32-debug`, `mingw32-profile`, and `mingw32-tests` presets; `RTS_BUILD_TESTS_ONLY` avoids the full runtime dependency graph for determinism/W3X checks; and `Core/Tests/CMakeLists.txt` integrates W3X A0/A1/A2 plus the Step 01 gate with CTest. The legacy Step 01 preset name remains a compatibility alias. Local Linux GCC validation is green; the real MinGW Windows `z_determinismcheck` and `z_generals` build still require user-side verification before Step 02A sign-off.

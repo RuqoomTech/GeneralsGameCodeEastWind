@@ -18,7 +18,7 @@ if(WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows")
     else()
         message(FATAL_ERROR 
             "EABrowserEngine requires an IDL compiler for Windows builds:\n"
-            "  - For MinGW: Install widl (apt-get install wine-stable-dev)\n"
+            "  - For MinGW: install WIDL (MSYS2 MINGW32: mingw-w64-i686-tools) or set RTS_WIDL_ROOT\n"
             "  - For MSVC: midl.exe should be in PATH\n"
             "  - For other compilers: Not currently supported")
     endif()

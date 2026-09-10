@@ -11,18 +11,16 @@ if(MINGW)
     get_filename_component(COMPILER_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
     
     find_program(MINGW_OBJCOPY
-        NAMES ${CMAKE_CXX_COMPILER_TARGET}-objcopy
-              ${CMAKE_SYSTEM_PROCESSOR}-w64-mingw32-objcopy
-              objcopy
-        HINTS ${COMPILER_DIR}
+        NAMES ${CMAKE_SYSTEM_PROCESSOR}-w64-mingw32-objcopy objcopy
+        HINTS ${COMPILER_DIR} ${RTS_MINGW_BIN_DIR}
+        NO_DEFAULT_PATH
         DOC "MinGW objcopy tool for extracting debug symbols"
     )
-    
+
     find_program(MINGW_STRIP
-        NAMES ${CMAKE_CXX_COMPILER_TARGET}-strip
-              ${CMAKE_SYSTEM_PROCESSOR}-w64-mingw32-strip
-              strip
-        HINTS ${COMPILER_DIR}
+        NAMES ${CMAKE_SYSTEM_PROCESSOR}-w64-mingw32-strip strip
+        HINTS ${COMPILER_DIR} ${RTS_MINGW_BIN_DIR}
+        NO_DEFAULT_PATH
         DOC "MinGW strip tool for removing debug symbols"
     )
     

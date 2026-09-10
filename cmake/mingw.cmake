@@ -1,91 +1,73 @@
-# TheSuperHackers @build JohnsterID 05/01/2026 Add MinGW-w64 cross-compilation support
-# MinGW-w64 specific compiler and linker configurations
+# MinGW-w64 specific compiler and linker configuration.
+# Keep compatibility behavior attached to project targets through core_config;
+# do not leak legacy flags/libraries into fetched third-party projects.
 
 if(MINGW)
     message(STATUS "Configuring MinGW-w64 build settings")
-    
-    # Detect if this is 32-bit or 64-bit MinGW
+
+    if(NOT TARGET core_config)
+        message(FATAL_ERROR "cmake/mingw.cmake must be included after core_config is created")
+    endif()
+
     if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         set(IS_MINGW32 TRUE)
         message(STATUS "MinGW-w64 32-bit (i686) detected")
     else()
-        message(FATAL_ERROR "MinGW-w64 64-bit (x86_64) detected, but this project only supports 32-bit builds. Use the i686-w64-mingw32 toolchain.")
+        message(FATAL_ERROR
+            "MinGW-w64 64-bit detected, but the compatibility/reference runtime is still 32-bit. "
+            "Use the i686 MinGW preset until the dedicated x64 Evolution port begins.")
     endif()
-    
-    # Windows subsystem
-    add_link_options(-mwindows)
-    
-    # Static linking of GCC runtime libraries
-    # This embeds libgcc and libstdc++ into the executable to avoid DLL dependencies
-    add_link_options(-static-libgcc -static-libstdc++)
-    
-    # Compatibility flags for legacy code
-    add_compile_options(
-        -fno-strict-aliasing        # Avoid type-punning issues with DX8/COM
-    )
-    
-    # MSVC compatibility macros for MinGW
-    # Note: MinGW already defines _cdecl and _stdcall correctly, so we only add __forceinline
-    # The escaped syntax below expands to: -D__forceinline="inline __attribute__((always_inline))"
-    # Escaping rules: \( \) = literal parentheses, \ (backslash-space) = space in definition
-    add_compile_definitions(
+
+    # Preserve the legacy code assumptions without applying them to downloaded
+    # dependencies. Strict aliasing remains disabled for the compatibility tree.
+    target_compile_options(core_config INTERFACE -fno-strict-aliasing)
+
+    target_compile_definitions(core_config INTERFACE
         __forceinline=inline\ __attribute__\(\(always_inline\)\)
         __int64=long\ long
         _int64=long\ long
-    )
-    
-    # Enable math constants in MinGW's <math.h>
-    # MinGW provides M_PI, M_E, etc. in <math.h>, but only when -std=c++XX is NOT used (strict ANSI mode),
-    # or when _USE_MATH_DEFINES is defined. Since we compile with -std=c++20, we need this define.
-    # The header mingw.h (included via always.h) provides the missing constants (M_1_SQRTPI, M_SQRT_2 alias).
-    add_compile_definitions(
         _USE_MATH_DEFINES
     )
-    
-    # Ensure proper calling conventions are defined
-    # MinGW-w64 should define these, but verify they exist
+
     include(CheckCXXSymbolExists)
     check_cxx_symbol_exists(STDMETHODCALLTYPE "windows.h" HAVE_STDMETHODCALLTYPE)
     if(NOT HAVE_STDMETHODCALLTYPE)
-        add_compile_definitions(
+        target_compile_definitions(core_config INTERFACE
             STDMETHODCALLTYPE=__stdcall
             STDMETHODIMP=HRESULT\ __stdcall
         )
     endif()
-    
-    # Required Windows libraries for DX8 + COM
-    link_libraries(
-        uuid        # COM GUIDs
-        ole32       # COM runtime
-        oleaut32    # COM automation
-        gdi32       # GDI
-        user32      # User interface
-        comctl32    # Common controls
-        winmm       # Multimedia (timeGetTime, etc.)
-        vfw32       # Video for Windows (AVIFile functions)
-        d3d8        # Direct3D 8
-        dinput8     # DirectInput 8
-        dsound      # DirectSound
-        imm32       # Input Method Manager (IME)
+
+    # These are platform libraries used throughout the legacy runtime. Attach
+    # them to the project configuration interface instead of globally injecting
+    # them into every target (including FetchContent dependencies).
+    target_link_libraries(core_config INTERFACE
+        uuid
+        ole32
+        oleaut32
+        gdi32
+        user32
+        comctl32
+        winmm
+        vfw32
+        d3d8
+        dinput8
+        dsound
+        imm32
     )
-    
-    # MinGW-w64 does not provide Microsoft's comsuppw library, but modern
-    # MinGW-w64 headers already provide _com_util string/BSTR conversion helpers.
-    # Dependencies/Utility/Utility/comsupp_compat.h only supplies the remaining
-    # vtMissing compatibility storage. No comsuppw link library is required.
-    
-    # MinGW-w64 compatibility: Create d3dx8 as an alias to d3dx8d
-    # MinGW-w64 only provides libd3dx8d.a (debug library), not libd3dx8.a
-    # The min-dx8-sdk (dx8.cmake) handles this correctly via d3d8lib interface target,
-    # but for compatibility with direct library references in main executables,
-    # we create an alias so that linking to d3dx8 automatically uses d3dx8d
-    if(NOT TARGET d3dx8)
+
+    # Keep GCC runtime deployment self-contained for command-line builds.
+    target_link_options(core_config INTERFACE -static-libgcc -static-libstdc++)
+
+    # min-dx8-sdk exposes d3dx8d for MinGW. Retain the historical d3dx8 name
+    # used by the game executable without creating a global linker rewrite.
+    if(NOT RTS_BUILD_TESTS_ONLY AND NOT TARGET d3dx8)
         add_library(d3dx8 INTERFACE IMPORTED GLOBAL)
         set_target_properties(d3dx8 PROPERTIES
             INTERFACE_LINK_LIBRARIES "d3dx8d"
         )
         message(STATUS "Created d3dx8 -> d3dx8d alias for MinGW-w64")
     endif()
-    
+
     message(STATUS "MinGW-w64 configuration complete")
 endif()

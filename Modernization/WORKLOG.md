@@ -140,3 +140,18 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - The focused MinGW determinism target uses interprocedural optimization when supported to eliminate unused legacy inline/vtable material without relinking the monolithic GameEngine.
 - Step 01 is now **DONE**. Its CRC/RNG/Xfer/snapshot/ABI/replay contracts are the mandatory regression gate for Step 02 and all later modernization work.
 - Step 02 — Command-Line Build System Foundation is now the active milestone.
+
+## 2026-09-10 — Step 02A: canonical MinGW/Ninja build foundation
+
+- Started from the exact Step 01G archive bytes supplied for this chat; the received archive SHA-256 (`796c7e5642d655bebdf0ca079d7a099a5af46d82cb11a9b27282021f800fce07`) does not match the user-declared handoff hash (`bb179526f5a093397375220025e265ffc66ad223e8569a30b4d933562ac8718a`), so the mismatch is recorded rather than silently falling back to another repository.
+- Added canonical `mingw32-release`, `mingw32-debug`, `mingw32-profile`, and `mingw32-tests` Ninja presets while retaining the Step 01 `mingw-w64-i686*` names as compatibility aliases.
+- Added a focused `RTS_BUILD_TESTS_ONLY` CMake graph and centralized modernization test wiring in `Core/Tests/CMakeLists.txt`.
+- Moved only the CMake ownership of `z_determinismtest` out of the Zero Hour tools subtree; the signed-off Win32 production source set, `CppMacros` prelude, Zero Hour header precedence, ReactOS ATL use, and MinGW IPO isolation remain intact.
+- Integrated W3X A0/A1/A2 and the Step 01 lightweight determinism path with CTest without adding new test source files.
+- Scoped `-Wsuggest-override` to C++ project compilation instead of C/vendored targets; moved MinGW compatibility flags/defines/libraries from global injection to `core_config`; removed the global `-mwindows` injection.
+- Replaced direct deprecated `FetchContent_Populate()` use for ReactOS ATL, legacy zlib, and LZHL with source-only `FetchContent_MakeAvailable()` flows; marked appropriate vendor include boundaries as `SYSTEM`.
+- Hardened i686 toolchain selection with an explicit `RTS_MINGW_ROOT`, selected-bin discovery, target-triplet validation, and selected-bin debug-strip lookup.
+- Reworked WIDL discovery around the selected MinGW/MSYS2 environment plus explicit `RTS_WIDL_ROOT`, `WIDL_ROOT`, and `RTS_WIDL_INCLUDE_DIR` overrides. Native MINGW32 now resolves both `widl.exe` and `${RTS_MINGW_ROOT}/include/oaidl.idl` without PATH surgery; Linux Wine include layouts remain fallbacks. The focused test graph no longer requires WIDL.
+- Local GCC 14.2 CMake/Ninja/CTest passed all four focused tests; Clang 17 CMake/Ninja/CTest passed the same four tests.
+- Manual Step 01 lightweight determinism passed GCC and Clang at `-O0`, `-O2`, and `-O3`; GCC ASan and UBSan passed; standalone W3X A0/A1/A2 passed with both GCC and Clang.
+- Windows Step 02A verification and the real `z_generals` MinGW build remain pending. No Step 02A Windows pass is claimed.

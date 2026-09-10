@@ -1,16 +1,18 @@
 # Current Source State
 
-This document records verified facts from the 2026-09-09 authoritative baseline.
+This document records verified source facts plus accepted modernization changes through Step 02A on 2026-09-10.
 
 ## Build system
 
-- Top-level project uses CMake 3.25+.
-- Modern builds use C++20 through `core_config`.
-- VC6 remains supported as a historical path.
-- Standard modern Windows presets use `Ninja Multi-Config`.
-- `mingw-w64-i686` and the focused determinism preset use Ninja; the i686 toolchain resolves native MSYS2 MINGW32 tools directly.
-- MinGW-specific support exists in `cmake/mingw.cmake`, `cmake/reactos-atl.cmake`, `cmake/widl.cmake`, and the i686 toolchain file.
-- The project still contains toolchain/platform assumptions that must be audited before GCC/Ninja becomes the canonical Windows path.
+- Top-level project uses CMake 3.25+; modern project code uses C++20 through `core_config` while the standalone W3X characterization targets remain C++98-compatible.
+- VC6 and existing MSVC preset families remain available as historical/comparison paths.
+- The canonical i686 MinGW/Ninja names are `mingw32-release`, `mingw32-debug`, `mingw32-profile`, and `mingw32-tests`; older `mingw-w64-i686*` names remain compatibility aliases.
+- `mingw32-tests` enables a focused root graph (`RTS_BUILD_TESTS_ONLY`) instead of configuring the full Zero Hour renderer/tool/dependency tree.
+- `Core/Tests/CMakeLists.txt` integrates W3X A0/A1/A2 and the Step 01 determinism test with CTest while preserving `z_determinismcheck`.
+- C++-only `-Wsuggest-override` and MinGW compatibility/link settings are target-scoped through `core_config` rather than globally leaking into C/vendored targets.
+- Direct `FetchContent_Populate()` use in the ReactOS ATL, legacy zlib, and LZHL source-only paths has been removed.
+- The i686 toolchain validates the selected GCC triplet, supports `RTS_MINGW_ROOT`, and shares its resolved bin path with WIDL/debug-strip discovery. WIDL supports explicit root/include overrides and is not required for the focused test graph.
+- Local host-native GCC configure/build/CTest validation is green. Windows MinGW validation of Step 02A and the real `z_generals` target is still pending; no Windows success is claimed for Step 02A yet.
 
 ## Renderer
 
@@ -64,7 +66,7 @@ Step 01 now has a consolidated characterization harness in `Core/Tests/Determini
 
 One concrete compiler hazard was removed without changing the legacy numeric algorithm: modern/non-VC6 `fast_float_trunc`, `fast_float_floor`, and `fast_float_ceil` now move IEEE-754 bits with `memcpy` rather than aliasing a `float` through an `unsigned *`. A 199,122-input before/after probe produced identical output bits; the VC6/reference assembly branch remains untouched.
 
-The focused Windows gate is now signed off. On 2026-09-10, `z_determinismcheck` passed on MinGW-w64 i686 / GCC 16.2 + Ninja with the complete float-helper, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoint set. The earlier monolithic-link failure was eliminated by keeping the test focused and allowing the MinGW build to remove unused legacy inline/vtable material. Step 02 can now proceed with this gate as a mandatory regression check.
+The Step 01G Windows gate remains signed off: on 2026-09-10, `z_determinismcheck` passed on MinGW-w64 i686 / GCC 16.2 + Ninja with the complete float-helper, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoint set. Step 02A relocates only the CMake ownership of that focused target into `Core/Tests`; its Windows source set, header-prelude contract, and MinGW IPO isolation are preserved. The new Step 02A Windows run still requires fresh validation.
 
 ## Modernization risk areas
 
