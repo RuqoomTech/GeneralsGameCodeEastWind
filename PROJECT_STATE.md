@@ -60,7 +60,7 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 |---|---|
 | Baseline documentation and roadmap | **Done** |
 | Existing upstream renderer backend seam | **Partial / already present** |
-| Determinism/CRC/Xfer characterization | **In progress — Step 01; CRC primitive characterized** |
+| Determinism/CRC/Xfer characterization | **In progress — Step 01; CRC + game-logic RNG characterized; Xfer primitive gate implemented, Windows run pending** |
 | MinGW-w64 GCC + Ninja canonical build | Planned — Step 02 |
 | HD performance telemetry | Planned — Step 03 |
 | x86 memory-survival work | Planned — Step 04 |
@@ -90,6 +90,12 @@ None of these pre-steps is wired into the runtime asset manager. They do not cha
 
 **Step 01 — Determinism / CRC / Xfer Characterization** remains in progress.
 
-The first isolated slice now locks representative vectors for the production `Common/crc.h` primitive, including incremental processing and carry/high-bit behavior. The next small slice should characterize deterministic game-logic RNG state/sequence behavior without redesigning the RNG.
+The first two isolated slices now lock representative vectors for the production `Common/crc.h` primitive and the production game-logic RNG in `Common/RandomValue.cpp`. RNG coverage includes explicit-seed initialization, replay/base-seed stability, state CRC transitions, repeatable integer sequences, signed ranges, equal-range retail behavior, and the retail-compatible `GameLogicRandomValueUnchanged` state advance.
 
-This remains deliberately before the primary GCC/Ninja compiler migration acceptance gate. Compiler changes must not silently change simulation bytes or replay CRC behavior.
+The RNG test reuses `Core/Tests/DeterminismPrimitivesTest.cpp`; no parallel RNG test module or copied RNG implementation was added. `RandomValue.cpp` gained only a compile-time `RTS_STANDALONE_DETERMINISM_TEST` include seam so the actual production implementation can be linked into the lightweight harness without the legacy ATL/Win32 precompiled-header dependency. Normal production builds remain on the existing `PreRTS.h` path.
+
+Step 01C now adds an engine-linked Xfer primitive characterization mode to the same `Core/Tests/DeterminismPrimitivesTest.cpp`. It exercises the production `Xfer::xferVersion`, byte/bool/integer/real primitive wrappers and `xferUser` through a capture implementation, locking the legacy 32-bit Windows widths and little-endian byte stream without copying the production wrapper logic. No new test source or Xfer implementation was added.
+
+The Windows CMake test target is `z_determinismtest`, enabled only by the existing `RTS_BUILD_ZEROHOUR_EXTRAS` option. Linux can still run the lightweight CRC/RNG path; the Xfer gate intentionally links the real Zero Hour GameEngine and therefore requires a Windows build. Windows reference execution is pending user validation.
+
+The next Step 01 slice should move upward to snapshot/compound Xfer ordering or layout-sensitive structures after the Windows Xfer primitive gate is confirmed. Compiler changes must not silently change simulation bytes or replay CRC behavior.
