@@ -15,4 +15,17 @@ if(RTS_BUILD_ZEROHOUR_EXTRAS)
     add_subdirectory(Autorun)
     add_subdirectory(Launcher)
     add_subdirectory(PATCHGET)
+
+    # Determinism characterization intentionally links the production Zero Hour
+    # GameEngine so Xfer primitive wrappers are tested without copying them.
+    add_executable(z_determinismtest
+        ${CMAKE_SOURCE_DIR}/Core/Tests/DeterminismPrimitivesTest.cpp
+    )
+    target_compile_definitions(z_determinismtest PRIVATE
+        RTS_ENGINE_DETERMINISM_TEST=1
+    )
+    target_link_libraries(z_determinismtest PRIVATE
+        z_gameengine
+        zi_always
+    )
 endif()
