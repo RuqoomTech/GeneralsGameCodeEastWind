@@ -6,7 +6,7 @@ Make CMake + Ninja + MinGW-w64 GCC the canonical Windows development build witho
 
 ## Starting state
 
-The baseline already has MinGW-w64 i686 support, but its preset uses `Unix Makefiles`. Standard modern Windows presets already demonstrate Ninja infrastructure.
+Step 01 proved a working Windows MinGW-w64 i686 / GCC 16.2 + Ninja path and added a focused `mingw-w64-i686-determinism` preset plus `z_determinismcheck`. The general project build still contains legacy compiler, dependency, warning, target-coupling, and tool assumptions, so Step 02 begins from a proven determinism/build foothold rather than from an untested MinGW preset.
 
 ## Deliverables
 

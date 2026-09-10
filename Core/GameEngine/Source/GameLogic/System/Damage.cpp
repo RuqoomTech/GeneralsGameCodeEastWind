@@ -39,6 +39,7 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if !defined(RTS_STANDALONE_DETERMINISM_TEST)
 template<>
 const char* const DamageTypeFlags::s_bitNameList[] =
 {
@@ -176,6 +177,8 @@ void DamageInfoInput::xfer( Xfer *xfer )
 	}
 
 }
+
+#endif // !RTS_STANDALONE_DETERMINISM_TEST
 
 // ------------------------------------------------------------------------------------------------
 /** Xfer method

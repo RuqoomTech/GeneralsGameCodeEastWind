@@ -60,8 +60,8 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 |---|---|
 | Baseline documentation and roadmap | **Done** |
 | Existing upstream renderer backend seam | **Partial / already present** |
-| Determinism/CRC/Xfer characterization | **Step 01 implementation complete; Windows engine-linked sign-off pending** |
-| MinGW-w64 GCC + Ninja canonical build | Planned — Step 02 |
+| Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
+| MinGW-w64 GCC + Ninja canonical build | **Active — Step 02** |
 | HD performance telemetry | Planned — Step 03 |
 | x86 memory-survival work | Planned — Step 04 |
 | W3X format-recognition pre-step | **Done — A0** |
@@ -88,12 +88,12 @@ None of these pre-steps is wired into the runtime asset manager. They do not cha
 
 ## Next implementation milestone
 
-**Step 01 implementation is complete and awaiting Windows sign-off.**
+**Step 01 is complete and signed off. Step 02 is now the active modernization milestone.**
 
 The consolidated `Core/Tests/DeterminismPrimitivesTest.cpp` now covers production CRC, integer and real game-logic RNG state/sequences, legacy float helper bit behavior, Xfer primitive bytes, representative snapshot ordering, production `XferCRC`, critical Win32 replay/network ABI assumptions, and a known `MSG_LOGIC_CRC` replay-record byte/CRC checkpoint. No additional per-topic determinism test files were introduced.
 
 The only deterministic production-code correction in the completion pass removes modern C++ strict-aliasing violations from the non-VC6 float bit-conversion path in `Lib/BaseType.h` by using `memcpy`. The legacy arithmetic/mask behavior is unchanged, the VC6 assembly branch is untouched, and a 199,122-input before/after probe was bit-identical. GCC no longer requires the prior `-Wno-strict-aliasing` test workaround.
 
-The engine-linked Windows target remains `z_determinismtest`, enabled only by `RTS_BUILD_ZEROHOUR_EXTRAS`. It must pass on the Win32 compatibility/reference configuration before Step 02 accepts compiler/build migration changes. Linux GCC/Clang optimization and sanitizer gates are green; W3X A0/A1/A2 regressions remain green.
+The Windows target remains `z_determinismtest`, enabled only by `RTS_BUILD_ZEROHOUR_EXTRAS`, but it is now a focused standalone compatibility gate instead of linking the monolithic `z_gameengine` archive. It compiles the production RandomValue/Snapshot/Xfer/XferCRC/Damage implementation units directly with a narrow standalone seam, avoiding unrelated renderer/UI/network executable globals. The MinGW preset uses Ninja and discovers native MSYS2 MINGW32 tools directly. On 2026-09-10 the focused `z_determinismcheck` gate passed on Windows with MinGW-w64 i686 / GCC 16.2, producing the expected full Step 01 success line. Linux GCC/Clang optimization gates remain green; W3X A0/A1/A2 regressions remain green.
 
-After Windows sign-off, **Step 02 — Command-Line Build System Foundation** becomes the active milestone. Its first goal is to make MinGW-w64 GCC + Ninja the canonical Windows command-line path without altering the deterministic contracts locked by Step 01.
+**Step 02 — Command-Line Build System Foundation** is now active. Its first goal is to turn the proven MinGW-w64 GCC + Ninja path into the canonical Windows command-line workflow without altering the deterministic contracts locked by Step 01.

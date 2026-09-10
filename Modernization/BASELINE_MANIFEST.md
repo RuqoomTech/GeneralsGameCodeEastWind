@@ -28,3 +28,10 @@ When a future source update is adopted:
 3. record upstream changes in `WORKLOG.md`;
 4. update this manifest only after the new baseline is intentionally accepted;
 5. forward-merge modernization work rather than replacing newer upstream source with an older full ZIP.
+
+## Current modernization working baseline
+
+- Source archive supplied after final Step 01 Windows fixes: `89e0f428-4554-4c3c-9f0f-f8323d411217.zip`
+- Source archive SHA-256: `4ad2b066f516938763db9bbf82d7e15b8090f3900355d50a53694954fb3c28a0`
+- Accepted: 2026-09-10 after successful Windows `z_determinismcheck` execution on MinGW-w64 i686 / GCC 16.2 + Ninja.
+- This archive is the authoritative implementation baseline for Step 02. The original 2026-09-09 anchor hashes above remain historical provenance for the unmodified upstream source.

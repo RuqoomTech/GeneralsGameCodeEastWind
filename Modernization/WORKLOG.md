@@ -115,7 +115,28 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - GCC 14.2 now passes the lightweight determinism test at `-O0`, `-O2`, and `-O3` with `-Werror` and no `-Wno-strict-aliasing`; Clang 17 passes the same matrix; ASan and UBSan pass.
 - Added production `XferCRC` checkpoints for full-word and partial-tail folding.
 - Added strict Win32 ABI guards for replay/network primitive widths, packed `TransportMessageHeader`, native `GameMessage` size, command-packet capacity, and `CommandPacket` offsets/size.
-- Locked replay/network enum anchors, including `MSG_BEGIN_NETWORK_MESSAGES = 1000`, `MSG_LOGIC_CRC = 1093`, and `MSG_END_NETWORK_MESSAGES = 1999`.
+- Locked replay/network enum anchors, including `MSG_BEGIN_NETWORK_MESSAGES = 1000`, `MSG_LOGIC_CRC = 1095`, and `MSG_END_NETWORK_MESSAGES = 1999`.
 - Added a known 19-byte replay `MSG_LOGIC_CRC` command-record fixture with production CRC and XferCRC checkpoints.
 - W3X A0/A1/A2 regressions remain green.
-- Step 01 characterization implementation is complete; the engine-linked `z_determinismtest` still requires Win32 user execution for final sign-off before Step 02 compiler/build migration is accepted.
+- Step 01 characterization implementation was complete at this point; final Win32 sign-off was still pending and was completed after the focused-target stabilization recorded below.
+## 2026-09-10 — Step 01F: Windows sign-off harness decoupling
+
+- User MinGW-w64 GCC 16.2 + Ninja validation reached all 653 compilation steps and failed only at final `z_determinismtest` linkage because the target linked the monolithic `z_gameengine` archive.
+- The unresolved symbols were executable/device responsibilities (`TheKey_*`, `MapObject` storage, UI/renderer hooks, language-file globals), not failures in CRC/RNG/Xfer determinism.
+- Reworked `z_determinismtest` as a focused standalone target built from the existing test plus production RandomValue, Snapshot, Xfer, XferCRC, and Damage implementation units; removed the `z_gameengine` link dependency.
+- Kept characterized Xfer primitive/XferCRC/DamageInfoOutput code on the production implementations; only out-of-scope Xfer APIs and identifier/string-allocation plumbing use standalone-test seams.
+- Removed the `XferSave` dependency from the snapshot capture while continuing to test the real `DamageInfoOutput::xfer()` field order.
+- Changed the MinGW i686 configure preset to Ninja and added `mingw-w64-i686-determinism` plus `z_determinismcheck` for a short build-and-run workflow.
+- Made the i686 toolchain discover native MSYS2 MINGW32 `gcc/g++/ar/ranlib/windres/dlltool` as well as conventional cross-prefixed tool names.
+- Removed duplicate `_com_util` conversion implementations from `comsupp_compat.h` because modern MinGW-w64 already provides them.
+- Local GCC/Clang lightweight determinism and W3X A0/A1/A2 regressions remained green; final focused Win32 execution was completed successfully after the final linker-isolation correction.
+
+
+## 2026-09-10 — Step 01G: Windows sign-off and baseline seal
+
+- User validation on Windows passed `cmake --build --preset mingw-w64-i686-determinism --target z_determinismcheck` with MinGW-w64 i686 / GCC 16.2 + Ninja.
+- Final output: `Step 01 determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.`
+- Corrected the provisional replay enum checkpoint from `MSG_LOGIC_CRC = 1093` to the source-accurate `1095`; updated the 19-byte replay fixture and CRC/XferCRC expected values accordingly.
+- The focused MinGW determinism target uses interprocedural optimization when supported to eliminate unused legacy inline/vtable material without relinking the monolithic GameEngine.
+- Step 01 is now **DONE**. Its CRC/RNG/Xfer/snapshot/ABI/replay contracts are the mandatory regression gate for Step 02 and all later modernization work.
+- Step 02 — Command-Line Build System Foundation is now the active milestone.

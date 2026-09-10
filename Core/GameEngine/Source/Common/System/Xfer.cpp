@@ -60,8 +60,14 @@ Xfer::~Xfer()
 void Xfer::open( AsciiString identifier )
 {
 
+#if defined(RTS_STANDALONE_DETERMINISM_TEST)
+	// The standalone determinism gate never transfers string identifiers. Avoid
+	// pulling the legacy AsciiString allocator into this focused test binary.
+	(void)identifier;
+#else
 	// save identifier
 	m_identifier = identifier;
+#endif
 
 }
 
@@ -165,6 +171,47 @@ void Xfer::xferReal( Real *realData )
 
 }
 
+#if defined(RTS_STANDALONE_DETERMINISM_TEST)
+
+// The Step 01 standalone gate characterizes only native primitive transfers and
+// raw user bytes. Keep the rest of the Xfer surface link-complete without dragging
+// the full Science/Upgrade/GameState graph into the test executable. Production
+// builds compile the original implementations below unchanged.
+void Xfer::xferMapName( AsciiString *data ) { (void)data; }
+void Xfer::xferAsciiString( AsciiString *data ) { (void)data; }
+void Xfer::xferMarkerLabel( AsciiString data ) { (void)data; }
+void Xfer::xferUnicodeString( UnicodeString *data ) { (void)data; }
+void Xfer::xferCoord3D( Coord3D *data ) { (void)data; }
+void Xfer::xferICoord3D( ICoord3D *data ) { (void)data; }
+void Xfer::xferRegion3D( Region3D *data ) { (void)data; }
+void Xfer::xferIRegion3D( IRegion3D *data ) { (void)data; }
+void Xfer::xferCoord2D( Coord2D *data ) { (void)data; }
+void Xfer::xferICoord2D( ICoord2D *data ) { (void)data; }
+void Xfer::xferRegion2D( Region2D *data ) { (void)data; }
+void Xfer::xferIRegion2D( IRegion2D *data ) { (void)data; }
+void Xfer::xferRealRange( RealRange *data ) { (void)data; }
+void Xfer::xferColor( Color *data ) { (void)data; }
+void Xfer::xferRGBColor( RGBColor *data ) { (void)data; }
+void Xfer::xferRGBAColorReal( RGBAColorReal *data ) { (void)data; }
+void Xfer::xferRGBAColorInt( RGBAColorInt *data ) { (void)data; }
+void Xfer::xferObjectID( ObjectID *data ) { (void)data; }
+void Xfer::xferDrawableID( DrawableID *data ) { (void)data; }
+void Xfer::xferSTLObjectIDVector( std::vector<ObjectID> *data ) { (void)data; }
+void Xfer::xferSTLObjectIDList( std::list<ObjectID> *data ) { (void)data; }
+void Xfer::xferSTLIntList( std::list<Int> *data ) { (void)data; }
+void Xfer::xferScienceType( ScienceType *data ) { (void)data; }
+void Xfer::xferScienceVec( ScienceVec *data ) { (void)data; }
+void Xfer::xferKindOf( KindOfType *data ) { (void)data; }
+void Xfer::xferUpgradeMask( UpgradeMaskType *data ) { (void)data; }
+
+void Xfer::xferUser( void *data, Int dataSize )
+{
+	xferImplementation( data, dataSize );
+}
+
+void Xfer::xferMatrix3D( Matrix3D *data ) { (void)data; }
+
+#else
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 void Xfer::xferMapName( AsciiString *mapNameData )
@@ -870,3 +917,5 @@ void Xfer::xferMatrix3D( Matrix3D* mtx )
 }
 
 
+
+#endif // RTS_STANDALONE_DETERMINISM_TEST

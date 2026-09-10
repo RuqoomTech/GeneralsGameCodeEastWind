@@ -164,13 +164,26 @@
         {
             "name": "mingw-w64-i686",
             "displayName": "MinGW-w64 32-bit (i686) Release",
-            "generator": "Unix Makefiles",
+            "generator": "Ninja",
             "hidden": false,
             "binaryDir": "${sourceDir}/build/${presetName}",
             "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-i686.cmake",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "mingw-w64-i686-determinism",
+            "displayName": "MinGW-w64 32-bit Determinism Gate",
+            "hidden": false,
+            "inherits": "mingw-w64-i686",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "RTS_BUILD_ZEROHOUR_EXTRAS": "ON",
+                "RTS_BUILD_ZEROHOUR_TOOLS": "OFF",
+                "RTS_BUILD_CORE_TOOLS": "OFF",
+                "RTS_BUILD_GENERALS": "OFF"
             }
         },
         {
@@ -278,6 +291,12 @@
             "configurePreset": "mingw-w64-i686",
             "displayName": "Build MinGW-w64 32-bit (i686) Release",
             "description": "Build MinGW-w64 32-bit (i686) Release"
+        },
+        {
+            "name": "mingw-w64-i686-determinism",
+            "configurePreset": "mingw-w64-i686-determinism",
+            "displayName": "Build MinGW-w64 32-bit Determinism Gate",
+            "description": "Build the focused Step 01 determinism executable"
         },
         {
             "name": "mingw-w64-i686-debug",
