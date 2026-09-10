@@ -47,42 +47,9 @@ include(FetchContent)
 include(cmake/config.cmake)
 
 # MinGW-w64 compatibility settings are target-scoped through core_config.
-# For a real runtime build, preflight WIDL before populating any external
-# dependencies so a missing MSYS2 tool fails immediately and diagnostically.
 if(MINGW)
     include(cmake/mingw.cmake)
-    if(NOT RTS_BUILD_TESTS_ONLY)
-        include(cmake/widl.cmake)
-        rts_require_widl_for_runtime()
-    endif()
-    # The focused x64 readiness graph has no ATL consumer. The signed-off i686
-    # determinism gate still uses the ReactOS ATL compatibility seam.
-    if(NOT RTS_BUILD_TESTS_ONLY OR CMAKE_SIZEOF_VOID_P EQUAL 4)
-        include(cmake/reactos-atl.cmake)
-    endif()
-endif()
-
-# Find/Add build dependencies and stubs shared by all projects
-if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND ${CMAKE_SIZEOF_VOID_P} EQUAL 4)
-    include(cmake/dx8.cmake)
-endif()
-
-# Define a dummy stlport target when not on VC6.
-if (IS_VS6_BUILD)
-    include(cmake/stlport.cmake)
-else()
-    add_library(stlport INTERFACE)
-endif()
-
-include(cmake/config.cmake)
-include(cmake/gamespy.cmake)
-include(cmake/lzhl.cmake)
-include(cmake/stb.cmake)
-
-if (IS_VS6_BUILD)
-    # The original max sdk does not compile against a modern compiler.
-    # If there is a desire to make this work, then a fixed max sdk needs to be created.
-    add_subdirectory(Dependencies/MaxSDK)
+    include(cmake/reactos-atl.cmake)
 endif()
 
 # Utility headers are used by both the full runtime and the focused regression
@@ -97,6 +64,12 @@ endif()
 if(NOT RTS_BUILD_TESTS_ONLY)
     # Debug symbol stripping is only relevant to installable MinGW binaries.
     include(cmake/debug_strip.cmake)
+
+    # WIDL is a runtime/library dependency, not a requirement for the focused
+    # characterization tests.
+    if(MINGW)
+        include(cmake/widl.cmake)
+    endif()
 
     # Find/Add build dependencies and stubs shared by the real game targets.
     if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND ${CMAKE_SIZEOF_VOID_P} EQUAL 4)

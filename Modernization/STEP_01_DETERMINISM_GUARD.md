@@ -205,7 +205,7 @@ The focused compatibility gate has passed on the primary MinGW-w64 i686 path. Ke
 
 ### MinGW-w64 i686
 
-The dedicated preset uses Ninja, enables only the required Zero Hour extras path, disables unrelated Generals/core tool targets, and resolves native MSYS2 MINGW32 tool names/paths.
+The historical preset name remains valid. As of Step 02A it is a compatibility alias for the focused `mingw32-tests` graph, which preserves the signed-off Win32 determinism source set while avoiding the unrelated runtime/tool dependency graph.
 
 ```powershell
 cmake --preset mingw-w64-i686-determinism
