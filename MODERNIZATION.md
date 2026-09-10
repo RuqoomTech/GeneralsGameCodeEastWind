@@ -35,11 +35,8 @@ This is **not a rewrite of the game simulation**. The strategy is to preserve pr
 12. [`Modernization/WORKLOG.md`](Modernization/WORKLOG.md) — chronological record of completed modernization work.
 13. [`Modernization/REFERENCES.md`](Modernization/REFERENCES.md) — external format/API references used for validation.
 14. [`Modernization/STEP_01_DETERMINISM_GUARD.md`](Modernization/STEP_01_DETERMINISM_GUARD.md) — deterministic compatibility contract and Windows sign-off gate.
-15. [`Modernization/STEP_02_BUILD_SYSTEM_FOUNDATION.md`](Modernization/STEP_02_BUILD_SYSTEM_FOUNDATION.md) — MinGW/Ninja command-line build foundation.
-16. [`Modernization/STEP_03_PERFORMANCE_TELEMETRY.md`](Modernization/STEP_03_PERFORMANCE_TELEMETRY.md) — completed HD-mod measurement/telemetry milestone.
-17. [`Modernization/STEP_04_X64_MIGRATION.md`](Modernization/STEP_04_X64_MIGRATION.md) — active staged x64 engine migration.
-18. [`Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md`](Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md) — first W3X implementation specification.
-19. [`Modernization/BASELINE_MANIFEST.md`](Modernization/BASELINE_MANIFEST.md) — accepted source hash and anchor-file hashes.
+15. [`Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md`](Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md) — first W3X implementation specification.
+16. [`Modernization/BASELINE_MANIFEST.md`](Modernization/BASELINE_MANIFEST.md) — accepted source hash and anchor-file hashes.
 
 ## Priority order
 
@@ -48,10 +45,7 @@ When goals conflict, use this order:
 1. deterministic simulation / replay / CRC safety;
 2. reproducible command-line builds;
 3. measurement and profiling;
-4. x64 engine/runtime correctness, memory headroom, and resource correctness;
-5. asset compatibility and W3D/W3X loading correctness;
-6. high-poly geometry scalability;
-7. HD texture efficiency;
+4. memory headroom and resource correctness;
 5. asset compatibility and W3D/W3X loading correctness;
 6. high-poly geometry scalability;
 7. HD texture efficiency;
