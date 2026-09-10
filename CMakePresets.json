@@ -1,643 +1,511 @@
 {
-  "version": 6,
-  "cmakeMinimumRequired": {
-    "major": 3,
-    "minor": 25,
-    "patch": 0
-  },
-  "configurePresets": [
-    {
-      "name": "vc6",
-      "displayName": "Windows 32bit VC6 Release",
-      "generator": "Ninja",
-      "hidden": false,
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
-        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "",
-        "CMAKE_BUILD_TYPE": "Release",
-        "RTS_FLAGS": "/W3"
-      },
-      "vendor": {
-        "jetbrains.com/clion": {
-          "toolchain": "Visual Studio 6"
-        }
-      }
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 25,
+        "patch": 0
     },
-    {
-      "name": "vc6-profile",
-      "displayName": "Windows 32bit VC6 Profile",
-      "hidden": false,
-      "inherits": "vc6",
-      "cacheVariables": {
-        "RTS_BUILD_OPTION_PROFILE": "ON"
-      }
-    },
-    {
-      "name": "vc6-debug",
-      "displayName": "Windows 32bit VC6 Debug",
-      "hidden": false,
-      "inherits": "vc6",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "RTS_BUILD_OPTION_DEBUG": "ON"
-      }
-    },
-    {
-      "name": "vc6-releaselog",
-      "displayName": "Windows 32bit VC6 Release Logging",
-      "inherits": "vc6",
-      "cacheVariables": {
-        "RTS_DEBUG_LOGGING": "ON",
-        "RTS_DEBUG_CRASHING": "ON"
-      }
-    },
-    {
-      "name": "vc6-weekly",
-      "displayName": "Windows 32bit VC6 Weekly Release",
-      "inherits": "vc6",
-      "cacheVariables": {
-        "RTS_BUILD_OPTION_VC6_FULL_DEBUG": "ON"
-      }
-    },
-    {
-      "name": "default",
-      "displayName": "Default Config (don't use directly!)",
-      "generator": "Ninja Multi-Config",
-      "hidden": true,
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "$<$<CONFIG:Release,Debug,RelWithDebInfo>:Embedded>",
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-      }
-    },
-    {
-      "name": "default-vcpkg",
-      "displayName": "Default Config for vcpkg (don't use directly!)",
-      "generator": "Ninja Multi-Config",
-      "hidden": true,
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "$<$<CONFIG:Release,Debug,RelWithDebInfo>:Embedded>",
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-      }
-    },
-    {
-      "name": "win32",
-      "inherits": "default",
-      "hidden": false,
-      "displayName": "Windows 32bit Release",
-      "architecture": {
-        "value": "Win32",
-        "strategy": "external"
-      },
-      "cacheVariables": {
-        "RTS_FLAGS": "/W3"
-      },
-      "vendor": {
-        "jetbrains.com/clion": {
-          "toolchain": "Visual Studio"
-        }
-      }
-    },
-    {
-      "name": "win32-profile",
-      "inherits": "win32",
-      "displayName": "Windows 32bit Profile",
-      "cacheVariables": {
-        "RTS_BUILD_OPTION_PROFILE": "ON",
-        "RTS_BUILD_OPTION_PROFILE_TRACY": "ON",
-        "RTS_BUILD_OPTION_PERF_TELEMETRY": "ON"
-      }
-    },
-    {
-      "name": "win32-debug",
-      "inherits": "win32",
-      "displayName": "Windows 32bit Debug",
-      "cacheVariables": {
-        "RTS_BUILD_OPTION_DEBUG": "ON"
-      }
-    },
-    {
-      "name": "win32-vcpkg",
-      "inherits": "default-vcpkg",
-      "hidden": false,
-      "displayName": "Windows 32bit VCPKG Release",
-      "architecture": {
-        "value": "Win32",
-        "strategy": "external"
-      },
-      "cacheVariables": {
-        "RTS_FLAGS": "/W3"
-      },
-      "vendor": {
-        "jetbrains.com/clion": {
-          "toolchain": "Visual Studio"
-        }
-      }
-    },
-    {
-      "name": "win32-vcpkg-profile",
-      "inherits": "win32-vcpkg",
-      "displayName": "Windows 32bit VCPKG Profile",
-      "cacheVariables": {
-        "RTS_BUILD_OPTION_PROFILE": "ON"
-      }
-    },
-    {
-      "name": "win32-vcpkg-debug",
-      "inherits": "win32-vcpkg",
-      "displayName": "Windows 32bit VCPKG Debug",
-      "cacheVariables": {
-        "RTS_BUILD_OPTION_DEBUG": "ON"
-      }
-    },
-    {
-      "name": "unix",
-      "inherits": "default-vcpkg",
-      "hidden": false,
-      "displayName": "Unix 32bit VCPKG Release"
-    },
-    {
-      "name": "mingw32-base",
-      "displayName": "MinGW-w64 32-bit base (do not use directly)",
-      "hidden": true,
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-i686.cmake",
-      "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "RTS_BUILD_ZEROHOUR": "ON",
-        "RTS_BUILD_GENERALS": "OFF",
-        "RTS_BUILD_CORE_TOOLS": "OFF",
-        "RTS_BUILD_ZEROHOUR_TOOLS": "OFF"
-      }
-    },
-    {
-      "name": "mingw32-release",
-      "displayName": "MinGW-w64 i686 / Ninja — Zero Hour Release",
-      "inherits": "mingw32-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "mingw32-debug",
-      "displayName": "MinGW-w64 i686 / Ninja — Zero Hour Debug",
-      "inherits": "mingw32-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "RTS_BUILD_OPTION_DEBUG": "ON"
-      }
-    },
-    {
-      "name": "mingw32-profile",
-      "displayName": "MinGW-w64 i686 / Ninja — Zero Hour Profile",
-      "inherits": "mingw32-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "RTS_BUILD_OPTION_PROFILE": "ON",
-        "RTS_BUILD_OPTION_PERF_TELEMETRY": "ON"
-      }
-    },
-    {
-      "name": "mingw32-tests",
-      "displayName": "MinGW-w64 i686 / Ninja — Modernization Tests",
-      "inherits": "mingw32-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "RTS_BUILD_TESTS_ONLY": "ON",
-        "RTS_BUILD_TESTS": "ON"
-      }
-    },
-    {
-      "name": "mingw64-tests",
-      "displayName": "MinGW-w64 x86_64 / Ninja — x64 Readiness Tests",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "RTS_BUILD_TESTS_ONLY": "ON",
-        "RTS_BUILD_TESTS": "ON",
-        "RTS_BUILD_ZEROHOUR": "OFF",
-        "RTS_BUILD_GENERALS": "OFF",
-        "RTS_BUILD_CORE_TOOLS": "OFF",
-        "RTS_BUILD_X64_READINESS": "ON"
-      }
-    },
-    {
-      "name": "mingw-w64-i686",
-      "displayName": "Compatibility alias: mingw32-release",
-      "inherits": "mingw32-release"
-    },
-    {
-      "name": "mingw-w64-i686-debug",
-      "displayName": "Compatibility alias: mingw32-debug",
-      "inherits": "mingw32-debug"
-    },
-    {
-      "name": "mingw-w64-i686-profile",
-      "displayName": "Compatibility alias: mingw32-profile",
-      "inherits": "mingw32-profile"
-    },
-    {
-      "name": "mingw-w64-i686-determinism",
-      "displayName": "Compatibility alias: mingw32-tests",
-      "inherits": "mingw32-tests"
-    }
-  ],
-  "buildPresets": [
-    {
-      "name": "vc6",
-      "configurePreset": "vc6",
-      "displayName": "Build Windows 32bit VC6 Release",
-      "description": "Build Windows 32bit VC6 Release"
-    },
-    {
-      "name": "vc6-profile",
-      "configurePreset": "vc6-profile",
-      "displayName": "Build Windows 32bit VC6 Profile",
-      "description": "Build Windows 32bit VC6 Profile"
-    },
-    {
-      "name": "vc6-debug",
-      "configurePreset": "vc6-debug",
-      "displayName": "Build Windows 32bit VC6 Debug",
-      "description": "Build Windows 32bit VC6 Debug"
-    },
-    {
-      "name": "vc6-releaselog",
-      "configurePreset": "vc6-releaselog",
-      "displayName": "Build Windows 32bit VC6 Release Logging",
-      "description": "Build Windows 32bit VC6 Release Logging"
-    },
-    {
-      "name": "vc6-weekly",
-      "configurePreset": "vc6-weekly",
-      "displayName": "Build Windows 32bit VC6 Weekly Release",
-      "description": "Build Windows 32bit VC6 Weekly Release"
-    },
-    {
-      "name": "win32",
-      "configurePreset": "win32",
-      "displayName": "Build Windows 32bit Release",
-      "description": "Build Windows 32bit Release",
-      "configuration": "Release"
-    },
-    {
-      "name": "win32-profile",
-      "configurePreset": "win32-profile",
-      "displayName": "Build Windows 32bit Profile",
-      "description": "Build Windows 32bit Profile",
-      "configuration": "Release"
-    },
-    {
-      "name": "win32-debug",
-      "configurePreset": "win32-debug",
-      "displayName": "Build Windows 32bit Debug",
-      "description": "Build Windows 32bit Debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "win32-vcpkg",
-      "configurePreset": "win32-vcpkg",
-      "displayName": "Build Windows 32bit VCPKG Release",
-      "description": "Build Windows 32bit VCPKG Release",
-      "configuration": "Release"
-    },
-    {
-      "name": "win32-vcpkg-profile",
-      "configurePreset": "win32-vcpkg-profile",
-      "displayName": "Build Windows 32bit VCPKG Profile",
-      "description": "Build Windows 32bit VCPKG Profile",
-      "configuration": "Release"
-    },
-    {
-      "name": "win32-vcpkg-debug",
-      "configurePreset": "win32-vcpkg-debug",
-      "displayName": "Build Windows 32bit VCPKG Debug",
-      "description": "Build Windows 32bit VCPKG Debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "unix",
-      "configurePreset": "unix",
-      "displayName": "Build Unix 32bit VCPKG Release",
-      "description": "Build Unix 32bit VCPKG Release",
-      "configuration": "Release"
-    },
-    {
-      "name": "mingw32-release",
-      "configurePreset": "mingw32-release",
-      "displayName": "Build canonical MinGW Zero Hour Release",
-      "description": "Build canonical MinGW Zero Hour Release"
-    },
-    {
-      "name": "mingw32-debug",
-      "configurePreset": "mingw32-debug",
-      "displayName": "Build canonical MinGW Zero Hour Debug",
-      "description": "Build canonical MinGW Zero Hour Debug"
-    },
-    {
-      "name": "mingw32-profile",
-      "configurePreset": "mingw32-profile",
-      "displayName": "Build canonical MinGW Zero Hour Profile",
-      "description": "Build canonical MinGW Zero Hour Profile"
-    },
-    {
-      "name": "mingw32-tests",
-      "configurePreset": "mingw32-tests",
-      "displayName": "Build focused modernization tests",
-      "description": "Build focused modernization tests"
-    },
-    {
-      "name": "mingw64-tests",
-      "configurePreset": "mingw64-tests",
-      "displayName": "Build x64 readiness tests",
-      "description": "Build focused MinGW-w64 x86_64 modernization readiness tests"
-    },
-    {
-      "name": "mingw-w64-i686",
-      "configurePreset": "mingw-w64-i686",
-      "displayName": "Compatibility build preset: mingw-w64-i686"
-    },
-    {
-      "name": "mingw-w64-i686-debug",
-      "configurePreset": "mingw-w64-i686-debug",
-      "displayName": "Compatibility build preset: mingw-w64-i686-debug"
-    },
-    {
-      "name": "mingw-w64-i686-profile",
-      "configurePreset": "mingw-w64-i686-profile",
-      "displayName": "Compatibility build preset: mingw-w64-i686-profile"
-    },
-    {
-      "name": "mingw-w64-i686-determinism",
-      "configurePreset": "mingw-w64-i686-determinism",
-      "displayName": "Compatibility build preset: mingw-w64-i686-determinism"
-    }
-  ],
-  "workflowPresets": [
-    {
-      "name": "vc6",
-      "steps": [
+    "configurePresets": [
         {
-          "type": "configure",
-          "name": "vc6"
+            "name": "vc6",
+            "displayName": "Windows 32bit VC6 Release",
+            "generator": "Ninja",
+            "hidden": false,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
+                "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "",
+                "CMAKE_BUILD_TYPE": "Release",
+                "RTS_FLAGS": "/W3"
+            },
+            "vendor": {
+                "jetbrains.com/clion": {
+                    "toolchain": "Visual Studio 6"
+                }
+            }
         },
         {
-          "type": "build",
-          "name": "vc6"
+            "name": "vc6-profile",
+            "displayName": "Windows 32bit VC6 Profile",
+            "hidden": false,
+            "inherits": "vc6",
+            "cacheVariables": {
+                "RTS_BUILD_OPTION_PROFILE": "ON"
+            }
+        },
+        {
+            "name": "vc6-debug",
+            "displayName": "Windows 32bit VC6 Debug",
+            "hidden": false,
+            "inherits": "vc6",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "RTS_BUILD_OPTION_DEBUG": "ON"
+            }
+        },
+        {
+            "name": "vc6-releaselog",
+            "displayName": "Windows 32bit VC6 Release Logging",
+            "inherits": "vc6",
+            "cacheVariables": {
+                "RTS_DEBUG_LOGGING": "ON",
+                "RTS_DEBUG_CRASHING": "ON"
+            }
+        },
+        {
+            "name": "vc6-weekly",
+            "displayName": "Windows 32bit VC6 Weekly Release",
+            "inherits": "vc6",
+            "cacheVariables": {
+                "RTS_BUILD_OPTION_VC6_FULL_DEBUG": "ON"
+            }
+        },
+        {
+            "name": "default",
+            "displayName": "Default Config (don't use directly!)",
+            "generator": "Ninja Multi-Config",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "$<$<CONFIG:Release,Debug,RelWithDebInfo>:Embedded>",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+            }
+        },
+        {
+            "name": "default-vcpkg",
+            "displayName": "Default Config for vcpkg (don't use directly!)",
+            "generator": "Ninja Multi-Config",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "$<$<CONFIG:Release,Debug,RelWithDebInfo>:Embedded>",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+            }
+        },
+        {
+            "name": "win32",
+            "inherits": "default",
+            "hidden": false,
+            "displayName": "Windows 32bit Release",
+            "architecture": {
+                "value": "Win32",
+                "strategy": "external"
+            },
+            "cacheVariables": {
+                "RTS_FLAGS": "/W3"
+            },
+            "vendor": {
+                "jetbrains.com/clion": {
+                    "toolchain": "Visual Studio"
+                }
+            }
+        },
+        {
+            "name": "win32-profile",
+            "inherits": "win32",
+            "displayName": "Windows 32bit Profile",
+            "cacheVariables": {
+                "RTS_BUILD_OPTION_PROFILE": "ON",
+                "RTS_BUILD_OPTION_PROFILE_TRACY": "ON"
+            }
+        },
+        {
+            "name": "win32-debug",
+            "inherits": "win32",
+            "displayName": "Windows 32bit Debug",
+            "cacheVariables": {
+                "RTS_BUILD_OPTION_DEBUG": "ON"
+            }
+        },
+        {
+            "name": "win32-vcpkg",
+            "inherits": "default-vcpkg",
+            "hidden": false,
+            "displayName": "Windows 32bit VCPKG Release",
+            "architecture": {
+                "value": "Win32",
+                "strategy": "external"
+            },
+            "cacheVariables": {
+                "RTS_FLAGS": "/W3"
+            },
+            "vendor": {
+                "jetbrains.com/clion": {
+                    "toolchain": "Visual Studio"
+                }
+            }
+        },
+        {
+            "name": "win32-vcpkg-profile",
+            "inherits": "win32-vcpkg",
+            "displayName": "Windows 32bit VCPKG Profile",
+            "cacheVariables": {
+                "RTS_BUILD_OPTION_PROFILE": "ON"
+            }
+        },
+        {
+            "name": "win32-vcpkg-debug",
+            "inherits": "win32-vcpkg",
+            "displayName": "Windows 32bit VCPKG Debug",
+            "cacheVariables": {
+                "RTS_BUILD_OPTION_DEBUG": "ON"
+            }
+        },
+        {
+            "name": "unix",
+            "inherits": "default-vcpkg",
+            "hidden": false,
+            "displayName": "Unix 32bit VCPKG Release"
+        },
+        {
+            "name": "mingw-w64-i686",
+            "displayName": "MinGW-w64 32-bit (i686) Release",
+            "generator": "Ninja",
+            "hidden": false,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-i686.cmake",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "mingw-w64-i686-determinism",
+            "displayName": "MinGW-w64 32-bit Determinism Gate",
+            "hidden": false,
+            "inherits": "mingw-w64-i686",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "RTS_BUILD_ZEROHOUR_EXTRAS": "ON",
+                "RTS_BUILD_ZEROHOUR_TOOLS": "OFF",
+                "RTS_BUILD_CORE_TOOLS": "OFF",
+                "RTS_BUILD_GENERALS": "OFF"
+            }
+        },
+        {
+            "name": "mingw-w64-i686-debug",
+            "displayName": "MinGW-w64 32-bit (i686) Debug",
+            "hidden": false,
+            "inherits": "mingw-w64-i686",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "RTS_BUILD_OPTION_DEBUG": "ON"
+            }
+        },
+        {
+            "name": "mingw-w64-i686-profile",
+            "displayName": "MinGW-w64 32-bit (i686) Profile",
+            "hidden": false,
+            "inherits": "mingw-w64-i686",
+            "cacheVariables": {
+                "RTS_BUILD_OPTION_PROFILE": "ON"
+            }
         }
-      ]
-    },
-    {
-      "name": "vc6-debug",
-      "steps": [
+    ],
+    "buildPresets": [
         {
-          "type": "configure",
-          "name": "vc6-debug"
+            "name": "vc6",
+            "configurePreset": "vc6",
+            "displayName": "Build Windows 32bit VC6 Release",
+            "description": "Build Windows 32bit VC6 Release"
         },
         {
-          "type": "build",
-          "name": "vc6-debug"
+            "name": "vc6-profile",
+            "configurePreset": "vc6-profile",
+            "displayName": "Build Windows 32bit VC6 Profile",
+            "description": "Build Windows 32bit VC6 Profile"
+        },
+        {
+            "name": "vc6-debug",
+            "configurePreset": "vc6-debug",
+            "displayName": "Build Windows 32bit VC6 Debug",
+            "description": "Build Windows 32bit VC6 Debug"
+        },
+        {
+            "name": "vc6-releaselog",
+            "configurePreset": "vc6-releaselog",
+            "displayName": "Build Windows 32bit VC6 Release Logging",
+            "description": "Build Windows 32bit VC6 Release Logging"
+        },
+        {
+            "name": "vc6-weekly",
+            "configurePreset": "vc6-weekly",
+            "displayName": "Build Windows 32bit VC6 Weekly Release",
+            "description": "Build Windows 32bit VC6 Weekly Release"
+        },
+        {
+            "name": "win32",
+            "configurePreset": "win32",
+            "displayName": "Build Windows 32bit Release",
+            "description": "Build Windows 32bit Release",
+            "configuration": "Release"
+        },
+        {
+            "name": "win32-profile",
+            "configurePreset": "win32-profile",
+            "displayName": "Build Windows 32bit Profile",
+            "description": "Build Windows 32bit Profile",
+            "configuration": "Release"
+        },
+        {
+            "name": "win32-debug",
+            "configurePreset": "win32-debug",
+            "displayName": "Build Windows 32bit Debug",
+            "description": "Build Windows 32bit Debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "win32-vcpkg",
+            "configurePreset": "win32-vcpkg",
+            "displayName": "Build Windows 32bit VCPKG Release",
+            "description": "Build Windows 32bit VCPKG Release",
+            "configuration": "Release"
+        },
+        {
+            "name": "win32-vcpkg-profile",
+            "configurePreset": "win32-vcpkg-profile",
+            "displayName": "Build Windows 32bit VCPKG Profile",
+            "description": "Build Windows 32bit VCPKG Profile",
+            "configuration": "Release"
+        },
+        {
+            "name": "win32-vcpkg-debug",
+            "configurePreset": "win32-vcpkg-debug",
+            "displayName": "Build Windows 32bit VCPKG Debug",
+            "description": "Build Windows 32bit VCPKG Debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "unix",
+            "configurePreset": "unix",
+            "displayName": "Build Unix 32bit VCPKG Release",
+            "description": "Build Unix 32bit VCPKG Release",
+            "configuration": "Release"
+        },
+        {
+            "name": "mingw-w64-i686",
+            "configurePreset": "mingw-w64-i686",
+            "displayName": "Build MinGW-w64 32-bit (i686) Release",
+            "description": "Build MinGW-w64 32-bit (i686) Release"
+        },
+        {
+            "name": "mingw-w64-i686-determinism",
+            "configurePreset": "mingw-w64-i686-determinism",
+            "displayName": "Build MinGW-w64 32-bit Determinism Gate",
+            "description": "Build the focused Step 01 determinism executable"
+        },
+        {
+            "name": "mingw-w64-i686-debug",
+            "configurePreset": "mingw-w64-i686-debug",
+            "displayName": "Build MinGW-w64 32-bit (i686) Debug",
+            "description": "Build MinGW-w64 32-bit (i686) Debug"
+        },
+        {
+            "name": "mingw-w64-i686-profile",
+            "configurePreset": "mingw-w64-i686-profile",
+            "displayName": "Build MinGW-w64 32-bit (i686) Profile",
+            "description": "Build MinGW-w64 32-bit (i686) Profile"
         }
-      ]
-    },
-    {
-      "name": "vc6-profile",
-      "steps": [
+    ],
+    "workflowPresets": [
         {
-          "type": "configure",
-          "name": "vc6-profile"
+            "name": "vc6",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "vc6"
+                },
+                {
+                    "type": "build",
+                    "name": "vc6"
+                }
+            ]
         },
         {
-          "type": "build",
-          "name": "vc6-profile"
+            "name": "vc6-debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "vc6-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "vc6-debug"
+                }
+            ]
+        },
+        {
+            "name": "vc6-profile",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "vc6-profile"
+                },
+                {
+                    "type": "build",
+                    "name": "vc6-profile"
+                }
+            ]
+        },
+        {
+            "name": "vc6-releaselog",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "vc6-releaselog"
+                },
+                {
+                    "type": "build",
+                    "name": "vc6-releaselog"
+                }
+            ]
+        },
+        {
+            "name": "vc6-weekly",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "vc6-weekly"
+                },
+                {
+                    "type": "build",
+                    "name": "vc6-weekly"
+                }
+            ]
+        },
+        {
+            "name": "win32",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "win32"
+                },
+                {
+                    "type": "build",
+                    "name": "win32"
+                }
+            ]
+        },
+        {
+            "name": "win32-profile",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "win32-profile"
+                },
+                {
+                    "type": "build",
+                    "name": "win32-profile"
+                }
+            ]
+        },
+        {
+            "name": "win32-debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "win32-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "win32-debug"
+                }
+            ]
+        },
+        {
+            "name": "win32-vcpkg",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "win32-vcpkg"
+                },
+                {
+                    "type": "build",
+                    "name": "win32-vcpkg"
+                }
+            ]
+        },
+        {
+            "name": "win32-vcpkg-profile",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "win32-vcpkg-profile"
+                },
+                {
+                    "type": "build",
+                    "name": "win32-vcpkg-profile"
+                }
+            ]
+        },
+        {
+            "name": "win32-vcpkg-debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "win32-vcpkg-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "win32-vcpkg-debug"
+                }
+            ]
+        },
+        {
+            "name": "unix",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "unix"
+                },
+                {
+                    "type": "build",
+                    "name": "unix"
+                }
+            ]
+        },
+        {
+            "name": "mingw-w64-i686",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "mingw-w64-i686"
+                },
+                {
+                    "type": "build",
+                    "name": "mingw-w64-i686"
+                }
+            ]
+        },
+        {
+            "name": "mingw-w64-i686-debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "mingw-w64-i686-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "mingw-w64-i686-debug"
+                }
+            ]
+        },
+        {
+            "name": "mingw-w64-i686-profile",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "mingw-w64-i686-profile"
+                },
+                {
+                    "type": "build",
+                    "name": "mingw-w64-i686-profile"
+                }
+            ]
         }
-      ]
-    },
-    {
-      "name": "vc6-releaselog",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "vc6-releaselog"
-        },
-        {
-          "type": "build",
-          "name": "vc6-releaselog"
-        }
-      ]
-    },
-    {
-      "name": "vc6-weekly",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "vc6-weekly"
-        },
-        {
-          "type": "build",
-          "name": "vc6-weekly"
-        }
-      ]
-    },
-    {
-      "name": "win32",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "win32"
-        },
-        {
-          "type": "build",
-          "name": "win32"
-        }
-      ]
-    },
-    {
-      "name": "win32-profile",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "win32-profile"
-        },
-        {
-          "type": "build",
-          "name": "win32-profile"
-        }
-      ]
-    },
-    {
-      "name": "win32-debug",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "win32-debug"
-        },
-        {
-          "type": "build",
-          "name": "win32-debug"
-        }
-      ]
-    },
-    {
-      "name": "win32-vcpkg",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "win32-vcpkg"
-        },
-        {
-          "type": "build",
-          "name": "win32-vcpkg"
-        }
-      ]
-    },
-    {
-      "name": "win32-vcpkg-profile",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "win32-vcpkg-profile"
-        },
-        {
-          "type": "build",
-          "name": "win32-vcpkg-profile"
-        }
-      ]
-    },
-    {
-      "name": "win32-vcpkg-debug",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "win32-vcpkg-debug"
-        },
-        {
-          "type": "build",
-          "name": "win32-vcpkg-debug"
-        }
-      ]
-    },
-    {
-      "name": "unix",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "unix"
-        },
-        {
-          "type": "build",
-          "name": "unix"
-        }
-      ]
-    },
-    {
-      "name": "mingw32-release",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "mingw32-release"
-        },
-        {
-          "type": "build",
-          "name": "mingw32-release"
-        }
-      ]
-    },
-    {
-      "name": "mingw32-debug",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "mingw32-debug"
-        },
-        {
-          "type": "build",
-          "name": "mingw32-debug"
-        }
-      ]
-    },
-    {
-      "name": "mingw32-profile",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "mingw32-profile"
-        },
-        {
-          "type": "build",
-          "name": "mingw32-profile"
-        }
-      ]
-    },
-    {
-      "name": "mingw32-tests",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "mingw32-tests"
-        },
-        {
-          "type": "build",
-          "name": "mingw32-tests"
-        },
-        {
-          "type": "test",
-          "name": "mingw32-tests"
-        }
-      ]
-    },
-    {
-      "name": "mingw64-tests",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "mingw64-tests"
-        },
-        {
-          "type": "build",
-          "name": "mingw64-tests"
-        },
-        {
-          "type": "test",
-          "name": "mingw64-tests"
-        }
-      ]
-    }
-  ],
-  "testPresets": [
-    {
-      "name": "mingw32-tests",
-      "configurePreset": "mingw32-tests",
-      "displayName": "Run focused MinGW modernization tests",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "mingw64-tests",
-      "configurePreset": "mingw64-tests",
-      "displayName": "Run x64 readiness tests",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "mingw-w64-i686-determinism",
-      "configurePreset": "mingw-w64-i686-determinism",
-      "displayName": "Compatibility test preset for Step 01",
-      "output": {
-        "outputOnFailure": true
-      }
-    }
-  ]
+    ]
 }

@@ -28,18 +28,10 @@ When a future source update is adopted:
 3. record upstream changes in `WORKLOG.md`;
 4. update this manifest only after the new baseline is intentionally accepted;
 5. forward-merge modernization work rather than replacing newer upstream source with an older full ZIP.
+
 ## Current modernization working baseline
 
-- Declared Step 01G handoff archive: `GeneralsGameCode-Step01G-Windows-Signoff-Baseline-Seal-full.zip`.
-- Declared SHA-256: `bb179526f5a093397375220025e265ffc66ad223e8569a30b4d933562ac8718a`.
-- SHA-256 of the archive bytes actually received for Step 02A: `796c7e5642d655bebdf0ca079d7a099a5af46d82cb11a9b27282021f800fce07`.
-- The checksum mismatch is recorded rather than silently substituting an older repository. Step 02A is based strictly on the received archive bytes.
-- Step 01G itself remains accepted based on the user's successful Windows `z_determinismcheck` execution on MinGW-w64 i686 / GCC 16.2 + Ninja on 2026-09-10.
-- The original 2026-09-09 anchor hashes above remain historical provenance for the unmodified upstream source.
-
-## Step 02B continuation baseline
-
-- Authoritative Step 02B input file: `GeneralsGameCode-Step02A-Command-Line-Build-Foundation-full.zip`.
-- SHA-256 of the exact archive bytes used: `d0ecee0b8dc4810a18eee53b9ddcc278862422f725aa516756ac00090b6bc2ee`.
-- This hash supersedes any earlier reported Step 02A package hash for purposes of the Step 02B patch comparison because it identifies the actual archive bytes supplied to this chat turn.
-- Step 02B does not replace the Step 01G deterministic sign-off; it layers build-system changes on the Step 02A archive while preserving Step 01G as the behavioral compatibility gate.
+- Source archive supplied after final Step 01 Windows fixes: `89e0f428-4554-4c3c-9f0f-f8323d411217.zip`
+- Source archive SHA-256: `4ad2b066f516938763db9bbf82d7e15b8090f3900355d50a53694954fb3c28a0`
+- Accepted: 2026-09-10 after successful Windows `z_determinismcheck` execution on MinGW-w64 i686 / GCC 16.2 + Ninja.
+- This archive is the authoritative implementation baseline for Step 02. The original 2026-09-09 anchor hashes above remain historical provenance for the unmodified upstream source.

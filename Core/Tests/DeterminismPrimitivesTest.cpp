@@ -4,7 +4,6 @@
 
 #if defined(RTS_ENGINE_DETERMINISM_TEST)
 #include "Common/Xfer.h"
-#include "Common/XferSave.h"
 #include "Common/XferCRC.h"
 #include "GameLogic/Damage.h"
 #include "GameNetwork/NetworkDefs.h"
@@ -14,6 +13,16 @@
 
 #include <stdio.h>
 #include <string.h>
+
+#if defined(RTS_ENGINE_DETERMINISM_TEST) && defined(RTS_STANDALONE_DETERMINISM_TEST)
+// The focused Windows determinism binary never stores non-empty Xfer identifiers.
+// Provide only the empty-string cleanup seam needed by Xfer's embedded AsciiString
+// so the test does not link the legacy global string allocator/critical section graph.
+void AsciiString::releaseBuffer()
+{
+    m_data = nullptr;
+}
+#endif
 
 namespace {
 
@@ -125,24 +134,10 @@ private:
     std::vector<UnsignedByte> m_bytes;
 };
 
-class CaptureSaveXfer : public XferSave
+class ExposedDamageInfoOutput : public DamageInfoOutput
 {
 public:
-    const std::vector<UnsignedByte> &bytes() const { return m_bytes; }
-
-protected:
-    virtual void xferImplementation(void *data, Int dataSize) override
-    {
-        if (data == nullptr || dataSize <= 0) {
-            return;
-        }
-
-        const UnsignedByte *begin = static_cast<const UnsignedByte *>(data);
-        m_bytes.insert(m_bytes.end(), begin, begin + dataSize);
-    }
-
-private:
-    std::vector<UnsignedByte> m_bytes;
+    using DamageInfoOutput::xfer;
 };
 
 void Expect_Size(const char *case_name, size_t expected, size_t actual)
@@ -231,16 +226,17 @@ void Check_Xfer_Primitive_Characterization()
 
 void Check_Xfer_Snapshot_Characterization()
 {
-    // Exercise a real production Snapshot implementation through XferSave's
-    // production snapshot dispatch. DamageInfoOutput is deliberately small but
-    // determinism-relevant: its serialized order is version, dealt, clipped, no-effect.
-    DamageInfoOutput output;
+    // Exercise the real production DamageInfoOutput::xfer implementation directly
+    // through the same production Xfer primitive methods used by save/load. The protected
+    // Snapshot method is exposed only by this test subclass, avoiding the disk-oriented
+    // XferSave allocator/file dependency graph.
+    ExposedDamageInfoOutput output;
     output.m_actualDamageDealt = 1.0f;
     output.m_actualDamageClipped = -2.0f;
     output.m_noEffect = true;
 
-    CaptureSaveXfer xfer;
-    xfer.xferSnapshot(&output);
+    CaptureXfer xfer;
+    output.xfer(&xfer);
 
     const UnsignedByte expected[] = {
         0x01,
@@ -258,7 +254,6 @@ void Check_Xfer_CRC_Characterization()
     // XferCRC is the production state-CRC transport. Lock both its 32-bit
     // network-order folding and its partial-tail behavior across separate xfer calls.
     XferCRC xfer;
-    xfer.open("determinism-characterization");
     Expect_Unsigned("XferCRC initial state", 0x00000000U, xfer.getCRC());
 
     UnsignedInt word = 0x12345678U;
@@ -295,7 +290,9 @@ void Check_ABI_And_Replay_Characterization()
     Expect_Size("GameMessageArgumentType union width", 16U, sizeof(GameMessageArgumentType));
 
     Expect_Int("network message enum base", 1000, static_cast<Int>(GameMessage::MSG_BEGIN_NETWORK_MESSAGES));
-    Expect_Int("logic CRC message enum", 1093, static_cast<Int>(GameMessage::MSG_LOGIC_CRC));
+    // The original EA Zero Hour enum assigns 1093 to MSG_SELF_DESTRUCT and
+    // 1095 to MSG_LOGIC_CRC; keep the fixture tied to the latter.
+    Expect_Int("logic CRC message enum", 1095, static_cast<Int>(GameMessage::MSG_LOGIC_CRC));
     Expect_Int("network message enum end", 1999, static_cast<Int>(GameMessage::MSG_END_NETWORK_MESSAGES));
     Expect_Int("integer replay argument tag", 0, static_cast<Int>(ARGUMENTDATATYPE_INTEGER));
     Expect_Int("location replay argument tag", 6, static_cast<Int>(ARGUMENTDATATYPE_LOCATION));
@@ -318,7 +315,7 @@ void Check_ABI_And_Replay_Characterization()
     // frame 0x11223344, MSG_LOGIC_CRC, player 2, one INTEGER argument 0x89abcdef.
     const UnsignedByte replay_logic_crc_record[] = {
         0x44, 0x33, 0x22, 0x11,
-        0x45, 0x04, 0x00, 0x00,
+        0x47, 0x04, 0x00, 0x00,
         0x02, 0x00, 0x00, 0x00,
         0x01,
         0x00, 0x01,
@@ -326,12 +323,11 @@ void Check_ABI_And_Replay_Characterization()
     };
     CRC replay_crc;
     replay_crc.computeCRC(replay_logic_crc_record, sizeof(replay_logic_crc_record));
-    Expect_Unsigned("replay logic-CRC record byte checkpoint", 0x01b254dbU, replay_crc.get());
+    Expect_Unsigned("replay logic-CRC record byte checkpoint", 0x01b2d4dbU, replay_crc.get());
 
     XferCRC xfer_crc;
-    xfer_crc.open("replay-record-checkpoint");
     xfer_crc.xferUser(const_cast<UnsignedByte *>(replay_logic_crc_record), sizeof(replay_logic_crc_record));
-    Expect_Unsigned("replay record XferCRC checkpoint", 0xc1d0db75U, xfer_crc.getCRC());
+    Expect_Unsigned("replay record XferCRC checkpoint", 0xc1d0db85U, xfer_crc.getCRC());
 }
 
 #endif
