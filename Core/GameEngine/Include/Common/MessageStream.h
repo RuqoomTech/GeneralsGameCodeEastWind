@@ -107,7 +107,7 @@ public:
 	/**	@todo Create two classes of message: raw input messages, and command messages. Raw input messages
 						will be destroyed when they reach the end of the stream, whereas command messages will be
 						transferred to TheCommandList */
-	enum Type
+	enum Type CPP_11(: Int)
 	{
 		MSG_INVALID,																///< (none) this msg should never actually occur
 

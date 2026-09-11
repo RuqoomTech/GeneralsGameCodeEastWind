@@ -199,3 +199,21 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - No Windows x86_64 test pass is claimed; `mingw64-tests` remains the Step 04A Windows validation gate.
 - Final local validation also passed GCC/Clang `-O0`/`-O2`/`-O3` focused suites (7/7 each), GCC ASan and UBSan (7/7 each), schema-v2 summary text/JSON checks, and telemetry compile-definition isolation.
 - The validation container did not provide an x86_64 MinGW-w64 compiler, so no Win64 execution/build result was inferred from the host-native 64-bit pass.
+
+## 2026-09-11 — Step 04B: wire/replay ABI freeze + pointer/handle audit
+
+Authoritative input: `GeneralsGameCode-Step03-Complete-Step04A-x64-Readiness-full.zip` (`e87de5e1d2f6bd2e916030b5beb487fb4a71eb2beb4e57b14ccca3d22e1d7eba`).
+
+Implemented:
+
+- made `GameMessage::Type` explicitly `Int`-backed;
+- removed the `NetworkDefs.h` dependency on runtime `GameMessage` layout and froze legacy command payload capacity at 1008 bytes / 28 compatibility commands;
+- removed the now-unnecessary `MessageStream.h` include from `NetworkDefs.h`;
+- widened native-only `WindowMsgData` to `uintptr_t`;
+- converted `waveOutOpen` callback/instance userdata to `DWORD_PTR`;
+- replaced IME pointer-through-`UnsignedInt` arithmetic with typed byte-pointer arithmetic;
+- added `wire_replay_abi_step04b`;
+- added `pointer_wire_source_audit_step04b`;
+- retained fixed-width IDs/protocol fields and did not open the x64 D3D8 runtime graph.
+
+Validation completed in the Linux container with GCC 14.2.0 and Clang 17.0.0. The focused graph contains 9 tests and passed in all of these configurations: GCC `-O0`, `-O2`, `-O3`; Clang `-O0`, `-O2`, `-O3`; GCC AddressSanitizer; GCC UndefinedBehaviorSanitizer. `git diff --check` and clean patch-application verification are packaging gates for the final deliverables. No Windows or Win64 execution is claimed by this environment.

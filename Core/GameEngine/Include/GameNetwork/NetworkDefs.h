@@ -25,7 +25,6 @@
 #pragma once
 
 #include "Lib/BaseType.h"
-#include "Common/MessageStream.h"
 
 static constexpr const Int WOL_NAME_LEN = 64;
 
@@ -87,13 +86,23 @@ static constexpr const Int MAX_MESSAGES = 256;
  * Command packet - contains frame #, total # of commands, and each command.  This is what gets sent
  * to each player every frame
  */
-static constexpr const Int numCommandsPerCommandPacket = (MAX_NETWORK_MESSAGE_LEN - sizeof(UnsignedInt) - sizeof(UnsignedShort))/sizeof(GameMessage);
+// Step 04B: this legacy command buffer is a byte protocol container, not an array
+// of in-memory GameMessage objects.  The retail/x86 layout historically reserved
+// 1008 command bytes (28 * the old 36-byte GameMessage ABI).  Freeze that byte
+// capacity explicitly so widening pointers in GameMessage cannot change the wire
+// packet.  New protocol code must serialize fields explicitly and must not derive
+// any wire size from a runtime message-object layout.
+static constexpr const Int LEGACY_COMMAND_PACKET_COMMAND_BYTES = 1008;
+static constexpr const Int LEGACY_COMMAND_PACKET_MAX_COMMANDS = 28;
+// Compatibility name retained for frozen x86 code/tests; it is no longer computed
+// from the runtime GameMessage class layout.
+static constexpr const Int numCommandsPerCommandPacket = LEGACY_COMMAND_PACKET_MAX_COMMANDS;
 #pragma pack(push, 1)
 struct CommandPacket
 {
 	UnsignedInt m_frame;
 	UnsignedShort m_numCommands;
-	unsigned char m_commands[numCommandsPerCommandPacket * sizeof(GameMessage)];
+	UnsignedByte m_commands[LEGACY_COMMAND_PACKET_COMMAND_BYTES];
 };
 #pragma pack(pop)
 

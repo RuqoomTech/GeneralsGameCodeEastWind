@@ -73,7 +73,10 @@ enum { WIN_COLOR_UNDEFINED = GAME_COLOR_UNDEFINED };
 
 // WindowMsgData --------------------------------------------------------------
 //-----------------------------------------------------------------------------
-typedef UnsignedInt WindowMsgData;
+// Native GUI callback/userdata payload. This carries both logical scalar values and
+// pointers inside the in-process window system, so it must follow native pointer width.
+// It is not a network/replay/CRC field.
+typedef uintptr_t WindowMsgData;
 
 //-----------------------------------------------------------------------------
 enum WindowMsgHandledType CPP_11(: Int) { MSG_IGNORED, MSG_HANDLED };

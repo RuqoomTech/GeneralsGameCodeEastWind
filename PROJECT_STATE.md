@@ -58,6 +58,21 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 9. Add native support for the EA SAGE **W3X** asset format alongside W3D.
 10. Rendering must remain downstream of simulation; renderer/GPU timing must never influence deterministic game state.
 
+
+## Step 04B implementation state — 2026-09-11
+
+The authoritative input for Step 04B is `GeneralsGameCode-Step03-Complete-Step04A-x64-Readiness-full.zip`, SHA-256 `e87de5e1d2f6bd2e916030b5beb487fb4a71eb2beb4e57b14ccca3d22e1d7eba`. Step 04B was implemented directly from those bytes.
+
+Key invariants now encoded in source/tests:
+
+- future Evolution runtime is x64-only, while i686 remains a frozen temporary determinism oracle;
+- `GameMessage::Type` has explicit 32-bit `Int` underlying width;
+- legacy command-packet payload capacity is a frozen 1008-byte protocol constant and is no longer derived from `sizeof(GameMessage)`;
+- native GUI callback payload `WindowMsgData` follows `uintptr_t`;
+- wave-output userdata/callback and IME candidate pointer arithmetic no longer truncate through 32-bit integers;
+- focused test graph includes `wire_replay_abi_step04b` and `pointer_wire_source_audit_step04b`;
+- no Windows/Win64 result is claimed until supplied by a Windows console run.
+
 ## Current modernization status
 
 | Area | State |
@@ -67,7 +82,7 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
 | MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
 | HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
-| x64 engine migration | **ACTIVE — Step 04A readiness lane implemented** |
+| x64 engine migration | **ACTIVE — Step 04B wire/replay ABI freeze + first pointer-width audit implemented; Windows x64 validation pending** |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
 | W3X top-level child-element discovery | **Done — A2** |
@@ -112,4 +127,4 @@ Step 04A begins the engine migration without pretending the full runtime is alre
 
 Local host-native GCC 14.2 and Clang 17 focused configure/build/CTest runs pass 7/7 tests, including `-O0`/`-O2`/`-O3` coverage; GCC ASan and UBSan are also green. The validation container has no MinGW-w64 x86_64 compiler, so no Windows `mingw64-tests` pass is claimed until actual output is provided.
 
-The next implementation slice is **Step 04B — pointer/handle correctness**: inventory and remove address truncation (`pointer -> Int/DWORD/LONG`), distinguish numeric IDs from native addresses/handles, and add focused regressions while preserving the i686 determinism gate.
+The next implementation slice is **Step 04C — deeper pointer-width/runtime conversion**: memory pools, containers, resource/platform seams, and remaining native address/handle assumptions required for x64 core bring-up, while preserving the frozen i686 determinism oracle.

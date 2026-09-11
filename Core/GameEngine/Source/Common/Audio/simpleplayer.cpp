@@ -469,8 +469,8 @@ HRESULT CSimplePlayer::Play( LPCWSTR pszUrl, DWORD dwSecDuration, HANDLE hComple
     mmr = waveOutOpen( &m_hwo,
                        WAVE_MAPPER,
                        &m_wfx,
-                       (DWORD)WaveProc,
-                       (DWORD)this,
+                       reinterpret_cast<DWORD_PTR>(WaveProc),
+                       reinterpret_cast<DWORD_PTR>(this),
                        CALLBACK_FUNCTION );
     mmr = MMSYSERR_NOERROR;
 

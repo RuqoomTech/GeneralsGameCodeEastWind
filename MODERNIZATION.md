@@ -90,3 +90,7 @@ A roadmap step is not complete merely because code compiles. A completed step mu
 - `PROJECT_STATE.md`, `BACKLOG.md`, and `WORKLOG.md` updated;
 - no unexplained deterministic/replay regression;
 - no unrecorded architectural deviation.
+
+## Step 04B — x64 wire/pointer safety
+
+Step 04B freezes command/replay scalar widths independently of native C++ object layout and begins the native-pointer audit. See `Modernization/STEP_04_X64_MIGRATION.md`.
