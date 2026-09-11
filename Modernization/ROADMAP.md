@@ -31,7 +31,7 @@ The prior GCC strict-aliasing suppression is no longer required. No new determin
 
 Exit/sign-off gate: **PASSED on Windows MinGW-w64 i686 / GCC 16.2 + Ninja on 2026-09-10.** The focused `z_determinismcheck` target compiled and ran successfully and emitted the expected Step 01 success line. The target compiles only the production determinism/Xfer units it characterizes and no longer links the monolithic game archive. Any future compiler/ABI disagreement must be resolved explicitly rather than hidden by relaxing the test.
 
-### Step 02 — Command-Line Build System Foundation — ACTIVE
+### Step 02 — Command-Line Build System Foundation — IMPLEMENTATION COMPLETE / USER ACCEPTED
 
 Primary path:
 
@@ -56,13 +56,17 @@ Step 02B advances the real runtime configure/install path without broad source m
 - moved full-runtime WIDL validation ahead of ReactOS ATL/runtime FetchContent population;
 - added native-Windows preflight for the `oaidl.idl` / `ocidl.idl` imports actually used by the EABrowser IDLs.
 
-Windows verification of the new presets and the real `z_generals` target is pending. Step 02 remains ACTIVE until concrete MinGW runtime compile/link blockers are resolved and the canonical workflow is signed off. Clang remains secondary work rather than a blocker for this slice.
+The user subsequently reported that the Step 02B Windows workflow builds successfully (with expected legacy warnings). No Windows console transcript was supplied for archival, so this tree records user acceptance without claiming a new formally captured Windows test result. The modernization program now advances to Step 03; warning cleanup remains opportunistic and must not hide diagnostics from project-owned code.
 
 ## Phase 1 — Measure and stabilize the current x86 runtime
 
-### Step 03 — HD Mod Performance Foundation
+### Step 03 — HD Mod Performance Foundation — ACTIVE
 
 Add CPU/GPU timing where available, draw/geometry counters, memory/resource accounting, visibility data, asset hotspot reports, and repeatable benchmark captures.
+
+**Step 03A implemented:** reuse the existing profile + `Debug_Statistics` seams to produce a versioned per-render-frame CSV capture from the canonical profile build. The first schema records WW3D render CPU microseconds, synchronized time, draw/triangle/vertex counters, texture/resource counters, and WW3D memory allocation/free counts. The same sample can publish Tracy plots when Tracy is enabled. Normal Release rendering does not execute the Step 03A hook.
+
+Step 03A is a measurement foundation, not the end of Step 03: GPU timing, full client/update phases, visibility/culling telemetry, process memory, asset hotspots, and benchmark automation remain.
 
 ### Step 04 — x86 Memory Survival
 

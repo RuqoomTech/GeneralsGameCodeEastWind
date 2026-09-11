@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACTIVE. Step 02B implemented locally; Windows MinGW runtime sign-off is still required.**
+**IMPLEMENTATION COMPLETE / USER ACCEPTED.** The user reports the Step 02B Windows build path working; no console transcript was supplied for archival, so this document does not claim a newly captured Windows test pass.
 
 Step 01G remains the deterministic compatibility baseline. Steps 02A/02B change build-system structure only; they do not change simulation, replay, CRC, Xfer, network, W3D/W3X runtime behavior, or renderer code.
 
@@ -133,7 +133,7 @@ This validates build-system wiring plus W3X A0/A1/A2 and the lightweight Step 01
 - Standalone W3X A0/A1/A2 passed with both GCC and Clang.
 - Preset/test/workflow JSON was accepted by CMake/CTest listing commands.
 
-## Windows validation required for Step 02B sign-off
+## Windows validation record
 
 From PowerShell in an MSYS2 MINGW32-capable environment:
 
@@ -153,15 +153,15 @@ cmake --build --preset mingw32-release --target z_generals
 
 `mingw32-debug` and `mingw32-profile` are equivalent configure/build entry points for those configurations.
 
-Do not mark Step 02B Windows-verified until the actual Windows output is supplied. In particular, the expected Step 01 final line must still be:
+The user reports these paths working after Step 02B. Because the actual Step 02 Windows console output is not stored with this baseline, retain the commands below as the reproducible re-validation gate and do not invent a formal transcript. The Step 01 direct gate must still end with:
 
 ```text
 Step 01 determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.
 ```
 
-## Remaining Step 02 work
+## Follow-up build-system work
 
-Step 02A intentionally does not attempt a broad legacy CMake rewrite. Remaining work after Windows feedback is intentionally concrete: take the first compiler/linker failure from the full `z_generals` MinGW build, fix it without weakening the Step 01 gate, then repeat until the canonical runtime target links. After that, review remaining target-global dependency leakage and CI, and only then decide whether a secondary Clang preset is mature enough to promote.
+Step 02 is no longer the active milestone. Build warnings, secondary Clang promotion, CI refinements, and remaining target-global dependency cleanup are maintenance items unless they block a later milestone. Warning suppression must remain scoped to vendored/third-party code; warnings from project-owned code must remain visible.
 
 ## Non-goals
 

@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts plus accepted modernization changes through Step 02B on 2026-09-10.
+This document records verified source facts plus accepted modernization changes through Step 03A on 2026-09-11.
 
 ## Build system
 
@@ -14,7 +14,17 @@ This document records verified source facts plus accepted modernization changes 
 - The i686 toolchain validates the selected GCC triplet, supports `RTS_MINGW_ROOT`, and shares its resolved bin path with WIDL/debug-strip discovery. WIDL supports explicit root/include overrides and is not required for the focused test graph.
 - Full MinGW runtime configuration now requires WIDL before populating runtime FetchContent dependencies; native Windows also validates the `oaidl.idl` and `ocidl.idl` imports used by the EABrowser IDLs.
 - Generals and Zero Hour install rules use `rts_install_runtime_target()` instead of repeating MSVC-only PDB generator expressions. MSVC keeps optional PDB installation; MinGW Release installs the `.debug` sidecar emitted by the existing strip workflow.
-- Local host-native GCC and Clang configure/build/CTest validation is green at 5/5 tests, including `buildsystem_runtime_install_policy`. GNU configure/build/install probes validate both the generic runtime install helper and the MinGW-style `.debug` sidecar branch. Windows MinGW validation of Step 02B and the real `z_generals` target is still pending; no Windows success is claimed for Step 02B.
+- Local host-native GCC and Clang focused configure/build/CTest validation is green at 6/6 tests, including the Step 02B runtime-install policy and Step 03A telemetry capture regression. The user reports the real Step 02B Windows build path working; no Step 02 Windows console transcript is archived in this tree.
+
+## Performance telemetry
+
+- `rts/profile.h` now exposes the consolidated Step 03A `PerformanceTelemetry` seam; no second standalone profiler hierarchy was introduced.
+- `RTS_BUILD_OPTION_PERF_TELEMETRY` compiles the primary WW3D render hook. `mingw32-profile` enables it; normal `mingw32-release`/`mingw32-debug` do not.
+- `RTS_PERF_CAPTURE=<path>` enables a versioned CSV capture at runtime; `RTS_PERF_CAPTURE=1` uses `RTSPerfCapture.csv`.
+- CSV schema v1 records render CPU microseconds, WW3D render/sync frame identity, legacy draw/geometry counters, texture bytes/count/changes, lightmap/procedural texture counters, and WW3D memory allocation/free operation counts.
+- CSV capture temporarily enables the existing simple texture-accounting mode only when required, then restores the previous disabled state.
+- The same sample publishes Tracy plots when Tracy is separately enabled.
+- Telemetry values are observational only and are not consumed by simulation, frame pacing, CRC, replay, network, or Xfer code.
 
 ## Renderer
 

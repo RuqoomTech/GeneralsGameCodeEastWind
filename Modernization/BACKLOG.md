@@ -7,10 +7,11 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 00 | Repository modernization baseline/docs | DONE | Docs/state stored in authoritative tree |
 | F0 | Existing `IRenderBackend` / `DX8Backend` seam | PARTIAL | Already present upstream; incomplete abstraction |
 | 01 | Determinism / CRC / Xfer characterization | DONE | Windows MinGW-w64 i686 / GCC 16.2 + Ninja `z_determinismcheck` passed on 2026-09-10 |
-| 02 | MinGW-w64 GCC + Ninja canonical build | ACTIVE | Step 02A/02B foundation implemented; verify Win32 tests + advance the real `z_generals` build |
-| 02A | Canonical presets / focused tests / dependency scoping | VERIFY | Local GCC/Clang gates + Windows `mingw32-tests` validation |
-| 02B | Runtime configure/install hardening | VERIFY | No GNU PDB genex; early WIDL preflight; Windows `mingw32-release` + `z_generals` validation |
-| 03 | HD-mod performance telemetry | PLANNED | Repeatable CPU/GPU/memory metrics |
+| 02 | MinGW-w64 GCC + Ninja canonical build | DONE* | User reports Step 02B Windows build path working; formal console transcript not archived in this tree |
+| 02A | Canonical presets / focused tests / dependency scoping | DONE* | Accepted with Step 02; formal Step 02 Windows transcript not archived |
+| 02B | Runtime configure/install hardening | DONE* | User reports real Windows path working; output transcript not archived |
+| 03 | HD-mod performance telemetry | ACTIVE | Step 03A stable render-frame capture + profile-build validation |
+| 03A | Render-frame telemetry / CSV schema | VERIFY | 6/6 local focused tests; Windows `mingw32-profile` capture required |
 | 04 | x86 memory survival | PLANNED | Better headroom/diagnostics before x64 |
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |
 | W3X-A1 | W3X document-envelope probe | DONE | Root/namespace/SAGE envelope recognition |
@@ -36,6 +37,8 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 22 | Texture residency/streaming | PLANNED | Large HD-content VRAM control |
 | 23 | W3X completeness/tooling | PLANNED | Documented support matrix/toolchain |
 | 24 | Advanced GPU optimization | PLANNED | Only measured bottlenecks |
+
+`DONE*` records user acceptance of the Step 02 Windows path without claiming an archived Windows test transcript.
 
 ## Cross-cutting backlog
 

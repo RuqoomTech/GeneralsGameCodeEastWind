@@ -5,6 +5,7 @@ option(RTS_BUILD_ZEROHOUR "Build Zero Hour code." ON)
 option(RTS_BUILD_GENERALS "Build Generals code." ON)
 option(RTS_BUILD_OPTION_PROFILE "Build code with the \"Profile\" configuration." OFF)
 option(RTS_BUILD_OPTION_PROFILE_TRACY "Build code with Tracy profiling enabled." OFF)
+option(RTS_BUILD_OPTION_PERF_TELEMETRY "Build renderer performance telemetry instrumentation." OFF)
 option(RTS_BUILD_OPTION_DEBUG "Build code with the \"Debug\" configuration." OFF)
 option(RTS_BUILD_OPTION_ASAN "Build code with Address Sanitizer." OFF)
 option(RTS_BUILD_OPTION_VC6_FULL_DEBUG "Build VC6 with full debug info." OFF)
@@ -28,6 +29,7 @@ add_feature_info(CoreExtras RTS_BUILD_CORE_EXTRAS "Build Core Extra Tools/Tests"
 add_feature_info(ZeroHourStuff RTS_BUILD_ZEROHOUR "Build Zero Hour code")
 add_feature_info(GeneralsStuff RTS_BUILD_GENERALS "Build Generals code")
 add_feature_info(ProfileBuild RTS_BUILD_OPTION_PROFILE "Building as a \"Profile\" build")
+add_feature_info(PerformanceTelemetry RTS_BUILD_OPTION_PERF_TELEMETRY "Building renderer performance telemetry instrumentation")
 add_feature_info(DebugBuild RTS_BUILD_OPTION_DEBUG "Building as a \"Debug\" build")
 add_feature_info(AddressSanitizer RTS_BUILD_OPTION_ASAN "Building with address sanitizer")
 add_feature_info(Vc6FullDebug RTS_BUILD_OPTION_VC6_FULL_DEBUG "Building VC6 with full debug info")
@@ -98,6 +100,10 @@ endif()
 
 if(RTS_BUILD_OPTION_PROFILE)
     target_compile_definitions(core_config INTERFACE RTS_PROFILE_LEGACY)
+endif()
+
+if(RTS_BUILD_OPTION_PERF_TELEMETRY)
+    target_compile_definitions(core_config INTERFACE RTS_PERF_TELEMETRY)
 endif()
 
 # Define a dummy Tracy target when the build option is disabled.
