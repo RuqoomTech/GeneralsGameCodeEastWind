@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts plus accepted modernization changes through Step 02A on 2026-09-10.
+This document records verified source facts plus accepted modernization changes through Step 02B on 2026-09-10.
 
 ## Build system
 
@@ -12,7 +12,9 @@ This document records verified source facts plus accepted modernization changes 
 - C++-only `-Wsuggest-override` and MinGW compatibility/link settings are target-scoped through `core_config` rather than globally leaking into C/vendored targets.
 - Direct `FetchContent_Populate()` use in the ReactOS ATL, legacy zlib, and LZHL source-only paths has been removed.
 - The i686 toolchain validates the selected GCC triplet, supports `RTS_MINGW_ROOT`, and shares its resolved bin path with WIDL/debug-strip discovery. WIDL supports explicit root/include overrides and is not required for the focused test graph.
-- Local host-native GCC configure/build/CTest validation is green. Windows MinGW validation of Step 02A and the real `z_generals` target is still pending; no Windows success is claimed for Step 02A yet.
+- Full MinGW runtime configuration now requires WIDL before populating runtime FetchContent dependencies; native Windows also validates the `oaidl.idl` and `ocidl.idl` imports used by the EABrowser IDLs.
+- Generals and Zero Hour install rules use `rts_install_runtime_target()` instead of repeating MSVC-only PDB generator expressions. MSVC keeps optional PDB installation; MinGW Release installs the `.debug` sidecar emitted by the existing strip workflow.
+- Local host-native GCC and Clang configure/build/CTest validation is green at 5/5 tests, including `buildsystem_runtime_install_policy`. GNU configure/build/install probes validate both the generic runtime install helper and the MinGW-style `.debug` sidecar branch. Windows MinGW validation of Step 02B and the real `z_generals` target is still pending; no Windows success is claimed for Step 02B.
 
 ## Renderer
 

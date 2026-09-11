@@ -48,7 +48,15 @@ Step 02A implemented the first coherent foundation slice:
 - removal of deprecated direct FetchContent population in source-only ATL/zlib/LZHL paths;
 - improved i686 compiler/binutils/WIDL discovery without PATH surgery.
 
-Windows verification of the new presets and the real `z_generals` target is pending. Step 02 remains ACTIVE until concrete MinGW runtime blockers are resolved and the canonical workflow is signed off. Clang remains secondary work rather than a blocker for this slice.
+Step 02B advances the real runtime configure/install path without broad source modernization:
+
+- consolidated Generals/Zero Hour runtime installation behind a compiler-aware helper;
+- removed GNU/MinGW generation failures caused by unconditional MSVC `$<TARGET_PDB_FILE:...>` install rules;
+- preserved MSVC PDB installation and connected MinGW Release installs to the existing `.debug` sidecar workflow;
+- moved full-runtime WIDL validation ahead of ReactOS ATL/runtime FetchContent population;
+- added native-Windows preflight for the `oaidl.idl` / `ocidl.idl` imports actually used by the EABrowser IDLs.
+
+Windows verification of the new presets and the real `z_generals` target is pending. Step 02 remains ACTIVE until concrete MinGW runtime compile/link blockers are resolved and the canonical workflow is signed off. Clang remains secondary work rather than a blocker for this slice.
 
 ## Phase 1 — Measure and stabilize the current x86 runtime
 

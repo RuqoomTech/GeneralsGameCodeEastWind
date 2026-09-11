@@ -155,3 +155,17 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - Local GCC 14.2 CMake/Ninja/CTest passed all four focused tests; Clang 17 CMake/Ninja/CTest passed the same four tests.
 - Manual Step 01 lightweight determinism passed GCC and Clang at `-O0`, `-O2`, and `-O3`; GCC ASan and UBSan passed; standalone W3X A0/A1/A2 passed with both GCC and Clang.
 - Windows Step 02A verification and the real `z_generals` MinGW build remain pending. No Step 02A Windows pass is claimed.
+
+## 2026-09-10 — Step 02B: runtime configure/install hardening
+
+- Continued strictly from `GeneralsGameCode-Step02A-Command-Line-Build-Foundation-full.zip` as supplied in this chat; SHA-256 of the exact Step 02A bytes used as the comparison base is `d0ecee0b8dc4810a18eee53b9ddcc278862422f725aa516756ac00090b6bc2ee`.
+- Reproduced a real CMake generation blocker under GNU: unconditional `install(FILES $<TARGET_PDB_FILE:...>)` fails because `TARGET_PDB_FILE` is unsupported by the GNU linker, even when the install file is `OPTIONAL`. The prior Generals/Zero Hour install rules used this expression whenever an install prefix was present.
+- Consolidated runtime installation in `cmake/debug_strip.cmake` through `rts_install_runtime_target()`. MSVC retains optional PDB installation; MinGW Release installs the existing `$<TARGET_FILE>.debug` sidecar when symbol stripping is available; non-MSVC/GNU generation no longer evaluates a PDB expression.
+- Replaced the duplicated Generals and Zero Hour target/PDB install blocks with the shared helper and compact target lists.
+- Moved full-runtime WIDL discovery/requirement ahead of ReactOS ATL and the other runtime dependency graph. A missing WIDL now fails before external runtime dependencies are populated.
+- Added native-Windows validation for `oaidl.idl` and `ocidl.idl`, matching the imports in `BrowserEngine.idl` and `BrowserDispatch.idl`; focused `mingw32-tests` remains WIDL-independent.
+- Added `cmake/tests/RuntimeInstallPolicyTest.cmake` and registered `buildsystem_runtime_install_policy` in the existing `Core/Tests` graph; it uses a tiny nested target to catch linker-specific install-generator-expression regressions and requires the `.debug` sidecar on MinGW.
+- GCC 14.2 and Clang 17 focused CMake/Ninja graphs each passed 5/5 CTest tests.
+- The lightweight Step 01 determinism harness was rerun under GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`; GCC ASan and UBSan also passed.
+- The repository-owned runtime-install policy test configured, built, and installed successfully through `rts_install_runtime_target()` under both GCC and Clang; a separate host-GNU probe also validated the helper directly. A second synthetic GNU probe exercising the MinGW debug-sidecar branch produced and installed both the executable and `.debug` file.
+- A real i686 MinGW compiler is not available in this execution environment and package-network access is unavailable, so no Windows/MinGW `z_generals` build pass is claimed. The next Step 02 slice should use the first concrete compiler/linker failure from `cmake --build --preset mingw32-release --target z_generals`.

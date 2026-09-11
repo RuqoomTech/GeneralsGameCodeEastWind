@@ -37,3 +37,10 @@ When a future source update is adopted:
 - The checksum mismatch is recorded rather than silently substituting an older repository. Step 02A is based strictly on the received archive bytes.
 - Step 01G itself remains accepted based on the user's successful Windows `z_determinismcheck` execution on MinGW-w64 i686 / GCC 16.2 + Ninja on 2026-09-10.
 - The original 2026-09-09 anchor hashes above remain historical provenance for the unmodified upstream source.
+
+## Step 02B continuation baseline
+
+- Authoritative Step 02B input file: `GeneralsGameCode-Step02A-Command-Line-Build-Foundation-full.zip`.
+- SHA-256 of the exact archive bytes used: `d0ecee0b8dc4810a18eee53b9ddcc278862422f725aa516756ac00090b6bc2ee`.
+- This hash supersedes any earlier reported Step 02A package hash for purposes of the Step 02B patch comparison because it identifies the actual archive bytes supplied to this chat turn.
+- Step 02B does not replace the Step 01G deterministic sign-off; it layers build-system changes on the Step 02A archive while preserving Step 01G as the behavioral compatibility gate.

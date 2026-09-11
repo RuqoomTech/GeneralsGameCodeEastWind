@@ -4,11 +4,12 @@ This file is the authoritative state marker for modernization work. Read it befo
 
 ## Baseline identity
 
-- Step 02 implementation base: sealed Step 01G Windows-signoff repository supplied on 2026-09-10.
-- User-declared archive name: `GeneralsGameCode-Step01G-Windows-Signoff-Baseline-Seal-full.zip`.
-- User-declared SHA-256: `bb179526f5a093397375220025e265ffc66ad223e8569a30b4d933562ac8718a`.
-- SHA-256 of the archive bytes actually received for this Step 02A implementation: `796c7e5642d655bebdf0ca079d7a099a5af46d82cb11a9b27282021f800fce07`.
-- Because the received bytes do not match the declared checksum, Step 02A was based strictly on the received archive and did not fall back to any remembered/older repository.
+- Step 02A was based on the sealed Step 01G Windows-signoff repository supplied on 2026-09-10.
+- Step 01G user-declared archive/hash: `GeneralsGameCode-Step01G-Windows-Signoff-Baseline-Seal-full.zip` / `bb179526f5a093397375220025e265ffc66ad223e8569a30b4d933562ac8718a`.
+- SHA-256 of the Step 01G archive bytes actually received for Step 02A: `796c7e5642d655bebdf0ca079d7a099a5af46d82cb11a9b27282021f800fce07`; that mismatch remains recorded rather than silently substituting another tree.
+- **Step 02B authoritative implementation base:** `GeneralsGameCode-Step02A-Command-Line-Build-Foundation-full.zip`.
+- SHA-256 of the exact Step 02A archive bytes used for Step 02B: `d0ecee0b8dc4810a18eee53b9ddcc278862422f725aa516756ac00090b6bc2ee`.
+- Step 02B was produced strictly from those received Step 02A bytes; no remembered repository, older patch, or alternate ZIP was used.
 - Historical upstream provenance remains recorded in `Modernization/BASELINE_MANIFEST.md`.
 
 ## What was changed when establishing this baseline
@@ -63,7 +64,7 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | Baseline documentation and roadmap | **Done** |
 | Existing upstream renderer backend seam | **Partial / already present** |
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
-| MinGW-w64 GCC + Ninja canonical build | **Active — Step 02A implemented locally; Windows runtime verification pending** |
+| MinGW-w64 GCC + Ninja canonical build | **Active — Step 02B runtime configure/install hardening implemented locally; Windows runtime verification pending** |
 | HD performance telemetry | Planned — Step 03 |
 | x86 memory-survival work | Planned — Step 04 |
 | W3X format-recognition pre-step | **Done — A0** |
@@ -98,4 +99,6 @@ The only deterministic production-code correction in the completion pass removes
 
 The Windows target remains `z_determinismtest`, but Step 02A moves its CMake ownership from the Zero Hour extras subtree to the focused `Core/Tests` graph. It still compiles the production RandomValue/Snapshot/Xfer/XferCRC/Damage implementation units directly with the same narrow standalone seam, avoiding unrelated renderer/UI/network executable globals. The signed-off Step 01 command remains available through a compatibility preset alias. On 2026-09-10 the Step 01G `z_determinismcheck` gate passed on Windows with MinGW-w64 i686 / GCC 16.2; Step 02A requires a fresh Windows run before its own sign-off.
 
-**Step 02 — Command-Line Build System Foundation** is active. Step 02A now provides the canonical `mingw32-release`, `mingw32-debug`, `mingw32-profile`, and `mingw32-tests` presets; `RTS_BUILD_TESTS_ONLY` avoids the full runtime dependency graph for determinism/W3X checks; and `Core/Tests/CMakeLists.txt` integrates W3X A0/A1/A2 plus the Step 01 gate with CTest. The legacy Step 01 preset name remains a compatibility alias. Local Linux GCC validation is green; the real MinGW Windows `z_determinismcheck` and `z_generals` build still require user-side verification before Step 02A sign-off.
+**Step 02 — Command-Line Build System Foundation** is active. Step 02A provides the canonical `mingw32-release`, `mingw32-debug`, `mingw32-profile`, and `mingw32-tests` presets; `RTS_BUILD_TESTS_ONLY` avoids the full runtime dependency graph for determinism/W3X checks; and `Core/Tests/CMakeLists.txt` integrates W3X A0/A1/A2 plus the Step 01 gate with CTest.
+
+**Step 02B** hardens the first real runtime configure/install seams found during the full-tree audit. MinGW no longer evaluates MSVC-only `$<TARGET_PDB_FILE:...>` expressions when an installed Generals/Zero Hour path is present; runtime installation is consolidated through `rts_install_runtime_target()`, which preserves PDB installation for MSVC and installs the existing GNU `.debug` sidecar for MinGW Release builds. Full MinGW runtime configuration now preflights WIDL (and, on native Windows, the `oaidl.idl`/`ocidl.idl` headers) before ReactOS ATL or other runtime dependencies are populated, so a missing MINGW32 toolchain component fails early instead of after unrelated downloads/configuration. Local GCC/Clang focused regression tests (5/5, including the repository-owned runtime-install policy test) and host-GNU install/debug-sidecar probes are green. A real Windows MinGW `mingw32-tests` plus `mingw32-release`/`z_generals` run is still required; no Step 02B Windows success is claimed.
