@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACTIVE — Step 04A implemented.**
+**ACTIVE — Step 04B implemented; Windows x64 validation pending user console run.**
 
 The modernization program now moves the engine toward x64 immediately after the performance baseline. The signed-off i686 runtime remains the deterministic compatibility/reference build throughout the migration.
 
@@ -44,48 +44,62 @@ Step 04A introduces the first real x64 build lane while deliberately keeping the
 
 The x64 readiness lane is not a claim that Zero Hour itself is already an x64 executable.
 
-## Planned migration slices
+## Step 04B — wire/replay ABI freeze + pointer/handle audit — IMPLEMENTED
 
-### Step 04B — pointer/handle correctness
+Step 04B establishes the first architecture-independent command/wire boundary and fixes concrete native-pointer truncation in the x64 core/client lane without opening the D3D8 renderer graph.
 
-- inventory pointer-to-`Int`/`DWORD`/`LONG` conversions in runtime code;
-- replace address storage/arithmetic with pointer-sized types or real pointers;
-- distinguish numeric IDs from addresses/handles;
-- keep x86 behavior byte-compatible.
+Implemented changes:
 
-### Step 04C — allocator/pool/container bring-up
+1. `GameMessage::Type` now has explicit `Int` underlying width, preserving the 32-bit replay/network command type independently of compiler enum ABI choices.
+2. `NetworkDefs.h` no longer sizes the legacy command byte buffer from the runtime `GameMessage` class. The historical 1008-byte command payload and 28-command compatibility count are frozen as protocol constants.
+3. `NetworkDefs.h` no longer includes `MessageStream.h`; the packet contract is no longer coupled to the runtime message-object definition.
+4. `WindowMsgData` is now `uintptr_t`. It is an in-process GUI callback payload that routinely carries pointers and therefore follows native pointer width; it is explicitly not wire/replay/CRC state.
+5. `waveOutOpen` callback and instance userdata now use `DWORD_PTR`, eliminating Win64 truncation of both the callback address and `this`.
+6. IME candidate-list address arithmetic now uses typed byte-pointer arithmetic instead of converting the candidate-list pointer through `UnsignedInt`.
+7. `wire_replay_abi_step04b` guards fixed packet/scalar widths and the frozen legacy command-packet byte layout.
+8. `pointer_wire_source_audit_step04b` prevents reintroduction of the three concrete pointer-width truncations and the `GameMessage`-layout packet sizing dependency.
 
-- audit memory pools, free lists, alignment and pointer arithmetic;
-- remove 32-bit address assumptions;
-- add x64 focused coverage for pool metadata before enabling them in the runtime.
+Audit classification for this slice:
 
-### Step 04D — serialization/network/native-layout separation
+- **native pointer/address — fixed now:** GUI `WindowMsgData`, wave-output callback userdata, IME candidate-list address arithmetic;
+- **logical IDs — remain 32-bit:** `ObjectID`, `DrawableID`, player/team/squad IDs and command IDs;
+- **wire/replay — remain fixed-width:** command type, packet frame/count/header fields, argument tags, replay/network primitive fields;
+- **legacy ABI assumption — isolated:** the old 1008-byte command-buffer capacity is retained as an explicit frozen compatibility constant rather than inferred from a C++ object;
+- **renderer-only / full-client legacy casts — deferred:** D3D8/WW3D and other paths not required by the focused x64 core lane remain for later subsystem bring-up rather than being papered over with casts.
 
-- remove any dependence on native `sizeof(pointer)` or x64 STL object layout from replay/network/on-disk formats;
-- preserve Step 01 byte fixtures;
-- introduce explicit wire structs/conversion seams where native runtime objects cannot remain layout-compatible.
+The live `NetGameCommandMsg` packet path already performs field-oriented serialization. Step 04B does not version or redesign that protocol; it removes the architecture-dependent capacity calculation and freezes the scalar contract before deeper x64 bring-up.
 
-### Step 04E — x64 common/game-logic compile lane
+## Remaining migration slices
 
-- progressively add shared libraries and deterministic game-logic units to the x64 build graph;
-- keep renderer/client platform dependencies excluded until their boundaries are ready;
-- run deterministic CRC/RNG/replay compatibility comparisons against x86.
+### Step 04C — deeper pointer-width/runtime conversion
 
-### Step 04F — x64 client/platform runtime
+- memory pools, allocator metadata and free lists;
+- containers and pointer-based indices/order;
+- file/resource and platform abstractions;
+- remaining callback/userdata/handle assumptions required by the x64 core lane.
 
-- port Win32 handles, window/input/audio/file/platform seams;
-- resolve third-party architecture availability explicitly;
-- do not resurrect D3D11 or make D3D8 emulation the Evolution architecture.
+### Step 04D — x64 deterministic simulation
 
-### Step 04G — x64 executable handoff
+- progressively add common/game-logic units to the x64 build graph;
+- define/enforce deterministic floating-point policy (no fast-math/reassociation);
+- establish golden replay CRC timelines and compare x86 oracle versus x64.
 
-- enable the full x64 runtime once deterministic/core/client dependencies are clean;
-- preserve the x86 reference executable in parallel;
-- hand rendering to the renderer-neutral boundary and then D3D12 milestones.
+### Step 04E — x64 network/replay validation
+
+- x64-to-x64 multiplayer command-stream validation;
+- identical logical CRC timelines;
+- replay compatibility where practical;
+- explicit protocol compatibility gates.
+
+### Step 04F — retire x86
+
+- remove i686 build/runtime support only after the golden replay/network gates pass;
+- retain fixed-width protocol/replay invariants, not obsolete Win32 object-layout assumptions;
+- x64 becomes the sole authoritative Evolution engine architecture.
 
 ## Current validation
 
-Host-native 64-bit GCC 14.2 and Clang 17 focused suites pass 7/7 tests, including the architecture guard. The same focused suite passes at `-O0`, `-O2`, and `-O3`; GCC ASan and UBSan are also green. The validation container does not provide a MinGW-w64 x86_64 compiler, so no Windows x64 result is claimed from this step. The canonical Windows x64 command is:
+Step 04B adds two focused regressions, bringing the focused graph to 9 tests. Host-native validation results for this repository are recorded in the worklog. The validation container does not provide a MinGW-w64 x86_64 compiler, so no Windows x64 result is claimed. The canonical Windows x64 command is:
 
 ```powershell
 cmake --preset mingw64-tests
@@ -93,4 +107,4 @@ cmake --build --preset mingw64-tests
 ctest --preset mingw64-tests --output-on-failure
 ```
 
-A successful `mingw64-tests` run is the Step 04A Windows gate. It is **not** the full x64 runtime gate.
+A successful `mingw64-tests` run is the Step 04B Windows x64-readiness gate. It is **not** the full x64 runtime gate.

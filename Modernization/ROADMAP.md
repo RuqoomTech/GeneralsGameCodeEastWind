@@ -78,22 +78,21 @@ Legacy D3D8 GPU timestamp work is intentionally deferred; native GPU timing belo
 
 The earlier standalone “x86 memory survival” milestone is folded into the migration: x86 remains the compatibility/reference executable, but new effort now removes the x86 ceiling directly.
 
-**Step 04A implemented:**
+**Steps 04A–04B implemented:**
 
 - shared MinGW-w64 toolchain discovery for i686 and x86_64;
 - `mingw64-tests` x64 readiness preset;
 - explicit `RTS_BUILD_X64_READINESS` guard;
 - 64-bit focused graph decoupled from legacy D3D8/input/audio link requirements;
-- architecture-width test proving pointer widening does not widen fixed wire IDs.
+- architecture-width test proving pointer widening does not widen fixed wire IDs;
+- **04B:** explicit command-packet byte capacity independent of `GameMessage` runtime layout, fixed command enum width, first pointer/userdata truncation fixes, and focused wire/pointer regression guards.
 
 Remaining staged slices:
 
-- **04B:** pointer/handle correctness and pointer-to-32-bit conversion removal;
-- **04C:** allocators/pools/alignment/container assumptions;
-- **04D:** serialization/network/native-layout separation;
-- **04E:** x64 common + deterministic game-logic compile lane;
-- **04F:** x64 client/platform dependency bring-up;
-- **04G:** full x64 executable handoff while retaining x86 reference coverage.
+- **04C:** deeper pointer-width conversion: allocators/pools/containers/platform/resource assumptions;
+- **04D:** x64 deterministic simulation and golden replay CRC timelines;
+- **04E:** x64 network/replay validation and protocol compatibility gates;
+- **04F:** retire frozen x86 after the x64 golden gates pass.
 
 See `STEP_04_X64_MIGRATION.md`.
 

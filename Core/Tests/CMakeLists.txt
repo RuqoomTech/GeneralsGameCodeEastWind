@@ -175,3 +175,33 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
 endif()
 add_test(NAME architecture_width_step04a COMMAND architecture_migration_test)
+
+
+# Step 04B wire/replay ABI guard. Runtime GameMessage layout may widen on x64,
+# but protocol/replay widths and the frozen legacy command-packet byte capacity
+# must remain architecture-independent.
+add_executable(wire_abi_step04b_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/WireAbiStep04BTest.cpp
+)
+target_include_directories(wire_abi_step04b_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+)
+target_link_libraries(wire_abi_step04b_test PRIVATE
+    core_config
+    core_utility_no_pch
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(wire_abi_step04b_test PRIVATE
+        -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
+    )
+endif()
+add_test(NAME wire_replay_abi_step04b COMMAND wire_abi_step04b_test)
+
+
+add_test(
+    NAME pointer_wire_source_audit_step04b
+    COMMAND ${CMAKE_COMMAND}
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/X64PointerWireAuditTest.cmake
+)
