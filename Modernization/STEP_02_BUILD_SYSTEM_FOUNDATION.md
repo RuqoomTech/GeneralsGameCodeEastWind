@@ -2,9 +2,9 @@
 
 ## Status
 
-**ACTIVE. Step 02A implemented locally; Windows MinGW sign-off is still required.**
+**ACTIVE. Step 02B implemented locally; Windows MinGW runtime sign-off is still required.**
 
-Step 01G remains the deterministic compatibility baseline. Step 02A changes build-system structure only; it does not change simulation, replay, CRC, Xfer, network, W3D/W3X runtime behavior, or renderer code.
+Step 01G remains the deterministic compatibility baseline. Steps 02A/02B change build-system structure only; they do not change simulation, replay, CRC, Xfer, network, W3D/W3X runtime behavior, or renderer code.
 
 ## Purpose
 
@@ -76,6 +76,40 @@ Debug symbol stripping now searches only the selected compiler/bin directory ins
 
 IDL include discovery prefers `${RTS_MINGW_ROOT}/include` on native MSYS2 MINGW32 (where `oaidl.idl` is installed), while retaining Wine include fallbacks for Linux cross-build hosts. `RTS_WIDL_INCLUDE_DIR` remains an explicit override. The focused `mingw32-tests` graph does not require WIDL at all.
 
+## Step 02B implementation
+
+### Real runtime generation blocker: MSVC-only PDB install rules
+
+The Generals and Zero Hour top-level install blocks previously emitted `$<TARGET_PDB_FILE:...>` for every installable executable whenever an install prefix was detected or supplied. CMake evaluates that generator expression during generation; with a GNU/MinGW linker it is unsupported, so `OPTIONAL` does not protect the configure/generate step. A minimal GNU reproduction fails with `TARGET_PDB_FILE is not supported by the target linker`.
+
+Step 02B centralizes runtime installation in `cmake/debug_strip.cmake` through `rts_install_runtime_target(target, destination)`. The helper:
+
+- always installs the runtime target;
+- emits the PDB rule only when `MSVC` is true;
+- emits a MinGW Release `.debug` install rule only when the existing GNU debug-strip tools were found;
+- rejects accidental calls for non-target names.
+
+The duplicated per-target PDB blocks in both `Generals/CMakeLists.txt` and `GeneralsMD/CMakeLists.txt` are replaced by this one shared policy. `Core/Tests` now registers `buildsystem_runtime_install_policy`, backed by `cmake/tests/RuntimeInstallPolicyTest.cmake`, which creates a tiny nested runtime target and exercises configure/build/install through the same helper. This is deliberately a build/install correction, not a runtime-code change.
+
+### WIDL is now a true preflight
+
+The full MinGW graph used to discover WIDL after ReactOS ATL had already been populated, then fail much later when EABrowser IDL generation was configured or built. Step 02B moves WIDL discovery and `rts_require_widl_for_runtime()` ahead of ReactOS ATL and all remaining runtime dependency population.
+
+For native Windows the preflight also validates the actual system IDL imports used in-tree: `oaidl.idl` and `ocidl.idl`. The canonical MSYS2 MINGW32 toolchain group supplies `widl.exe` through `mingw-w64-i686-tools` and the IDL files through `mingw-w64-i686-headers`. Explicit `RTS_WIDL_ROOT`, `WIDL_ROOT`, and `RTS_WIDL_INCLUDE_DIR` overrides remain supported. Linux-hosted Wine WIDL discovery remains less strict because Wine may provide built-in/default include search paths.
+
+The focused `mingw32-tests` graph intentionally continues to bypass WIDL and the runtime dependency graph.
+
+### Step 02B local validation
+
+- GCC 14.2 focused CMake/Ninja/CTest: 5/5 tests passed.
+- Clang 17 focused CMake/Ninja/CTest: 5/5 tests passed.
+- Lightweight determinism reran successfully under GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`; GCC ASan and UBSan also passed.
+- Generic host-GNU `rts_install_runtime_target()` configure/build/install probe passed.
+- Synthetic GNU execution of the MinGW Release debug-strip/install branch produced and installed both the executable and `.debug` sidecar.
+- The old unconditional GNU `$<TARGET_PDB_FILE:...>` pattern was reproduced separately and failed at CMake generation exactly as expected.
+
+No i686 MinGW cross compiler is installed in the execution environment used for Step 02B, and external package installation is unavailable there. Therefore the real Win32 `z_generals` compiler/linker frontier still requires Windows validation; Step 02B is not marked Windows-verified.
+
 ## Local regression gate
 
 A host-native lightweight graph can be exercised without downloading the runtime dependency set:
@@ -99,7 +133,7 @@ This validates build-system wiring plus W3X A0/A1/A2 and the lightweight Step 01
 - Standalone W3X A0/A1/A2 passed with both GCC and Clang.
 - Preset/test/workflow JSON was accepted by CMake/CTest listing commands.
 
-## Windows validation required for Step 02A sign-off
+## Windows validation required for Step 02B sign-off
 
 From PowerShell in an MSYS2 MINGW32-capable environment:
 
@@ -119,7 +153,7 @@ cmake --build --preset mingw32-release --target z_generals
 
 `mingw32-debug` and `mingw32-profile` are equivalent configure/build entry points for those configurations.
 
-Do not mark Step 02A Windows-verified until the actual Windows output is supplied. In particular, the expected Step 01 final line must still be:
+Do not mark Step 02B Windows-verified until the actual Windows output is supplied. In particular, the expected Step 01 final line must still be:
 
 ```text
 Step 01 determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.
@@ -127,7 +161,7 @@ Step 01 determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot
 
 ## Remaining Step 02 work
 
-Step 02A intentionally does not attempt a broad legacy CMake rewrite. Remaining work after Windows feedback includes fixing concrete compile/link blockers in the full `z_generals` MinGW build, reviewing any remaining target-global dependency leakage, adding/adjusting CI only after the canonical Windows commands are proven, and then deciding whether a secondary Clang preset is mature enough to promote.
+Step 02A intentionally does not attempt a broad legacy CMake rewrite. Remaining work after Windows feedback is intentionally concrete: take the first compiler/linker failure from the full `z_generals` MinGW build, fix it without weakening the Step 01 gate, then repeat until the canonical runtime target links. After that, review remaining target-global dependency leakage and CI, and only then decide whether a secondary Clang preset is mature enough to promote.
 
 ## Non-goals
 
