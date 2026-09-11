@@ -68,10 +68,20 @@
 
 #endif
 // Step 03 performance telemetry. This remains independent of both the legacy
-// profiler and Tracy so the renderer can publish one stable set of counters to
-// either CSV capture or optional profiler plots.
+// profiler and Tracy so the engine can publish one stable observational sample
+// to either CSV capture or optional profiler plots. None of these values may
+// feed simulation, replay, networking, CRC, frame pacing, or gameplay decisions.
 namespace PerformanceTelemetry
 {
+	enum UpdatePhase
+	{
+		UPDATE_PHASE_CLIENT = 0,
+		UPDATE_PHASE_MESSAGE_STREAM,
+		UPDATE_PHASE_NETWORK,
+		UPDATE_PHASE_LOGIC,
+		UPDATE_PHASE_COUNT
+	};
+
 	struct RenderFrameCounters
 	{
 		unsigned int drawCalls;
@@ -94,12 +104,22 @@ namespace PerformanceTelemetry
 	};
 
 	// Explicit capture is useful for tests/tools. Runtime profile builds normally
-	// use RTS_PERF_CAPTURE and let Begin_Render_Frame initialize lazily.
+	// use RTS_PERF_CAPTURE and let the first update/render frame initialize lazily.
 	bool Start_Capture(const char *path);
 	bool Start_Capture_From_Environment();
 	void Stop_Capture();
 	bool Is_Capturing();
 
+	// Step 03B update-phase timing. Begin/End_Update_Frame bracket one
+	// GameEngine::update() call. Phase timing is additive within that frame.
+	void Begin_Update_Frame(unsigned int logicFrame);
+	void Begin_Update_Phase(UpdatePhase phase);
+	unsigned long End_Update_Phase(UpdatePhase phase);
+	void Record_Drawable_Visibility(unsigned int total, unsigned int visible, unsigned int shrouded);
+	unsigned long End_Update_Frame();
+
+	// Primary WW3D render bracket. When an update frame is active these values are
+	// buffered into that row; standalone renderer/tests still emit a render-only row.
 	void Begin_Render_Frame(unsigned int renderFrame, unsigned int syncTimeMs);
 	unsigned long End_Render_Frame(const RenderFrameCounters &counters);
 }

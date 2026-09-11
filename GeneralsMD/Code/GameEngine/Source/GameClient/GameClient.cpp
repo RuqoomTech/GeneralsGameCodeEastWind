@@ -77,6 +77,7 @@
 #include "GameClient/Snow.h"
 #include "GameClient/TerrainVisual.h"
 #include "GameClient/View.h"
+#include <rts/profile.h>
 #include "GameClient/VideoPlayer.h"
 #include "GameClient/WindowXlat.h"
 #include "GameLogic/GameLogic.h"
@@ -687,6 +688,31 @@ void GameClient::update()
 			draw = next;
 		}
 	}
+
+#if defined(RTS_PERF_TELEMETRY)
+	// Profile-build visibility snapshot. This intentionally stays outside gameplay
+	// decisions and is not a frustum/occlusion result: "visible" means at least one
+	// DrawModule currently reports visible, while shrouded is the existing drawable
+	// shroud state. A second lightweight traversal keeps the counters valid even when
+	// time is frozen and the normal drawable-update loop is skipped.
+	unsigned int telemetryDrawableTotal = 0;
+	unsigned int telemetryDrawableVisible = 0;
+	unsigned int telemetryDrawableShrouded = 0;
+	for (Drawable *telemetryDraw = firstDrawable(); telemetryDraw != nullptr; telemetryDraw = telemetryDraw->getNextDrawable())
+	{
+		++telemetryDrawableTotal;
+		if (telemetryDraw->getFullyObscuredByShroud())
+		{
+			++telemetryDrawableShrouded;
+		}
+		else if (telemetryDraw->isVisible())
+		{
+			++telemetryDrawableVisible;
+		}
+	}
+	PerformanceTelemetry::Record_Drawable_Visibility(
+		telemetryDrawableTotal, telemetryDrawableVisible, telemetryDrawableShrouded);
+#endif
 
 #if defined(RTS_DEBUG)
 	// need to draw the first frame, then don't draw again until TheGlobalData->m_noDraw

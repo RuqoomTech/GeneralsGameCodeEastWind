@@ -91,7 +91,9 @@ binaries instead of re-compiling everything. Pull requests from forks restore fr
 
 ### Profiling
 
-The canonical MinGW profile preset is `mingw32-profile`. Step 03A enables low-overhead render telemetry in that build; set `RTS_PERF_CAPTURE=<path.csv>` at runtime to capture versioned per-frame CPU/render/resource counters. `RTS_PERF_CAPTURE=1` writes `RTSPerfCapture.csv` in the process working directory. See `Modernization/STEP_03_PERFORMANCE_TELEMETRY.md` for the schema and benchmark guidance.
+The canonical MinGW profile preset is `mingw32-profile`. Completed Step 03 enables observational schema-v2 update/render/visibility/resource telemetry in that build; set `RTS_PERF_CAPTURE=<path.csv>` at runtime and summarize it with `python scripts/perf-summary.py <path.csv>`. `RTS_PERF_CAPTURE=1` writes `RTSPerfCapture.csv` in the process working directory. See `Modernization/STEP_03_PERFORMANCE_TELEMETRY.md`.
+
+The staged x64 migration starts with the focused `mingw64-tests` preset. It validates fixed-width compatibility and 64-bit build readiness without pretending the legacy D3D8 runtime is already x64. See `Modernization/STEP_04_X64_MIGRATION.md`.
 
 Tracy profiling is also supported by the existing `win32-profile` path and can be enabled independently for other builds through `RTS_BUILD_OPTION_PROFILE_TRACY`. Use `tracy-profiler.exe` from [Tracy v0.13.1](https://github.com/wolfpld/tracy/releases/tag/v0.13.1). If you get an error when using Tracy, try removing `dbghelp.dll` from the game binary directory.
 

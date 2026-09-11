@@ -10,9 +10,17 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 02 | MinGW-w64 GCC + Ninja canonical build | DONE* | User reports Step 02B Windows build path working; formal console transcript not archived in this tree |
 | 02A | Canonical presets / focused tests / dependency scoping | DONE* | Accepted with Step 02; formal Step 02 Windows transcript not archived |
 | 02B | Runtime configure/install hardening | DONE* | User reports real Windows path working; output transcript not archived |
-| 03 | HD-mod performance telemetry | ACTIVE | Step 03A stable render-frame capture + profile-build validation |
-| 03A | Render-frame telemetry / CSV schema | VERIFY | 6/6 local focused tests; Windows `mingw32-profile` capture required |
-| 04 | x86 memory survival | PLANNED | Better headroom/diagnostics before x64 |
+| 03 | HD-mod performance telemetry | DONE | Schema v2 update/render phases + visibility/resource counters + summary tool |
+| 03A | Render-frame telemetry / CSV schema v1 | DONE | Folded into completed Step 03 schema v2 |
+| 03B | Update-phase / visibility telemetry + capture summary | DONE | Local GCC/Clang focused regression; observational only |
+| 04 | x64 engine migration | ACTIVE | Staged port with x86 compatibility/reference retained |
+| 04A | x64 readiness build lane | DONE* | `mingw64-tests`, shared MinGW toolchain, architecture-width guard; Windows transcript pending |
+| 04B | Pointer/handle correctness | NEXT | Remove/trap address truncation without changing fixed wire IDs |
+| 04C | Allocator/pool/container x64 safety | PLANNED | Pointer-sized metadata/alignment with x86 parity |
+| 04D | Serialization/network/native-layout separation | PLANNED | Preserve Step 01 byte fixtures on x64 |
+| 04E | x64 common + game-logic compile lane | PLANNED | Deterministic core builds without renderer dependencies |
+| 04F | x64 client/platform bring-up | PLANNED | Win32/input/audio/file dependencies |
+| 04G | Full x64 executable handoff | PLANNED | Evolution runtime executable while x86 remains reference |
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |
 | W3X-A1 | W3X document-envelope probe | DONE | Root/namespace/SAGE envelope recognition |
 | W3X-A2 | W3X top-level child-element discovery | DONE | Direct-child classification without content decoding |
@@ -22,7 +30,7 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 07 | High-poly / 32-bit geometry | PLANNED | >65k-class geometry path where needed |
 | 08 | Instancing/batching expansion | PLANNED | Reduce repeated-object CPU/draw cost |
 | 09 | LOD/visibility modernization | PLANNED | Scalable dense scenes |
-| 10 | x64 Evolution runtime | PLANNED | Break 32-bit memory ceiling safely |
+| 10 | x64 runtime stabilization | PLANNED | Heavy-mod/replay/network soak after Step 04 bring-up |
 | 11 | Renderer architecture boundary completion | PLANNED | D3D12-ready renderer-neutral submission |
 | 12 | D3D12 foundation | PLANNED | Device/swapchain/commands/fences |
 | 13 | D3D12 resource system | PLANNED | Buffers/textures/descriptors/barriers |

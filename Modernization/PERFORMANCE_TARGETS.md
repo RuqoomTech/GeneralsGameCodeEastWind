@@ -25,13 +25,13 @@ Track at least:
 - vertex/index buffer memory;
 - render-target/depth memory.
 
-## Step 03A capture baseline
+## Step 03 capture baseline
 
-The first repository-owned repeatable capture is CSV schema v1 from `PerformanceTelemetry`. Use a `mingw32-profile` build and set `RTS_PERF_CAPTURE=<file.csv>`. The initial fields cover the primary WW3D render CPU bracket, render/sync frame identity, draw/geometry totals, texture/resource counters, and WW3D allocation/free operation counts.
+The repository-owned capture is CSV schema v2 from `PerformanceTelemetry`. Use a `mingw32-profile` build and set `RTS_PERF_CAPTURE=<file.csv>`. Each engine-update sample carries update/client/message/network/logic CPU timing, the WW3D render CPU bracket when a render occurred, render/sync/logic frame identity, drawable total/visible/shrouded visibility-proxy counts, draw/geometry totals, texture/resource counters, and WW3D allocation/free operation counts.
 
-This capture is intentionally narrower than the final list above. It establishes a stable data seam before adding GPU timestamps, full update/scene phases, visibility/culling metrics, resident/peak process memory, and asset hotspot tables. Texture accounting is more expensive while capture is active, so compare benchmark runs only when capture configuration is identical.
+Use `scripts/perf-summary.py <capture.csv>` for dependency-free mean/p50/p95/p99/max summaries, or add `--json` for machine-readable output. This schema is the completed Step 03 CPU/render baseline. Native GPU timestamps are intentionally deferred to the D3D12 renderer rather than expanded inside the temporary D3D8 path; resident/process memory accounting belongs with the x64 migration where address-space pressure is being removed.
 
-For before/after work, prefer a fixed replay or scripted scene and preserve the CSV together with build/compiler/hardware metadata. Do not use render timing to alter deterministic simulation behavior.
+For before/after work, prefer a fixed replay or scripted scene and preserve the CSV together with build/compiler/hardware metadata. Capture overhead must be held constant between compared runs, and no timing value may feed deterministic simulation behavior.
 
 ## Heavy-mod asset metrics
 

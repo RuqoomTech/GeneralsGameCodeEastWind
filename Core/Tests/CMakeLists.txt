@@ -154,3 +154,24 @@ if(CMAKE_GENERATOR STREQUAL "Ninja")
             -P ${CMAKE_SOURCE_DIR}/cmake/tests/RuntimeInstallPolicyTest.cmake
     )
 endif()
+
+# Step 04A architecture-width migration guard. This intentionally runs on both
+# the x86 compatibility lane and the new x64 readiness lane: pointers may widen,
+# but fixed wire/serialization types and IDs must not do so implicitly.
+add_executable(architecture_migration_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/ArchitectureMigrationTest.cpp
+)
+target_include_directories(architecture_migration_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+)
+target_link_libraries(architecture_migration_test PRIVATE
+    core_config
+    core_utility_no_pch
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(architecture_migration_test PRIVATE
+        -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
+    )
+endif()
+add_test(NAME architecture_width_step04a COMMAND architecture_migration_test)

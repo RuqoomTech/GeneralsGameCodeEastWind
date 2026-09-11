@@ -56,21 +56,46 @@ Step 02B advances the real runtime configure/install path without broad source m
 - moved full-runtime WIDL validation ahead of ReactOS ATL/runtime FetchContent population;
 - added native-Windows preflight for the `oaidl.idl` / `ocidl.idl` imports actually used by the EABrowser IDLs.
 
-The user subsequently reported that the Step 02B Windows workflow builds successfully (with expected legacy warnings). No Windows console transcript was supplied for archival, so this tree records user acceptance without claiming a new formally captured Windows test result. The modernization program now advances to Step 03; warning cleanup remains opportunistic and must not hide diagnostics from project-owned code.
+The user subsequently reported that the Step 02B Windows workflow builds successfully (with expected legacy warnings). No Windows console transcript was supplied for archival, so this tree records user acceptance without claiming a new formally captured Windows test result. Step 03 was subsequently completed and the modernization program has advanced to the staged Step 04 x64 migration; warning cleanup remains opportunistic and must not hide diagnostics from project-owned code.
 
 ## Phase 1 — Measure and stabilize the current x86 runtime
 
-### Step 03 — HD Mod Performance Foundation — ACTIVE
+### Step 03 — HD Mod Performance Foundation — DONE
 
-Add CPU/GPU timing where available, draw/geometry counters, memory/resource accounting, visibility data, asset hotspot reports, and repeatable benchmark captures.
+Completed measurement foundation:
 
-**Step 03A implemented:** reuse the existing profile + `Debug_Statistics` seams to produce a versioned per-render-frame CSV capture from the canonical profile build. The first schema records WW3D render CPU microseconds, synchronized time, draw/triangle/vertex counters, texture/resource counters, and WW3D memory allocation/free counts. The same sample can publish Tracy plots when Tracy is enabled. Normal Release rendering does not execute the Step 03A hook.
+- versioned per-engine-update CSV capture;
+- complete update/client/message/network/logic CPU phase timing;
+- WW3D render CPU timing and draw/geometry/texture/resource counters;
+- drawable total/visible/shrouded visibility proxy;
+- Tracy plots from the same sample;
+- dependency-free capture summary tool with percentile output;
+- focused schema/regression coverage.
 
-Step 03A is a measurement foundation, not the end of Step 03: GPU timing, full client/update phases, visibility/culling telemetry, process memory, asset hotspots, and benchmark automation remain.
+Legacy D3D8 GPU timestamp work is intentionally deferred; native GPU timing belongs to the D3D12 command-queue implementation rather than a temporary renderer path. Memory/resident accounting moves with the x64 migration.
 
-### Step 04 — x86 Memory Survival
+### Step 04 — x64 Engine Migration — ACTIVE
 
-Improve memory diagnostics, Large Address Aware strategy where appropriate, resource accounting, graceful failure, and short-term HD-mod stability while x64 is prepared.
+The earlier standalone “x86 memory survival” milestone is folded into the migration: x86 remains the compatibility/reference executable, but new effort now removes the x86 ceiling directly.
+
+**Step 04A implemented:**
+
+- shared MinGW-w64 toolchain discovery for i686 and x86_64;
+- `mingw64-tests` x64 readiness preset;
+- explicit `RTS_BUILD_X64_READINESS` guard;
+- 64-bit focused graph decoupled from legacy D3D8/input/audio link requirements;
+- architecture-width test proving pointer widening does not widen fixed wire IDs.
+
+Remaining staged slices:
+
+- **04B:** pointer/handle correctness and pointer-to-32-bit conversion removal;
+- **04C:** allocators/pools/alignment/container assumptions;
+- **04D:** serialization/network/native-layout separation;
+- **04E:** x64 common + deterministic game-logic compile lane;
+- **04F:** x64 client/platform dependency bring-up;
+- **04G:** full x64 executable handoff while retaining x86 reference coverage.
+
+See `STEP_04_X64_MIGRATION.md`.
 
 ## Phase 2 — Modern asset foundation
 
@@ -120,21 +145,19 @@ Expand repeated-asset batching/instancing for units, buildings, props, vegetatio
 
 Strengthen geometry LOD, shadow LOD, distance/material choices, frustum/occlusion strategy as appropriate, and profiler warnings for expensive assets.
 
-## Phase 3 — Break the x86 ceiling
+## Phase 3 — x64 stabilization / modern client convergence
 
-### Step 10 — x64 Evolution Runtime
+### Step 10 — x64 Runtime Stabilization
 
-Audit and port deliberately:
+Step 10 no longer begins the x64 port; that work moved forward into Step 04 by project decision on 2026-09-11. Step 10 is reserved for stabilization after the intervening asset/geometry/visibility work has exercised the 64-bit engine:
 
-- pointers/handles;
-- pools/allocators;
-- serialization widths;
-- replay/network layouts;
-- file structures;
-- Win32 assumptions;
-- external libraries/tools.
+- sustained heavy-mod memory/load testing;
+- replay/network compatibility soak;
+- allocator/resource lifetime diagnostics;
+- removal of temporary x64 migration guards;
+- readiness gate before the renderer boundary becomes the primary runtime path.
 
-The compatibility/reference x86 build remains available while this stabilizes.
+The compatibility/reference x86 build remains available until this gate is passed.
 
 ## Phase 4 — Complete renderer separation
 
