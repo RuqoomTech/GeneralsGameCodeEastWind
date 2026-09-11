@@ -107,3 +107,30 @@ add_custom_target(z_determinismcheck
     DEPENDS z_determinismtest
     USES_TERMINAL
 )
+
+# Step 02B build-system regression: exercise the shared runtime install policy
+# in a tiny nested project. This catches unsupported linker-specific generator
+# expressions (notably TARGET_PDB_FILE on GNU/MinGW) during CMake generation.
+# Keep it on Ninja, the canonical modernization generator, so nested-generator
+# assumptions remain explicit and predictable.
+if(CMAKE_GENERATOR STREQUAL "Ninja")
+    set(_rts_runtime_install_policy_args
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DRTS_TEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/runtime-install-policy
+        -DRTS_TEST_GENERATOR=${CMAKE_GENERATOR}
+        -DRTS_TEST_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DRTS_TEST_EXPECT_MINGW_DEBUG_SIDECAR=${MINGW}
+    )
+    if(CMAKE_TOOLCHAIN_FILE)
+        list(APPEND _rts_runtime_install_policy_args
+            -DRTS_TEST_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+        )
+    endif()
+
+    add_test(
+        NAME buildsystem_runtime_install_policy
+        COMMAND ${CMAKE_COMMAND}
+            ${_rts_runtime_install_policy_args}
+            -P ${CMAKE_SOURCE_DIR}/cmake/tests/RuntimeInstallPolicyTest.cmake
+    )
+endif()

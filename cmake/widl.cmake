@@ -47,10 +47,9 @@ if(WIDL_EXECUTABLE)
     set(IDL_COMPILER_FOUND TRUE)
 else()
     set(IDL_COMPILER_FOUND FALSE)
-    message(WARNING
-        "widl was not found. The full MinGW runtime needs it for EABrowser IDL generation. "
-        "On MSYS2 MINGW32 install mingw-w64-i686-tools (also part of the i686 toolchain group), "
-        "or set RTS_WIDL_ROOT/WIDL_ROOT. The mingw32-tests preset does not require WIDL.")
+    message(STATUS
+        "widl was not found. Focused tests can continue, but a full MinGW runtime "
+        "will fail its early WIDL preflight.")
 endif()
 
 if(RTS_WIDL_INCLUDE_DIR)
@@ -100,6 +99,38 @@ elseif(IDL_COMPILER_FOUND)
         "widl was found but the Windows IDL headers were not located. Set RTS_WIDL_INCLUDE_DIR "
         "to the directory containing oaidl.idl if IDL generation fails.")
 endif()
+
+# Fail before dependency population when a real MinGW runtime has requested
+# browser/COM code but no IDL compiler is available. Focused modernization
+# tests intentionally skip this requirement.
+function(rts_require_widl_for_runtime)
+    if(NOT MINGW)
+        return()
+    endif()
+
+    if(NOT IDL_COMPILER_FOUND)
+        message(FATAL_ERROR
+            "The MinGW runtime build requires WIDL for EABrowser IDL generation. "
+            "On MSYS2 MINGW32 install mingw-w64-i686-tools (included by the "
+            "mingw-w64-i686-toolchain group), or set RTS_WIDL_ROOT/WIDL_ROOT. "
+            "No PATH override is required by the canonical presets.")
+    endif()
+
+    # The in-tree BrowserEngine/BrowserDispatch IDLs import oaidl.idl and
+    # ocidl.idl. Native MSYS2 installs both under /mingw32/include as part of
+    # mingw-w64-i686-headers. Fail before FetchContent if that canonical header
+    # set is incomplete instead of waiting for a later custom-command failure.
+    if(CMAKE_HOST_WIN32)
+        if(NOT _rts_widl_system_include_dir
+           OR NOT EXISTS "${_rts_widl_system_include_dir}/oaidl.idl"
+           OR NOT EXISTS "${_rts_widl_system_include_dir}/ocidl.idl")
+            message(FATAL_ERROR
+                "WIDL was found, but the required Windows IDL headers oaidl.idl/ocidl.idl "
+                "were not found. On MSYS2 MINGW32 install mingw-w64-i686-headers "
+                "(included by mingw-w64-i686-toolchain), or set RTS_WIDL_INCLUDE_DIR.")
+        endif()
+    endif()
+endfunction()
 
 function(add_idl_file target_name idl_file)
     if(NOT IDL_COMPILER_FOUND)

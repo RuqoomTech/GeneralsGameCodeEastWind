@@ -43,6 +43,18 @@ Native Windows MinGW defaults to the MSYS2 MINGW32 root. `RTS_MINGW_ROOT` can ov
 
 WIDL is normally discovered from the selected MSYS2 MINGW32 root (`mingw-w64-i686-tools`, included in the i686 toolchain group). `RTS_WIDL_ROOT`/`WIDL_ROOT` can override the tool root, and `RTS_WIDL_INCLUDE_DIR` can override the directory containing `oaidl.idl`. Linux cross-host Wine include layouts remain supported. The focused test preset intentionally does not require WIDL.
 
+## Runtime preflight and install artifacts
+
+Step 02B moves mandatory full-runtime WIDL discovery ahead of ReactOS ATL and the other runtime dependency population. The focused `mingw32-tests` graph still skips WIDL entirely. For a real MinGW runtime, missing `widl.exe` now fails immediately with the MINGW32 package/override guidance; on native Windows the preflight also checks for `oaidl.idl` and `ocidl.idl`, which are imported by the in-tree EABrowser IDLs.
+
+Installable runtime targets use `rts_install_runtime_target()` from `cmake/debug_strip.cmake`. This keeps compiler-specific debug artifacts out of game-specific CMakeLists:
+
+- MSVC: install the target plus its PDB when present;
+- MinGW Release: install the target plus the `.debug` sidecar created by `add_debug_strip_target()` when GNU binutils are available;
+- other GNU configurations: install the runtime without ever evaluating the MSVC-only `TARGET_PDB_FILE` generator expression.
+
+This specifically avoids the CMake generation failure that occurs when an installed game path causes an unconditional PDB rule to be evaluated with a GNU/MinGW linker. `buildsystem_runtime_install_policy` exercises this policy in a tiny nested CMake/Ninja project as part of the focused modernization test graph.
+
 ## Required Windows commands
 
 Focused regression:

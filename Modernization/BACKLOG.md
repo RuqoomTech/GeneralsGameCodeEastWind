@@ -7,8 +7,9 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 00 | Repository modernization baseline/docs | DONE | Docs/state stored in authoritative tree |
 | F0 | Existing `IRenderBackend` / `DX8Backend` seam | PARTIAL | Already present upstream; incomplete abstraction |
 | 01 | Determinism / CRC / Xfer characterization | DONE | Windows MinGW-w64 i686 / GCC 16.2 + Ninja `z_determinismcheck` passed on 2026-09-10 |
-| 02 | MinGW-w64 GCC + Ninja canonical build | ACTIVE | Step 02A build foundation implemented; verify Win32 tests + real `z_generals` build |
-| 02A | Canonical presets / focused tests / dependency scoping | VERIFY | Local GCC/Clang gates + Windows `mingw32-tests` and `mingw32-release` validation |
+| 02 | MinGW-w64 GCC + Ninja canonical build | ACTIVE | Step 02A/02B foundation implemented; verify Win32 tests + advance the real `z_generals` build |
+| 02A | Canonical presets / focused tests / dependency scoping | VERIFY | Local GCC/Clang gates + Windows `mingw32-tests` validation |
+| 02B | Runtime configure/install hardening | VERIFY | No GNU PDB genex; early WIDL preflight; Windows `mingw32-release` + `z_generals` validation |
 | 03 | HD-mod performance telemetry | PLANNED | Repeatable CPU/GPU/memory metrics |
 | 04 | x86 memory survival | PLANNED | Better headroom/diagnostics before x64 |
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |

@@ -47,8 +47,14 @@ include(FetchContent)
 include(cmake/config.cmake)
 
 # MinGW-w64 compatibility settings are target-scoped through core_config.
+# For a real runtime build, preflight WIDL before populating any external
+# dependencies so a missing MSYS2 tool fails immediately and diagnostically.
 if(MINGW)
     include(cmake/mingw.cmake)
+    if(NOT RTS_BUILD_TESTS_ONLY)
+        include(cmake/widl.cmake)
+        rts_require_widl_for_runtime()
+    endif()
     include(cmake/reactos-atl.cmake)
 endif()
 
@@ -87,17 +93,6 @@ endif()
 if(NOT RTS_BUILD_TESTS_ONLY)
     # Debug symbol stripping is only relevant to installable MinGW binaries.
     include(cmake/debug_strip.cmake)
-
-    add_subdirectory(Dependencies/Bink)
-    add_subdirectory(Dependencies/Miles)
-
-    add_subdirectory(resources)
-
-    # WIDL is a runtime/library dependency, not a requirement for the focused
-    # characterization tests.
-    if(MINGW)
-        include(cmake/widl.cmake)
-    endif()
 
     # Find/Add build dependencies and stubs shared by the real game targets.
     if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND ${CMAKE_SIZEOF_VOID_P} EQUAL 4)

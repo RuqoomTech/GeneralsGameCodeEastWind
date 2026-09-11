@@ -40,48 +40,22 @@ if("${CMAKE_HOST_SYSTEM}" MATCHES "Windows" AND "${CMAKE_SYSTEM}" MATCHES "Windo
 endif()
 
 if(RTS_INSTALL_PREFIX_ZEROHOUR)
-    install(TARGETS z_generals RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}")
-    install(FILES $<TARGET_PDB_FILE:z_generals> DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}" OPTIONAL)
+    rts_install_runtime_target(z_generals "${RTS_INSTALL_PREFIX_ZEROHOUR}")
 
-    if(TARGET z_worldbuilder)
-        install(TARGETS z_worldbuilder RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}")
-        install(FILES $<TARGET_PDB_FILE:z_worldbuilder> DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}" OPTIONAL)
-    endif()
-
-    if(TARGET core_particleeditor)
-        install(TARGETS core_particleeditor RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}")
-        install(FILES $<TARGET_PDB_FILE:core_particleeditor> DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}" OPTIONAL)
-    endif()
-
-    if(TARGET core_debugwindow)
-        install(TARGETS core_debugwindow RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}")
-        install(FILES $<TARGET_PDB_FILE:core_debugwindow> DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}" OPTIONAL)
-    endif()
-
-    if(TARGET z_guiedit)
-        install(TARGETS z_guiedit RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}")
-        install(FILES $<TARGET_PDB_FILE:z_guiedit> DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}" OPTIONAL)
-    endif()
-
-    if(TARGET z_imagepacker)
-        install(TARGETS z_imagepacker RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}")
-        install(FILES $<TARGET_PDB_FILE:z_imagepacker> DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}" OPTIONAL)
-    endif()
-
-    if(TARGET z_mapcachebuilder)
-        install(TARGETS z_mapcachebuilder RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}")
-        install(FILES $<TARGET_PDB_FILE:z_mapcachebuilder> DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}" OPTIONAL)
-    endif()
-
-    if(TARGET z_w3dview)
-        install(TARGETS z_w3dview RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}")
-        install(FILES $<TARGET_PDB_FILE:z_w3dview> DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}" OPTIONAL)
-    endif()
-
-    if(TARGET z_wdump)
-        install(TARGETS z_wdump RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}")
-        install(FILES $<TARGET_PDB_FILE:z_wdump> DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}" OPTIONAL)
-    endif()
+    foreach(_rts_install_target IN ITEMS
+        z_worldbuilder
+        core_particleeditor
+        core_debugwindow
+        z_guiedit
+        z_imagepacker
+        z_mapcachebuilder
+        z_w3dview
+        z_wdump
+    )
+        if(TARGET ${_rts_install_target})
+            rts_install_runtime_target(${_rts_install_target} "${RTS_INSTALL_PREFIX_ZEROHOUR}")
+        endif()
+    endforeach()
 else()
     message(STATUS "Zero Hour install path not found. Registry keys for 'Command and Conquer Generals Zero Hour' not found. "
                    "Zero Hour targets will be built, but not installed. "

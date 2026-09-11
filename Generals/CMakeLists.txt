@@ -40,43 +40,21 @@ if("${CMAKE_HOST_SYSTEM}" MATCHES "Windows" AND "${CMAKE_SYSTEM}" MATCHES "Windo
 endif()
 
 if(RTS_INSTALL_PREFIX_GENERALS)
-    install(TARGETS g_generals RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}")
-    install(FILES $<TARGET_PDB_FILE:g_generals> DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}" OPTIONAL)
+    rts_install_runtime_target(g_generals "${RTS_INSTALL_PREFIX_GENERALS}")
 
-    if(TARGET g_worldbuilder)
-        install(TARGETS g_worldbuilder RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}")
-        install(FILES $<TARGET_PDB_FILE:g_worldbuilder> DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}" OPTIONAL)
-    endif()
-
-    if(TARGET core_particleeditor)
-        install(TARGETS core_particleeditor RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}")
-        install(FILES $<TARGET_PDB_FILE:core_particleeditor> DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}" OPTIONAL)
-    endif()
-
-    if(TARGET core_debugwindow)
-        install(TARGETS core_debugwindow RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}")
-        install(FILES $<TARGET_PDB_FILE:core_debugwindow> DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}" OPTIONAL)
-    endif()
-
-    if(TARGET g_guiedit)
-        install(TARGETS g_guiedit RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}")
-        install(FILES $<TARGET_PDB_FILE:g_guiedit> DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}" OPTIONAL)
-    endif()
-
-    if(TARGET g_imagepacker)
-        install(TARGETS g_imagepacker RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}")
-        install(FILES $<TARGET_PDB_FILE:g_imagepacker> DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}" OPTIONAL)
-    endif()
-
-    if(TARGET g_mapcachebuilder)
-        install(TARGETS g_mapcachebuilder RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}")
-        install(FILES $<TARGET_PDB_FILE:g_mapcachebuilder> DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}" OPTIONAL)
-    endif()
-
-    if(TARGET g_w3dview)
-        install(TARGETS g_w3dview RUNTIME DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}")
-        install(FILES $<TARGET_PDB_FILE:g_w3dview> DESTINATION "${RTS_INSTALL_PREFIX_GENERALS}" OPTIONAL)
-    endif()
+    foreach(_rts_install_target IN ITEMS
+        g_worldbuilder
+        core_particleeditor
+        core_debugwindow
+        g_guiedit
+        g_imagepacker
+        g_mapcachebuilder
+        g_w3dview
+    )
+        if(TARGET ${_rts_install_target})
+            rts_install_runtime_target(${_rts_install_target} "${RTS_INSTALL_PREFIX_GENERALS}")
+        endif()
+    endforeach()
 else()
     message(STATUS "Generals install path not found. Registry keys for 'Generals' not found. "
                    "Generals targets will be built, but not installed. "
