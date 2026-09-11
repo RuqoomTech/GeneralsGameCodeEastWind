@@ -93,4 +93,4 @@ A roadmap step is not complete merely because code compiles. A completed step mu
 
 ## Step 04 — x64 migration
 
-Steps 04A-04C now provide the x64 readiness lane, architecture-independent wire-width guards, native allocator/pointer substrate conversion, and a one-command Windows dependency bootstrap. The frozen i686 build is a temporary deterministic oracle only; future multiplayer compatibility is Evolution-to-Evolution, not retail x86. See `Modernization/STEP_04_X64_MIGRATION.md`.
+Steps 04A-04D now provide the x64 readiness lane, architecture-independent wire-width guards, native allocator/pointer substrate conversion, the one-command Windows dependency bootstrap, and the first deterministic/headless x64 CRC timeline gate. The frozen i686 build is a temporary deterministic oracle only; future multiplayer compatibility is Evolution-to-Evolution, not retail x86. See `Modernization/STEP_04_X64_MIGRATION.md`.

@@ -18,13 +18,18 @@ if(MINGW)
         if(NOT RTS_BUILD_X64_READINESS)
             message(FATAL_ERROR
                 "A 64-bit MinGW compiler was selected without the staged x64 readiness option. "
-                "Use preset 'mingw64-tests' while the runtime is being ported deliberately.")
+                "Use preset 'mingw64-tests' while the deterministic/headless runtime is being ported deliberately.")
+        endif()
+        if(NOT RTS_BUILD_X64_HEADLESS_CORE)
+            message(FATAL_ERROR
+                "A 64-bit MinGW compiler was selected without the Step 04D headless-core option. "
+                "Use preset 'mingw64-tests'.")
         endif()
         if(NOT RTS_BUILD_TESTS_ONLY)
             message(FATAL_ERROR
-                "The Step 04 x64 lane currently supports the focused readiness/test graph only. "
+                "The Step 04 x64 lane currently supports the focused deterministic/headless test graph only. "
                 "Use preset 'mingw64-tests'. The full x64 runtime will be enabled subsystem-by-subsystem "
-                "after 32-bit ABI/wire assumptions and the legacy D3D8 platform boundary are isolated.")
+                "without opening the legacy D3D8 platform boundary.")
         endif()
     else()
         message(FATAL_ERROR "Unsupported MinGW pointer width: ${CMAKE_SIZEOF_VOID_P}")

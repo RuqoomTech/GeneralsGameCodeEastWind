@@ -254,3 +254,67 @@ add_test(
         -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
         -P ${CMAKE_SOURCE_DIR}/cmake/tests/X64RuntimePointerAuditStep04CTest.cmake
 )
+
+
+# Step 04D deterministic/headless core gate. This is deliberately renderer-free:
+# it compiles the production GameLogic RNG and the shared production FPU policy,
+# executes a 12k-frame fixed-width micro-simulation, and verifies checkpoint CRCs.
+add_executable(headless_determinism_step04d_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/HeadlessDeterminismStep04DTest.cpp
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/RandomValue.cpp
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/GameLogic/System/FPUControl.cpp
+)
+target_compile_definitions(headless_determinism_step04d_test PRIVATE
+    RTS_STANDALONE_DETERMINISM_TEST=1
+)
+target_include_directories(headless_determinism_step04d_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
+    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Include
+)
+target_link_libraries(headless_determinism_step04d_test PRIVATE
+    core_config
+    core_utility_no_pch
+)
+set_target_properties(headless_determinism_step04d_test PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(headless_determinism_step04d_test PRIVATE
+        -Wall -Wextra -Werror -Wno-unknown-pragmas -Wno-unused-parameter -pedantic
+        -fno-fast-math
+        -ffp-contract=off
+    )
+elseif(MSVC)
+    target_compile_options(headless_determinism_step04d_test PRIVATE /fp:strict)
+endif()
+add_test(
+    NAME headless_determinism_step04d
+    COMMAND headless_determinism_step04d_test
+        --verify ${CMAKE_CURRENT_SOURCE_DIR}/Fixtures/Step04DHeadlessTimeline.txt
+)
+add_custom_target(z_headlessdeterminismcheck
+    COMMAND $<TARGET_FILE:headless_determinism_step04d_test>
+        --verify ${CMAKE_CURRENT_SOURCE_DIR}/Fixtures/Step04DHeadlessTimeline.txt
+    DEPENDS headless_determinism_step04d_test
+    USES_TERMINAL
+)
+
+add_test(
+    NAME deterministic_headless_policy_step04d
+    COMMAND ${CMAKE_COMMAND}
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/DeterministicHeadlessPolicyStep04DTest.cmake
+)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(
+        NAME determinism_timeline_compare_tool_step04d
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/scripts/compare-determinism-timelines.py --self-test
+    )
+endif()

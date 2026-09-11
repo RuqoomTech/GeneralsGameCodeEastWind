@@ -58,3 +58,13 @@ The prior roadmap deferred the main x64 port until Step 10 and placed a standalo
 - short-term x86 memory diagnostics may still be added when useful, but they are not a gate that delays x64 bring-up.
 - old Step 10 becomes an x64 stabilization/soak gate rather than the start of the port.
 - fixed replay/network/Xfer/on-disk widths must be separated from native pointer width; widening the process must not silently widen wire formats.
+
+
+## 2026-09-12 — Evolution multiplayer does not target retail x86 interoperability
+
+Future multiplayer compatibility is required between our own Evolution/game editions only. The retail 32-bit Generals/Zero Hour executable is not a required network peer.
+
+- Evolution may define a clean, explicit, versioned fixed-width wire protocol.
+- Native x64 pointers/handles/`size_t` must never leak into that protocol or CRC/replay state.
+- The frozen i686 build remains only as a temporary deterministic/replay behavior oracle until golden x64 gates replace it.
+- Retail packet-layout quirks must not block x64 runtime cleanup or the future D3D12 architecture.

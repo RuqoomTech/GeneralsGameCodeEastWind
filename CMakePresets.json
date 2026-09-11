@@ -216,7 +216,7 @@
     },
     {
       "name": "mingw64-tests",
-      "displayName": "MinGW-w64 x86_64 / Ninja — x64 Readiness Tests",
+      "displayName": "MinGW-w64 x86_64 / Ninja — x64 Headless Determinism Tests",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake",
@@ -228,7 +228,8 @@
         "RTS_BUILD_ZEROHOUR": "OFF",
         "RTS_BUILD_GENERALS": "OFF",
         "RTS_BUILD_CORE_TOOLS": "OFF",
-        "RTS_BUILD_X64_READINESS": "ON"
+        "RTS_BUILD_X64_READINESS": "ON",
+        "RTS_BUILD_X64_HEADLESS_CORE": "ON"
       }
     },
     {
