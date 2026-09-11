@@ -62,6 +62,13 @@ namespace Debug_Statistics
 
 	void Begin_Statistics();
 	void End_Statistics();
+
+	// Step 03 telemetry brackets only the primary WW3D render frame. These are
+	// intentionally separate from Begin_Statistics/End_Statistics because the
+	// latter are also used for off-screen render-target accounting.
+	void Begin_Performance_Frame(unsigned int renderFrame, unsigned int syncTimeMs);
+	void End_Performance_Frame(int memoryAllocations, int memoryFrees);
+
 	void Shutdown_Statistics();
 };
 

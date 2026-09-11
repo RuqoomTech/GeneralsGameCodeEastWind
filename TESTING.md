@@ -56,7 +56,7 @@ cmake --build --preset mingw32-tests --target z_determinismcheck
 
 The historical Step 01 command remains valid through the `mingw-w64-i686-determinism` compatibility alias.
 
-**Step 01G Windows sign-off:** passed on 2026-09-10 with MinGW-w64 i686 / GCC 16.2 + Ninja. **Step 02B Windows verification:** pending fresh user output; do not infer it from the Step 01G result.
+**Step 01G Windows sign-off:** passed on 2026-09-10 with MinGW-w64 i686 / GCC 16.2 + Ninja. **Step 02B Windows status:** on 2026-09-11 the user reported that the real MinGW/Ninja path works, with expected warnings. No Step 02B console transcript was supplied, so do not upgrade that report into an archived verification record.
 
 ## Step 02B build-system regression probes
 
@@ -89,3 +89,35 @@ If the build succeeds, the install/debug-sidecar path can then be checked withou
 ```powershell
 cmake --install build/mingw32-release
 ```
+
+## Step 03A performance telemetry gate
+
+The focused test graph includes `performance_telemetry_step03a`. It compiles the production capture implementation directly and checks stable CSV schema v1, frame identity fields, derived triangle/vertex totals, and render/resource counter serialization.
+
+Final local Step 03A validation also compiles/runs that production capture path with GCC and Clang at `-O0`, `-O2`, and `-O3`, plus GCC AddressSanitizer and UBSan. The telemetry-enabled focused graph is separately configured with `RTS_BUILD_OPTION_PERF_TELEMETRY=ON`, while the ordinary focused Release graph is checked to ensure the define is absent.
+
+Host-native regression:
+
+```sh
+cmake -S . -B build/step03a-tests -G Ninja -DRTS_BUILD_TESTS_ONLY=ON -DRTS_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build/step03a-tests
+ctest --test-dir build/step03a-tests --output-on-failure
+```
+
+For the real Windows profile runtime:
+
+```powershell
+cmake --preset mingw32-profile
+cmake --build --preset mingw32-profile --target z_generals
+$env:RTS_PERF_CAPTURE = "Step03A-baseline.csv"
+# Launch Zero Hour through the normal runtime/install workflow and run a repeatable scene/replay.
+Remove-Item Env:RTS_PERF_CAPTURE
+```
+
+Expected capture header:
+
+```text
+schema_version,capture_index,render_frame,sync_time_ms,render_cpu_us,draw_calls,triangles,vertices,dx8_triangles,dx8_vertices,skin_draws,skin_triangles,skin_vertices,sorted_triangles,sorted_vertices,texture_bytes,texture_count,texture_changes,lightmap_texture_bytes,lightmap_texture_count,procedural_texture_bytes,procedural_texture_count,memory_allocations,memory_frees
+```
+
+The CSV capture itself intentionally adds profiling overhead (especially texture accounting). Compare only runs made with equivalent capture configuration. No Windows Step 03A pass is claimed until actual command/runtime output and a produced CSV are supplied.

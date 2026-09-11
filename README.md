@@ -91,9 +91,9 @@ binaries instead of re-compiling everything. Pull requests from forks restore fr
 
 ### Profiling
 
-Tracy profiling is supported in the CMake preset `win32-profile`.
-Use `tracy-profiler.exe` from [Tracy v0.13.1](https://github.com/wolfpld/tracy/releases/tag/v0.13.1).
-If you get an error when using Tracy, try removing `dbghelp.dll` from the game binary directory.
+The canonical MinGW profile preset is `mingw32-profile`. Step 03A enables low-overhead render telemetry in that build; set `RTS_PERF_CAPTURE=<path.csv>` at runtime to capture versioned per-frame CPU/render/resource counters. `RTS_PERF_CAPTURE=1` writes `RTSPerfCapture.csv` in the process working directory. See `Modernization/STEP_03_PERFORMANCE_TELEMETRY.md` for the schema and benchmark guidance.
+
+Tracy profiling is also supported by the existing `win32-profile` path and can be enabled independently for other builds through `RTS_BUILD_OPTION_PROFILE_TRACY`. Use `tracy-profiler.exe` from [Tracy v0.13.1](https://github.com/wolfpld/tracy/releases/tag/v0.13.1). If you get an error when using Tracy, try removing `dbghelp.dll` from the game binary directory.
 
 ## Contributing
 

@@ -834,6 +834,10 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 		return WW3D_ERROR_GENERIC;
 	}
 
+#if defined(RTS_PERF_TELEMETRY)
+	Debug_Statistics::Begin_Performance_Frame((unsigned int)FrameCount + 1U, Get_Logic_Time_Milliseconds());
+#endif
+
 	// Memory allocation statistics
 	LastFrameMemoryAllocations=WWMemoryLogClass::Get_Allocate_Count();
 	LastFrameMemoryFrees=WWMemoryLogClass::Get_Free_Count();
@@ -1123,6 +1127,10 @@ WW3DErrorType WW3D::End_Render(bool flip_frame)
 		WWPROFILE("End_Statistics");
 		Debug_Statistics::End_Statistics();
 	}
+
+#if defined(RTS_PERF_TELEMETRY)
+	Debug_Statistics::End_Performance_Frame(LastFrameMemoryAllocations, LastFrameMemoryFrees);
+#endif
 
 	SNAPSHOT_SAY(("=========================================="));
 	SNAPSHOT_SAY(("========== WW3D::End_Render =============="));

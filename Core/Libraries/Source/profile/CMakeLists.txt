@@ -13,6 +13,7 @@ set(PROFILE_SRC
     "profile_result.cpp"
     "profile_result.h"
     "profile.cpp"
+    "performance_telemetry.cpp"
     "profile.h"
 )
 

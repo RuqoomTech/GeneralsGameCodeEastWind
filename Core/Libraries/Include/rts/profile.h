@@ -67,3 +67,39 @@
 #define PROFILER_IS_CONNECTED false
 
 #endif
+// Step 03 performance telemetry. This remains independent of both the legacy
+// profiler and Tracy so the renderer can publish one stable set of counters to
+// either CSV capture or optional profiler plots.
+namespace PerformanceTelemetry
+{
+	struct RenderFrameCounters
+	{
+		unsigned int drawCalls;
+		unsigned int dx8Triangles;
+		unsigned int dx8Vertices;
+		unsigned int skinDraws;
+		unsigned int skinTriangles;
+		unsigned int skinVertices;
+		unsigned int sortedTriangles;
+		unsigned int sortedVertices;
+		unsigned long textureBytes;
+		unsigned int textureCount;
+		unsigned int textureChanges;
+		unsigned long lightmapTextureBytes;
+		unsigned int lightmapTextureCount;
+		unsigned long proceduralTextureBytes;
+		unsigned int proceduralTextureCount;
+		int memoryAllocations;
+		int memoryFrees;
+	};
+
+	// Explicit capture is useful for tests/tools. Runtime profile builds normally
+	// use RTS_PERF_CAPTURE and let Begin_Render_Frame initialize lazily.
+	bool Start_Capture(const char *path);
+	bool Start_Capture_From_Environment();
+	void Stop_Capture();
+	bool Is_Capturing();
+
+	void Begin_Render_Frame(unsigned int renderFrame, unsigned int syncTimeMs);
+	unsigned long End_Render_Frame(const RenderFrameCounters &counters);
+}

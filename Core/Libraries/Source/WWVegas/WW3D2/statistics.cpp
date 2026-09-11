@@ -17,6 +17,7 @@
 */
 
 #include "statistics.h"
+#include "rts/profile.h"
 #include "WWLib/wwstring.h"
 #include "WWLib/simplevec.h"
 #include "dx8renderer.h"
@@ -54,6 +55,7 @@ static int last_frame_record_count;
 static int last_frame_texture_change_count;
 static TextureClass* latest_texture;
 static Debug_Statistics::RecordTextureMode record_texture_mode;
+static bool telemetry_forced_texture_recording;
 static StringClass texture_statistics_string;
 
 struct TextureStatisticsStruct
@@ -385,8 +387,49 @@ void Debug_Statistics::End_Statistics()
 	DX8Wrapper::End_Statistics();
 }
 
+void Debug_Statistics::Begin_Performance_Frame(unsigned int renderFrame, unsigned int syncTimeMs)
+{
+	PerformanceTelemetry::Begin_Render_Frame(renderFrame, syncTimeMs);
+
+	telemetry_forced_texture_recording = false;
+	if (PerformanceTelemetry::Is_Capturing() && record_texture_mode == RECORD_TEXTURE_NONE) {
+		record_texture_mode = RECORD_TEXTURE_SIMPLE;
+		telemetry_forced_texture_recording = true;
+	}
+}
+
+void Debug_Statistics::End_Performance_Frame(int memoryAllocations, int memoryFrees)
+{
+	PerformanceTelemetry::RenderFrameCounters counters;
+	counters.drawCalls = (unsigned int)Get_Draw_Calls();
+	counters.dx8Triangles = (unsigned int)Get_DX8_Polygons();
+	counters.dx8Vertices = (unsigned int)Get_DX8_Vertices();
+	counters.skinDraws = (unsigned int)Get_DX8_Skin_Renders();
+	counters.skinTriangles = (unsigned int)Get_DX8_Skin_Polygons();
+	counters.skinVertices = (unsigned int)Get_DX8_Skin_Vertices();
+	counters.sortedTriangles = (unsigned int)Get_Sorting_Polygons();
+	counters.sortedVertices = (unsigned int)Get_Sorting_Vertices();
+	counters.textureBytes = (unsigned long)Get_Record_Texture_Size();
+	counters.textureCount = (unsigned int)Get_Record_Texture_Count();
+	counters.textureChanges = (unsigned int)Get_Record_Texture_Change_Count();
+	counters.lightmapTextureBytes = (unsigned long)Get_Record_Lightmap_Texture_Size();
+	counters.lightmapTextureCount = (unsigned int)Get_Record_Lightmap_Texture_Count();
+	counters.proceduralTextureBytes = (unsigned long)Get_Record_Procedural_Texture_Size();
+	counters.proceduralTextureCount = (unsigned int)Get_Record_Procedural_Texture_Count();
+	counters.memoryAllocations = memoryAllocations;
+	counters.memoryFrees = memoryFrees;
+
+	PerformanceTelemetry::End_Render_Frame(counters);
+
+	if (telemetry_forced_texture_recording) {
+		record_texture_mode = RECORD_TEXTURE_NONE;
+		telemetry_forced_texture_recording = false;
+	}
+}
+
 void Debug_Statistics::Shutdown_Statistics()
 {
+	PerformanceTelemetry::Stop_Capture();
 	texture_statistics_string.Release_Resources();
 }
 // ----------------------------------------------------------------------------

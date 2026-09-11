@@ -25,6 +25,14 @@ Track at least:
 - vertex/index buffer memory;
 - render-target/depth memory.
 
+## Step 03A capture baseline
+
+The first repository-owned repeatable capture is CSV schema v1 from `PerformanceTelemetry`. Use a `mingw32-profile` build and set `RTS_PERF_CAPTURE=<file.csv>`. The initial fields cover the primary WW3D render CPU bracket, render/sync frame identity, draw/geometry totals, texture/resource counters, and WW3D allocation/free operation counts.
+
+This capture is intentionally narrower than the final list above. It establishes a stable data seam before adding GPU timestamps, full update/scene phases, visibility/culling metrics, resident/peak process memory, and asset hotspot tables. Texture accounting is more expensive while capture is active, so compare benchmark runs only when capture configuration is identical.
+
+For before/after work, prefer a fixed replay or scripted scene and preserve the CSV together with build/compiler/hardware metadata. Do not use render timing to alter deterministic simulation behavior.
+
 ## Heavy-mod asset metrics
 
 Development diagnostics should identify:

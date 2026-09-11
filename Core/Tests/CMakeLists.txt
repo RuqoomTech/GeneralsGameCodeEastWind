@@ -108,6 +108,26 @@ add_custom_target(z_determinismcheck
     USES_TERMINAL
 )
 
+
+# Step 03A telemetry regression. The capture implementation is intentionally
+# dependency-free so its stable CSV schema can be exercised in the focused graph.
+add_executable(performance_telemetry_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/PerformanceTelemetryTest.cpp
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/profile/performance_telemetry.cpp
+)
+target_include_directories(performance_telemetry_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+)
+set_target_properties(performance_telemetry_test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(performance_telemetry_test PRIVATE -Wall -Wextra -Werror -pedantic)
+endif()
+add_test(NAME performance_telemetry_step03a COMMAND performance_telemetry_test)
+
 # Step 02B build-system regression: exercise the shared runtime install policy
 # in a tiny nested project. This catches unsupported linker-specific generator
 # expressions (notably TARGET_PDB_FILE on GNU/MinGW) during CMake generation.

@@ -72,4 +72,10 @@ cmake --preset mingw32-release
 cmake --build --preset mingw32-release --target z_generals
 ```
 
-Step 02 remains active until those real Windows paths are verified and remaining concrete runtime blockers are resolved.
+Step 02 is implementation-complete and user-accepted. On 2026-09-11 the user reported that the real Windows MinGW/Ninja path works, with expected legacy warnings. No console transcript was archived, so this document records acceptance without inventing a formal captured verification result.
+
+## Profile telemetry build option
+
+Step 03A adds `RTS_BUILD_OPTION_PERF_TELEMETRY`. The canonical `mingw32-profile` preset enables it; `mingw32-release` and `mingw32-debug` leave it off. The option defines `RTS_PERF_TELEMETRY`, which brackets only the primary WW3D render frame and publishes existing renderer statistics through the shared profiling seam.
+
+CSV output is still runtime opt-in through `RTS_PERF_CAPTURE=<path>`, so building the profile preset does not create capture files unless requested. Tracy remains a separate optional profiler backend; when enabled it consumes the same Step 03A counters rather than collecting another set.
