@@ -15,7 +15,7 @@ Turn the existing Generals / Zero Hour runtime into a modern, high-performance R
 - modern shadows, materials, lighting, HDR, and post-processing;
 - native support for legacy W3D assets;
 - first-class support for EA SAGE W3X assets;
-- continued deterministic simulation, CRC, replay, and multiplayer behavior unless an intentional compatibility break is explicitly approved and tested.
+- continued deterministic simulation, CRC, replay, and Evolution-to-Evolution multiplayer behavior; retail 32-bit multiplayer interoperability is not a future compatibility target.
 
 This is **not a rewrite of the game simulation**. The strategy is to preserve proven game logic and content behavior while progressively replacing client/runtime limitations.
 
@@ -91,6 +91,6 @@ A roadmap step is not complete merely because code compiles. A completed step mu
 - no unexplained deterministic/replay regression;
 - no unrecorded architectural deviation.
 
-## Step 04B — x64 wire/pointer safety
+## Step 04 — x64 migration
 
-Step 04B freezes command/replay scalar widths independently of native C++ object layout and begins the native-pointer audit. See `Modernization/STEP_04_X64_MIGRATION.md`.
+Steps 04A-04C now provide the x64 readiness lane, architecture-independent wire-width guards, native allocator/pointer substrate conversion, and a one-command Windows dependency bootstrap. The frozen i686 build is a temporary deterministic oracle only; future multiplayer compatibility is Evolution-to-Evolution, not retail x86. See `Modernization/STEP_04_X64_MIGRATION.md`.

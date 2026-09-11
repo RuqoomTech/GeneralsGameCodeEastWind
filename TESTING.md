@@ -33,7 +33,12 @@ This runs:
 - `determinism_step01` — lightweight CRC/RNG/float characterization on non-Windows hosts;
 - `performance_telemetry_step03a` — completed Step 03 CSV schema-v2/phase/resource characterization (historical test name retained);
 - `buildsystem_runtime_install_policy` — nested CMake/Ninja runtime-install policy regression, including the MinGW `.debug` sidecar expectation on MinGW;
-- `architecture_width_step04a` — native pointer-width/fixed wire-width migration guard.
+- `architecture_width_step04a` — native pointer-width/fixed wire-width migration guard;
+- `wire_replay_abi_step04b` — explicit fixed-width command/replay/network ABI guard;
+- `pointer_wire_source_audit_step04b` — Step 04B source-level pointer/wire regression audit;
+- `runtime_native_width_step04c` — production WWLib allocator/pool native-width and realloc stress guard;
+- `windows_dependency_bootstrap_step04c` — x64-default Windows setup policy guard;
+- `runtime_pointer_source_audit_step04c` — Step 04C allocator/GUI/handle pointer-width source audit.
 
 The W3X targets remain C++98-compatible and still use the consolidated `rts/w3x_document.h` / `w3x_document.cpp` seam. No runtime W3X importer is exercised.
 
@@ -139,6 +144,28 @@ Performed against the exact Step 03A baseline used for this implementation:
 
 No MinGW-w64 x86_64 compiler is installed in the validation container, so no Windows/Win64 Step 04A pass is claimed here. The `mingw64-tests` workflow below remains the authoritative Windows x64 readiness gate.
 
+## Step 04C Windows dependency bootstrap
+
+For a new Windows development machine, the x64 Evolution toolchain is the default:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1
+```
+
+That command installs/verifies MSYS2 MINGW64 GCC/G++, WIDL/tools, CMake, Ninja, Python and Git, then prints the canonical `mingw64-tests` commands. To also provision the temporary frozen i686 determinism oracle:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86
+```
+
+To check an existing machine without installing/updating packages:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -VerifyOnly
+```
+
+The repository's `windows_dependency_bootstrap_step04c` CTest verifies the script policy/source contract. It does not substitute for actually executing the script on Windows.
+
 ## Step 04A x64 readiness gate
 
 The first x64 migration gate is intentionally focused and does not build the full legacy runtime. It checks that project/toolchain configuration can target Windows x86_64 while fixed wire/game widths remain explicit.
@@ -157,13 +184,25 @@ Expected architecture-test line:
 Step 04A architecture guard passed: native pointer width=64, fixed wire IDs remain 32-bit.
 ```
 
-`mingw64-tests` uses the MSYS2 MINGW64 toolchain root (`C:/msys64/mingw64`) unless `RTS_MINGW_ROOT` selects another matching x86_64 MinGW-w64 installation. A full x64 runtime configure is expected to fail deliberately at this stage; only the readiness/test graph is enabled until Step 04B+ migrate runtime dependencies.
+`mingw64-tests` uses the MSYS2 MINGW64 toolchain root (`C:/msys64/mingw64`) unless `RTS_MINGW_ROOT` selects another matching x86_64 MinGW-w64 installation. A full x64 runtime configure remains deliberately gated through Step 04C; Step 04D will progressively add real Common/GameLogic runtime units instead of opening the legacy D3D8 graph wholesale.
 
-The i686 compatibility gate remains mandatory in parallel:
+The i686 gate is a temporary deterministic oracle, not a future feature/multiplayer target. Run it when validating oracle parity:
 
 ```powershell
 cmake --preset mingw32-tests
 cmake --build --preset mingw32-tests --target z_determinismcheck
 ```
 
-Do not treat an x64 readiness pass as permission to relax or delete the signed-off Win32 replay/network/Xfer fixtures.
+Do not delete the frozen x86 oracle until Step 04D/04E golden deterministic and Evolution network gates replace it. Retail x86 multiplayer interoperability is not required.
+
+
+## Step 04C local validation — 2026-09-11
+
+Against the authoritative Step 04B full ZIP, the 12-test focused graph passed:
+
+- GCC 14.2 at `-O0`, `-O2`, and `-O3`;
+- Clang 17 at `-O0`, `-O2`, and `-O3`;
+- GCC AddressSanitizer;
+- GCC UndefinedBehaviorSanitizer.
+
+No Windows/Win64 result is claimed from those host-native runs. The authoritative Windows command remains `ctest --preset mingw64-tests --output-on-failure` after the dependency bootstrap.

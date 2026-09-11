@@ -84,8 +84,16 @@ public:
 
 protected:
 
+	// Allocation blocks carry a native pointer link before the first pooled object.
+	// The original uint32* bookkeeping happened to match pointer width on Win32,
+	// but advanced only four bytes on x64 while storing an eight-byte pointer.
+	struct BlockHeader
+	{
+		BlockHeader *Next;
+	};
+
 	T	*		FreeListHead;
-	uint32 *	BlockListHead;
+	BlockHeader *BlockListHead;
 	int		FreeObjectCount;
 	int		TotalObjectCount;
 	FastCriticalSectionClass ObjectPoolCS;
@@ -205,7 +213,7 @@ ObjectPoolClass<T,BLOCK_SIZE>::~ObjectPoolClass()
 	// delete all of the blocks we allocated
 	int block_count = 0;
 	while (BlockListHead != nullptr) {
-		uint32 * next_block = *(uint32 **)BlockListHead;
+		BlockHeader * next_block = BlockListHead->Next;
 		::operator delete(BlockListHead);
 		BlockListHead = next_block;
 		block_count++;
@@ -280,14 +288,17 @@ T * ObjectPoolClass<T,BLOCK_SIZE>::Allocate_Object_Memory()
 
 	if ( FreeListHead == nullptr ) {
 
-		// No free objects, allocate another block
-		uint32 * tmp_block_head = BlockListHead;
-		BlockListHead = (uint32*)::operator new( sizeof(T) * BLOCK_SIZE + sizeof(uint32 *));
-		// Link this block into the block list
-		*(void **)BlockListHead = tmp_block_head;
+		// No free objects, allocate another block. The header remains exactly one
+		// native pointer wide, preserving the Win32 layout while widening correctly
+		// for the x64-only Evolution runtime.
+		BlockHeader *tmp_block_head = BlockListHead;
+		BlockListHead = static_cast<BlockHeader*>(::operator new(sizeof(BlockHeader) + sizeof(T) * BLOCK_SIZE));
+		BlockListHead->Next = tmp_block_head;
 
-		// Link the objects in the block into the free object list
-		FreeListHead = (T*)(BlockListHead + 1);
+		// Link the objects in the block into the free object list. operator new gives
+		// the allocation native alignment; the pointer-sized header preserves the
+		// legacy pool's natural-alignment contract without any integer address math.
+		FreeListHead = reinterpret_cast<T*>(BlockListHead + 1);
 		for ( int i = 0; i < BLOCK_SIZE; i++ ) {
 			*(T**)(&(FreeListHead[i])) = &(FreeListHead[i+1]);	// link up the elements
 		}

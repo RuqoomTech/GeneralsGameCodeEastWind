@@ -4,18 +4,23 @@ This file is the authoritative state marker for modernization work. Read it befo
 
 ## Baseline identity
 
+- **Step 04C authoritative input:** `GeneralsGameCode-Step04B-Wire-Pointer-Audit-full.zip`.
+- SHA-256 of the exact Step 04B archive used for this work: `b6e983715e74c32ececcbe820964697496a9df25dd5e36cb86d88e6c981a09f9`.
+- Step 04C was produced strictly from those bytes; no GitHub state, remembered repository, older patch, or alternate ZIP was substituted.
+- Step 04B itself was produced from `GeneralsGameCode-Step03-Complete-Step04A-x64-Readiness-full.zip`, SHA-256 `e87de5e1d2f6bd2e916030b5beb487fb4a71eb2beb4e57b14ccca3d22e1d7eba`.
+
 - Step 02A was based on the sealed Step 01G Windows-signoff repository supplied on 2026-09-10.
 - Step 01G user-declared archive/hash: `GeneralsGameCode-Step01G-Windows-Signoff-Baseline-Seal-full.zip` / `bb179526f5a093397375220025e265ffc66ad223e8569a30b4d933562ac8718a`.
 - SHA-256 of the Step 01G archive bytes actually received for Step 02A: `796c7e5642d655bebdf0ca079d7a099a5af46d82cb11a9b27282021f800fce07`; that mismatch remains recorded rather than silently substituting another tree.
-- **Step 03 completion + Step 04A authoritative implementation base:** `GeneralsGameCode-Step03A-Performance-Telemetry-Foundation-full.zip`.
+- Historical Step 03 completion + Step 04A implementation base: `GeneralsGameCode-Step03A-Performance-Telemetry-Foundation-full.zip`.
 - SHA-256 of the exact Step 03A archive bytes used here: `e1166a1d1834530eea4fc740b00802f27a85269e8831d25c8ff9e61c81c0c5c3`.
-- This work was produced strictly from those received Step 03A bytes; no remembered repository, older patch, or alternate ZIP was used.
+- Step 03 completion/04A were produced strictly from those received Step 03A bytes; later steps use the chained authoritative ZIPs recorded above.
 - Historical Step 03A base: Step 02B SHA-256 `c0bac9981f10ec82bdeb391fa7e33811be7a611d3368c31c1f5e73ef15ba1ab5`.
 - Historical upstream provenance remains recorded in `Modernization/BASELINE_MANIFEST.md`.
 
 ## What was changed when establishing this baseline
 
-Only documentation files were added/updated to establish the roadmap and project state. No C/C++, CMake, shader, renderer, gameplay, CRC, replay, network, asset-loader, or build-script implementation was intentionally changed as part of this baseline documentation pass.
+The original Step 00 baseline pass changed documentation only. Subsequent signed-off modernization steps now include C/C++, CMake, tests, scripts, telemetry, network ABI guards, and x64-readiness/runtime work; the historical baseline statement must not be read as describing the current tree.
 
 ## Verified implementation already present in the uploaded source
 
@@ -57,6 +62,8 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 8. The long-term Evolution runtime is **x64 + D3D12**.
 9. Add native support for the EA SAGE **W3X** asset format alongside W3D.
 10. Rendering must remain downstream of simulation; renderer/GPU timing must never influence deterministic game state.
+11. Evolution multiplayer compatibility is required only between our own Evolution/game editions; retail 32-bit multiplayer interoperability is not a target.
+12. The i686 build receives no new features and remains only until x64 deterministic/replay/network golden gates replace it as the oracle.
 
 
 ## Step 04B implementation state — 2026-09-11
@@ -73,6 +80,23 @@ Key invariants now encoded in source/tests:
 - focused test graph includes `wire_replay_abi_step04b` and `pointer_wire_source_audit_step04b`;
 - no Windows/Win64 result is claimed until supplied by a Windows console run.
 
+## Step 04C implementation state — 2026-09-11
+
+Authoritative input: `GeneralsGameCode-Step04B-Wire-Pointer-Audit-full.zip`, SHA-256 `b6e983715e74c32ececcbe820964697496a9df25dd5e36cb86d88e6c981a09f9`.
+
+Implemented in this slice:
+
+- repaired `WWLib/ObjectPoolClass` backing-block metadata so its chain is a native pointer rather than a `uint32*` surrogate;
+- moved `GameMemory` raw size/stride calculations to `size_t`, native pointer alignment, checked blob multiplication, and `uintptr_t` address checks;
+- made `FastFixedAllocator` stride/chunk storage pointer-aligned while preserving four-byte behavior on x86 and widening naturally on x64;
+- replaced `FastAllocatorGeneral`'s hard-coded four-byte prefix with a pointer-aligned header and corrected realloc copy bounds;
+- converted native pointer hashing and keyboard-layout handle extraction away from direct 32-bit truncation;
+- fixed list-box multi-selection pointer return to use an explicit `Int**` native pointer contract;
+- added `scripts/setup-windows-dev.ps1` as the x64-default Windows dependency bootstrap, with optional `-IncludeLegacyX86`;
+- expanded the focused graph to 12 tests with allocator runtime, pointer source-audit, and dependency-bootstrap policy regressions.
+
+Local validation is green with GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`, plus GCC ASan and UBSan: 12/12 tests in every configuration. No Windows/Win64/bootstrap pass is claimed because this environment has neither PowerShell nor an x86_64 MinGW-w64 compiler.
+
 ## Current modernization status
 
 | Area | State |
@@ -82,7 +106,7 @@ Key invariants now encoded in source/tests:
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
 | MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
 | HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
-| x64 engine migration | **ACTIVE — Step 04B wire/replay ABI freeze + first pointer-width audit implemented; Windows x64 validation pending** |
+| x64 engine migration | **ACTIVE — Step 04C native-width runtime substrate + x64-default dependency bootstrap implemented; Windows x64 validation pending** |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
 | W3X top-level child-element discovery | **Done — A2** |
@@ -109,7 +133,7 @@ None of these pre-steps is wired into the runtime asset manager. They do not cha
 
 **Step 03 is complete. Step 04 — x64 Engine Migration — is active.**
 
-Step 01 remains the deterministic compatibility contract. The i686 MinGW/Ninja runtime is the reference executable and must keep its replay/network/Xfer byte behavior while the x64 lane is brought up. Step 02 remains user-accepted on Windows.
+Step 01 remains the deterministic behavior contract. The frozen i686 MinGW/Ninja runtime is retained only as a temporary simulation/replay/CRC oracle while the x64 lane is brought up; it is not a future retail-multiplayer compatibility target. Step 02 remains user-accepted on Windows.
 
 ### Step 03 completion
 
@@ -127,4 +151,4 @@ Step 04A begins the engine migration without pretending the full runtime is alre
 
 Local host-native GCC 14.2 and Clang 17 focused configure/build/CTest runs pass 7/7 tests, including `-O0`/`-O2`/`-O3` coverage; GCC ASan and UBSan are also green. The validation container has no MinGW-w64 x86_64 compiler, so no Windows `mingw64-tests` pass is claimed until actual output is provided.
 
-The next implementation slice is **Step 04C — deeper pointer-width/runtime conversion**: memory pools, containers, resource/platform seams, and remaining native address/handle assumptions required for x64 core bring-up, while preserving the frozen i686 determinism oracle.
+The next implementation slice is **Step 04D — x64 deterministic/headless core bring-up**: progressively compile real Common/GameLogic/runtime units in the x64 lane, resolve the next concrete native-width blockers, and establish golden x86-versus-x64 CRC timelines. The frozen i686 build remains only the temporary behavior oracle; future multiplayer compatibility is Evolution-to-Evolution rather than retail x86.
