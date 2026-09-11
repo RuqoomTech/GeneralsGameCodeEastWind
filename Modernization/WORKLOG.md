@@ -169,3 +169,15 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - The lightweight Step 01 determinism harness was rerun under GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`; GCC ASan and UBSan also passed.
 - The repository-owned runtime-install policy test configured, built, and installed successfully through `rts_install_runtime_target()` under both GCC and Clang; a separate host-GNU probe also validated the helper directly. A second synthetic GNU probe exercising the MinGW debug-sidecar branch produced and installed both the executable and `.debug` file.
 - A real i686 MinGW compiler is not available in this execution environment and package-network access is unavailable, so no Windows/MinGW `z_generals` build pass is claimed. The next Step 02 slice should use the first concrete compiler/linker failure from `cmake --build --preset mingw32-release --target z_generals`.
+
+## 2026-09-11 — Step 03A: render-frame performance telemetry foundation
+
+- Advanced from Step 02 after the user reported the Windows canonical build path working; no Step 02 Windows console transcript was supplied, so the repository records user acceptance without inventing formal output.
+- Reused `rts/profile.h`, the existing profile module, WW3D `Debug_Statistics`, and the current Tracy seam rather than introducing a parallel profiler/statistics hierarchy.
+- Added `RTS_BUILD_OPTION_PERF_TELEMETRY`; canonical `mingw32-profile` enables it while normal release/debug render paths compile the hook out.
+- Added production `performance_telemetry.cpp` with runtime-opt-in `RTS_PERF_CAPTURE` CSV output, buffered periodic flush, stable schema version 1, and optional Tracy plots from the same frame sample.
+- Bracketed successful primary WW3D render frames only; telemetry reads render/sync identity, CPU microseconds, draw/geometry counters, texture/resource counters, and WW3D allocation/free counts. No telemetry value feeds back into simulation or frame pacing.
+- Reused existing texture statistics. CSV capture temporarily promotes `RECORD_TEXTURE_NONE` to `RECORD_TEXTURE_SIMPLE` only for the primary frame when needed, then restores it.
+- Added `performance_telemetry_step03a` to the focused CTest graph. GCC 14.2 and Clang 17 each pass 6/6 focused tests.
+- Final telemetry sealing matrix passed with GCC and Clang at `-O0`, `-O2`, and `-O3`, plus GCC ASan and UBSan. A telemetry-enabled focused configure confirmed `RTS_PERF_TELEMETRY` propagation; the normal focused Release graph confirmed the define stays absent.
+- Step 03 remains active: GPU timing, full client/update phases, visibility/culling, process memory, asset hotspots, and benchmark automation remain.
