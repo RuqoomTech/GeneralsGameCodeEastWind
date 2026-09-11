@@ -11,11 +11,23 @@ if(MINGW)
 
     if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         set(IS_MINGW32 TRUE)
-        message(STATUS "MinGW-w64 32-bit (i686) detected")
+        message(STATUS "MinGW-w64 32-bit (i686) compatibility/reference build detected")
+    elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(IS_MINGW64 TRUE)
+        message(STATUS "MinGW-w64 64-bit (x86_64) modernization lane detected")
+        if(NOT RTS_BUILD_X64_READINESS)
+            message(FATAL_ERROR
+                "A 64-bit MinGW compiler was selected without the staged x64 readiness option. "
+                "Use preset 'mingw64-tests' while the runtime is being ported deliberately.")
+        endif()
+        if(NOT RTS_BUILD_TESTS_ONLY)
+            message(FATAL_ERROR
+                "The Step 04 x64 lane currently supports the focused readiness/test graph only. "
+                "Use preset 'mingw64-tests'. The full x64 runtime will be enabled subsystem-by-subsystem "
+                "after 32-bit ABI/wire assumptions and the legacy D3D8 platform boundary are isolated.")
+        endif()
     else()
-        message(FATAL_ERROR
-            "MinGW-w64 64-bit detected, but the compatibility/reference runtime is still 32-bit. "
-            "Use the i686 MinGW preset until the dedicated x64 Evolution port begins.")
+        message(FATAL_ERROR "Unsupported MinGW pointer width: ${CMAKE_SIZEOF_VOID_P}")
     endif()
 
     # Preserve the legacy code assumptions without applying them to downloaded
@@ -50,11 +62,15 @@ if(MINGW)
         comctl32
         winmm
         vfw32
-        d3d8
-        dinput8
-        dsound
         imm32
     )
+
+    # Renderer/input/audio compatibility libraries are not needed by the focused
+    # modernization graph. Keeping them out is what allows the first x64 lane to
+    # compile architecture/serialization guards before the D3D8 runtime is ported.
+    if(NOT RTS_BUILD_TESTS_ONLY)
+        target_link_libraries(core_config INTERFACE d3d8 dinput8 dsound)
+    endif()
 
     # Keep GCC runtime deployment self-contained for command-line builds.
     target_link_options(core_config INTERFACE -static-libgcc -static-libstdc++)

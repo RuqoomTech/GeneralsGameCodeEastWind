@@ -55,7 +55,11 @@ if(MINGW)
         include(cmake/widl.cmake)
         rts_require_widl_for_runtime()
     endif()
-    include(cmake/reactos-atl.cmake)
+    # The focused x64 readiness graph has no ATL consumer. The signed-off i686
+    # determinism gate still uses the ReactOS ATL compatibility seam.
+    if(NOT RTS_BUILD_TESTS_ONLY OR CMAKE_SIZEOF_VOID_P EQUAL 4)
+        include(cmake/reactos-atl.cmake)
+    endif()
 endif()
 
 # Find/Add build dependencies and stubs shared by all projects

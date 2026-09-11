@@ -31,7 +31,9 @@ This runs:
 - `w3x_document_probe_test` — W3X A1;
 - `w3x_child_discovery_test` — W3X A2;
 - `determinism_step01` — lightweight CRC/RNG/float characterization on non-Windows hosts;
-- `buildsystem_runtime_install_policy` — nested CMake/Ninja runtime-install policy regression, including the MinGW `.debug` sidecar expectation on MinGW.
+- `performance_telemetry_step03a` — completed Step 03 CSV schema-v2/phase/resource characterization (historical test name retained);
+- `buildsystem_runtime_install_policy` — nested CMake/Ninja runtime-install policy regression, including the MinGW `.debug` sidecar expectation on MinGW;
+- `architecture_width_step04a` — native pointer-width/fixed wire-width migration guard.
 
 The W3X targets remain C++98-compatible and still use the consolidated `rts/w3x_document.h` / `w3x_document.cpp` seam. No runtime W3X importer is exercised.
 
@@ -90,18 +92,16 @@ If the build succeeds, the install/debug-sidecar path can then be checked withou
 cmake --install build/mingw32-release
 ```
 
-## Step 03A performance telemetry gate
+## Step 03 performance telemetry gate
 
-The focused test graph includes `performance_telemetry_step03a`. It compiles the production capture implementation directly and checks stable CSV schema v1, frame identity fields, derived triangle/vertex totals, and render/resource counter serialization.
-
-Final local Step 03A validation also compiles/runs that production capture path with GCC and Clang at `-O0`, `-O2`, and `-O3`, plus GCC AddressSanitizer and UBSan. The telemetry-enabled focused graph is separately configured with `RTS_BUILD_OPTION_PERF_TELEMETRY=ON`, while the ordinary focused Release graph is checked to ensure the define is absent.
+The focused graph retains the historical CTest name `performance_telemetry_step03a`, but the test now protects completed Step 03 CSV schema v2: update/render/logic state markers, engine phase fields, drawable visibility fields, derived geometry totals, and resource counters.
 
 Host-native regression:
 
 ```sh
-cmake -S . -B build/step03a-tests -G Ninja -DRTS_BUILD_TESTS_ONLY=ON -DRTS_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build/step03a-tests
-ctest --test-dir build/step03a-tests --output-on-failure
+cmake -S . -B build/step03-tests -G Ninja -DRTS_BUILD_TESTS_ONLY=ON -DRTS_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build/step03-tests
+ctest --test-dir build/step03-tests --output-on-failure
 ```
 
 For the real Windows profile runtime:
@@ -109,15 +109,61 @@ For the real Windows profile runtime:
 ```powershell
 cmake --preset mingw32-profile
 cmake --build --preset mingw32-profile --target z_generals
-$env:RTS_PERF_CAPTURE = "Step03A-baseline.csv"
-# Launch Zero Hour through the normal runtime/install workflow and run a repeatable scene/replay.
+$env:RTS_PERF_CAPTURE = "Step03-baseline.csv"
+# Launch Zero Hour and run a repeatable scene/replay.
 Remove-Item Env:RTS_PERF_CAPTURE
+python scripts/perf-summary.py Step03-baseline.csv
 ```
 
-Expected capture header:
+Schema v2 begins with:
 
 ```text
-schema_version,capture_index,render_frame,sync_time_ms,render_cpu_us,draw_calls,triangles,vertices,dx8_triangles,dx8_vertices,skin_draws,skin_triangles,skin_vertices,sorted_triangles,sorted_vertices,texture_bytes,texture_count,texture_changes,lightmap_texture_bytes,lightmap_texture_count,procedural_texture_bytes,procedural_texture_count,memory_allocations,memory_frees
+schema_version,capture_index,render_frame,logic_frame,sync_time_ms,rendered,logic_updated,update_cpu_us,client_cpu_us,logic_cpu_us,network_cpu_us,message_cpu_us,render_cpu_us,...
 ```
 
-The CSV capture itself intentionally adds profiling overhead (especially texture accounting). Compare only runs made with equivalent capture configuration. No Windows Step 03A pass is claimed until actual command/runtime output and a produced CSV are supplied.
+The capture intentionally adds profile overhead. Compare only equivalent capture configurations. GPU timestamp validation is deferred to the D3D12 renderer.
+
+
+### Step 03 completion / Step 04A local validation (2026-09-11)
+
+Performed against the exact Step 03A baseline used for this implementation:
+
+- GCC 14.2 focused CMake/Ninja/CTest at `-O0`, `-O2`, and `-O3`: 7/7 passed in each configuration;
+- Clang 17 focused CMake/Ninja/CTest at `-O0`, `-O2`, and `-O3`: 7/7 passed in each configuration;
+- GCC ASan focused suite: 7/7 passed;
+- GCC UBSan focused suite: 7/7 passed;
+- `z_determinismcheck` passed in the host GCC and Clang focused graphs;
+- `scripts/perf-summary.py` parsed a synthetic schema-v2 capture successfully in text and JSON modes;
+- compile-command inspection confirmed `RTS_PERF_TELEMETRY` is present only when the telemetry option is enabled;
+- host-native 64-bit `architecture_width_step04a` reported a 64-bit native pointer with 32-bit fixed wire IDs.
+
+No MinGW-w64 x86_64 compiler is installed in the validation container, so no Windows/Win64 Step 04A pass is claimed here. The `mingw64-tests` workflow below remains the authoritative Windows x64 readiness gate.
+
+## Step 04A x64 readiness gate
+
+The first x64 migration gate is intentionally focused and does not build the full legacy runtime. It checks that project/toolchain configuration can target Windows x86_64 while fixed wire/game widths remain explicit.
+
+Canonical Windows commands:
+
+```powershell
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+```
+
+Expected architecture-test line:
+
+```text
+Step 04A architecture guard passed: native pointer width=64, fixed wire IDs remain 32-bit.
+```
+
+`mingw64-tests` uses the MSYS2 MINGW64 toolchain root (`C:/msys64/mingw64`) unless `RTS_MINGW_ROOT` selects another matching x86_64 MinGW-w64 installation. A full x64 runtime configure is expected to fail deliberately at this stage; only the readiness/test graph is enabled until Step 04B+ migrate runtime dependencies.
+
+The i686 compatibility gate remains mandatory in parallel:
+
+```powershell
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests --target z_determinismcheck
+```
+
+Do not treat an x64 readiness pass as permission to relax or delete the signed-off Win32 replay/network/Xfer fixtures.

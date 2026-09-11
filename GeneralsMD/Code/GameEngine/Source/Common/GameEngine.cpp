@@ -107,6 +107,7 @@
 #include "GameNetwork/GameSpy/GameResultsThread.h"
 
 #include "Common/version.h"
+#include <rts/profile.h>
 
 
 //-------------------------------------------------------------------------------------------------
@@ -895,6 +896,10 @@ DECLARE_PERF_TIMER(GameEngine_update)
  */
 void GameEngine::update()
 {
+#if defined(RTS_PERF_TELEMETRY)
+	PerformanceTelemetry::Begin_Update_Frame(TheGameLogic != nullptr ? (unsigned int)TheGameLogic->getFrame() : 0U);
+#endif
+
 	USE_PERF_TIMER(GameEngine_update)
 	{
 		{
@@ -906,19 +911,41 @@ void GameEngine::update()
 			/// @todo Move audio init, update, etc, into GameClient update
 
 			TheAudio->UPDATE();
+#if defined(RTS_PERF_TELEMETRY)
+			PerformanceTelemetry::Begin_Update_Phase(PerformanceTelemetry::UPDATE_PHASE_CLIENT);
+#endif
 			TheGameClient->UPDATE();
+#if defined(RTS_PERF_TELEMETRY)
+			PerformanceTelemetry::End_Update_Phase(PerformanceTelemetry::UPDATE_PHASE_CLIENT);
+			PerformanceTelemetry::Begin_Update_Phase(PerformanceTelemetry::UPDATE_PHASE_MESSAGE_STREAM);
+#endif
 			TheMessageStream->propagateMessages();
+#if defined(RTS_PERF_TELEMETRY)
+			PerformanceTelemetry::End_Update_Phase(PerformanceTelemetry::UPDATE_PHASE_MESSAGE_STREAM);
+#endif
 
 			if (TheNetwork != nullptr)
 			{
+#if defined(RTS_PERF_TELEMETRY)
+				PerformanceTelemetry::Begin_Update_Phase(PerformanceTelemetry::UPDATE_PHASE_NETWORK);
+#endif
 				TheNetwork->UPDATE();
+#if defined(RTS_PERF_TELEMETRY)
+				PerformanceTelemetry::End_Update_Phase(PerformanceTelemetry::UPDATE_PHASE_NETWORK);
+#endif
 			}
 		}
 
 		// TheSuperHackers @info Ignores frozen time because the script engine needs updating in the logic update regardless.
 		if (canUpdateGameLogic(FramePacer::IgnoreFrozenTime))
 		{
+#if defined(RTS_PERF_TELEMETRY)
+			PerformanceTelemetry::Begin_Update_Phase(PerformanceTelemetry::UPDATE_PHASE_LOGIC);
+#endif
 			TheGameLogic->UPDATE();
+#if defined(RTS_PERF_TELEMETRY)
+			PerformanceTelemetry::End_Update_Phase(PerformanceTelemetry::UPDATE_PHASE_LOGIC);
+#endif
 
 			if (!TheFramePacer->isTimeFrozen())
 			{
@@ -926,6 +953,9 @@ void GameEngine::update()
 			}
 		}
 	}
+#if defined(RTS_PERF_TELEMETRY)
+	PerformanceTelemetry::End_Update_Frame();
+#endif
 }
 
 // Horrible reference, but we really, really need to know if we are windowed.

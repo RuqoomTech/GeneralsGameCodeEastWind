@@ -47,3 +47,14 @@ Simulation/game state produces renderable state. Renderer frame rate, GPU query 
 ## 2026-09-09 — Performance architecture before eye candy
 
 Measurement, memory, geometry, batching, LOD, x64, and renderer architecture come before optional effects such as bloom/AO/advanced lighting. Visual features must be built on a scalable renderer rather than hiding structural bottlenecks.
+
+## 2026-09-11 — Begin x64 migration immediately after Step 03
+
+The prior roadmap deferred the main x64 port until Step 10 and placed a standalone x86-memory-survival milestone at Step 04. That sequencing is superseded.
+
+- Step 03 performance telemetry is completed first so migration work remains measurable.
+- Step 04 now owns the staged x64 engine migration.
+- x86 remains the deterministic compatibility/reference runtime throughout the migration.
+- short-term x86 memory diagnostics may still be added when useful, but they are not a gate that delays x64 bring-up.
+- old Step 10 becomes an x64 stabilization/soak gate rather than the start of the port.
+- fixed replay/network/Xfer/on-disk widths must be separated from native pointer width; widening the process must not silently widen wire formats.

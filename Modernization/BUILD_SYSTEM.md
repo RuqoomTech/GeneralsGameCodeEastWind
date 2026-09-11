@@ -25,11 +25,13 @@ The older `mingw-w64-i686*` names remain compatibility aliases so Step 01 script
 
 The i686 runtime presets are deliberately Zero Hour-first: Generals and MFC-dependent legacy tools are disabled unless explicitly requested/supported. The long-term Evolution runtime remains x64 + D3D12; these are compatibility/reference presets, not the final renderer architecture.
 
-## Focused test path
+## Focused test paths
 
-`mingw32-tests` sets `RTS_BUILD_TESTS_ONLY=ON`. The root CMake graph then configures only `core_config`, Utility compatibility headers, ReactOS ATL on MinGW, and `Core/Tests`.
+`mingw32-tests` sets `RTS_BUILD_TESTS_ONLY=ON` for the i686 compatibility/reference lane. The root graph configures only the focused modernization dependencies and tests, retaining ReactOS ATL only because the signed-off 32-bit determinism target consumes it.
 
-This prevents a determinism/W3X regression run from fetching or configuring unrelated renderer/runtime dependencies. CTest owns W3X A0/A1/A2 and the Step 01 gate.
+`mingw64-tests` is the Step 04A x64 readiness lane. It also sets `RTS_BUILD_TESTS_ONLY=ON`, enables `RTS_BUILD_X64_READINESS`, uses the x86_64 MinGW wrapper, and intentionally does **not** populate ATL or link the legacy D3D8/DirectInput/DirectSound runtime libraries.
+
+This separation lets architecture/serialization guards compile on x64 before the full legacy runtime is enabled. CTest owns W3X A0/A1/A2, Step 01 lightweight determinism, Step 02 install policy, Step 03 telemetry schema, and Step 04A architecture width coverage.
 
 ## Dependency and warning policy
 
@@ -39,7 +41,12 @@ Source-only FetchContent dependencies use the modern declare/make-available flow
 
 ## Tool discovery
 
-Native Windows MinGW defaults to the MSYS2 MINGW32 root. `RTS_MINGW_ROOT` can override it explicitly. The toolchain validates the compiler target triplet before the full graph is configured.
+MinGW tool discovery is shared by architecture wrappers in `cmake/toolchains/mingw-w64-common.cmake`:
+
+- i686 defaults to MSYS2 `C:/msys64/mingw32` and triplet `i686-w64-mingw32`;
+- x86_64 defaults to MSYS2 `C:/msys64/mingw64` and triplet `x86_64-w64-mingw32`.
+
+`RTS_MINGW_ROOT` can override either root explicitly. The shared toolchain validates the selected compiler triplet before the project graph is configured.
 
 WIDL is normally discovered from the selected MSYS2 MINGW32 root (`mingw-w64-i686-tools`, included in the i686 toolchain group). `RTS_WIDL_ROOT`/`WIDL_ROOT` can override the tool root, and `RTS_WIDL_INCLUDE_DIR` can override the directory containing `oaidl.idl`. Linux cross-host Wine include layouts remain supported. The focused test preset intentionally does not require WIDL.
 
@@ -76,6 +83,16 @@ Step 02 is implementation-complete and user-accepted. On 2026-09-11 the user rep
 
 ## Profile telemetry build option
 
-Step 03A adds `RTS_BUILD_OPTION_PERF_TELEMETRY`. The canonical `mingw32-profile` preset enables it; `mingw32-release` and `mingw32-debug` leave it off. The option defines `RTS_PERF_TELEMETRY`, which brackets only the primary WW3D render frame and publishes existing renderer statistics through the shared profiling seam.
+Completed Step 03 uses `RTS_BUILD_OPTION_PERF_TELEMETRY`. The canonical `mingw32-profile` preset enables it; `mingw32-release` and `mingw32-debug` leave it off. `RTS_PERF_TELEMETRY` brackets the engine update phases, client visibility snapshot, and primary WW3D render frame while reusing existing renderer statistics.
 
-CSV output is still runtime opt-in through `RTS_PERF_CAPTURE=<path>`, so building the profile preset does not create capture files unless requested. Tracy remains a separate optional profiler backend; when enabled it consumes the same Step 03A counters rather than collecting another set.
+CSV output remains runtime opt-in through `RTS_PERF_CAPTURE=<path>`. Schema v2 is summarized with `scripts/perf-summary.py`; Tracy consumes the same sample rather than collecting a duplicate set.
+
+## Step 04A x64 readiness command
+
+```text
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+```
+
+This is intentionally a focused x64 gate. A full x64 runtime configure is rejected until later Step 04 slices migrate pointer/handle, allocator, serialization/network, and client/platform boundaries.

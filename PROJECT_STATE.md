@@ -7,9 +7,10 @@ This file is the authoritative state marker for modernization work. Read it befo
 - Step 02A was based on the sealed Step 01G Windows-signoff repository supplied on 2026-09-10.
 - Step 01G user-declared archive/hash: `GeneralsGameCode-Step01G-Windows-Signoff-Baseline-Seal-full.zip` / `bb179526f5a093397375220025e265ffc66ad223e8569a30b4d933562ac8718a`.
 - SHA-256 of the Step 01G archive bytes actually received for Step 02A: `796c7e5642d655bebdf0ca079d7a099a5af46d82cb11a9b27282021f800fce07`; that mismatch remains recorded rather than silently substituting another tree.
-- **Step 03A authoritative implementation base:** `GeneralsGameCode-Step02B-Runtime-Configure-Install-Hardening-full.zip`.
-- SHA-256 of the exact Step 02B archive bytes used for Step 03A: `c0bac9981f10ec82bdeb391fa7e33811be7a611d3368c31c1f5e73ef15ba1ab5`.
-- Step 03A was produced strictly from those received Step 02B bytes; no remembered repository, older patch, or alternate ZIP was used.
+- **Step 03 completion + Step 04A authoritative implementation base:** `GeneralsGameCode-Step03A-Performance-Telemetry-Foundation-full.zip`.
+- SHA-256 of the exact Step 03A archive bytes used here: `e1166a1d1834530eea4fc740b00802f27a85269e8831d25c8ff9e61c81c0c5c3`.
+- This work was produced strictly from those received Step 03A bytes; no remembered repository, older patch, or alternate ZIP was used.
+- Historical Step 03A base: Step 02B SHA-256 `c0bac9981f10ec82bdeb391fa7e33811be7a611d3368c31c1f5e73ef15ba1ab5`.
 - Historical upstream provenance remains recorded in `Modernization/BASELINE_MANIFEST.md`.
 
 ## What was changed when establishing this baseline
@@ -65,8 +66,8 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | Existing upstream renderer backend seam | **Partial / already present** |
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
 | MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
-| HD performance telemetry | **ACTIVE — Step 03A render-frame capture implemented locally** |
-| x86 memory-survival work | Planned — Step 04 |
+| HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
+| x64 engine migration | **ACTIVE — Step 04A readiness lane implemented** |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
 | W3X top-level child-element discovery | **Done — A2** |
@@ -76,7 +77,7 @@ The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. 
 | 32-bit/high-poly geometry path | Planned — Step 07 |
 | Expanded instancing/batching | Planned — Step 08 |
 | Modern LOD/visibility | Planned — Step 09 |
-| x64 Evolution runtime | Planned — Step 10 |
+| x64 runtime stabilization | Planned — Step 10 after Step 04 bring-up |
 | Renderer boundary completion | Planned — Step 11 |
 | D3D12 renderer | Planned — Steps 12+ |
 
@@ -91,17 +92,24 @@ None of these pre-steps is wired into the runtime asset manager. They do not cha
 
 ## Next implementation milestone
 
-**Step 01 is complete and signed off. Step 02 has been user-accepted; Step 03 is now the active modernization milestone.**
+**Step 03 is complete. Step 04 — x64 Engine Migration — is active.**
 
-The consolidated `Core/Tests/DeterminismPrimitivesTest.cpp` now covers production CRC, integer and real game-logic RNG state/sequences, legacy float helper bit behavior, Xfer primitive bytes, representative snapshot ordering, production `XferCRC`, critical Win32 replay/network ABI assumptions, and a known `MSG_LOGIC_CRC` replay-record byte/CRC checkpoint. No additional per-topic determinism test files were introduced.
+Step 01 remains the deterministic compatibility contract. The i686 MinGW/Ninja runtime is the reference executable and must keep its replay/network/Xfer byte behavior while the x64 lane is brought up. Step 02 remains user-accepted on Windows.
 
-The only deterministic production-code correction in the completion pass removes modern C++ strict-aliasing violations from the non-VC6 float bit-conversion path in `Lib/BaseType.h` by using `memcpy`. The legacy arithmetic/mask behavior is unchanged, the VC6 assembly branch is untouched, and a 199,122-input before/after probe was bit-identical. GCC no longer requires the prior `-Wno-strict-aliasing` test workaround.
+### Step 03 completion
 
-The Windows target remains `z_determinismtest`, but Step 02A moves its CMake ownership from the Zero Hour extras subtree to the focused `Core/Tests` graph. It still compiles the production RandomValue/Snapshot/Xfer/XferCRC/Damage implementation units directly with the same narrow standalone seam, avoiding unrelated renderer/UI/network executable globals. The signed-off Step 01 command remains available through a compatibility preset alias. On 2026-09-10 the Step 01G `z_determinismcheck` gate passed on Windows with MinGW-w64 i686 / GCC 16.2; Step 02A requires a fresh Windows run before its own sign-off.
+Step 03 extends the Step 03A renderer sample into stable CSV schema v2: one row per `GameEngine::update()` containing complete update CPU time, client/message/network/logic phase timing, primary WW3D render timing, drawable total/visible/shrouded visibility proxies, and the existing draw/geometry/texture/resource counters. `scripts/perf-summary.py` reports p50/p95/p99/max phase timings plus mean/max resource counters. The path is compile-time limited to telemetry/profile builds and remains observational only. Legacy D3D8 GPU timestamp work is intentionally deferred to D3D12 rather than creating instrumentation that would be discarded with the compatibility renderer.
 
-**Step 02 — Command-Line Build System Foundation** is implementation-complete and user-accepted on Windows. Step 02A provides the canonical `mingw32-release`, `mingw32-debug`, `mingw32-profile`, and `mingw32-tests` presets; `RTS_BUILD_TESTS_ONLY` avoids the full runtime dependency graph for determinism/W3X checks; and `Core/Tests/CMakeLists.txt` integrates W3X A0/A1/A2 plus the Step 01 gate with CTest. The user reported the real Windows path working on 2026-09-11; that report is recorded without fabricating an archived command transcript.
+### Step 04A — x64 readiness lane
 
-**Step 02B** hardens the first real runtime configure/install seams found during the full-tree audit. MinGW no longer evaluates MSVC-only `$<TARGET_PDB_FILE:...>` expressions when an installed Generals/Zero Hour path is present; runtime installation is consolidated through `rts_install_runtime_target()`, which preserves PDB installation for MSVC and installs the existing GNU `.debug` sidecar for MinGW Release builds. Full MinGW runtime configuration now preflights WIDL (and, on native Windows, the `oaidl.idl`/`ocidl.idl` headers) before ReactOS ATL or other runtime dependencies are populated, so a missing MINGW32 toolchain component fails early instead of after unrelated downloads/configuration. Local GCC/Clang focused regression tests (5/5 at Step 02B, including the repository-owned runtime-install policy test) and host-GNU install/debug-sidecar probes were green. On 2026-09-11 the user reported that the Windows MinGW path works, with expected warnings. No console transcript was supplied, so the repository records user acceptance rather than claiming an independently archived Windows verification.
+Step 04A begins the engine migration without pretending the full runtime is already 64-bit:
 
+- MinGW-w64 discovery is consolidated into one common toolchain implementation used by i686 and x86_64 wrappers;
+- `mingw64-tests` is the canonical x86_64 focused preset and enables `RTS_BUILD_X64_READINESS`;
+- a full x64 runtime configure is intentionally rejected until runtime boundaries are ported;
+- the x64 focused graph does not depend on legacy D3D8/DirectInput/DirectSound libraries or an unused ATL population;
+- `architecture_width_step04a` locks fixed 32-bit wire/game IDs while validating pointer-sized `uintptr_t` round trips.
 
-**Step 03A — Render-frame telemetry foundation** reuses the existing `rts/profile.h` and WW3D `Debug_Statistics` seams rather than creating a second profiler hierarchy. The canonical `mingw32-profile` build now enables `RTS_BUILD_OPTION_PERF_TELEMETRY`; normal release/debug builds do not execute the new render hook. A runtime `RTS_PERF_CAPTURE=<path>` switch emits stable CSV schema v1 containing render-frame CPU microseconds, synchronized time, draw/geometry counters, texture/resource counters, and WW3D allocation/free counts. The same sample can publish Tracy plots when Tracy is enabled. Local GCC 14.2 and Clang 17 focused CMake/Ninja/CTest runs pass 6/6 tests, including the new production capture/schema regression. GPU timing, visibility/culling, process memory, asset hotspots, and benchmark automation remain Step 03 work.
+Local host-native GCC 14.2 and Clang 17 focused configure/build/CTest runs pass 7/7 tests, including `-O0`/`-O2`/`-O3` coverage; GCC ASan and UBSan are also green. The validation container has no MinGW-w64 x86_64 compiler, so no Windows `mingw64-tests` pass is claimed until actual output is provided.
+
+The next implementation slice is **Step 04B — pointer/handle correctness**: inventory and remove address truncation (`pointer -> Int/DWORD/LONG`), distinguish numeric IDs from native addresses/handles, and add focused regressions while preserving the i686 determinism gate.

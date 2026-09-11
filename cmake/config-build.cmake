@@ -11,6 +11,7 @@ option(RTS_BUILD_OPTION_ASAN "Build code with Address Sanitizer." OFF)
 option(RTS_BUILD_OPTION_VC6_FULL_DEBUG "Build VC6 with full debug info." OFF)
 option(RTS_BUILD_TESTS "Build modernization characterization/regression tests." OFF)
 option(RTS_BUILD_TESTS_ONLY "Configure only the lightweight modernization test graph." OFF)
+option(RTS_BUILD_X64_READINESS "Configure the staged 64-bit migration/readiness graph." OFF)
 
 if(RTS_BUILD_TESTS_ONLY)
     set(RTS_BUILD_TESTS ON CACHE BOOL "Build modernization characterization/regression tests." FORCE)
@@ -35,6 +36,7 @@ add_feature_info(AddressSanitizer RTS_BUILD_OPTION_ASAN "Building with address s
 add_feature_info(Vc6FullDebug RTS_BUILD_OPTION_VC6_FULL_DEBUG "Building VC6 with full debug info")
 add_feature_info(ModernizationTests RTS_BUILD_TESTS "Build modernization characterization/regression tests")
 add_feature_info(TestsOnly RTS_BUILD_TESTS_ONLY "Configure only the lightweight modernization test graph")
+add_feature_info(X64Readiness RTS_BUILD_X64_READINESS "Configure the staged 64-bit migration/readiness graph")
 add_feature_info(FFmpegSupport RTS_BUILD_OPTION_FFMPEG "Building with FFmpeg support")
 
 set(RTS_BUILD_OUTPUT_SUFFIX "" CACHE STRING "Suffix appended to output names of installable targets")
