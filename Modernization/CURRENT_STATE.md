@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts plus accepted modernization changes through Step 03A on 2026-09-11.
+This document records verified source facts plus accepted modernization changes through completed Step 03 and Step 04A on 2026-09-11.
 
 ## Build system
 
@@ -14,17 +14,30 @@ This document records verified source facts plus accepted modernization changes 
 - The i686 toolchain validates the selected GCC triplet, supports `RTS_MINGW_ROOT`, and shares its resolved bin path with WIDL/debug-strip discovery. WIDL supports explicit root/include overrides and is not required for the focused test graph.
 - Full MinGW runtime configuration now requires WIDL before populating runtime FetchContent dependencies; native Windows also validates the `oaidl.idl` and `ocidl.idl` imports used by the EABrowser IDLs.
 - Generals and Zero Hour install rules use `rts_install_runtime_target()` instead of repeating MSVC-only PDB generator expressions. MSVC keeps optional PDB installation; MinGW Release installs the `.debug` sidecar emitted by the existing strip workflow.
-- Local host-native GCC and Clang focused configure/build/CTest validation is green at 6/6 tests, including the Step 02B runtime-install policy and Step 03A telemetry capture regression. The user reports the real Step 02B Windows build path working; no Step 02 Windows console transcript is archived in this tree.
+- MinGW toolchain discovery is now shared by tiny i686/x86_64 wrappers. `mingw64-tests` is the first x64 readiness lane and intentionally configures only the focused modernization graph.
+- Full MinGW x64 runtime configuration is still blocked by design until runtime/platform/renderer dependencies are migrated subsystem-by-subsystem.
+- Local host-native GCC and Clang focused configure/build/CTest validation is green at 7/7 tests, including the Step 02B runtime-install policy, completed Step 03 telemetry regression, and Step 04A architecture-width guard. The user reports the real Step 02B Windows build path working; no Step 02 Windows console transcript is archived in this tree.
 
 ## Performance telemetry
 
-- `rts/profile.h` now exposes the consolidated Step 03A `PerformanceTelemetry` seam; no second standalone profiler hierarchy was introduced.
-- `RTS_BUILD_OPTION_PERF_TELEMETRY` compiles the primary WW3D render hook. `mingw32-profile` enables it; normal `mingw32-release`/`mingw32-debug` do not.
-- `RTS_PERF_CAPTURE=<path>` enables a versioned CSV capture at runtime; `RTS_PERF_CAPTURE=1` uses `RTSPerfCapture.csv`.
-- CSV schema v1 records render CPU microseconds, WW3D render/sync frame identity, legacy draw/geometry counters, texture bytes/count/changes, lightmap/procedural texture counters, and WW3D memory allocation/free operation counts.
-- CSV capture temporarily enables the existing simple texture-accounting mode only when required, then restores the previous disabled state.
-- The same sample publishes Tracy plots when Tracy is separately enabled.
-- Telemetry values are observational only and are not consumed by simulation, frame pacing, CRC, replay, network, or Xfer code.
+- Step 03 is complete. `rts/profile.h` exposes one consolidated `PerformanceTelemetry` seam; no second profiler hierarchy was introduced.
+- `mingw32-profile` enables `RTS_BUILD_OPTION_PERF_TELEMETRY`; normal release/debug builds do not compile the engine/client telemetry call sites.
+- CSV schema v2 emits one observational row per `GameEngine::update()` with update/client/message/network/logic CPU phases plus the primary WW3D render CPU bracket.
+- The same row carries draw/geometry/texture/resource counters and a drawable total/visible/shrouded visibility proxy.
+- `scripts/perf-summary.py` reports timing percentiles and mean/max resource counters using only the Python standard library.
+- Tracy plots consume the same sample.
+- GPU timestamp work is deferred to D3D12 rather than adding temporary D3D8 query infrastructure.
+- Telemetry values are never consumed by simulation, frame pacing, CRC, replay, network, or Xfer behavior.
+
+## x64 migration
+
+- Step 04 is active; Step 04A establishes the x64 readiness lane.
+- `cmake/toolchains/mingw-w64-common.cmake` centralizes MinGW-w64 discovery; i686 and x86_64 wrappers select architecture/triplet/root/pointer width.
+- `mingw64-tests` enables `RTS_BUILD_X64_READINESS` and the focused graph only. This is the first canonical x86_64 Windows build preset.
+- Focused x64 readiness does not link legacy D3D8/DirectInput/DirectSound and does not populate ReactOS ATL when there is no consumer.
+- `architecture_width_step04a` enforces fixed-width engine/wire primitives and IDs while permitting native pointers/`uintptr_t` to widen.
+- The full x64 Zero Hour executable is not enabled yet. Pointer/handle correctness, pools/allocators, serialization/native-layout separation, deterministic core bring-up, and client/platform dependencies are subsequent Step 04 slices.
+- The i686 runtime remains the deterministic/replay compatibility reference during migration.
 
 ## Renderer
 
@@ -83,7 +96,7 @@ The Step 01G Windows gate remains signed off: on 2026-09-10, `z_determinismcheck
 ## Modernization risk areas
 
 - deterministic behavior across compilers;
-- x86/32-bit memory ceiling;
+- x86/32-bit address assumptions while x64 is brought up;
 - legacy binary/on-disk layout assumptions;
 - 16-bit geometry assumptions in legacy W3D rendering paths;
 - DX8 state-machine coupling;

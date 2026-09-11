@@ -181,3 +181,21 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - Added `performance_telemetry_step03a` to the focused CTest graph. GCC 14.2 and Clang 17 each pass 6/6 focused tests.
 - Final telemetry sealing matrix passed with GCC and Clang at `-O0`, `-O2`, and `-O3`, plus GCC ASan and UBSan. A telemetry-enabled focused configure confirmed `RTS_PERF_TELEMETRY` propagation; the normal focused Release graph confirmed the define stays absent.
 - Step 03 remains active: GPU timing, full client/update phases, visibility/culling, process memory, asset hotspots, and benchmark automation remain.
+
+## 2026-09-11 — Step 03 completion + Step 04A x64 readiness lane
+
+- Completed Step 03 by extending the Step 03A render sample into versioned CSV schema v2 with one row per `GameEngine::update()`.
+- Added complete engine update, GameClient, message-stream, network, GameLogic, and primary WW3D render CPU timing while keeping all telemetry observational.
+- Added a profile-build drawable visibility snapshot: total drawables, DrawModule-visible drawables, and fully shrouded drawables. This is explicitly a client visibility proxy, not a frustum/GPU occlusion result.
+- Preserved existing WW3D draw/geometry/texture/resource counters and Tracy plots; no duplicate renderer-statistics subsystem was introduced.
+- Added `scripts/perf-summary.py` for standard-library-only p50/p95/p99/max timing and mean/max counter summaries.
+- Deliberately deferred legacy D3D8 GPU timestamp work to D3D12, where native queue timestamp infrastructure will survive the renderer transition.
+- Began Step 04 immediately after Step 03 by consolidating MinGW toolchain discovery into one architecture-parameterized implementation.
+- Kept `mingw-w64-i686.cmake` as the compatibility/reference wrapper and added `mingw-w64-x86_64.cmake` for the staged x64 lane.
+- Added `mingw64-tests` and `RTS_BUILD_X64_READINESS`; the x64 lane is initially focused-tests-only, and full x64 runtime configuration fails intentionally with an explanatory diagnostic.
+- Removed legacy D3D8/DirectInput/DirectSound link requirements from the focused MinGW test graph and avoided ReactOS ATL population in the x64 focused graph when there is no consumer.
+- Added `architecture_width_step04a`, which validates pointer/`uintptr_t` width behavior while locking fixed-width engine/wire primitives and ObjectID/DrawableID to 32 bits.
+- Local host-native GCC 14.2 and Clang 17 focused CMake/Ninja/CTest runs pass 7/7 tests.
+- No Windows x86_64 test pass is claimed; `mingw64-tests` remains the Step 04A Windows validation gate.
+- Final local validation also passed GCC/Clang `-O0`/`-O2`/`-O3` focused suites (7/7 each), GCC ASan and UBSan (7/7 each), schema-v2 summary text/JSON checks, and telemetry compile-definition isolation.
+- The validation container did not provide an x86_64 MinGW-w64 compiler, so no Win64 execution/build result was inferred from the host-native 64-bit pass.
