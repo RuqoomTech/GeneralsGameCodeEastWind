@@ -205,3 +205,52 @@ add_test(
         -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
         -P ${CMAKE_SOURCE_DIR}/cmake/tests/X64PointerWireAuditTest.cmake
 )
+
+# Step 04C native-width runtime substrate guard. This instantiates the actual
+# WWLib object pool and forces multiple backing blocks so the block-list header,
+# free-list pointers, and object alignment are exercised with native pointer width.
+add_executable(runtime_native_width_step04c_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/RuntimeNativeWidthStep04CTest.cpp
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/FastAllocator.cpp
+)
+target_include_directories(runtime_native_width_step04c_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
+)
+target_link_libraries(runtime_native_width_step04c_test PRIVATE
+    core_config
+    core_utility_no_pch
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(runtime_native_width_step04c_test PRIVATE
+        -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
+    )
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND UNIX)
+    # The legacy WWLib umbrella headers collide with libc's strlcpy/strlcat
+    # declarations on Clang/Linux. This is a host-only focused-test shim; the
+    # Windows x64 target does not depend on these libc declarations.
+    target_compile_definitions(runtime_native_width_step04c_test PRIVATE
+        HAVE_STRLCPY=1 HAVE_STRLCAT=1 HAVE_WCSLCPY=1 HAVE_WCSLCAT=1
+    )
+    target_compile_options(runtime_native_width_step04c_test PRIVATE
+        -Wno-implicit-exception-spec-mismatch
+        -Wno-unused-parameter
+        -Wno-unused-but-set-variable
+    )
+endif()
+add_test(NAME runtime_native_width_step04c COMMAND runtime_native_width_step04c_test)
+
+add_test(
+    NAME windows_dependency_bootstrap_step04c
+    COMMAND ${CMAKE_COMMAND}
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/WindowsDependencyBootstrapTest.cmake
+)
+
+add_test(
+    NAME runtime_pointer_source_audit_step04c
+    COMMAND ${CMAKE_COMMAND}
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/X64RuntimePointerAuditStep04CTest.cmake
+)

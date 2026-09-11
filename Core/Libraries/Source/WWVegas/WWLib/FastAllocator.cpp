@@ -16,8 +16,12 @@
 **	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "FastAllocator.h"
+#include "Utility/CppMacros.h"
+
+#include <cwctype>
 #include <new>
+
+#include "FastAllocator.h"
 
 static FastAllocatorGeneral* generalAllocator; //This general allocator will do all allocations for us.
 

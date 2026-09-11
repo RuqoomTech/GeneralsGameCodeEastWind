@@ -217,3 +217,32 @@ Implemented:
 - retained fixed-width IDs/protocol fields and did not open the x64 D3D8 runtime graph.
 
 Validation completed in the Linux container with GCC 14.2.0 and Clang 17.0.0. The focused graph contains 9 tests and passed in all of these configurations: GCC `-O0`, `-O2`, `-O3`; Clang `-O0`, `-O2`, `-O3`; GCC AddressSanitizer; GCC UndefinedBehaviorSanitizer. `git diff --check` and clean patch-application verification are packaging gates for the final deliverables. No Windows or Win64 execution is claimed by this environment.
+
+## 2026-09-11 — Step 04C: native-width runtime substrate + quick Windows dependency bootstrap
+
+Authoritative input: `GeneralsGameCode-Step04B-Wire-Pointer-Audit-full.zip` (`b6e983715e74c32ececcbe820964697496a9df25dd5e36cb86d88e6c981a09f9`).
+
+Locked compatibility clarification for this slice: Evolution is x64-only and multiplayer compatibility is required only between our own Evolution/game editions. Retail 32-bit multiplayer interoperability is not a target. The frozen i686 build receives no new features and remains temporarily only as a deterministic/replay/network oracle.
+
+Implemented:
+
+- converted `ObjectPoolClass` backing-block chaining from the Win32-accidental `uint32*` layout to a native one-pointer `BlockHeader`, preventing x64 overlap between the eight-byte block link and the first pooled object/free-list entry;
+- converted `GameMemory` raw byte arithmetic/strides to `size_t`, made pool byte alignment follow `sizeof(void*)`, added blob multiplication overflow checking, and removed the pointer-through-`unsigned` alignment check;
+- retained the separate `GameMemoryInit.cpp` four-count rounding rule because it rounds pool **counts**, not addresses;
+- made `FastFixedAllocator` chunk storage/stride pointer-aligned and replaced `FastAllocatorGeneral`'s fixed four-byte prefix with a pointer-aligned header that remains four bytes on x86 and becomes eight bytes on x64;
+- corrected `FastAllocatorGeneral::Realloc` so grow/shrink copies only the valid payload prefix instead of the old augmented allocation size;
+- converted `WindowVideoManager` pointer hashing to `uintptr_t` and `HKL` low-word extraction to an explicit native-width handle bridge;
+- fixed list-box multi-select retrieval so the native `Int*` selection array is returned through `Int**`, not truncated into `Int`; updated the modern Core GameSpy chat caller to use that contract;
+- added guarded `HAVE_WCSLCPY` / `HAVE_WCSLCAT` compatibility seams used only by the Clang/Linux focused allocator regression, avoiding a new duplicate string implementation;
+- added `scripts/setup-windows-dev.ps1`: x64/MSYS2 GCC + WIDL + CMake + Ninja + Python + Git by default, with the frozen i686 toolchain only behind `-IncludeLegacyX86`; `-VerifyOnly`, `-SkipMsysUpdate`, and `-SkipPathUpdate` are available for existing installations;
+- added `runtime_native_width_step04c`, `runtime_pointer_source_audit_step04c`, and `windows_dependency_bootstrap_step04c`, increasing the focused graph from 9 to 12 tests.
+
+Validation completed in the Linux container:
+
+- GCC 14.2 `-O0`, `-O2`, `-O3`: 12/12 each;
+- Clang 17 `-O0`, `-O2`, `-O3`: 12/12 each;
+- GCC AddressSanitizer: 12/12;
+- GCC UndefinedBehaviorSanitizer: 12/12;
+- production Step 04C allocator guard reports 64-bit native pointers on this host.
+
+The environment has no PowerShell runtime and no `x86_64-w64-mingw32` compiler, so no Windows/Win64 dependency-bootstrap or `mingw64-tests` pass is claimed. Step 04D is next: bring real deterministic/headless Common/GameLogic units into the x64 lane and start golden x86-versus-x64 CRC timeline validation.

@@ -199,13 +199,15 @@ static Bool theMainInitFlag = false;
 // PRIVATE PROTOTYPES
 // ----------------------------------------------------------------------------
 
-/// @todo srj -- make this work for 8
-#define MEM_BOUND_ALIGNMENT 4
+// Pool storage contains native pointers in its private block headers. Win32 used
+// four-byte alignment; the x64 Evolution runtime must align every block to the
+// native pointer width so consecutive pool entries cannot become misaligned.
+#define MEM_BOUND_ALIGNMENT (sizeof(void *))
 
-static Int roundUpMemBound(Int i);
-static void *sysAllocateDoNotZero(Int numBytes);
+static size_t roundUpMemBound(size_t i);
+static void *sysAllocateDoNotZero(size_t numBytes);
 static void sysFree(void* p);
-static void memset32(void* ptr, Int value, Int bytesToFill);
+static void memset32(void* ptr, Int value, size_t bytesToFill);
 #ifdef MEMORYPOOL_STACKTRACE
 static void doStackDumpOutput(const char* m);
 static void doStackDump(void **stacktrace, int size);
@@ -223,9 +225,10 @@ static inline void preMainInitMemoryManager()
 
 //-----------------------------------------------------------------------------
 /** round up to the nearest multiple of MEM_BOUND_ALIGNMENT */
-static Int roundUpMemBound(Int i)
+static size_t roundUpMemBound(size_t i)
 {
-	return (i + (MEM_BOUND_ALIGNMENT-1)) & ~(MEM_BOUND_ALIGNMENT-1);
+	const size_t alignment = MEM_BOUND_ALIGNMENT;
+	return (i + (alignment - 1)) & ~(alignment - 1);
 }
 
 //-----------------------------------------------------------------------------
@@ -236,7 +239,7 @@ static Int roundUpMemBound(Int i)
 
 	note: throws ERROR_OUT_OF_MEMORY on failure; never returns null
 */
-static void* sysAllocateDoNotZero(Int numBytes)
+static void* sysAllocateDoNotZero(size_t numBytes)
 {
 	void* p = ::GlobalAlloc(GMEM_FIXED, numBytes);
 	if (!p)
@@ -282,10 +285,10 @@ static void sysFree(void* p)
 /**
 	fills memory with a 32-bit value (note: assumes the ptr is 4-byte-aligned)
 */
-static void memset32(void* ptr, Int value, Int bytesToFill)
+static void memset32(void* ptr, Int value, size_t bytesToFill)
 {
-	Int wordsToFill = bytesToFill>>2;
-	bytesToFill -= (wordsToFill<<2);
+	size_t wordsToFill = bytesToFill >> 2;
+	bytesToFill -= (wordsToFill << 2);
 
 	Int *p = (Int*)ptr;
 	for (++wordsToFill; --wordsToFill; )
@@ -433,7 +436,7 @@ private:
 
 public:
 
-	static Int calcRawBlockSize(Int logicalSize);
+	static size_t calcRawBlockSize(Int logicalSize);
 	static MemoryPoolSingleBlock *rawAllocateSingleBlock(MemoryPoolSingleBlock **pRawListHead, Int logicalSize, MemoryPoolFactory *owningFactory DECLARE_LITERALSTRING_ARG2);
 	void removeBlockFromList(MemoryPoolSingleBlock **pHead);
 
@@ -560,13 +563,14 @@ inline void* MemoryPoolSingleBlock::getUserData()
 	given a desired logical block size, calculate the physical size needed for each
 	MemoryPoolSingleBlock (including overhead, etc.)
 */
-inline /*static*/ Int MemoryPoolSingleBlock::calcRawBlockSize(Int logicalSize)
+inline /*static*/ size_t MemoryPoolSingleBlock::calcRawBlockSize(Int logicalSize)
 {
-	Int s = ::roundUpMemBound(logicalSize) + sizeof(MemoryPoolSingleBlock);
+	DEBUG_ASSERTCRASH(logicalSize >= 0, ("negative allocation size"));
+	size_t s = ::roundUpMemBound(static_cast<size_t>(logicalSize)) + sizeof(MemoryPoolSingleBlock);
 	#ifdef MEMORYPOOL_BOUNDINGWALL
-	s += WALLSIZE*2;
+	s += WALLSIZE * 2;
 	#endif
-	return s;
+	return ::roundUpMemBound(s);
 }
 
 /**
@@ -1189,8 +1193,11 @@ void MemoryPoolBlob::initBlob(MemoryPool *owningPool, Int allocationCount)
 	m_totalBlocksInBlob = allocationCount;
 	m_usedBlocksInBlob = 0;
 
-	Int rawBlockSize = MemoryPoolSingleBlock::calcRawBlockSize(m_owningPool->getAllocationSize());
-	m_blockData = (char *)::sysAllocateDoNotZero(rawBlockSize * m_totalBlocksInBlob);	// throws on failure
+	const size_t rawBlockSize = MemoryPoolSingleBlock::calcRawBlockSize(m_owningPool->getAllocationSize());
+	const size_t blockCount = static_cast<size_t>(m_totalBlocksInBlob);
+	if (blockCount != 0 && rawBlockSize > static_cast<size_t>(-1) / blockCount)
+		throw ERROR_OUT_OF_MEMORY;
+	m_blockData = (char *)::sysAllocateDoNotZero(rawBlockSize * blockCount);	// throws on failure
 
 	// set up the list of free blocks in the blob (namely, all of 'em)
 	MemoryPoolSingleBlock *block = (MemoryPoolSingleBlock *)m_blockData;
@@ -1319,7 +1326,7 @@ void MemoryPoolBlob::debugMemoryVerifyBlob()
 	DEBUG_ASSERTCRASH(m_usedBlocksInBlob >= 0 && m_usedBlocksInBlob <= m_totalBlocksInBlob, ("unlikely m_usedBlocksInBlob"));
 	DEBUG_ASSERTCRASH(m_totalBlocksInBlob > 0, ("unlikely m_totalBlocksInBlob"));
 
-	Int rawBlockSize = MemoryPoolSingleBlock::calcRawBlockSize(m_owningPool->getAllocationSize());
+	const size_t rawBlockSize = MemoryPoolSingleBlock::calcRawBlockSize(m_owningPool->getAllocationSize());
 	char *blockData = m_blockData;
 	for (Int i = m_totalBlocksInBlob-1; i >= 0; i--, blockData += rawBlockSize)
 	{
@@ -1336,7 +1343,7 @@ Int MemoryPoolBlob::debugBlobReportLeaks(const char* owner)
 	//USE_PERF_TIMER(MemoryPoolDebugging) skip end-of-run reporting stuff
 
 	Int any = 0;
-	Int rawBlockSize = MemoryPoolSingleBlock::calcRawBlockSize(m_owningPool->getAllocationSize());
+	const size_t rawBlockSize = MemoryPoolSingleBlock::calcRawBlockSize(m_owningPool->getAllocationSize());
 	char *blockData = m_blockData;
 	for (Int i = m_totalBlocksInBlob-1; i >= 0; i--, blockData += rawBlockSize)
 	{
@@ -1357,7 +1364,7 @@ Bool MemoryPoolBlob::debugIsBlockInBlob(void *pBlockPtr)
 	USE_PERF_TIMER(MemoryPoolDebugging)
 
 	MemoryPoolSingleBlock *block = MemoryPoolSingleBlock::recoverBlockFromUserData(pBlockPtr);
-	Int rawBlockSize = MemoryPoolSingleBlock::calcRawBlockSize(m_owningPool->getAllocationSize());
+	const size_t rawBlockSize = MemoryPoolSingleBlock::calcRawBlockSize(m_owningPool->getAllocationSize());
 	char *blockData = m_blockData;
 	for (Int i = m_totalBlocksInBlob-1; i >= 0; i--)
 	{
@@ -1377,7 +1384,7 @@ Bool MemoryPoolBlob::debugIsBlockInBlob(void *pBlockPtr)
 */
 void MemoryPoolBlob::debugResetCheckpoints()
 {
-	Int rawBlockSize = MemoryPoolSingleBlock::calcRawBlockSize(m_owningPool->getAllocationSize());
+	const size_t rawBlockSize = MemoryPoolSingleBlock::calcRawBlockSize(m_owningPool->getAllocationSize());
 	char *blockData = m_blockData;
 	for (Int i = m_totalBlocksInBlob-1; i >= 0; i--, blockData += rawBlockSize)
 	{
@@ -1525,7 +1532,12 @@ void MemoryPool::init(MemoryPoolFactory *factory, const char *poolName, Int allo
 {
 	m_factory = factory;
 	m_poolName = poolName;
-	m_allocationSize = ::roundUpMemBound(allocationSize);	// round up to four-byte boundary
+	if (allocationSize < 0)
+		throw ERROR_OUT_OF_MEMORY;
+	const size_t alignedAllocationSize = ::roundUpMemBound(static_cast<size_t>(allocationSize));
+	if (alignedAllocationSize > static_cast<size_t>(0x7fffffff))
+		throw ERROR_OUT_OF_MEMORY;
+	m_allocationSize = static_cast<Int>(alignedAllocationSize);	// native-pointer alignment; remains 4 bytes on Win32
 	m_initialAllocationCount = initialAllocationCount;
 	m_overflowAllocationCount = overflowAllocationCount;
 	m_usedBlocksInPool = 0;
@@ -1561,7 +1573,7 @@ MemoryPool::~MemoryPool()
 */
 MemoryPoolBlob* MemoryPool::createBlob(Int allocationCount)
 {
-	DEBUG_ASSERTCRASH(allocationCount > 0 && allocationCount%MEM_BOUND_ALIGNMENT==0, ("bad allocationCount (must be >0 and evenly divisible by %d)",MEM_BOUND_ALIGNMENT));
+	DEBUG_ASSERTCRASH(allocationCount > 0, ("bad allocationCount (must be >0)"));
 
 	MemoryPoolBlob* blob = new (::sysAllocateDoNotZero(sizeof(MemoryPoolBlob))) MemoryPoolBlob;	// will throw on failure
 
@@ -2253,7 +2265,7 @@ void *DynamicMemoryAllocator::allocateBytesDoNotZeroImplementation(Int numBytes 
 
 #if defined(RTS_DEBUG)
   // check alignment
-  if (unsigned(result)&3)
+  if ((reinterpret_cast<uintptr_t>(result) & (MEM_BOUND_ALIGNMENT - 1)) != 0)
     throw ERROR_OUT_OF_MEMORY;
 #endif
 

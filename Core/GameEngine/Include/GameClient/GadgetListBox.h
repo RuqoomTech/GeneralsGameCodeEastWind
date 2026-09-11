@@ -89,6 +89,7 @@ extern Int GadgetListBoxAddEntryImage( GameWindow *listbox, const Image *image,
 extern void GadgetListBoxSetSelected( GameWindow *listbox, Int selectIndex );
 extern void GadgetListBoxSetSelected( GameWindow *listbox, const Int *selectList, Int selectCount = 1 );
 extern void GadgetListBoxGetSelected( GameWindow *listbox, Int *selectList );
+extern void GadgetListBoxGetSelected( GameWindow *listbox, Int **selectList );
 extern void GadgetListBoxReset( GameWindow *listbox );
 extern void GadgetListBoxSetItemData( GameWindow *listbox,  void *data, Int row, Int column = 0);
 extern void *GadgetListBoxGetItemData( GameWindow *listbox, Int row, Int column = 0);

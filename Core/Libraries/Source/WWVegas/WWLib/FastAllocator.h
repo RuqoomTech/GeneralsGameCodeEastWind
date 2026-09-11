@@ -234,7 +234,7 @@ protected:
 		};
 
 		Chunk* next;
-		char mem[size];
+		alignas(void*) char mem[size];
 	};
 	Chunk* chunks;
 	unsigned int esize;
@@ -315,7 +315,10 @@ WWINLINE FastFixedAllocator::~FastFixedAllocator()
 
 WWINLINE void FastFixedAllocator::Init(unsigned int n)
 {
-   esize = (n<sizeof(Link*) ? sizeof(Link*) : n);
+	const unsigned int alignment = static_cast<unsigned int>(alignof(void*));
+	const unsigned int minimum = static_cast<unsigned int>(sizeof(Link));
+	const unsigned int requested = (n < minimum ? minimum : n);
+	esize = (requested + (alignment - 1)) & ~(alignment - 1);
 }
 
 // ----------------------------------------------------------------------------
@@ -374,6 +377,17 @@ public:
 	static FastAllocatorGeneral* Get_Allocator();
 
 protected:
+	// Allocation metadata is pointer-aligned so returning header + 1 preserves the
+	// native pointer alignment required by the free-list metadata. The header remains
+	// 4 bytes on the frozen x86 oracle and naturally becomes 8 bytes on x64. The size
+	// field itself stays 32-bit because this allocator API accepts 32-bit request sizes.
+	struct alignas(void*) AllocationHeader
+	{
+		unsigned int Size;
+	};
+
+	static unsigned int Get_Allocation_Payload_Size(const AllocationHeader *header);
+
    FastFixedAllocator allocators[MAX_ALLOC_SIZE/ALLOC_STEP];
 	FastCriticalSectionClass CriticalSections[MAX_ALLOC_SIZE/ALLOC_STEP];
 	bool MemoryLeakLogEnabled;
@@ -420,16 +434,25 @@ WWINLINE unsigned FastAllocatorGeneral::Get_Total_Allocation_Count()
 //
 // ----------------------------------------------------------------------------
 
+WWINLINE unsigned int FastAllocatorGeneral::Get_Allocation_Payload_Size(const AllocationHeader *header)
+{
+	unsigned int payload = header->Size - static_cast<unsigned int>(sizeof(AllocationHeader));
+#ifdef MEMORY_OVERWRITE_TEST
+	payload -= static_cast<unsigned int>(sizeof(unsigned int));
+#endif
+	return payload;
+}
+
 WWINLINE void* FastAllocatorGeneral::Alloc(unsigned int n)
 {
    void* pMemory;
 	static int re_entrancy=0;
 	re_entrancy++;
 
-   //We actually allocate n+4 bytes. We store the # allocated
-   //in the first 4 bytes, and return the ptr to the rest back
-   //to the user.
-   n += sizeof(unsigned int);
+	// Store the 32-bit allocation size in a native-aligned header. The historical
+	// four-byte prefix returned user storage at +4, which breaks native pointer
+	// alignment on x64.
+	n += static_cast<unsigned int>(sizeof(AllocationHeader));
 #ifdef MEMORY_OVERWRITE_TEST
 	n+=sizeof(unsigned int);
 #endif
@@ -456,8 +479,9 @@ WWINLINE void* FastAllocatorGeneral::Alloc(unsigned int n)
 #endif
 
 	re_entrancy--;
-   *((unsigned int*)pMemory) = n;     //Write modified (augmented by 4) count into first four bytes.
-   return ((unsigned int*)pMemory)+1; //return ptr to bytes after it back to user.
+	AllocationHeader *header = static_cast<AllocationHeader*>(pMemory);
+	header->Size = n;
+	return header + 1;
 }
 
 // ----------------------------------------------------------------------------
@@ -469,24 +493,24 @@ WWINLINE void* FastAllocatorGeneral::Alloc(unsigned int n)
 WWINLINE void FastAllocatorGeneral::Free(void* pAlloc)
 {
    if (pAlloc) {
-      unsigned int* n = ((unsigned int*)pAlloc)-1; //Subtract four bytes and the count is stored there.
+		AllocationHeader *header = static_cast<AllocationHeader*>(pAlloc) - 1;
+		const unsigned int size = header->Size;
 
 #ifdef MEMORY_OVERWRITE_TEST
-		WWASSERT(*((unsigned int*)((char*)n+*n)-1)==0xabbac0de);
+		WWASSERT(*((unsigned int*)((char*)header+size)-1)==0xabbac0de);
 #endif
 
-		unsigned size=*n;
 		ActualMemoryUsage-=size;
 
 		if (size<MAX_ALLOC_SIZE) {
 			int index=size/ALLOC_STEP;
 			FastCriticalSectionClass::LockClass lock(CriticalSections[index]);
-         allocators[index].Free(n);
+         allocators[index].Free(header);
 		}
       else {
 			AllocatedWithMallocCount--;
 			AllocatedWithMalloc-=size;
-         ::free(n);
+         ::free(header);
 		}
    }
 }
@@ -500,8 +524,10 @@ WWINLINE void* FastAllocatorGeneral::Realloc(void* pAlloc, unsigned int n){
    if(n){
       void* const pNewAlloc = Alloc(n);      //Allocate the new memory. This never fails.
       if(pAlloc){
-         n = *(((unsigned int*)pAlloc)-1);   //Subtract four bytes and the count is stored there.
-         ::memcpy(pNewAlloc, pAlloc, n);     //Copy the old memory into the new memory.
+			const AllocationHeader *oldHeader = static_cast<const AllocationHeader*>(pAlloc) - 1;
+			const unsigned int oldPayloadSize = Get_Allocation_Payload_Size(oldHeader);
+			const unsigned int copySize = (oldPayloadSize < n) ? oldPayloadSize : n;
+         ::memcpy(pNewAlloc, pAlloc, copySize);
          Free(pAlloc);                       //Delete the old memory.
       }
       return pNewAlloc;
@@ -509,7 +535,6 @@ WWINLINE void* FastAllocatorGeneral::Realloc(void* pAlloc, unsigned int n){
    Free(pAlloc);
    return nullptr;
 }
-
 
 
 

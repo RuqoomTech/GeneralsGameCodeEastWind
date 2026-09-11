@@ -67,13 +67,26 @@ Docker, CLion, and links to forks supporting additional versions.
 
 ### Quick Start
 
-**Windows — canonical command-line path (MinGW-w64 i686 + Ninja)**
-```bash
-cmake --preset mingw32-release
-cmake --build --preset mingw32-release --target z_generals
+**Windows — x64 modernization toolchain (MinGW-w64 + Ninja)**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
 ```
 
-Focused modernization tests use `mingw32-tests` with `ctest --preset mingw32-tests --output-on-failure`. The Visual Studio IDE is not required for the modernization path. The existing `win32`/MSVC presets remain available as comparison builds.
+The bootstrap installs/verifies the MSYS2 x86_64 GCC toolchain, WIDL, CMake, Ninja, Python and Git. The Visual Studio IDE is not required. During Step 04 the full x64 game runtime is still being brought up progressively, so `mingw64-tests` is the canonical future-architecture gate rather than a claim that the D3D8 game executable is already Win64.
+
+The frozen i686 determinism oracle is optional and receives no new features:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86
+cmake --preset mingw-w64-i686-determinism
+cmake --build --preset mingw-w64-i686-determinism --target z_determinismcheck
+```
+
+The existing `mingw32-release` / MSVC paths remain temporary legacy/reference builds while x64 deterministic parity is established.
 
 **Linux (via Docker)**
 ```bash
@@ -93,7 +106,7 @@ binaries instead of re-compiling everything. Pull requests from forks restore fr
 
 The canonical MinGW profile preset is `mingw32-profile`. Completed Step 03 enables observational schema-v2 update/render/visibility/resource telemetry in that build; set `RTS_PERF_CAPTURE=<path.csv>` at runtime and summarize it with `python scripts/perf-summary.py <path.csv>`. `RTS_PERF_CAPTURE=1` writes `RTSPerfCapture.csv` in the process working directory. See `Modernization/STEP_03_PERFORMANCE_TELEMETRY.md`.
 
-The staged x64 migration starts with the focused `mingw64-tests` preset. It validates fixed-width compatibility and 64-bit build readiness without pretending the legacy D3D8 runtime is already x64. See `Modernization/STEP_04_X64_MIGRATION.md`.
+The staged x64 migration uses the focused `mingw64-tests` preset and the one-command `scripts/setup-windows-dev.ps1` bootstrap. Step 04C now exercises native-width allocator/runtime substrate while keeping wire/replay fields fixed-width; it still does not pretend the legacy D3D8 runtime is already x64. See `Modernization/STEP_04_X64_MIGRATION.md`.
 
 Tracy profiling is also supported by the existing `win32-profile` path and can be enabled independently for other builds through `RTS_BUILD_OPTION_PROFILE_TRACY`. Use `tracy-profiler.exe` from [Tracy v0.13.1](https://github.com/wolfpld/tracy/releases/tag/v0.13.1). If you get an error when using Tracy, try removing `dbghelp.dll` from the game binary directory.
 

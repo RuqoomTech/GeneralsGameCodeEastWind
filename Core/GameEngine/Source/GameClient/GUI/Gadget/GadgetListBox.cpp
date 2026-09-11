@@ -1792,7 +1792,7 @@ WindowMsgHandledType GadgetListBoxSystem( GameWindow *window, UnsignedInt msg,
 		{
 
 			if( list->multiSelect )
-				*(Int*)mData2 = (Int)list->selections;
+				*(Int**)mData2 = list->selections;
 			else
 				*(Int*)mData2 = list->selectPos;
 
@@ -2626,7 +2626,23 @@ void GadgetListBoxGetSelected( GameWindow *listbox, Int *selectList )
 	if( listbox == nullptr )
 		return;
 
-	// get selected indices via system message
+	// get the single selected index via system message
+	TheWindowManager->winSendSystemMsg( listbox, GLM_GET_SELECTION, 0, (WindowMsgData)selectList );
+
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Get the internal selected-index list for a multi-select listbox. The pointer
+	* remains owned by the listbox and is valid only while its selection storage is unchanged. */
+//-------------------------------------------------------------------------------------------------
+void GadgetListBoxGetSelected( GameWindow *listbox, Int **selectList )
+{
+
+	// sanity
+	if( listbox == nullptr || selectList == nullptr )
+		return;
+
+	// Native pointer payload: GLM_GET_SELECTION writes an Int* when multi-select is enabled.
 	TheWindowManager->winSendSystemMsg( listbox, GLM_GET_SELECTION, 0, (WindowMsgData)selectList );
 
 }
