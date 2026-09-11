@@ -184,7 +184,7 @@ Expected architecture-test line:
 Step 04A architecture guard passed: native pointer width=64, fixed wire IDs remain 32-bit.
 ```
 
-`mingw64-tests` uses the MSYS2 MINGW64 toolchain root (`C:/msys64/mingw64`) unless `RTS_MINGW_ROOT` selects another matching x86_64 MinGW-w64 installation. A full x64 runtime configure remains deliberately gated through Step 04C; Step 04D will progressively add real Common/GameLogic runtime units instead of opening the legacy D3D8 graph wholesale.
+`mingw64-tests` uses the MSYS2 MINGW64 toolchain root (`C:/msys64/mingw64`) unless `RTS_MINGW_ROOT` selects another matching x86_64 MinGW-w64 installation. A full renderer/game x64 configure remains deliberately gated; Step 04D now adds a real deterministic/headless production RNG/CRC/FPU lane without opening the legacy D3D8 graph.
 
 The i686 gate is a temporary deterministic oracle, not a future feature/multiplayer target. Run it when validating oracle parity:
 
@@ -206,3 +206,36 @@ Against the authoritative Step 04B full ZIP, the 12-test focused graph passed:
 - GCC UndefinedBehaviorSanitizer.
 
 No Windows/Win64 result is claimed from those host-native runs. The authoritative Windows command remains `ctest --preset mingw64-tests --output-on-failure` after the dependency bootstrap.
+
+
+## Step 04D deterministic/headless timeline gate
+
+The focused graph now contains 15 tests. The new `headless_determinism_step04d` target executes 12,000 deterministic frames with production GameLogic RNG, production CRC, and shared production floating-point reset policy. It verifies the checked-in candidate fixture at frames 0, 1, 10, 100, 1000, 5000, 10000 and 12000/end.
+
+Canonical x64 Windows gate:
+
+```powershell
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+```
+
+To emit the x64 timeline explicitly:
+
+```powershell
+.\build\mingw64-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-x64.txt
+```
+
+To certify against the frozen i686 oracle, provision the optional 32-bit compiler and emit the same executable's timeline:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests --target z_determinismcheck headless_determinism_step04d_test
+.\build\mingw32-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-i686.txt
+python .\scripts\compare-determinism-timelines.py build\step04d-i686.txt build\step04d-x64.txt
+```
+
+Success must report eight identical checkpoints through frame 12000. Do not promote the fixture to a signed-off cross-architecture oracle until the real Windows i686 and Windows x64 outputs match.
+
+Local Step 04D validation on 2026-09-12: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan, and GCC UBSan all passed 15/15 tests and emitted the identical checked-in timeline. No Windows/Win64 result is claimed from those runs.

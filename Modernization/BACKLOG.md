@@ -17,8 +17,8 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 04A | x64 readiness build lane | DONE* | `mingw64-tests`, shared MinGW toolchain, architecture-width guard; Windows transcript pending |
 | 04B | Wire/replay ABI freeze + pointer/handle audit | DONE | Explicit fixed-width wire contract; first native pointer/handle truncations removed |
 | 04C | Native-width runtime substrate + dependency bootstrap | DONE* | Object/Fast/GameMemory allocator safety, GUI/native fixes, x64-default setup script; Windows transcript pending |
-| 04D | x64 deterministic/headless core bring-up | NEXT | Real Common/GameLogic x64 compile lane + golden x86/x64 CRC timelines |
-| 04E | Evolution network/replay protocol + x64 validation | PLANNED | Versioned fixed-width x64-to-x64 command streams/CRC; no retail multiplayer requirement |
+| 04D | x64 deterministic/headless core bring-up | DONE* | Shared FPU policy + production RNG/CRC 12k-frame timeline; Windows i686-vs-x64 certification pending |
+| 04E | Evolution network/replay protocol + x64 validation | NEXT | Versioned fixed-width x64-to-x64 command streams/CRC; no retail multiplayer requirement |
 | 04F | Retire x86 | PLANNED | Remove i686 after golden replay/simulation/network gates pass |
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |
 | W3X-A1 | W3X document-envelope probe | DONE | Root/namespace/SAGE envelope recognition |
@@ -45,7 +45,7 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 23 | W3X completeness/tooling | PLANNED | Documented support matrix/toolchain |
 | 24 | Advanced GPU optimization | PLANNED | Only measured bottlenecks |
 
-`DONE*` records implementation/user acceptance where the relevant Windows console transcript is not archived. Step 04C therefore remains pending its real `mingw64-tests` Windows console run even though the implementation slice is complete.
+`DONE*` records implementation where the relevant Windows console transcript/cross-architecture certification is not archived. Steps 04C and 04D therefore still require their real Windows gates even though their implementation slices are complete.
 
 ## Cross-cutting backlog
 

@@ -4,9 +4,10 @@ This file is the authoritative state marker for modernization work. Read it befo
 
 ## Baseline identity
 
-- **Step 04C authoritative input:** `GeneralsGameCode-Step04B-Wire-Pointer-Audit-full.zip`.
-- SHA-256 of the exact Step 04B archive used for this work: `b6e983715e74c32ececcbe820964697496a9df25dd5e36cb86d88e6c981a09f9`.
-- Step 04C was produced strictly from those bytes; no GitHub state, remembered repository, older patch, or alternate ZIP was substituted.
+- **Step 04D authoritative input:** `GeneralsGameCode-Step04C-Native-Width-Runtime-Dependencies-full.zip`.
+- SHA-256 of the exact Step 04C archive used for this work: `e49b157c93e9fced03c61bb76519f4262bddc4b0682d08a35499700e1c47e1d9`.
+- Step 04D was produced strictly from those bytes; no GitHub state, remembered repository, older patch, or alternate ZIP was substituted.
+- Historical Step 04C authoritative input: `GeneralsGameCode-Step04B-Wire-Pointer-Audit-full.zip`, SHA-256 `b6e983715e74c32ececcbe820964697496a9df25dd5e36cb86d88e6c981a09f9`.
 - Step 04B itself was produced from `GeneralsGameCode-Step03-Complete-Step04A-x64-Readiness-full.zip`, SHA-256 `e87de5e1d2f6bd2e916030b5beb487fb4a71eb2beb4e57b14ccca3d22e1d7eba`.
 
 - Step 02A was based on the sealed Step 01G Windows-signoff repository supplied on 2026-09-10.
@@ -97,6 +98,24 @@ Implemented in this slice:
 
 Local validation is green with GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`, plus GCC ASan and UBSan: 12/12 tests in every configuration. No Windows/Win64/bootstrap pass is claimed because this environment has neither PowerShell nor an x86_64 MinGW-w64 compiler.
 
+## Step 04D implementation state — 2026-09-12
+
+Authoritative input: `GeneralsGameCode-Step04C-Native-Width-Runtime-Dependencies-full.zip`, SHA-256 `e49b157c93e9fced03c61bb76519f4262bddc4b0682d08a35499700e1c47e1d9`.
+
+Implemented in this slice:
+
+- centralized the duplicated Generals/Zero Hour `setFPMode()` implementation in shared Core GameEngine code;
+- preserved the signed-off i686 x87 round-to-nearest / 24-bit precision oracle behavior while defining the x64 contract as round-to-nearest with no legacy x87 precision-width dependency;
+- added the `RTS_BUILD_X64_HEADLESS_CORE` lane to `mingw64-tests`;
+- added a renderer-free 12,000-frame deterministic/headless executable using the production GameLogic RNG, production CRC primitive, and shared production FPU policy;
+- the timeline hashes only explicit fixed-width simulation fields plus RNG state and never raw object layout, pointers, padding, `size_t`, or allocator state;
+- checked-in checkpoints are frame 0, 1, 10, 100, 1000, 5000, 10000, and 12000/end;
+- added `scripts/compare-determinism-timelines.py` so the frozen i686 executable and x64 executable can emit and compare the same timeline;
+- deterministic focused compile policy explicitly disables fast-math and FP contraction (`-fno-fast-math`, `-ffp-contract=off`; `/fp:strict` on MSVC);
+- expanded the focused graph from 12 to 15 tests.
+
+Local GCC 14.2 and Clang 17 O0/O2/O3 builds, GCC ASan, and GCC UBSan all pass 15/15 tests and reproduce the same eight timeline checkpoints. This is a locally stable candidate golden fixture, not yet a signed-off x86-vs-Win64 oracle: no Windows/MinGW x64 result is claimed until the user supplies console output.
+
 ## Current modernization status
 
 | Area | State |
@@ -106,7 +125,7 @@ Local validation is green with GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`,
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
 | MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
 | HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
-| x64 engine migration | **ACTIVE — Step 04C native-width runtime substrate + x64-default dependency bootstrap implemented; Windows x64 validation pending** |
+| x64 engine migration | **ACTIVE — Step 04D deterministic/headless CRC timeline lane implemented; Windows i686-vs-x64 certification pending** |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
 | W3X top-level child-element discovery | **Done — A2** |
@@ -151,4 +170,4 @@ Step 04A begins the engine migration without pretending the full runtime is alre
 
 Local host-native GCC 14.2 and Clang 17 focused configure/build/CTest runs pass 7/7 tests, including `-O0`/`-O2`/`-O3` coverage; GCC ASan and UBSan are also green. The validation container has no MinGW-w64 x86_64 compiler, so no Windows `mingw64-tests` pass is claimed until actual output is provided.
 
-The next implementation slice is **Step 04D — x64 deterministic/headless core bring-up**: progressively compile real Common/GameLogic/runtime units in the x64 lane, resolve the next concrete native-width blockers, and establish golden x86-versus-x64 CRC timelines. The frozen i686 build remains only the temporary behavior oracle; future multiplayer compatibility is Evolution-to-Evolution rather than retail x86.
+The next implementation slice is **Step 04E — Evolution network/replay protocol + x64 validation**: define an explicit versioned fixed-width Evolution wire protocol, validate x64-to-x64 command streams/CRCs, and use the Step 04D timeline machinery plus representative replay fixtures as compatibility gates. The frozen i686 build remains only until the deterministic/replay oracle is fully replaced.

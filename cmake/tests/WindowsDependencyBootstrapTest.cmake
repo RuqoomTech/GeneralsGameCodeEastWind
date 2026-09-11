@@ -19,6 +19,8 @@ foreach(_required
     "IncludeLegacyX86"
     "mingw64-tests"
     "z_determinismcheck"
+    "z_headlessdeterminismcheck"
+    "compare-determinism-timelines.py"
 )
     string(FIND "${_contents}" "${_required}" _pos)
     if(_pos EQUAL -1)

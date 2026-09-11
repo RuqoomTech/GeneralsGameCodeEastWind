@@ -246,3 +246,24 @@ Validation completed in the Linux container:
 - production Step 04C allocator guard reports 64-bit native pointers on this host.
 
 The environment has no PowerShell runtime and no `x86_64-w64-mingw32` compiler, so no Windows/Win64 dependency-bootstrap or `mingw64-tests` pass is claimed. Step 04D is next: bring real deterministic/headless Common/GameLogic units into the x64 lane and start golden x86-versus-x64 CRC timeline validation.
+
+
+## 2026-09-12 — Step 04D: deterministic/headless x64 core + CRC timeline gate
+
+Authoritative input: `GeneralsGameCode-Step04C-Native-Width-Runtime-Dependencies-full.zip` (`e49b157c93e9fced03c61bb76519f4262bddc4b0682d08a35499700e1c47e1d9`).
+
+Implemented:
+
+- centralized the duplicated Generals/Zero Hour `setFPMode()` implementation in shared Core GameEngine code;
+- retained the frozen i686 x87 round-to-nearest/24-bit precision behavior while giving x64 a round-to-nearest contract without legacy x87 precision emulation;
+- enabled `RTS_BUILD_X64_HEADLESS_CORE` in `mingw64-tests`;
+- added `headless_determinism_step04d`, a renderer-free 12,000-frame deterministic executable using production GameLogic RNG, production CRC, and production FP reset;
+- hashes only explicit fixed-width fields and RNG state, never native pointers/padding/allocator state;
+- added the versioned candidate timeline fixture at frames 0, 1, 10, 100, 1000, 5000, 10000 and 12000/end;
+- added `scripts/compare-determinism-timelines.py` for direct i686-vs-x64 oracle comparison;
+- added deterministic compiler policy guards (`-fno-fast-math`, `-ffp-contract=off`, `/fp:strict` on MSVC) and source-policy regression coverage;
+- focused graph increased from 12 to 15 tests.
+
+Local validation: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan all passed 15/15 tests. All configurations emitted identical eight-checkpoint timelines through frame 12000.
+
+No Windows/Win64 execution is claimed. The candidate fixture becomes a signed-off cross-architecture oracle only after the same revision matches under the frozen Windows i686 lane and Windows x64 `mingw64-tests` lane. Step 04E is next: explicit Evolution network/replay protocol and x64-to-x64 validation.

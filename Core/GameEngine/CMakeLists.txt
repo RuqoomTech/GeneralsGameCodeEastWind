@@ -1099,6 +1099,7 @@ set(GAMEENGINE_SRC
     Source/GameLogic/System/CaveSystem.cpp
     Source/GameLogic/System/CrateSystem.cpp
     Source/GameLogic/System/Damage.cpp
+    Source/GameLogic/System/FPUControl.cpp
 #    Source/GameLogic/System/GameLogic.cpp
     Source/GameLogic/System/GameLogicDispatch.cpp
     Source/GameLogic/System/RankInfo.cpp

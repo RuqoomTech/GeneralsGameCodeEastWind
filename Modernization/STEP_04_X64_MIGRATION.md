@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACTIVE — Steps 04A, 04B and 04C implemented; Windows x64 validation still requires a user console run.**
+**ACTIVE — Steps 04A through 04D implemented; Windows x64 and i686-vs-x64 determinism certification still require user console runs.**
 
 Generals Evolution is an x64-only future target. The frozen i686 build is retained temporarily only as a deterministic simulation/replay reference while the x64 core is brought up. New Evolution features do not have to run on x86.
 
@@ -164,14 +164,47 @@ The focused graph therefore contains 12 tests at Step 04C.
 
 ## Remaining migration slices
 
-### Step 04D — x64 deterministic/headless core bring-up — NEXT
+### Step 04D — x64 deterministic/headless core bring-up — IMPLEMENTED
 
-- progressively compile real Common/GameLogic/runtime units in the x64 lane without the legacy renderer;
-- resolve the next pointer/native-size blockers encountered by that compile lane rather than performing blind global cast replacement;
-- normalize remaining scalar-in-pointer userdata contracts needed by the core/client boundary;
-- enforce deterministic floating-point policy: no `-ffast-math`, unsafe reassociation or architecture-dependent state in CRC/replay;
-- establish representative golden CRC timelines at frames such as 0, 1, 10, 100, 1000, 5000, 10000 and end;
-- require x64 logical CRCs to match the frozen x86 oracle for the selected deterministic fixtures.
+Step 04D establishes the first executable deterministic x64 core lane without opening the legacy renderer graph.
+
+Implemented:
+
+1. `setFPMode()` is centralized in `Core/GameEngine/Source/GameLogic/System/FPUControl.cpp` instead of being duplicated in both edition `GameLogic.cpp` files.
+2. Frozen Windows/i686 behavior retains x87 round-to-nearest plus 24-bit precision. x64 uses an explicit round-to-nearest contract and does not emulate the old x87 precision-width ABI.
+3. `mingw64-tests` enables `RTS_BUILD_X64_HEADLESS_CORE` in addition to the existing readiness option.
+4. `headless_determinism_step04d` executes a renderer-free 12,000-frame deterministic micro-simulation using the production GameLogic RNG, production CRC primitive, and production FP-reset function.
+5. Logical CRC input is field-by-field fixed-width state only; raw structs, padding, pointers, `size_t`, allocator state and addresses are excluded.
+6. The versioned fixture records checkpoints at frames 0, 1, 10, 100, 1000, 5000, 10000 and 12000/end.
+7. `scripts/compare-determinism-timelines.py` compares timeline files emitted by the frozen i686 and x64 binaries and reports the first differing frame/CRC/RNG state.
+8. The focused deterministic target explicitly uses `-fno-fast-math` and `-ffp-contract=off` on GCC/Clang, or `/fp:strict` on MSVC.
+9. A source/policy guard prevents `setFPMode()` duplication and protects the checkpoint/FP policy.
+
+The checked-in timeline is a **candidate golden fixture** until the same repository revision is run under both Windows i686 and Windows x64 MinGW. Host-native GCC/Clang agreement proves compiler/optimization stability on the validation host; it does not substitute for that Windows cross-architecture certification.
+
+Windows oracle comparison workflow:
+
+```powershell
+# Provision x64 plus the temporary i686 oracle.
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86
+
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests --target headless_determinism_step04d_test z_determinismcheck
+.\build\mingw32-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-i686.txt
+
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests --target headless_determinism_step04d_test
+ctest --preset mingw64-tests --output-on-failure
+.\build\mingw64-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-x64.txt
+
+python .\scripts\compare-determinism-timelines.py build\step04d-i686.txt build\step04d-x64.txt
+```
+
+Expected comparison success line after real Windows certification:
+
+```text
+Step 04D timelines match: 8 checkpoints, final frame 12000.
+```
 
 ### Step 04E — Evolution network/replay protocol + x64 validation
 
@@ -194,17 +227,18 @@ After the x64 core is stable enough, continue to the renderer-neutral scene/asse
 
 ## Current validation
 
-Local host-native validation for Step 04C:
+Local host-native validation for Step 04D:
 
-- GCC 14.2: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **12/12 passed** in each configuration;
-- Clang 17: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **12/12 passed** in each configuration;
-- GCC AddressSanitizer — **12/12 passed**;
-- GCC UndefinedBehaviorSanitizer — **12/12 passed**;
-- production allocator runtime guard reports 64-bit native pointers on the validation host.
+- GCC 14.2: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **15/15 passed** in each configuration;
+- Clang 17: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **15/15 passed** in each configuration;
+- GCC AddressSanitizer — **15/15 passed**;
+- GCC UndefinedBehaviorSanitizer — **15/15 passed**;
+- all eight configurations emitted the same Step 04D 8-checkpoint timeline through frame 12000;
+- production allocator/native-width tests from 04C remain in the same graph.
 
-No MinGW-w64 x86_64 compiler or PowerShell runtime is available in this environment, so no Win64 build/test/bootstrap pass is claimed.
+No MinGW-w64 x86_64 compiler or PowerShell runtime is available in this environment, so no Windows/Win64 pass and no Windows i686-vs-x64 timeline match is claimed.
 
-Canonical Windows Step 04C x64 gate:
+Canonical Windows Step 04D x64 gate:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1
@@ -213,12 +247,4 @@ cmake --build --preset mingw64-tests
 ctest --preset mingw64-tests --output-on-failure
 ```
 
-Optional frozen-oracle gate:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86
-cmake --preset mingw-w64-i686-determinism
-cmake --build --preset mingw-w64-i686-determinism --target z_determinismcheck
-```
-
-A `mingw64-tests` pass validates the focused Step 04C x64 substrate. It is still not the full x64 game-runtime gate; Step 04D opens that lane progressively.
+Cross-architecture certification requires `-IncludeLegacyX86` and the timeline comparison workflow documented above. The full renderer/game executable remains gated; Step 04D is the deterministic/headless core lane, not a D3D8 x64 compatibility build.
