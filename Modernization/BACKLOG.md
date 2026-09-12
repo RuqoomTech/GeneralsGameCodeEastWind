@@ -46,7 +46,7 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 23 | W3X completeness/tooling | PLANNED | Documented support matrix/toolchain |
 | 24 | Advanced GPU optimization | PLANNED | Only measured bottlenecks |
 
-`DONE*` records implementation where a relevant Windows/cross-architecture gate remains outstanding. The pre-04D3 Windows x64 focused lane is verified at 15/15 plus the headless fixture; Step 04D still awaits i686-vs-x64 timeline certification, and Step 04D3 awaits its 17-test Windows rerun.
+`DONE*` records implementation where a relevant Windows/cross-architecture gate remains outstanding. Step 04D3/04D4 Windows x64 is verified at 17/17 plus the matched headless fixture; Step 04D still awaits the frozen i686 17-test rerun and i686-vs-x64 timeline certification.
 
 ## Cross-cutting backlog
 

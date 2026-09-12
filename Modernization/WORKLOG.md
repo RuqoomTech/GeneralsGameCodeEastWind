@@ -322,3 +322,14 @@ Shared material divergence against this upstream snapshot fell from **93 to 63 f
 - Fixed the frozen i686 Step 01 guard after Step 04B header decoupling by making `DeterminismPrimitivesTest.cpp` include `Common/MessageStream.h` directly for its `GameMessage` ABI/replay assertions.
 - Added a source-policy regression preventing the test from silently depending on `NetworkDefs.h` to provide message definitions transitively.
 - No runtime protocol or deterministic data layout changed.
+
+
+## 2026-09-12 — Step 04D6 frozen-i686 allocator-probe and timeline-encoding hotfix
+
+- Recorded real Windows x64 Step 04D3/04D4 validation at **17/17** plus the matched Step 04D headless fixture.
+- Recorded the frozen i686 CTest result at **16/17**; only `runtime_native_width_step04c` failed.
+- Corrected the Step 04C test probe from `uint64_t` to `uintptr_t` so the test validates native pointer-width metadata without imposing an artificial 8-byte alignment requirement on the Win32 oracle. The production WWLib allocator layout is unchanged.
+- Added a source-policy regression requiring the probe's alignment to be no stronger than `void*`.
+- Updated `compare-determinism-timelines.py` to read plain UTF-8, UTF-8 BOM, or BOM-marked UTF-16 timeline files; the self-test now covers Windows PowerShell-style UTF-16 output.
+- No deterministic checkpoint, CRC/RNG state, network/replay layout, or allocator implementation changed.
+- The final i686 17-test rerun, `z_determinismcheck`, and i686-vs-x64 timeline match remain the last Step 04D certification gate before Step 04E.

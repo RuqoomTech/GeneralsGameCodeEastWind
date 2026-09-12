@@ -87,4 +87,9 @@ _require_contains("${_ww_alloc_stub}" "void operator delete[](void *p) noexcept"
 
 _require_contains("${_mempool}" "#ifdef DEBUG_CRASHING\n\tint block_count = 0;" "ObjectPool debug-only block counter must not trigger release -Werror builds")
 
+_read_repo_file("Core/Tests/RuntimeNativeWidthStep04CTest.cpp" _runtime_native_width_test)
+_require_contains("${_runtime_native_width_test}" "std::uintptr_t marker" "native-width allocator probe marker must follow pointer width on both i686 and x64")
+_require_contains("${_runtime_native_width_test}" "alignof(PoolProbe) <= alignof(void *)" "native-width allocator probe must not impose stronger-than-pointer alignment on the frozen i686 oracle")
+_require_absent("${_runtime_native_width_test}" "std::uint64_t marker" "allocator probe regressed to an artificial 8-byte alignment requirement on i686")
+
 message(STATUS "Step 04C runtime pointer-width source audit passed")

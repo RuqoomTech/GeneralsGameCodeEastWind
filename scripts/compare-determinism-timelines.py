@@ -10,8 +10,17 @@ import sys
 HEADER_PREFIX = "step04d-headless-v1 "
 
 
+def read_timeline_text(path: Path) -> str:
+    data = path.read_bytes()
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16")
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data.decode("utf-8-sig")
+    return data.decode("utf-8")
+
+
 def parse_timeline(path: Path) -> tuple[str, list[tuple[int, int, int]]]:
-    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    lines = [line.strip() for line in read_timeline_text(path).splitlines() if line.strip()]
     if not lines or not lines[0].startswith(HEADER_PREFIX):
         raise ValueError(f"{path}: missing {HEADER_PREFIX.strip()} header")
     rows: list[tuple[int, int, int]] = []
@@ -54,12 +63,17 @@ def self_test() -> int:
         root = Path(tmp)
         a = root / "a.txt"
         b = root / "b.txt"
+        utf16 = root / "utf16.txt"
         bad = root / "bad.txt"
         text = "step04d-headless-v1 seed=0x12345678 end=12000\n0 0x1 0x2\n12000 0x3 0x4\n"
         a.write_text(text, encoding="utf-8")
         b.write_text(text, encoding="utf-8")
+        utf16.write_text(text, encoding="utf-16")
         bad.write_text(text.replace("0x3", "0x5"), encoding="utf-8")
         if compare(a, b) != 0:
+            return 1
+        if compare(a, utf16) != 0:
+            print("self-test failed to accept a PowerShell-style UTF-16 timeline", file=sys.stderr)
             return 1
         if compare(a, bad) == 0:
             print("self-test failed to detect a mismatch", file=sys.stderr)

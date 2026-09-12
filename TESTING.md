@@ -305,3 +305,24 @@ cmake --build --preset mingw32-tests --target z_determinismcheck
 ```
 
 Then emit and compare the i686 and x64 Step 04D timelines.
+
+## Step 04D6 frozen-i686 oracle follow-up
+
+A real Windows i686 run after Step 04D5 passed 16/17 tests. `runtime_native_width_step04c` alone failed because the test probe itself contained a `uint64_t`, which can require 8-byte alignment on MinGW i686 even though the frozen WWLib pool contract is pointer/natural alignment. The production x64 fix is still correct; the probe now uses `uintptr_t`, preserving the intended native-width coverage without changing Win32 allocator behavior.
+
+The same run emitted both architecture timelines successfully. Windows PowerShell `>` produced UTF-16LE files, so the comparator now detects UTF-16 BOMs in addition to UTF-8/UTF-8-BOM. The comparator self-test exercises UTF-8 versus UTF-16 equivalence.
+
+Rerun on Windows:
+
+```powershell
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests
+ctest --preset mingw32-tests --output-on-failure
+cmake --build --preset mingw32-tests --target z_determinismcheck
+
+.\build\mingw32-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-i686.txt
+.\build\mingw64-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-x64.txt
+python .\scripts\compare-determinism-timelines.py build\step04d-i686.txt build\step04d-x64.txt
+```
+
+Do not concatenate the `cmake --build ... --target z_determinismcheck` command with another command on the same PowerShell line.

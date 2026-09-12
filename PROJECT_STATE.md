@@ -155,7 +155,7 @@ Local validation: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan a
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
 | MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
 | HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
-| x64 engine migration | **ACTIVE — Step 04D3/04D4 Windows x64 focused lane verified at 17/17 + matched headless fixture; frozen i686 explicit-dependency hotfix implemented; i686-vs-x64 certification pending** |
+| x64 engine migration | **ACTIVE — Windows x64 focused lane verified at 17/17 + matched headless fixture; Step 04D6 fixes the frozen-i686 allocator probe contract and PowerShell timeline encoding; i686-vs-x64 certification pending rerun** |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
 | W3X top-level child-element discovery | **Done — A2** |
@@ -211,3 +211,11 @@ The first `-IncludeLegacyX86` bootstrap run after Step 04D3 successfully updated
 Real Windows validation after Step 04D4/04D3 passed the x64 focused graph **17/17** with MinGW-w64 GCC 16.2.0 and `z_headlessdeterminismcheck` matched the checked-in Step 04D timeline. The subsequent frozen i686 oracle build exposed a test-only dependency regression: `DeterminismPrimitivesTest.cpp` still characterizes `GameMessage` replay/ABI fields, but Step 04B intentionally removed `MessageStream.h` from `NetworkDefs.h`. The test now includes `Common/MessageStream.h` explicitly, preserving the network-header decoupling while restoring the frozen i686 ABI/replay characterization. The Step 04D policy guard locks this direct include so the transitive dependency cannot return.
 
 No i686 determinism pass is claimed until the user reruns `mingw32-tests`, `z_determinismcheck`, and the i686-vs-x64 timeline comparison.
+
+## Step 04D6 frozen-i686 allocator-probe + PowerShell timeline hotfix — 2026-09-12
+
+The real Windows Step 04D3/04D4 x64 lane passed **17/17** and matched the checked-in Step 04D fixture. The following frozen i686 CTest run reached **16/17**: only `runtime_native_width_step04c` failed because its modernization probe embedded a `uint64_t`, imposing 8-byte object alignment on a historical Win32 pool whose compatibility contract is pointer/natural 4-byte alignment. The probe now uses `uintptr_t` for its native-width marker, so it requires pointer alignment on both i686 and x64 without altering the frozen allocator implementation.
+
+The user also successfully emitted both i686 and x64 Step 04D timelines, but Windows PowerShell redirected them as UTF-16LE and the Python comparator assumed UTF-8. `compare-determinism-timelines.py` now accepts BOM-marked UTF-16 plus UTF-8/UTF-8-BOM, and its self-test covers the PowerShell-style encoding. No checkpoint value, CRC algorithm, RNG state, allocator layout, or protocol field changed.
+
+No i686-vs-x64 match is claimed until the user reruns the 17-test i686 graph, the correctly separated `z_determinismcheck` command, and the timeline comparator.

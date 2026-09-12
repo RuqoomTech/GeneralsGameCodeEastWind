@@ -254,7 +254,7 @@ Local host-native validation through Step 04D3:
 - all eight configurations still verify the same Step 04D 8-checkpoint timeline through frame 12000;
 - production allocator/native-width and upstream-alignment source guards remain in the same graph.
 
-The user supplied a real Windows x64 MinGW-w64 GCC 16.2.0 run on the immediately preceding Step 04D2 baseline: build passed, CTest passed **15/15**, and `z_headlessdeterminismcheck` matched the fixture. Step 04D3 itself still requires the Windows **17-test** rerun, and the Windows i686-vs-x64 timeline comparison remains pending.
+The user supplied a real Windows x64 MinGW-w64 GCC 16.2.0 Step 04D3/04D4 run: build passed, CTest passed **17/17**, and `z_headlessdeterminismcheck` matched the fixture. The Windows i686-vs-x64 timeline comparison remains pending. A subsequent i686 run reached 16/17 and exposed only a modernization-probe alignment assumption plus a PowerShell UTF-16 timeline-file issue; Step 04D6 corrects both without changing the production allocator or checkpoint data.
 
 Canonical Windows Step 04D x64 gate:
 
@@ -283,3 +283,10 @@ cmake --build --preset mingw64-tests
 ctest --preset mingw64-tests --output-on-failure
 cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck
 ```
+
+
+### Step 04D6 i686 oracle/test-harness correction — 2026-09-12
+
+The frozen i686 CTest graph reached 16/17. The only failure was the Step 04C allocator regression probe: it used a `uint64_t` marker, accidentally requiring 8-byte `PoolProbe` alignment on MinGW i686. That exceeded the historical pool's pointer-alignment contract and was not required to validate the x64 block-header fix. The probe marker is now `uintptr_t` and a source-policy guard rejects reintroducing stronger-than-pointer alignment.
+
+Windows PowerShell redirected the emitted timelines as UTF-16LE. The comparison tool now auto-detects BOM-marked UTF-16, UTF-8 BOM, or plain UTF-8; its self-test compares a UTF-8 fixture against an equivalent UTF-16 file. No CRC/RNG checkpoint changes were made.
