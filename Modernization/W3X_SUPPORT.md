@@ -79,7 +79,6 @@ Before adding more W3X features, A1 and A2 were consolidated to prevent the expl
 
 This is the preferred pattern going forward: extend a coherent parser/import module when responsibilities overlap, and create another file only when it represents a distinct architectural responsibility.
 
-
 Legacy W3D loading currently enters through `WW3DAssetManager::Load_3D_Assets`, uses `ChunkLoadClass`, and dispatches to hierarchy/animation/prototype loaders.
 
 W3X should **not** be implemented by pretending XML is a W3D chunk stream.

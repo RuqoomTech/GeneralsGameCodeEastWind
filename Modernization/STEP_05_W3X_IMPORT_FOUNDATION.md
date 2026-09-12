@@ -17,6 +17,7 @@ Add the first real EA SAGE W3X capability without coupling XML parsing to Direct
 - A2 top-level child-element discovery is already implemented and tested for the initial W3D child kinds plus unknown preservation.
 - A2R consolidated A1/A2 behind `rts/w3x_document.h` with implementation in `Core/Libraries/Source/rts/w3x_document.cpp`; future parser work must extend or deliberately replace this seam rather than create parallel XML scanners.
 - Step 05 therefore starts **after** file classification, root-envelope recognition, direct-child discovery, and parser-seam cleanup; it must not duplicate those primitives.
+
 ## Deliverables
 
 ### 1. Format fixtures

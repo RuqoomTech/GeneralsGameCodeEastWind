@@ -33,7 +33,12 @@ This runs:
 - `determinism_step01` — lightweight CRC/RNG/float characterization on non-Windows hosts;
 - `performance_telemetry_step03a` — completed Step 03 CSV schema-v2/phase/resource characterization (historical test name retained);
 - `buildsystem_runtime_install_policy` — nested CMake/Ninja runtime-install policy regression, including the MinGW `.debug` sidecar expectation on MinGW;
-- `architecture_width_step04a` — native pointer-width/fixed wire-width migration guard.
+- `architecture_width_step04a` — native pointer-width/fixed wire-width migration guard;
+- `wire_replay_abi_step04b` — explicit fixed-width command/replay/network ABI guard;
+- `pointer_wire_source_audit_step04b` — Step 04B source-level pointer/wire regression audit;
+- `runtime_native_width_step04c` — production WWLib allocator/pool native-width and realloc stress guard;
+- `windows_dependency_bootstrap_step04c` — x64-default Windows setup policy guard;
+- `runtime_pointer_source_audit_step04c` — Step 04C allocator/GUI/handle pointer-width source audit.
 
 The W3X targets remain C++98-compatible and still use the consolidated `rts/w3x_document.h` / `w3x_document.cpp` seam. No runtime W3X importer is exercised.
 
@@ -139,6 +144,28 @@ Performed against the exact Step 03A baseline used for this implementation:
 
 No MinGW-w64 x86_64 compiler is installed in the validation container, so no Windows/Win64 Step 04A pass is claimed here. The `mingw64-tests` workflow below remains the authoritative Windows x64 readiness gate.
 
+## Step 04C Windows dependency bootstrap
+
+For a new Windows development machine, the x64 Evolution toolchain is the default:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1
+```
+
+That command installs/verifies MSYS2 MINGW64 GCC/G++, WIDL/tools, CMake, Ninja, Python and Git, then prints the canonical `mingw64-tests` commands. To also provision the temporary frozen i686 determinism oracle:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86
+```
+
+To check an existing machine without installing/updating packages:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -VerifyOnly
+```
+
+The repository's `windows_dependency_bootstrap_step04c` CTest verifies the script policy/source contract. It does not substitute for actually executing the script on Windows.
+
 ## Step 04A x64 readiness gate
 
 The first x64 migration gate is intentionally focused and does not build the full legacy runtime. It checks that project/toolchain configuration can target Windows x86_64 while fixed wire/game widths remain explicit.
@@ -157,14 +184,84 @@ Expected architecture-test line:
 Step 04A architecture guard passed: native pointer width=64, fixed wire IDs remain 32-bit.
 ```
 
-`mingw64-tests` uses the MSYS2 MINGW64 toolchain root (`C:/msys64/mingw64`) unless `RTS_MINGW_ROOT` selects another matching x86_64 MinGW-w64 installation. A full x64 runtime configure is expected to fail deliberately at this stage; only the readiness/test graph is enabled until Step 04B+ migrate runtime dependencies.
+`mingw64-tests` uses the MSYS2 MINGW64 toolchain root (`C:/msys64/mingw64`) unless `RTS_MINGW_ROOT` selects another matching x86_64 MinGW-w64 installation. A full renderer/game x64 configure remains deliberately gated; Step 04D now adds a real deterministic/headless production RNG/CRC/FPU lane without opening the legacy D3D8 graph.
 
-The i686 compatibility gate remains mandatory in parallel:
+The i686 gate is a temporary deterministic oracle, not a future feature/multiplayer target. Run it when validating oracle parity:
 
 ```powershell
 cmake --preset mingw32-tests
 cmake --build --preset mingw32-tests --target z_determinismcheck
 ```
 
-Do not treat an x64 readiness pass as permission to relax or delete the signed-off Win32 replay/network/Xfer fixtures.
+Do not delete the frozen x86 oracle until Step 04D/04E golden deterministic and Evolution network gates replace it. Retail x86 multiplayer interoperability is not required.
 
+
+## Step 04C local validation — 2026-09-11
+
+Against the authoritative Step 04B full ZIP, the 12-test focused graph passed:
+
+- GCC 14.2 at `-O0`, `-O2`, and `-O3`;
+- Clang 17 at `-O0`, `-O2`, and `-O3`;
+- GCC AddressSanitizer;
+- GCC UndefinedBehaviorSanitizer.
+
+No Windows/Win64 result is claimed from those host-native runs. The authoritative Windows command remains `ctest --preset mingw64-tests --output-on-failure` after the dependency bootstrap.
+
+
+## Step 04D deterministic/headless timeline gate
+
+The focused graph now contains 15 tests. The new `headless_determinism_step04d` target executes 12,000 deterministic frames with production GameLogic RNG, production CRC, and shared production floating-point reset policy. It verifies the checked-in candidate fixture at frames 0, 1, 10, 100, 1000, 5000, 10000 and 12000/end.
+
+Canonical x64 Windows gate:
+
+```powershell
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+```
+
+To emit the x64 timeline explicitly:
+
+```powershell
+.\build\mingw64-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-x64.txt
+```
+
+To certify against the frozen i686 oracle, provision the optional 32-bit compiler and emit the same executable's timeline:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests --target z_determinismcheck headless_determinism_step04d_test
+.\build\mingw32-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-i686.txt
+python .\scripts\compare-determinism-timelines.py build\step04d-i686.txt build\step04d-x64.txt
+```
+
+Success must report eight identical checkpoints through frame 12000. Do not promote the fixture to a signed-off cross-architecture oracle until the real Windows i686 and Windows x64 outputs match.
+
+Local Step 04D validation on 2026-09-12: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan, and GCC UBSan all passed 15/15 tests and emitted the identical checked-in timeline. No Windows/Win64 result is claimed from those runs.
+
+## Step 04D Windows bootstrap hotfix — 2026-09-12
+
+A real Windows bootstrap run reached tool verification after successfully updating/installing the MSYS2 x64 toolchain. The transcript reported x64 GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2, and located `C:\msys64\mingw64\bin\widl.exe`. Verification then stopped because the script queried WIDL with unsupported `--version`; this WIDL implementation documents `-V` as its version option.
+
+The bootstrap now verifies both x64 and optional i686 WIDL with `-V`. `windows_dependency_bootstrap_step04c` locks that contract and rejects the unsupported long option. No Windows build/test pass is claimed from the interrupted run. After applying this hotfix, rerun:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -VerifyOnly
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck
+```
+
+Use `-IncludeLegacyX86` only when performing the temporary i686 oracle comparison.
+
+
+## Step 04D2 Windows GCC 16 runtime-ABI hotfix — 2026-09-12
+
+A user-supplied Windows run configured `mingw64-tests` successfully with MSYS2 MinGW-w64 GCC/G++ 16.2.0, confirming the x64 toolchain/preset path is active. The first build then failed in `runtime_native_width_step04c_test` for two modern-C++/release-warning reasons:
+
+- legacy global `operator delete(void*)` and `operator delete[](void*)` declarations in WWLib did not match `<new>`'s non-throwing exception specification; equivalent GameMemory declarations/definitions were updated at the same time so the mismatch is not merely moved to a later target;
+- `ObjectPoolClass::~ObjectPoolClass()` maintained `block_count` only for `WWASSERT`, but release builds compile `WWASSERT` away, causing GCC 16 `-Werror=unused-but-set-variable`. The counter now exists only under `DEBUG_CRASHING`.
+
+The existing `runtime_pointer_source_audit_step04c` policy test now locks the `noexcept` global-delete contract and the debug-only pool counter. Focused local GCC/Clang builds of the exact allocator test target pass after the repair. This does **not** claim a Windows build pass; rerun `cmake --build --preset mingw64-tests` and CTest on Windows for sign-off.

@@ -349,7 +349,6 @@ void NeutronMissileSlowDeathBehavior::doBlast( const BlastInfo *blastInfo )
 	damageInfo.in.m_amount = blastInfo->minDamage;
 
 	// scan objects around us and do damage to objects we have "passed over" and are behind us
-	// TheSuperHackers @todo Optimize this function. Iterates through the blasts even if they apply zero damage.
 	if( blastInfo->outerRadius )
 	{
 #if defined(RTS_DEBUG)
@@ -360,17 +359,9 @@ void NeutronMissileSlowDeathBehavior::doBlast( const BlastInfo *blastInfo )
 		}
 #endif
 
-#if RETAIL_COMPATIBLE_CRC || PRESERVE_RETAIL_NUKE_MISSILE_OUTER_RADIUS_SEARCH
-		const DistanceCalculationType dc = FROM_CENTER_2D;
-#else
-		// TheSuperHackers @bugfix xezon 16/08/2026 From FROM_CENTER_2D,
-		// because objects that reach into the outer radius should also receive damage.
-		const DistanceCalculationType dc = FROM_BOUNDINGSPHERE_3D;
-#endif
-
 		ObjectIterator *iter = ThePartitionManager->iterateObjectsInRange( missilePos,
 																																			 blastInfo->outerRadius,
-																																			 dc,
+																																			 FROM_CENTER_2D,
 																																			 nullptr );
 		MemoryPoolObjectHolder hold( iter );
 		Object *other;
@@ -383,26 +374,10 @@ void NeutronMissileSlowDeathBehavior::doBlast( const BlastInfo *blastInfo )
 			// get other position
 			otherPos = other->getPosition();
 
-#if RETAIL_COMPATIBLE_CRC || PRESERVE_RETAIL_NUKE_MISSILE_OUTER_RADIUS_DAMAGE
 			// compute vector from the missile to other object
-			forceVector = *otherPos - *missilePos;
-#else
-			// compute vector from the missile to other object
-			// TheSuperHackers @tweak xezon 16/08/2026 No longer calculate the force vector to the center of the object,
-			// but to half way between the closest edge and the center of the object. This way a more appropriate
-			// damage value is sampled for a large structure inside the damage fall off range.
-			const Coord3D missileToObjectCenter = *otherPos - *missilePos;
-
-			Coord3D missileToObjectEdge;
-			ThePartitionManager->getVectorTo(other, missilePos, FROM_BOUNDINGSPHERE_3D, missileToObjectEdge);
-
-			// flip direction
-			missileToObjectEdge = -missileToObjectEdge;
-
-			// take the average between the edge and center vectors
-			forceVector = missileToObjectEdge + missileToObjectCenter;
-			forceVector.scale(0.5f);
-#endif
+			forceVector.x = otherPos->x - missilePos->x;
+			forceVector.y = otherPos->y - missilePos->y;
+			forceVector.z = otherPos->z - missilePos->z;
 
 			// try to topple other object
 			other->topple( &forceVector, blastInfo->toppleSpeed, TOPPLE_OPTIONS_NO_BOUNCE |

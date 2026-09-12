@@ -211,14 +211,20 @@ ObjectPoolClass<T,BLOCK_SIZE>::~ObjectPoolClass()
 	WWASSERT(FreeObjectCount == TotalObjectCount);
 
 	// delete all of the blocks we allocated
+#ifdef DEBUG_CRASHING
 	int block_count = 0;
+#endif
 	while (BlockListHead != nullptr) {
 		BlockHeader * next_block = BlockListHead->Next;
 		::operator delete(BlockListHead);
 		BlockListHead = next_block;
+#ifdef DEBUG_CRASHING
 		block_count++;
+#endif
 	}
+#ifdef DEBUG_CRASHING
 	WWASSERT(block_count == TotalObjectCount / BLOCK_SIZE);
+#endif
 }
 
 

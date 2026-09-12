@@ -59,4 +59,32 @@ _require_absent("${_listbox}" "*(Int*)mData2 = (Int)list->selections" "multi-sel
 _read_repo_file("Core/GameEngine/Source/GameNetwork/GameSpy/Chat.cpp" _chat)
 _require_contains("${_chat}" "GadgetListBoxGetSelected(playerListbox, &selections);" "multi-select callers should use the native Int** contract")
 
+# Step 04D2 modern C++ runtime ABI guard. The standard unsized global delete
+# replacements must match <new>'s noexcept contract on current GCC/Clang/MSVC.
+_read_repo_file("Core/Libraries/Source/WWVegas/WWLib/always.h" _ww_always)
+_require_contains("${_ww_always}" "operator delete\t\t(void *p) noexcept;" "WWLib global operator delete must match the standard noexcept contract")
+_require_contains("${_ww_always}" "operator delete[]\t(void *p) noexcept;" "WWLib global operator delete[] must match the standard noexcept contract")
+
+_read_repo_file("Core/GameEngine/Include/Common/GameMemory.h" _game_memory_header)
+_require_contains("${_game_memory_header}" "operator delete\t\t(void *p) noexcept;" "GameMemory global operator delete must match the standard noexcept contract")
+_require_contains("${_game_memory_header}" "operator delete[]\t(void *p) noexcept;" "GameMemory global operator delete[] must match the standard noexcept contract")
+
+_read_repo_file("Core/GameEngine/Include/Common/GameMemoryNull.h" _game_memory_null_header)
+_require_contains("${_game_memory_null_header}" "operator delete(void *p) noexcept;" "GameMemoryNull global operator delete must match the standard noexcept contract")
+_require_contains("${_game_memory_null_header}" "operator delete[](void *p) noexcept;" "GameMemoryNull global operator delete[] must match the standard noexcept contract")
+
+_read_repo_file("Core/GameEngine/Source/Common/System/GameMemory.cpp" _game_memory_source)
+_require_contains("${_game_memory_source}" "void operator delete(void *p) noexcept" "GameMemory delete definition must preserve noexcept")
+_require_contains("${_game_memory_source}" "void operator delete[](void *p) noexcept" "GameMemory delete[] definition must preserve noexcept")
+
+_read_repo_file("Core/GameEngine/Source/Common/System/GameMemoryNull.cpp" _game_memory_null_source)
+_require_contains("${_game_memory_null_source}" "operator delete(void *p) noexcept" "GameMemoryNull delete definition must preserve noexcept")
+_require_contains("${_game_memory_null_source}" "operator delete[](void *p) noexcept" "GameMemoryNull delete[] definition must preserve noexcept")
+
+_read_repo_file("Core/Libraries/Source/WWVegas/WWStub/wwallocstub.cpp" _ww_alloc_stub)
+_require_contains("${_ww_alloc_stub}" "void operator delete(void *p) noexcept" "WWStub delete definition must preserve noexcept")
+_require_contains("${_ww_alloc_stub}" "void operator delete[](void *p) noexcept" "WWStub delete[] definition must preserve noexcept")
+
+_require_contains("${_mempool}" "#ifdef DEBUG_CRASHING\n\tint block_count = 0;" "ObjectPool debug-only block counter must not trigger release -Werror builds")
+
 message(STATUS "Step 04C runtime pointer-width source audit passed")

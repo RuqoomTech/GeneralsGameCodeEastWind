@@ -267,3 +267,21 @@ Implemented:
 Local validation: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan all passed 15/15 tests. All configurations emitted identical eight-checkpoint timelines through frame 12000.
 
 No Windows/Win64 execution is claimed. The candidate fixture becomes a signed-off cross-architecture oracle only after the same revision matches under the frozen Windows i686 lane and Windows x64 `mingw64-tests` lane. Step 04E is next: explicit Evolution network/replay protocol and x64-to-x64 validation.
+
+## 2026-09-12 — Step 04D Windows dependency-bootstrap WIDL verification hotfix
+
+- Windows bootstrap transcript supplied by the user confirmed MSYS2 package update/install completed and discovered the x64 GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2, and `widl.exe` tools.
+- The bootstrap then failed during WIDL verification because `scripts/setup-windows-dev.ps1` used the generic `--version` argument. The installed MSYS2/Wine WIDL accepts `-V` instead; `cmake/widl.cmake` already used the correct flag.
+- Changed both x64 and optional i686 bootstrap WIDL probes to `-V` rather than weakening or skipping WIDL verification.
+- Extended `WindowsDependencyBootstrapTest.cmake` to require the `-V` probes and reject a regression to `--version` for WIDL.
+- This transcript proves dependency installation/tool discovery up to the WIDL probe; it does not yet constitute a passing Windows `mingw64-tests` or i686-vs-x64 timeline gate. Those remain pending a rerun after this hotfix.
+
+
+## 2026-09-12 — Step 04D2 Windows GCC 16 runtime ABI compile hotfix
+
+- Windows `mingw64-tests` configure succeeded under MSYS2 MinGW-w64 GCC 16.2.0 after the WIDL bootstrap correction.
+- The build exposed two real focused-lane compiler barriers: pre-C++11 global delete declarations disagreed with the standard `noexcept` declaration from `<new>`, and a `WWASSERT`-only object-pool counter became unused in release builds under `-Werror`.
+- Updated WWLib, GameMemory and GameMemoryNull standard unsized global delete/delete[] declarations and definitions to the modern non-throwing contract; project-specific debug placement overloads were not changed.
+- Scoped the object-pool block-count verification to `DEBUG_CRASHING`, preserving the debug invariant without release warning noise.
+- Extended the existing Step 04C runtime source audit rather than creating another overlapping audit module.
+- Focused GCC and Clang allocator/runtime tests pass locally; Windows build/CTest remains pending user rerun and is not claimed here.

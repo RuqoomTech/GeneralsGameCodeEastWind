@@ -248,3 +248,20 @@ ctest --preset mingw64-tests --output-on-failure
 ```
 
 Cross-architecture certification requires `-IncludeLegacyX86` and the timeline comparison workflow documented above. The full renderer/game executable remains gated; Step 04D is the deterministic/headless core lane, not a D3D8 x64 compatibility build.
+
+### Windows bootstrap verification correction — 2026-09-12
+
+The first user-run x64 dependency bootstrap reached tool verification with GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2 and WIDL installed under MSYS2 MINGW64. It exposed a bootstrap-only mismatch: the generic verifier passed `--version` to WIDL, while the MSYS2/Wine WIDL CLI uses `-V`. The bootstrap now passes `-V` explicitly for x64 and optional i686 WIDL, matching the existing `cmake/widl.cmake` probe. A focused source-policy test locks this behavior. The interrupted bootstrap is evidence that installation/discovery worked, not a passing Step 04D Windows determinism gate.
+
+
+### Step 04D2 Windows GCC 16 compile-barrier correction — 2026-09-12
+
+The first post-bootstrap Windows `mingw64-tests` configure completed successfully with MinGW-w64 GCC 16.2.0. Compilation then exposed two legacy C++ assumptions in the focused allocator/runtime lane. Standard unsized global delete/delete[] declarations are now explicitly `noexcept` across WWLib and GameMemory replacement declarations/definitions, matching current `<new>` declarations. `ObjectPoolClass`'s block-count assertion bookkeeping is now compiled only when `DEBUG_CRASHING` keeps the consuming assertion alive. No protocol, replay, deterministic field width, or allocator layout is changed by this hotfix.
+
+This correction is not a Windows sign-off by itself. The canonical next gate remains:
+
+```powershell
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck
+```

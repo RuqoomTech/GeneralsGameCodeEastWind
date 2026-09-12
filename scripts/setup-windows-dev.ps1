@@ -142,14 +142,14 @@ Assert-Tool (Join-Path $mingw64Bin 'gcc.exe') 'x64 GCC'
 Assert-Tool (Join-Path $mingw64Bin 'g++.exe') 'x64 G++'
 Assert-Tool (Join-Path $mingw64Bin 'cmake.exe') 'CMake'
 Assert-Tool (Join-Path $mingw64Bin 'ninja.exe') 'Ninja'
-Assert-Tool (Join-Path $mingw64Bin 'widl.exe') 'WIDL'
+Assert-Tool (Join-Path $mingw64Bin 'widl.exe') 'WIDL' @('-V')
 Assert-Tool (Join-Path $mingw64Bin 'python.exe') 'Python'
 
 if ($IncludeLegacyX86) {
     Write-Step 'Verifying the optional i686 oracle toolchain'
     Assert-Tool (Join-Path $mingw32Bin 'gcc.exe') 'i686 GCC'
     Assert-Tool (Join-Path $mingw32Bin 'g++.exe') 'i686 G++'
-    Assert-Tool (Join-Path $mingw32Bin 'widl.exe') 'i686 WIDL'
+    Assert-Tool (Join-Path $mingw32Bin 'widl.exe') 'i686 WIDL' @('-V')
 }
 
 Write-Host ''

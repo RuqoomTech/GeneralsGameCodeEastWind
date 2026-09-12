@@ -65,7 +65,7 @@ void *DynamicMemoryAllocator::allocateBytesImplementation(Int numBytes)
 /**
 	free a chunk-o-bytes allocated by this dma. it's ok to pass null.
 */
-void DynamicMemoryAllocator::freeBytes(void* pBlockPtr) noexcept
+void DynamicMemoryAllocator::freeBytes(void* pBlockPtr)
 {
 	free(pBlockPtr);
 }
@@ -158,7 +158,7 @@ void shutdownMemoryManager()
 
 #ifndef DISABLE_GAMEMEMORY_NEW_OPERATORS
 
-void * __cdecl operator new(size_t size)
+extern void * __cdecl operator new(size_t size)
 {
 	void *p = malloc(size);
 	if (p == nullptr)
@@ -167,17 +167,12 @@ void * __cdecl operator new(size_t size)
 	return p;
 }
 
-void __cdecl operator delete(void *p)
+extern void __cdecl operator delete(void *p) noexcept
 {
 	free(p);
 }
 
-void __cdecl operator delete(void *p, size_t)
-{
-	free(p);
-}
-
-void * __cdecl operator new[](size_t size)
+extern void * __cdecl operator new[](size_t size)
 {
 	void *p = malloc(size);
 	if (p == nullptr)
@@ -186,18 +181,13 @@ void * __cdecl operator new[](size_t size)
 	return p;
 }
 
-void __cdecl operator delete[](void *p)
-{
-	free(p);
-}
-
-void __cdecl operator delete[](void *p, size_t)
+extern void __cdecl operator delete[](void *p) noexcept
 {
 	free(p);
 }
 
 // additional overloads to account for VC/MFC funky versions
-void* __cdecl operator new(size_t size, const char *, int)
+extern void* __cdecl operator new(size_t size, const char *, int)
 {
 	void *p = malloc(size);
 	if (p == nullptr)
@@ -206,12 +196,12 @@ void* __cdecl operator new(size_t size, const char *, int)
 	return p;
 }
 
-void __cdecl operator delete(void *p, const char *, int)
+extern void __cdecl operator delete(void *p, const char *, int)
 {
 	free(p);
 }
 
-void* __cdecl operator new[](size_t size, const char *, int)
+extern void* __cdecl operator new[](size_t size, const char *, int)
 {
 	void *p = malloc(size);
 	if (p == nullptr)
@@ -220,7 +210,7 @@ void* __cdecl operator new[](size_t size, const char *, int)
 	return p;
 }
 
-void __cdecl operator delete[](void *p, const char *, int)
+extern void __cdecl operator delete[](void *p, const char *, int)
 {
 	free(p);
 }

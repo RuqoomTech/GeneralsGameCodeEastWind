@@ -56,14 +56,6 @@
 #define IUNKNOWN_NOEXCEPT
 #endif
 
-#if defined(_MSC_VER) && _MSC_VER >= 1300
-#define NOINLINE __declspec(noinline)
-#elif defined(__GNUC__) || defined(__clang__)
-#define NOINLINE __attribute__((noinline))
-#else
-#define NOINLINE
-#endif
-
 #ifdef __cplusplus
 namespace stl
 {
