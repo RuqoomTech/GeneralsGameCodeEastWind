@@ -73,9 +73,18 @@ function Assert-Tool([string]$Path, [string]$Name, [string[]]$Arguments = @('--v
     }
 
     Write-Host ("{0}: {1}" -f $Name, $Path)
-    & $Path @Arguments | Select-Object -First 2 | ForEach-Object { Write-Host "  $_" }
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Name verification failed (exit code $LASTEXITCODE)."
+
+    # Do not pipe a native tool directly into Select-Object -First. On Windows
+    # PowerShell that can close the stdout pipe after the requested lines and
+    # leave an otherwise-successful native process reported through
+    # $LASTEXITCODE as -1. Capture the complete probe output first and snapshot
+    # the native exit code before any PowerShell pipeline processes the text.
+    $output = @(& $Path @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+
+    $output | Select-Object -First 2 | ForEach-Object { Write-Host "  $_" }
+    if ($exitCode -ne 0) {
+        throw "$Name verification failed (exit code $exitCode)."
     }
 }
 
@@ -142,14 +151,14 @@ Assert-Tool (Join-Path $mingw64Bin 'gcc.exe') 'x64 GCC'
 Assert-Tool (Join-Path $mingw64Bin 'g++.exe') 'x64 G++'
 Assert-Tool (Join-Path $mingw64Bin 'cmake.exe') 'CMake'
 Assert-Tool (Join-Path $mingw64Bin 'ninja.exe') 'Ninja'
-Assert-Tool (Join-Path $mingw64Bin 'widl.exe') 'WIDL'
+Assert-Tool (Join-Path $mingw64Bin 'widl.exe') 'WIDL' @('-V')
 Assert-Tool (Join-Path $mingw64Bin 'python.exe') 'Python'
 
 if ($IncludeLegacyX86) {
     Write-Step 'Verifying the optional i686 oracle toolchain'
     Assert-Tool (Join-Path $mingw32Bin 'gcc.exe') 'i686 GCC'
     Assert-Tool (Join-Path $mingw32Bin 'g++.exe') 'i686 G++'
-    Assert-Tool (Join-Path $mingw32Bin 'widl.exe') 'i686 WIDL'
+    Assert-Tool (Join-Path $mingw32Bin 'widl.exe') 'i686 WIDL' @('-V')
 }
 
 Write-Host ''

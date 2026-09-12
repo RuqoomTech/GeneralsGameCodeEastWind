@@ -239,3 +239,110 @@ python .\scripts\compare-determinism-timelines.py build\step04d-i686.txt build\s
 Success must report eight identical checkpoints through frame 12000. Do not promote the fixture to a signed-off cross-architecture oracle until the real Windows i686 and Windows x64 outputs match.
 
 Local Step 04D validation on 2026-09-12: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan, and GCC UBSan all passed 15/15 tests and emitted the identical checked-in timeline. No Windows/Win64 result is claimed from those runs.
+
+## Step 04D Windows bootstrap hotfix — 2026-09-12
+
+A real Windows bootstrap run reached tool verification after successfully updating/installing the MSYS2 x64 toolchain. The transcript reported x64 GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2, and located `C:\msys64\mingw64\bin\widl.exe`. Verification then stopped because the script queried WIDL with unsupported `--version`; this WIDL implementation documents `-V` as its version option.
+
+The bootstrap now verifies both x64 and optional i686 WIDL with `-V`. `windows_dependency_bootstrap_step04c` locks that contract and rejects the unsupported long option. No Windows build/test pass is claimed from the interrupted run. After applying this hotfix, rerun:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -VerifyOnly
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck
+```
+
+Use `-IncludeLegacyX86` only when performing the temporary i686 oracle comparison.
+
+
+## Step 04D2 Windows GCC 16 runtime-ABI hotfix — 2026-09-12
+
+A user-supplied Windows run configured `mingw64-tests` successfully with MSYS2 MinGW-w64 GCC/G++ 16.2.0, confirming the x64 toolchain/preset path is active. The first build then failed in `runtime_native_width_step04c_test` for two modern-C++/release-warning reasons:
+
+- legacy global `operator delete(void*)` and `operator delete[](void*)` declarations in WWLib did not match `<new>`'s non-throwing exception specification; equivalent GameMemory declarations/definitions were updated at the same time so the mismatch is not merely moved to a later target;
+- `ObjectPoolClass::~ObjectPoolClass()` maintained `block_count` only for `WWASSERT`, but release builds compile `WWASSERT` away, causing GCC 16 `-Werror=unused-but-set-variable`. The counter now exists only under `DEBUG_CRASHING`.
+
+The existing `runtime_pointer_source_audit_step04c` policy test now locks the `noexcept` global-delete contract and the debug-only pool counter. Focused local GCC/Clang builds of the exact allocator test target pass after the repair. This does **not** claim a Windows build pass; rerun `cmake --build --preset mingw64-tests` and CTest on Windows for sign-off.
+
+## Step 04D3 upstream-alignment validation
+
+The focused graph grows to 17 tests with:
+
+- `upstream_coordinate_ops_step04d3` — compiles/runs the coordinate unary operators required by the corrected neutron-radius implementation;
+- `upstream_alignment_source_policy_step04d3` — locks the imported Dozer/Worker Xfer-version behavior, production cancellation guards, neutron compatibility switches, EastWind-safe GameMemory adaptation, runtime Bink/Miles loader wiring, strict-aliasing-safe float helpers, and dynamic glyph-buffer behavior.
+
+Local validation on the Step 04D3 tree passed GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`, plus GCC ASan and UBSan: **17/17** in every configuration. The Step 04D headless timeline is unchanged in all runs.
+
+The user's real Windows x64 pass on the immediately preceding Step 04D2 baseline remains recorded separately (15/15 plus the headless fixture). Do not treat it as a Step 04D3 Windows pass; rerun the canonical `mingw64-tests` commands after applying this sync.
+
+## Step 04D4 Windows dependency-bootstrap exit-code hotfix
+
+A later real Windows run used `scripts/setup-windows-dev.ps1 -IncludeLegacyX86`. Package installation completed for both the x64 Evolution toolchain and the frozen i686 oracle toolchain. During x64 verification, GCC/G++ and CMake printed valid version output, but CMake was reported as exit `-1`. The failure was in the PowerShell verifier: the native process was piped directly to `Select-Object -First 2`, allowing the consumer to close stdout before the process status was sampled.
+
+The bootstrap now captures the complete native output, snapshots `$LASTEXITCODE`, then displays the first two lines. `windows_dependency_bootstrap_step04c` locks this order and rejects the old direct-pipeline pattern. Rerun the already-installed toolchains without another package update:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86 -VerifyOnly
+```
+
+If verification succeeds, continue directly with the frozen i686 oracle build/timeline commands. The interrupted bootstrap is not an i686 determinism pass.
+
+## Step 04D5 frozen-i686 explicit GameMessage dependency hotfix
+
+A real Windows Step 04D3/04D4 x64 run passed **17/17** tests and matched the checked-in headless deterministic fixture. The following `mingw32-tests` build then failed while compiling `DeterminismPrimitivesTest.cpp` because the frozen Step 01 ABI/replay assertions use `GameMessage`, `GameMessageArgumentDataType`, and `GameMessageArgumentType` without directly including their defining header. Step 04B had correctly removed the old `NetworkDefs.h` -> `MessageStream.h` transitive dependency.
+
+The test now includes `Common/MessageStream.h` explicitly under `RTS_ENGINE_DETERMINISM_TEST`; the Step 04D source-policy test requires that direct dependency. This is a focused test-boundary repair and does not restore protocol/runtime coupling.
+
+Rerun on Windows:
+
+```powershell
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests
+ctest --preset mingw32-tests --output-on-failure
+cmake --build --preset mingw32-tests --target z_determinismcheck
+```
+
+Then emit and compare the i686 and x64 Step 04D timelines.
+
+## Step 04D6 frozen-i686 oracle follow-up
+
+A real Windows i686 run after Step 04D5 passed 16/17 tests. `runtime_native_width_step04c` alone failed because the test probe itself contained a `uint64_t`, which can require 8-byte alignment on MinGW i686 even though the frozen WWLib pool contract is pointer/natural alignment. The production x64 fix is still correct; the probe now uses `uintptr_t`, preserving the intended native-width coverage without changing Win32 allocator behavior.
+
+The same run emitted both architecture timelines successfully. Windows PowerShell `>` produced UTF-16LE files, so the comparator now detects UTF-16 BOMs in addition to UTF-8/UTF-8-BOM. The comparator self-test exercises UTF-8 versus UTF-16 equivalence.
+
+Rerun on Windows:
+
+```powershell
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests
+ctest --preset mingw32-tests --output-on-failure
+cmake --build --preset mingw32-tests --target z_determinismcheck
+
+.\build\mingw32-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-i686.txt
+.\build\mingw64-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-x64.txt
+python .\scripts\compare-determinism-timelines.py build\step04d-i686.txt build\step04d-x64.txt
+```
+
+Do not concatenate the `cmake --build ... --target z_determinismcheck` command with another command on the same PowerShell line.
+
+
+## Step 04E1 Evolution protocol v1
+
+The focused graph grows from 17 to 19 tests with `evolution_protocol_v1_step04e` and `evolution_protocol_source_policy_step04e`. Both i686 and x64 Windows focused lanes also compile the production `EvolutionGameMessageAdapter` object.
+
+Canonical Windows x64 validation:
+
+```powershell
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+cmake --build --preset mingw64-tests --target z_evolutionprotocolcheck z_headlessdeterminismcheck
+```
+
+The protocol test freezes exact v1 command, command-batch, network-packet, replay-header and replay-record bytes. It rejects unsupported versions/types, invalid argument widths/tags, non-canonical booleans, non-zero reserved bytes, truncation and length mismatches.
+
+Local 04E1 validation on 2026-09-12: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan all pass **19/19**. `z_headlessdeterminismcheck` matches the unchanged Step 04D fixture and `z_evolutionprotocolcheck` matches the Step 04E v1 golden-byte fixture in every configuration. Real Windows 04E1 validation remains pending.
+
+The frozen i686 lane may be rerun to prove the same byte fixture is architecture-independent, but it is no longer a future multiplayer peer.

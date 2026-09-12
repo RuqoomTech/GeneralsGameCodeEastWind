@@ -68,3 +68,25 @@ Future multiplayer compatibility is required between our own Evolution/game edit
 - Native x64 pointers/handles/`size_t` must never leak into that protocol or CRC/replay state.
 - The frozen i686 build remains only as a temporary deterministic/replay behavior oracle until golden x64 gates replace it.
 - Retail packet-layout quirks must not block x64 runtime cleanup or the future D3D12 architecture.
+
+## 2026-09-12 — EastWind owns architecture; upstream is a recurring correctness source
+
+Future upstream refreshes are selective integrations, not branch replacements.
+
+- hash and record the EastWind and upstream snapshots before each sync;
+- normalize line endings when measuring divergence;
+- import coherent gameplay/correctness groups into both Generals and Zero Hour where applicable;
+- adapt upstream runtime/build changes to EastWind's x64, determinism and D3D12 decisions instead of copying x86 assumptions;
+- never overwrite fixed-width wire/replay/Xfer guarantees, native-width allocator work, strict-aliasing fixes or the focused test graph merely to reduce diff size;
+- document intentional divergence and add regression coverage for imported compatibility-sensitive behavior.
+
+## 2026-09-12 — Evolution protocol v1 is explicit little-endian fixed-width data
+
+Evolution network/replay compatibility is defined by versioned byte encodings, never by C++ object layout.
+
+- command/network/replay fields use explicit fixed widths and little-endian encoding;
+- `GameMessage`, STL container layout, native enums, pointers, `size_t`, padding and allocator state are never serialized as protocol state;
+- network and replay share one command codec but retain separate outer containers;
+- legacy `.rep` loading may remain as a compatibility path, but new Evolution format design is independent of legacy Recorder object layout;
+- unsupported protocol/replay/command versions are rejected explicitly rather than guessed;
+- retail x86 multiplayer packet compatibility is intentionally outside the Evolution contract.

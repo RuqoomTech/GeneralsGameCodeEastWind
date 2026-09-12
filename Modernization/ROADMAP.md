@@ -78,7 +78,7 @@ Legacy D3D8 GPU timestamp work is intentionally deferred; native GPU timing belo
 
 The earlier standalone “x86 memory survival” milestone is folded into the migration: x86 remains the compatibility/reference executable, but new effort now removes the x86 ceiling directly.
 
-**Steps 04A–04D implemented:**
+**Steps 04A–04D fully verified; 04D3 implemented/Windows-x64 verified; 04E active:**
 
 - shared MinGW-w64 toolchain discovery for i686 and x86_64;
 - `mingw64-tests` x64 readiness preset;
@@ -87,12 +87,20 @@ The earlier standalone “x86 memory survival” milestone is folded into the mi
 - architecture-width test proving pointer widening does not widen fixed wire IDs;
 - **04B:** explicit command-packet byte capacity independent of `GameMessage` runtime layout, fixed command enum width, first pointer/userdata truncation fixes, and focused wire/pointer regression guards;
 - **04C:** native-width allocator/runtime substrate, pointer/userdata cleanup, and x64-default dependency bootstrap;
-- **04D:** centralized deterministic FP policy plus renderer-free production RNG/CRC headless timeline and x86/x64 comparison tooling.
+- **04D:** centralized deterministic FP policy plus renderer-free production RNG/CRC headless timeline; real Windows i686 and x64 timelines now match at all eight checkpoints through frame 12000;
+- **04D3:** selective upstream correctness/runtime alignment, reducing material shared-file divergence from 93 to 63 while retaining EastWind x64/determinism authority.
 
-Remaining staged slices:
+### Step 04D3 — Upstream Alignment / Divergence Reduction — IMPLEMENTED
 
-- **04E:** Evolution x64 network/replay protocol validation and compatibility gates;
-- **04F:** retire frozen x86 after the x64 golden gates pass.
+Before defining the Evolution protocol, selectively synchronize correctness/runtime work from the supplied upstream snapshot while keeping EastWind as the architecture authority. Imported/adapted areas include Dozer/Worker disabled-task and Xfer-version fixes, production cancellation, corrected neutron-radius behavior behind compatibility gates, GameMemory robustness compatible with the x64 allocator, runtime Bink/Miles loaders, and glyph-buffer safety.
+
+The sync deliberately does **not** replace EastWind's x64 allocator/pointer work, strict-aliasing-safe float helpers, deterministic/wire-width guards, build modernization, or renderer direction. The larger upstream Miles lifecycle refactor remains deferred until its callback/userdata seams are converted to native-width-safe types. Material shared-file divergence against the supplied upstream snapshot fell from 93 to 63 files.
+
+Current/remaining staged slices:
+
+- **04E1 implemented:** explicit little-endian command codec, command-batch/network v1 framing, replay v1 framing, golden bytes, malformed-input rejection, and migration of live `NetPacketGameCommandData` payloads to the shared codec;
+- **04E2 next:** route the complete x64 transport and new Recorder path through those containers, then run real x64-to-x64 sessions/replay validation;
+- **04F:** retire frozen x86 after the Evolution network/replay golden gates pass.
 
 See `STEP_04_X64_MIGRATION.md`.
 

@@ -206,13 +206,39 @@ Expected comparison success line after real Windows certification:
 Step 04D timelines match: 8 checkpoints, final frame 12000.
 ```
 
-### Step 04E — Evolution network/replay protocol + x64 validation
+### Step 04D3 — selective upstream alignment — IMPLEMENTED
 
-- define an explicit versioned Evolution wire protocol rather than inheriting C++ object layout;
-- serialize commands field-by-field with defined widths/endianness;
-- validate Evolution x64-to-x64 multiplayer command streams and CRCs;
-- add compiler/build-configuration cross-checks where practical;
-- retain legacy replay reading where practical, without making retail x86 multiplayer a compatibility requirement.
+Step 04D3 reduces divergence against the supplied upstream snapshot without allowing upstream's older 32-bit assumptions to overwrite Evolution architecture decisions.
+
+Imported/adapted:
+
+- Generals and Zero Hour Dozer/Worker disabled-task handling, including the Xfer-reader fix that tests the stream `version` rather than `currentVersion`;
+- newer production-cancellation/refund behavior, including the started-batch guard;
+- neutron-missile outer-radius search/damage corrections behind explicit retail-preservation gates plus the required coordinate unary operators;
+- selected GameMemory robustness (`NOINLINE` pre-main initialization, debug-only link bookkeeping, sized non-throwing deletes) merged into EastWind's native-width allocator implementation;
+- Bink/Miles runtime-loader wiring so x64 can bring the engine up without hard-linking the legacy 32-bit multimedia DLL stubs;
+- oversized glyph-buffer handling and font-size safety;
+- a CRLF/LF-tolerant Step 04D fixture header reader, with checkpoint contents unchanged.
+
+Deliberately retained from EastWind: native-width allocator layouts and `size_t` arithmetic, strict-aliasing-safe float bit conversion, fixed-width wire/replay guards, CMake/toolchain modernization, deterministic FP policy, and x64-only/D3D12 direction. The larger upstream Miles audio lifecycle refactor is deferred until its pointer/userdata assumptions are audited rather than importing 32-bit casts into the x64 lane.
+
+The shared-tree material difference count against the supplied upstream snapshot drops from **93 to 63**. See `STEP_04D3_UPSTREAM_ALIGNMENT.md` for provenance and the recurring sync policy.
+
+### Step 04E — Evolution network/replay protocol + x64 validation — ACTIVE
+
+**04E1 implemented:**
+
+- `EvolutionCommandCodec` defines versioned little-endian fixed-width command bytes independent of `GameMessage` layout;
+- `EvolutionGameMessageAdapter` centralizes runtime conversion so network and future replay wiring cannot diverge;
+- `EvolutionProtocol` defines `EVN1` packet framing plus player/command-ID command batches;
+- `EvolutionReplayFormat` defines additive `EVR1` header/command-record framing using exactly the same command payload bytes;
+- live `NetPacketGameCommandData` payload encoding/decoding now routes through the shared codec;
+- exact golden fixtures and malformed/truncated/version rejection tests freeze v1 bytes;
+- legacy Recorder `.rep` behavior remains untouched for compatibility while the new container is additive.
+
+**04E2/validation remaining:** route the complete x64 transport and new recording/playback path through the Evolution containers, run Evolution x64-to-x64 multiplayer command-stream/CRC validation, and add representative Evolution replay golden sessions. Retail x86 multiplayer is not a compatibility requirement.
+
+See `STEP_04E_EVOLUTION_PROTOCOL.md`.
 
 ### Step 04F — retire x86
 
@@ -227,16 +253,16 @@ After the x64 core is stable enough, continue to the renderer-neutral scene/asse
 
 ## Current validation
 
-Local host-native validation for Step 04D:
+Local host-native validation through Step 04D3:
 
-- GCC 14.2: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **15/15 passed** in each configuration;
-- Clang 17: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **15/15 passed** in each configuration;
-- GCC AddressSanitizer — **15/15 passed**;
-- GCC UndefinedBehaviorSanitizer — **15/15 passed**;
-- all eight configurations emitted the same Step 04D 8-checkpoint timeline through frame 12000;
-- production allocator/native-width tests from 04C remain in the same graph.
+- GCC 14.2: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **17/17 passed** in each configuration;
+- Clang 17: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **17/17 passed** in each configuration;
+- GCC AddressSanitizer — **17/17 passed**;
+- GCC UndefinedBehaviorSanitizer — **17/17 passed**;
+- all eight configurations still verify the same Step 04D 8-checkpoint timeline through frame 12000;
+- production allocator/native-width and upstream-alignment source guards remain in the same graph.
 
-No MinGW-w64 x86_64 compiler or PowerShell runtime is available in this environment, so no Windows/Win64 pass and no Windows i686-vs-x64 timeline match is claimed.
+The user supplied real Windows MinGW-w64 GCC 16.2.0 results for both architectures. x64 passed **17/17** and matched `z_headlessdeterminismcheck`; after the Step 04D5/04D6 harness corrections, i686 also passed **17/17**, `z_determinismcheck` passed, and the i686/x64 eight-checkpoint timelines matched through frame 12000. Step 04D is therefore fully cross-architecture certified.
 
 Canonical Windows Step 04D x64 gate:
 
@@ -248,3 +274,27 @@ ctest --preset mingw64-tests --output-on-failure
 ```
 
 Cross-architecture certification requires `-IncludeLegacyX86` and the timeline comparison workflow documented above. The full renderer/game executable remains gated; Step 04D is the deterministic/headless core lane, not a D3D8 x64 compatibility build.
+
+### Windows bootstrap verification correction — 2026-09-12
+
+The first user-run x64 dependency bootstrap reached tool verification with GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2 and WIDL installed under MSYS2 MINGW64. It exposed a bootstrap-only mismatch: the generic verifier passed `--version` to WIDL, while the MSYS2/Wine WIDL CLI uses `-V`. The bootstrap now passes `-V` explicitly for x64 and optional i686 WIDL, matching the existing `cmake/widl.cmake` probe. A focused source-policy test locks this behavior. The interrupted bootstrap is evidence that installation/discovery worked, not a passing Step 04D Windows determinism gate.
+
+
+### Step 04D2 Windows GCC 16 compile-barrier correction — 2026-09-12
+
+The first post-bootstrap Windows `mingw64-tests` configure completed successfully with MinGW-w64 GCC 16.2.0. Compilation then exposed two legacy C++ assumptions in the focused allocator/runtime lane. Standard unsized global delete/delete[] declarations are now explicitly `noexcept` across WWLib and GameMemory replacement declarations/definitions, matching current `<new>` declarations. `ObjectPoolClass`'s block-count assertion bookkeeping is now compiled only when `DEBUG_CRASHING` keeps the consuming assertion alive. No protocol, replay, deterministic field width, or allocator layout is changed by this hotfix.
+
+This correction is not a Windows sign-off by itself. The canonical next gate remains:
+
+```powershell
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck
+```
+
+
+### Step 04D6 i686 oracle/test-harness correction — 2026-09-12
+
+The frozen i686 CTest graph reached 16/17. The only failure was the Step 04C allocator regression probe: it used a `uint64_t` marker, accidentally requiring 8-byte `PoolProbe` alignment on MinGW i686. That exceeded the historical pool's pointer-alignment contract and was not required to validate the x64 block-header fix. The probe marker is now `uintptr_t` and a source-policy guard rejects reintroducing stronger-than-pointer alignment.
+
+Windows PowerShell redirected the emitted timelines as UTF-16LE. The comparison tool now auto-detects BOM-marked UTF-16, UTF-8 BOM, or plain UTF-8; its self-test compares a UTF-8 fixture against an equivalent UTF-16 file. No CRC/RNG checkpoint changes were made.

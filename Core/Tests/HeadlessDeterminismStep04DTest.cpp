@@ -159,6 +159,9 @@ bool VerifyFixture(const char *path, const std::vector<Checkpoint> &actual)
 
     std::string header;
     std::getline(in, header);
+    if (!header.empty() && header.back() == '\r') {
+        header.pop_back();
+    }
     if (header != "step04d-headless-v1 seed=0x12345678 end=12000") {
         fprintf(stderr, "Unexpected Step 04D timeline fixture header: %s\n", header.c_str());
         return false;

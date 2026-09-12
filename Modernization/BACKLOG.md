@@ -14,11 +14,14 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 03A | Render-frame telemetry / CSV schema v1 | DONE | Folded into completed Step 03 schema v2 |
 | 03B | Update-phase / visibility telemetry + capture summary | DONE | Local GCC/Clang focused regression; observational only |
 | 04 | x64 engine migration | ACTIVE | x64-only Evolution target; frozen i686 retained temporarily as deterministic oracle |
-| 04A | x64 readiness build lane | DONE* | `mingw64-tests`, shared MinGW toolchain, architecture-width guard; Windows transcript pending |
+| 04A | x64 readiness build lane | DONE | `mingw64-tests` verified on real Windows x64 as part of the Step 04D/04D3 17-test gate |
 | 04B | Wire/replay ABI freeze + pointer/handle audit | DONE | Explicit fixed-width wire contract; first native pointer/handle truncations removed |
-| 04C | Native-width runtime substrate + dependency bootstrap | DONE* | Object/Fast/GameMemory allocator safety, GUI/native fixes, x64-default setup script; Windows transcript pending |
-| 04D | x64 deterministic/headless core bring-up | DONE* | Shared FPU policy + production RNG/CRC 12k-frame timeline; Windows i686-vs-x64 certification pending |
-| 04E | Evolution network/replay protocol + x64 validation | NEXT | Versioned fixed-width x64-to-x64 command streams/CRC; no retail multiplayer requirement |
+| 04C | Native-width runtime substrate + dependency bootstrap | DONE | Native allocator/pointer tests verified in the real Windows x64 and frozen i686 focused graphs |
+| 04D | x64 deterministic/headless core bring-up | DONE | Windows x64 17/17, i686 17/17, Step 01 oracle pass, and identical 8-checkpoint i686/x64 timeline through frame 12000 |
+| 04D3 | Upstream alignment / divergence reduction | DONE | Selected gameplay/runtime fixes imported/adapted; Windows x64 17/17 plus unchanged Step 04D fixture |
+| 04E | Evolution network/replay protocol + x64 validation | ACTIVE | 04E1 fixed-width command codec + network/replay v1 framing implemented; full x64 runtime integration/session validation pending |
+| 04E1 | Protocol v1 foundation + game-command payload migration | DONE* | Golden byte fixtures + malformed-input gates; Windows 19-test rerun pending |
+| 04E2 | Evolution transport/replay runtime integration | NEXT | Route full x64 transport and new recordings/playback through v1 containers |
 | 04F | Retire x86 | PLANNED | Remove i686 after golden replay/simulation/network gates pass |
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |
 | W3X-A1 | W3X document-envelope probe | DONE | Root/namespace/SAGE envelope recognition |
@@ -45,7 +48,7 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 23 | W3X completeness/tooling | PLANNED | Documented support matrix/toolchain |
 | 24 | Advanced GPU optimization | PLANNED | Only measured bottlenecks |
 
-`DONE*` records implementation where the relevant Windows console transcript/cross-architecture certification is not archived. Steps 04C and 04D therefore still require their real Windows gates even though their implementation slices are complete.
+`DONE*` records implementation where a relevant Windows gate remains outstanding. Step 04D is fully cross-architecture verified; 04E1 awaits the real Windows 19-test rerun.
 
 ## Cross-cutting backlog
 

@@ -134,4 +134,6 @@ This repository is also the authoritative baseline for a long-term engine modern
 
 Start with [`MODERNIZATION.md`](MODERNIZATION.md) and [`PROJECT_STATE.md`](PROJECT_STATE.md). The ordered implementation roadmap is in [`Modernization/ROADMAP.md`](Modernization/ROADMAP.md).
 
+Step 04D3 upstream alignment is documented in `Modernization/STEP_04D3_UPSTREAM_ALIGNMENT.md`.
+
 The Evolution renderer target is **x64 + Direct3D 12**. The existing Direct3D 8-era path remains a temporary compatibility/reference renderer during migration; no D3D9 or D3D11 intermediate renderer is planned.

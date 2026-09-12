@@ -24,11 +24,11 @@ namespace
 struct PoolProbe
 {
     void *nativePointer;
-    std::uint64_t marker;
+    std::uintptr_t marker;
     std::uint32_t index;
 };
 
-constexpr std::uint64_t kMarker = UINT64_C(0x5A17C0DECAFEBEEF);
+constexpr std::uintptr_t kMarker = static_cast<std::uintptr_t>(UINT32_C(0x5A17C0DE));
 }
 
 
@@ -92,6 +92,8 @@ int testFastAllocator()
 int main()
 {
     static_assert(sizeof(std::uintptr_t) == sizeof(void *), "uintptr_t must match native pointer width");
+    static_assert(alignof(PoolProbe) <= alignof(void *),
+        "native-width pool probe must not require stronger alignment than a pointer");
     static_assert(sizeof(PoolProbe) >= sizeof(PoolProbe *), "pool free-list link must fit in an object slot");
 
     if (const int fastAllocatorResult = testFastAllocator(); fastAllocatorResult != 0)

@@ -38,8 +38,10 @@ This is **not a rewrite of the game simulation**. The strategy is to preserve pr
 15. [`Modernization/STEP_02_BUILD_SYSTEM_FOUNDATION.md`](Modernization/STEP_02_BUILD_SYSTEM_FOUNDATION.md) — MinGW/Ninja command-line build foundation.
 16. [`Modernization/STEP_03_PERFORMANCE_TELEMETRY.md`](Modernization/STEP_03_PERFORMANCE_TELEMETRY.md) — completed HD-mod measurement/telemetry milestone.
 17. [`Modernization/STEP_04_X64_MIGRATION.md`](Modernization/STEP_04_X64_MIGRATION.md) — active staged x64 engine migration.
-18. [`Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md`](Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md) — first W3X implementation specification.
-19. [`Modernization/BASELINE_MANIFEST.md`](Modernization/BASELINE_MANIFEST.md) — accepted source hash and anchor-file hashes.
+18. [`Modernization/STEP_04D3_UPSTREAM_ALIGNMENT.md`](Modernization/STEP_04D3_UPSTREAM_ALIGNMENT.md) — selective upstream correctness/runtime sync policy and results.
+19. [`Modernization/STEP_04E_EVOLUTION_PROTOCOL.md`](Modernization/STEP_04E_EVOLUTION_PROTOCOL.md) — versioned fixed-width Evolution command/network/replay protocol.
+20. [`Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md`](Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md) — first W3X implementation specification.
+21. [`Modernization/BASELINE_MANIFEST.md`](Modernization/BASELINE_MANIFEST.md) — accepted source hash and anchor-file hashes.
 
 ## Priority order
 
@@ -93,4 +95,4 @@ A roadmap step is not complete merely because code compiles. A completed step mu
 
 ## Step 04 — x64 migration
 
-Steps 04A-04D now provide the x64 readiness lane, architecture-independent wire-width guards, native allocator/pointer substrate conversion, the one-command Windows dependency bootstrap, and the first deterministic/headless x64 CRC timeline gate. The frozen i686 build is a temporary deterministic oracle only; future multiplayer compatibility is Evolution-to-Evolution, not retail x86. See `Modernization/STEP_04_X64_MIGRATION.md`.
+Steps 04A-04D are now Windows cross-architecture verified; Step 04D3 is Windows x64 verified, and 04E1 now adds the versioned Evolution command/network/replay protocol foundation. The earlier slices provide the x64 readiness lane, architecture-independent wire-width guards, native allocator/pointer substrate conversion, the one-command Windows dependency bootstrap, the deterministic/headless x64 CRC timeline gate, and a selective upstream-alignment pass that imports correctness fixes without surrendering EastWind architecture ownership. The frozen i686 build is a temporary deterministic oracle only; future multiplayer compatibility is Evolution-to-Evolution, not retail x86. See `Modernization/STEP_04_X64_MIGRATION.md`.

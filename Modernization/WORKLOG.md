@@ -267,3 +267,84 @@ Implemented:
 Local validation: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan all passed 15/15 tests. All configurations emitted identical eight-checkpoint timelines through frame 12000.
 
 No Windows/Win64 execution is claimed. The candidate fixture becomes a signed-off cross-architecture oracle only after the same revision matches under the frozen Windows i686 lane and Windows x64 `mingw64-tests` lane. Step 04E is next: explicit Evolution network/replay protocol and x64-to-x64 validation.
+
+## 2026-09-12 — Step 04D Windows dependency-bootstrap WIDL verification hotfix
+
+- Windows bootstrap transcript supplied by the user confirmed MSYS2 package update/install completed and discovered the x64 GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2, and `widl.exe` tools.
+- The bootstrap then failed during WIDL verification because `scripts/setup-windows-dev.ps1` used the generic `--version` argument. The installed MSYS2/Wine WIDL accepts `-V` instead; `cmake/widl.cmake` already used the correct flag.
+- Changed both x64 and optional i686 bootstrap WIDL probes to `-V` rather than weakening or skipping WIDL verification.
+- Extended `WindowsDependencyBootstrapTest.cmake` to require the `-V` probes and reject a regression to `--version` for WIDL.
+- This transcript proves dependency installation/tool discovery up to the WIDL probe; it does not yet constitute a passing Windows `mingw64-tests` or i686-vs-x64 timeline gate. Those remain pending a rerun after this hotfix.
+
+
+## 2026-09-12 — Step 04D2 Windows GCC 16 runtime ABI compile hotfix
+
+- Windows `mingw64-tests` configure succeeded under MSYS2 MinGW-w64 GCC 16.2.0 after the WIDL bootstrap correction.
+- The build exposed two real focused-lane compiler barriers: pre-C++11 global delete declarations disagreed with the standard `noexcept` declaration from `<new>`, and a `WWASSERT`-only object-pool counter became unused in release builds under `-Werror`.
+- Updated WWLib, GameMemory and GameMemoryNull standard unsized global delete/delete[] declarations and definitions to the modern non-throwing contract; project-specific debug placement overloads were not changed.
+- Scoped the object-pool block-count verification to `DEBUG_CRASHING`, preserving the debug invariant without release warning noise.
+- Extended the existing Step 04C runtime source audit rather than creating another overlapping audit module.
+- Focused GCC and Clang allocator/runtime tests pass locally; Windows build/CTest remains pending user rerun and is not claimed here.
+
+## 2026-09-12 — Step 04D3: selective upstream alignment / divergence reduction
+
+Authoritative local input: `GeneralsGameCodeEastWind.zip` (`e290c9bb51c4fc271ed89428b531d33298e498336f61fa4a8db6abcab5ad8502`).
+
+Upstream comparison snapshot: `GeneralsGameCode-main (1).zip` (`c5c561ca47ffe874c31732c3cb86bcc0016f246f5ee36cc3435bae50e26427d1`).
+
+Implemented:
+
+- imported/adapted newer Dozer/Worker disabled-task handling in both editions and corrected old-stream Xfer gating to branch on the stream `version`;
+- imported newer production cancellation/refund behavior and started-batch guard;
+- imported corrected neutron-missile radius/search/damage behavior behind retail-preservation gates and added the required coordinate unary operators without replacing EastWind's strict-aliasing-safe float helpers;
+- merged upstream GameMemory robustness into the existing x64-native allocator rather than reverting pointer alignment/`size_t` work;
+- switched active Bink/Miles runtime consumers from stub link targets to the repository runtime loaders so x64 bring-up can degrade cleanly when legacy 32-bit multimedia DLLs are unavailable;
+- imported large-glyph/font-buffer safety;
+- made the Step 04D fixture header reader tolerate CRLF/LF while leaving all CRC/RNG checkpoint data unchanged;
+- added coordinate and source-policy regression tests; focused graph increased from 15 to 17 tests.
+
+Deliberately not imported: upstream's older pointer-width allocator assumptions, unsafe float aliasing, pointer-truncating audio changes, older CMake/network architecture, or the full Miles lifecycle refactor before native-width userdata auditing. EastWind remains the architecture authority.
+
+Shared material divergence against this upstream snapshot fell from **93 to 63 files**. Local GCC 14.2/Clang 17 O0/O2/O3 plus GCC ASan/UBSan all pass **17/17**, preserving the same Step 04D deterministic timeline. The immediately preceding Step 04D2 baseline has a user-supplied Windows x64 15/15 + fixture pass; Step 04D3 itself still awaits the Windows 17-test rerun and the i686-vs-x64 timeline certification.
+
+## 2026-09-12 — Step 04D4: Windows bootstrap native-process exit-code hotfix
+
+- A user-supplied `-IncludeLegacyX86` Windows run successfully updated MSYS2 and installed/found both x64 and frozen i686 toolchain packages, then reached x64 tool verification.
+- `gcc.exe`, `g++.exe`, and `cmake.exe` launched and printed valid version output, but the bootstrap reported `CMake verification failed (exit code -1)`.
+- Root cause: `Assert-Tool` piped each native version probe directly into `Select-Object -First 2`; Windows PowerShell can close the native stdout pipe after the requested rows and leave `$LASTEXITCODE` as `-1` even though the tool itself succeeded.
+- `Assert-Tool` now captures the complete native output first, snapshots `$LASTEXITCODE` immediately, and only then pipelines the captured text for two-line display.
+- `WindowsDependencyBootstrapTest.cmake` now locks the capture/snapshot/display ordering and rejects the direct native-process-to-`Select-Object -First` pattern.
+- This transcript confirms the legacy i686 packages are installed, but the run stopped before optional i686 tool verification or any i686 determinism execution. No i686-vs-x64 timeline match is claimed yet.
+
+## 2026-09-12 — Step 04D5 frozen i686 determinism-test dependency repair
+
+- Recorded real Windows x64 Step 04D3/04D4 validation at 17/17 plus the matched headless fixture.
+- Fixed the frozen i686 Step 01 guard after Step 04B header decoupling by making `DeterminismPrimitivesTest.cpp` include `Common/MessageStream.h` directly for its `GameMessage` ABI/replay assertions.
+- Added a source-policy regression preventing the test from silently depending on `NetworkDefs.h` to provide message definitions transitively.
+- No runtime protocol or deterministic data layout changed.
+
+
+## 2026-09-12 — Step 04D6 frozen-i686 allocator-probe and timeline-encoding hotfix
+
+- Recorded real Windows x64 Step 04D3/04D4 validation at **17/17** plus the matched Step 04D headless fixture.
+- Recorded the frozen i686 CTest result at **16/17**; only `runtime_native_width_step04c` failed.
+- Corrected the Step 04C test probe from `uint64_t` to `uintptr_t` so the test validates native pointer-width metadata without imposing an artificial 8-byte alignment requirement on the Win32 oracle. The production WWLib allocator layout is unchanged.
+- Added a source-policy regression requiring the probe's alignment to be no stronger than `void*`.
+- Updated `compare-determinism-timelines.py` to read plain UTF-8, UTF-8 BOM, or BOM-marked UTF-16 timeline files; the self-test now covers Windows PowerShell-style UTF-16 output.
+- No deterministic checkpoint, CRC/RNG state, network/replay layout, or allocator implementation changed.
+- The final i686 17-test rerun, `z_determinismcheck`, and i686-vs-x64 timeline match remain the last Step 04D certification gate before Step 04E.
+
+
+## 2026-09-12 — Step 04D final Windows cross-architecture certification
+
+- Real Windows x64 MinGW-w64 GCC 16.2 focused graph passed 17/17 and matched the Step 04D headless fixture.
+- Frozen Windows i686 focused graph passed 17/17; Step 01 `z_determinismcheck` passed with the signed-off CRC/RNG/Xfer/snapshot/ABI/replay checkpoint set.
+- i686 and x64 Step 04D timelines matched all eight checkpoints through frame 12000. Step 04D is closed.
+
+## 2026-09-12 — Step 04E1: Evolution protocol v1 foundation
+
+Authoritative input: `GeneralsGameCode-Step04D6-i686-Oracle-TestHarness-Hotfix-full.zip` (`61f5f4ba146c6d15154b983b1e5e8eadca7d963bb2b2c715e701b0532243d7c3`).
+
+Implemented explicit little-endian fixed-width command serialization, a shared GameMessage adapter, EVN1 network framing with explicit command batches, and additive EVR1 replay framing using the same command bytes. `NetPacketGameCommandData` now routes game-command payloads through the Evolution codec. Legacy `.rep` Recorder behavior is intentionally untouched until runtime replay integration. Added exact byte fixtures plus malformed/version/truncation source/runtime guards; local focused graph grows from 17 to 19 tests.
+
+04E remains active: full transport/Recorder wiring and real x64-to-x64 multiplayer/replay session validation are next.

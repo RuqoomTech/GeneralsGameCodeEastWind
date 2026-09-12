@@ -75,10 +75,13 @@ if(NOT RTS_BUILD_TESTS_ONLY)
     # Debug symbol stripping is only relevant to installable MinGW binaries.
     include(cmake/debug_strip.cmake)
 
-    # Find/Add build dependencies and stubs shared by the real game targets.
+    # Runtime Bink/Miles shims are source-built and degrade cleanly when the legacy
+    # 32-bit DLLs are unavailable (notably in the x64 Evolution runtime).
+    add_subdirectory(Dependencies/Bink)
+    add_subdirectory(Dependencies/Miles)
+
+    # DirectX 8 remains a frozen x86 compatibility-renderer dependency only.
     if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND ${CMAKE_SIZEOF_VOID_P} EQUAL 4)
-        include(cmake/miles.cmake)
-        include(cmake/bink.cmake)
         include(cmake/dx8.cmake)
     endif()
 

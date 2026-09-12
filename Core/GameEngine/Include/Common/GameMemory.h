@@ -448,7 +448,7 @@ public:
 #endif
 
 	/// free the bytes. (assumes allocated by this dma.)
-	void freeBytes(void* pMem);
+	void freeBytes(void* pMem) noexcept;
 
 	/**
 		return the actual number of bytes that would be allocated
@@ -851,10 +851,12 @@ extern void userMemoryAdjustPoolSize(const char *poolName, Int& initialAllocatio
 	#define _OPERATOR_NEW_DEFINED_
 
 	extern void * __cdecl operator new		(size_t size);
-	extern void __cdecl operator delete		(void *p);
+	extern void __cdecl operator delete		(void *p) noexcept;
+	extern void __cdecl operator delete		(void *p, size_t size) noexcept;
 
 	extern void * __cdecl operator new[]	(size_t size);
-	extern void __cdecl operator delete[]	(void *p);
+	extern void __cdecl operator delete[]	(void *p) noexcept;
+	extern void __cdecl operator delete[]	(void *p, size_t size) noexcept;
 
 	// additional overloads to account for VC/MFC funky versions
 	extern void* __cdecl operator new(size_t nSize, const char *, int);
