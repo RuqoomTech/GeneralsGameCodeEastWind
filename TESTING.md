@@ -276,3 +276,32 @@ The focused graph grows to 17 tests with:
 Local validation on the Step 04D3 tree passed GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`, plus GCC ASan and UBSan: **17/17** in every configuration. The Step 04D headless timeline is unchanged in all runs.
 
 The user's real Windows x64 pass on the immediately preceding Step 04D2 baseline remains recorded separately (15/15 plus the headless fixture). Do not treat it as a Step 04D3 Windows pass; rerun the canonical `mingw64-tests` commands after applying this sync.
+
+## Step 04D4 Windows dependency-bootstrap exit-code hotfix
+
+A later real Windows run used `scripts/setup-windows-dev.ps1 -IncludeLegacyX86`. Package installation completed for both the x64 Evolution toolchain and the frozen i686 oracle toolchain. During x64 verification, GCC/G++ and CMake printed valid version output, but CMake was reported as exit `-1`. The failure was in the PowerShell verifier: the native process was piped directly to `Select-Object -First 2`, allowing the consumer to close stdout before the process status was sampled.
+
+The bootstrap now captures the complete native output, snapshots `$LASTEXITCODE`, then displays the first two lines. `windows_dependency_bootstrap_step04c` locks this order and rejects the old direct-pipeline pattern. Rerun the already-installed toolchains without another package update:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86 -VerifyOnly
+```
+
+If verification succeeds, continue directly with the frozen i686 oracle build/timeline commands. The interrupted bootstrap is not an i686 determinism pass.
+
+## Step 04D5 frozen-i686 explicit GameMessage dependency hotfix
+
+A real Windows Step 04D3/04D4 x64 run passed **17/17** tests and matched the checked-in headless deterministic fixture. The following `mingw32-tests` build then failed while compiling `DeterminismPrimitivesTest.cpp` because the frozen Step 01 ABI/replay assertions use `GameMessage`, `GameMessageArgumentDataType`, and `GameMessageArgumentType` without directly including their defining header. Step 04B had correctly removed the old `NetworkDefs.h` -> `MessageStream.h` transitive dependency.
+
+The test now includes `Common/MessageStream.h` explicitly under `RTS_ENGINE_DETERMINISM_TEST`; the Step 04D source-policy test requires that direct dependency. This is a focused test-boundary repair and does not restore protocol/runtime coupling.
+
+Rerun on Windows:
+
+```powershell
+cmake --preset mingw32-tests
+cmake --build --preset mingw32-tests
+ctest --preset mingw32-tests --output-on-failure
+cmake --build --preset mingw32-tests --target z_determinismcheck
+```
+
+Then emit and compare the i686 and x64 Step 04D timelines.

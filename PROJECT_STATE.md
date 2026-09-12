@@ -155,7 +155,7 @@ Local validation: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan a
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
 | MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
 | HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
-| x64 engine migration | **ACTIVE — Step 04D Windows x64 focused lane verified; Step 04D3 upstream alignment implemented locally; i686-vs-x64 certification pending** |
+| x64 engine migration | **ACTIVE — Step 04D3/04D4 Windows x64 focused lane verified at 17/17 + matched headless fixture; frozen i686 explicit-dependency hotfix implemented; i686-vs-x64 certification pending** |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
 | W3X top-level child-element discovery | **Done — A2** |
@@ -201,3 +201,13 @@ Step 04A begins the engine migration without pretending the full runtime is alre
 Local host-native GCC 14.2 and Clang 17 focused configure/build/CTest runs pass 7/7 tests, including `-O0`/`-O2`/`-O3` coverage; GCC ASan and UBSan are also green. The validation container has no MinGW-w64 x86_64 compiler, so no Windows `mingw64-tests` pass is claimed until actual output is provided.
 
 Before Step 04E, rerun the 17-test `mingw64-tests` graph on Windows and complete the explicit i686-vs-x64 Step 04D timeline comparison. Then the next implementation slice is **Step 04E — Evolution network/replay protocol + x64 validation**: define an explicit versioned fixed-width Evolution wire protocol, validate x64-to-x64 command streams/CRCs, and use the Step 04D timeline machinery plus representative replay fixtures as compatibility gates. The frozen i686 build remains only until the deterministic/replay oracle is fully replaced.
+
+### Step 04D4 Windows bootstrap follow-up — 2026-09-12
+
+The first `-IncludeLegacyX86` bootstrap run after Step 04D3 successfully updated/discovered the x64 toolchain and installed/discovered the frozen i686 package set, but stopped during x64 CMake verification with a spurious `exit code -1` after CMake had already printed valid version output. The verifier was piping native processes directly through `Select-Object -First 2`; it now captures output and snapshots the native exit code before formatting output. The source-policy regression test locks this behavior. Legacy i686 package installation is therefore complete, while i686 executable verification and the cross-architecture Step 04D timeline comparison remain pending.
+
+## Step 04D5 frozen-i686 explicit dependency hotfix — 2026-09-12
+
+Real Windows validation after Step 04D4/04D3 passed the x64 focused graph **17/17** with MinGW-w64 GCC 16.2.0 and `z_headlessdeterminismcheck` matched the checked-in Step 04D timeline. The subsequent frozen i686 oracle build exposed a test-only dependency regression: `DeterminismPrimitivesTest.cpp` still characterizes `GameMessage` replay/ABI fields, but Step 04B intentionally removed `MessageStream.h` from `NetworkDefs.h`. The test now includes `Common/MessageStream.h` explicitly, preserving the network-header decoupling while restoring the frozen i686 ABI/replay characterization. The Step 04D policy guard locks this direct include so the transitive dependency cannot return.
+
+No i686 determinism pass is claimed until the user reruns `mingw32-tests`, `z_determinismcheck`, and the i686-vs-x64 timeline comparison.

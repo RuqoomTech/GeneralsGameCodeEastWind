@@ -306,3 +306,19 @@ Implemented:
 Deliberately not imported: upstream's older pointer-width allocator assumptions, unsafe float aliasing, pointer-truncating audio changes, older CMake/network architecture, or the full Miles lifecycle refactor before native-width userdata auditing. EastWind remains the architecture authority.
 
 Shared material divergence against this upstream snapshot fell from **93 to 63 files**. Local GCC 14.2/Clang 17 O0/O2/O3 plus GCC ASan/UBSan all pass **17/17**, preserving the same Step 04D deterministic timeline. The immediately preceding Step 04D2 baseline has a user-supplied Windows x64 15/15 + fixture pass; Step 04D3 itself still awaits the Windows 17-test rerun and the i686-vs-x64 timeline certification.
+
+## 2026-09-12 — Step 04D4: Windows bootstrap native-process exit-code hotfix
+
+- A user-supplied `-IncludeLegacyX86` Windows run successfully updated MSYS2 and installed/found both x64 and frozen i686 toolchain packages, then reached x64 tool verification.
+- `gcc.exe`, `g++.exe`, and `cmake.exe` launched and printed valid version output, but the bootstrap reported `CMake verification failed (exit code -1)`.
+- Root cause: `Assert-Tool` piped each native version probe directly into `Select-Object -First 2`; Windows PowerShell can close the native stdout pipe after the requested rows and leave `$LASTEXITCODE` as `-1` even though the tool itself succeeded.
+- `Assert-Tool` now captures the complete native output first, snapshots `$LASTEXITCODE` immediately, and only then pipelines the captured text for two-line display.
+- `WindowsDependencyBootstrapTest.cmake` now locks the capture/snapshot/display ordering and rejects the direct native-process-to-`Select-Object -First` pattern.
+- This transcript confirms the legacy i686 packages are installed, but the run stopped before optional i686 tool verification or any i686 determinism execution. No i686-vs-x64 timeline match is claimed yet.
+
+## 2026-09-12 — Step 04D5 frozen i686 determinism-test dependency repair
+
+- Recorded real Windows x64 Step 04D3/04D4 validation at 17/17 plus the matched headless fixture.
+- Fixed the frozen i686 Step 01 guard after Step 04B header decoupling by making `DeterminismPrimitivesTest.cpp` include `Common/MessageStream.h` directly for its `GameMessage` ABI/replay assertions.
+- Added a source-policy regression preventing the test from silently depending on `NetworkDefs.h` to provide message definitions transitively.
+- No runtime protocol or deterministic data layout changed.

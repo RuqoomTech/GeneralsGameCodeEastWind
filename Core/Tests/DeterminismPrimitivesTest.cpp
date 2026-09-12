@@ -3,6 +3,7 @@
 #include "GameLogic/LogicRandomValue.h"
 
 #if defined(RTS_ENGINE_DETERMINISM_TEST)
+#include "Common/MessageStream.h"
 #include "Common/Xfer.h"
 #include "Common/XferCRC.h"
 #include "GameLogic/Damage.h"

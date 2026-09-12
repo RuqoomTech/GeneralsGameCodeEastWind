@@ -28,6 +28,14 @@ foreach(_needle IN ITEMS "-fno-fast-math" "-ffp-contract=off" "headless_determin
     endif()
 endforeach()
 
+file(READ "${RTS_SOURCE_DIR}/Core/Tests/DeterminismPrimitivesTest.cpp" _step01_guard)
+string(FIND "${_step01_guard}" "#include \"Common/MessageStream.h\"" _message_stream_include)
+if(_message_stream_include EQUAL -1)
+    message(FATAL_ERROR
+        "The frozen i686 determinism guard must include Common/MessageStream.h explicitly; "
+        "do not rely on NetworkDefs.h or another transitive include for GameMessage ABI/replay definitions.")
+endif()
+
 file(READ "${RTS_SOURCE_DIR}/Core/Tests/HeadlessDeterminismStep04DTest.cpp" _timeline)
 foreach(_frame IN ITEMS "0U" "1U" "10U" "100U" "1000U" "5000U" "10000U" "kEndFrame")
     string(FIND "${_timeline}" "${_frame}" _pos)

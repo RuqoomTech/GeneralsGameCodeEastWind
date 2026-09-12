@@ -73,9 +73,18 @@ function Assert-Tool([string]$Path, [string]$Name, [string[]]$Arguments = @('--v
     }
 
     Write-Host ("{0}: {1}" -f $Name, $Path)
-    & $Path @Arguments | Select-Object -First 2 | ForEach-Object { Write-Host "  $_" }
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Name verification failed (exit code $LASTEXITCODE)."
+
+    # Do not pipe a native tool directly into Select-Object -First. On Windows
+    # PowerShell that can close the stdout pipe after the requested lines and
+    # leave an otherwise-successful native process reported through
+    # $LASTEXITCODE as -1. Capture the complete probe output first and snapshot
+    # the native exit code before any PowerShell pipeline processes the text.
+    $output = @(& $Path @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+
+    $output | Select-Object -First 2 | ForEach-Object { Write-Host "  $_" }
+    if ($exitCode -ne 0) {
+        throw "$Name verification failed (exit code $exitCode)."
     }
 }
 
