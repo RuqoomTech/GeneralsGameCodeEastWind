@@ -224,13 +224,21 @@ Deliberately retained from EastWind: native-width allocator layouts and `size_t`
 
 The shared-tree material difference count against the supplied upstream snapshot drops from **93 to 63**. See `STEP_04D3_UPSTREAM_ALIGNMENT.md` for provenance and the recurring sync policy.
 
-### Step 04E — Evolution network/replay protocol + x64 validation
+### Step 04E — Evolution network/replay protocol + x64 validation — ACTIVE
 
-- define an explicit versioned Evolution wire protocol rather than inheriting C++ object layout;
-- serialize commands field-by-field with defined widths/endianness;
-- validate Evolution x64-to-x64 multiplayer command streams and CRCs;
-- add compiler/build-configuration cross-checks where practical;
-- retain legacy replay reading where practical, without making retail x86 multiplayer a compatibility requirement.
+**04E1 implemented:**
+
+- `EvolutionCommandCodec` defines versioned little-endian fixed-width command bytes independent of `GameMessage` layout;
+- `EvolutionGameMessageAdapter` centralizes runtime conversion so network and future replay wiring cannot diverge;
+- `EvolutionProtocol` defines `EVN1` packet framing plus player/command-ID command batches;
+- `EvolutionReplayFormat` defines additive `EVR1` header/command-record framing using exactly the same command payload bytes;
+- live `NetPacketGameCommandData` payload encoding/decoding now routes through the shared codec;
+- exact golden fixtures and malformed/truncated/version rejection tests freeze v1 bytes;
+- legacy Recorder `.rep` behavior remains untouched for compatibility while the new container is additive.
+
+**04E2/validation remaining:** route the complete x64 transport and new recording/playback path through the Evolution containers, run Evolution x64-to-x64 multiplayer command-stream/CRC validation, and add representative Evolution replay golden sessions. Retail x86 multiplayer is not a compatibility requirement.
+
+See `STEP_04E_EVOLUTION_PROTOCOL.md`.
 
 ### Step 04F — retire x86
 
@@ -254,7 +262,7 @@ Local host-native validation through Step 04D3:
 - all eight configurations still verify the same Step 04D 8-checkpoint timeline through frame 12000;
 - production allocator/native-width and upstream-alignment source guards remain in the same graph.
 
-The user supplied a real Windows x64 MinGW-w64 GCC 16.2.0 Step 04D3/04D4 run: build passed, CTest passed **17/17**, and `z_headlessdeterminismcheck` matched the fixture. The Windows i686-vs-x64 timeline comparison remains pending. A subsequent i686 run reached 16/17 and exposed only a modernization-probe alignment assumption plus a PowerShell UTF-16 timeline-file issue; Step 04D6 corrects both without changing the production allocator or checkpoint data.
+The user supplied real Windows MinGW-w64 GCC 16.2.0 results for both architectures. x64 passed **17/17** and matched `z_headlessdeterminismcheck`; after the Step 04D5/04D6 harness corrections, i686 also passed **17/17**, `z_determinismcheck` passed, and the i686/x64 eight-checkpoint timelines matched through frame 12000. Step 04D is therefore fully cross-architecture certified.
 
 Canonical Windows Step 04D x64 gate:
 

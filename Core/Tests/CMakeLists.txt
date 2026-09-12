@@ -345,3 +345,72 @@ if(Python3_Interpreter_FOUND)
             ${CMAKE_SOURCE_DIR}/scripts/compare-determinism-timelines.py --self-test
     )
 endif()
+
+# Step 04E Evolution protocol/replay v1 guard. The codec and framers are standalone
+# fixed-width code so both i686 oracle and x64 Evolution lanes verify identical bytes.
+add_executable(evolution_protocol_step04e_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/EvolutionProtocolStep04ETest.cpp
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/EvolutionCommandCodec.cpp
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/EvolutionReplayFormat.cpp
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/GameNetwork/EvolutionProtocol.cpp
+)
+target_include_directories(evolution_protocol_step04e_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
+)
+set_target_properties(evolution_protocol_step04e_test PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(evolution_protocol_step04e_test PRIVATE
+        -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
+    )
+endif()
+add_test(
+    NAME evolution_protocol_v1_step04e
+    COMMAND evolution_protocol_step04e_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/Fixtures/Step04EEvolutionProtocolV1.txt
+)
+add_custom_target(z_evolutionprotocolcheck
+    COMMAND $<TARGET_FILE:evolution_protocol_step04e_test>
+        ${CMAKE_CURRENT_SOURCE_DIR}/Fixtures/Step04EEvolutionProtocolV1.txt
+    DEPENDS evolution_protocol_step04e_test
+    USES_TERMINAL
+)
+
+add_test(
+    NAME evolution_protocol_source_policy_step04e
+    COMMAND ${CMAKE_COMMAND}
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/EvolutionProtocolPolicyStep04ETest.cmake
+)
+
+# Compile the production GameMessage adapter in the Windows focused graph even
+# though the standalone codec test intentionally avoids the legacy memory-pool runtime.
+# The historical GameMemory header includes <new.h>, so host Unix validation leaves
+# this adapter to the source-policy test while both MinGW oracle/Evolution lanes compile it.
+if(WIN32)
+    add_library(evolution_game_message_adapter_step04e OBJECT
+        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/EvolutionGameMessageAdapter.cpp
+    )
+    target_include_directories(evolution_game_message_adapter_step04e PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
+    )
+    target_link_libraries(evolution_game_message_adapter_step04e PRIVATE
+        core_config
+        core_utility_no_pch
+    )
+    set_target_properties(evolution_game_message_adapter_step04e PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS NO
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(evolution_game_message_adapter_step04e PRIVATE
+            -Wall -Wextra -Wno-unknown-pragmas -pedantic
+        )
+    endif()
+endif()

@@ -19,7 +19,8 @@
 #include "PreRTS.h"
 #include "GameNetwork/NetPacketStructs.h"
 
-#include "GameNetwork/GameMessageParser.h"
+#include "Common/EvolutionCommandCodec.h"
+#include "Common/EvolutionGameMessageAdapter.h"
 #include "GameNetwork/NetCommandRef.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -761,258 +762,86 @@ size_t NetPacketDisconnectChatCommandBase::copyBytes(UnsignedByte *buffer, const
 // NetPacketGameCommand
 ////////////////////////////////////////////////////////////////////////////////
 
+namespace
+{
+
+bool NetGameCommandToEvolutionBytes(const NetGameCommandMsg &cmdMsg, std::vector<std::uint8_t> &bytes)
+{
+    GameMessage *gmsg = cmdMsg.constructGameMessage();
+    if (gmsg == nullptr)
+        return false;
+
+    evolution::Command command;
+    const bool converted = evolution::gameMessageToEvolutionCommand(*gmsg, command);
+    deleteInstance(gmsg);
+    return converted && evolution::encodeCommandV1(command, bytes);
+}
+
+} // namespace
+
 size_t NetPacketGameCommandData::getSize(const NetCommandMsg &msg)
 {
-	const CommandMsg *cmdMsg = static_cast<const CommandMsg *>(&msg);
-	GameMessage *gmsg = cmdMsg->constructGameMessage();
-	GameMessageParser *parser = newInstance(GameMessageParser)(gmsg);
-
-	size_t size = 0;
-
-	size += sizeof(Int);
-	size += sizeof(UnsignedByte);
-
-	GameMessageParserArgumentType *arg = parser->getFirstArgumentType();
-	while (arg != nullptr)
-	{
-		size += sizeof(UnsignedByte); // argument type
-		size += sizeof(UnsignedByte); // argument count
-
-		const GameMessageArgumentDataType type = arg->getType();
-		switch (type)
-		{
-		case ARGUMENTDATATYPE_INTEGER:
-			size += arg->getArgCount() * sizeof(Int);
-			break;
-		case ARGUMENTDATATYPE_REAL:
-			size += arg->getArgCount() * sizeof(Real);
-			break;
-		case ARGUMENTDATATYPE_BOOLEAN:
-			size += arg->getArgCount() * sizeof(Bool);
-			break;
-		case ARGUMENTDATATYPE_OBJECTID:
-			size += arg->getArgCount() * sizeof(ObjectID);
-			break;
-		case ARGUMENTDATATYPE_DRAWABLEID:
-			size += arg->getArgCount() * sizeof(DrawableID);
-			break;
-		case ARGUMENTDATATYPE_TEAMID:
-			size += arg->getArgCount() * sizeof(UnsignedInt);
-			break;
-		case ARGUMENTDATATYPE_LOCATION:
-			size += arg->getArgCount() * sizeof(Coord3D);
-			break;
-		case ARGUMENTDATATYPE_PIXEL:
-			size += arg->getArgCount() * sizeof(ICoord2D);
-			break;
-		case ARGUMENTDATATYPE_PIXELREGION:
-			size += arg->getArgCount() * sizeof(IRegion2D);
-			break;
-		case ARGUMENTDATATYPE_TIMESTAMP:
-			size += arg->getArgCount() * sizeof(UnsignedInt);
-			break;
-		case ARGUMENTDATATYPE_WIDECHAR:
-			size += arg->getArgCount() * sizeof(WideChar);
-			break;
-		}
-		arg = arg->getNext();
-	}
-
-	deleteInstance(parser);
-	deleteInstance(gmsg);
-
-	return size;
+    const CommandMsg *cmdMsg = static_cast<const CommandMsg *>(&msg);
+    std::vector<std::uint8_t> bytes;
+    if (!NetGameCommandToEvolutionBytes(*cmdMsg, bytes))
+    {
+        DEBUG_CRASH(("Failed to encode Evolution game command for network sizing."));
+        return 0;
+    }
+    return bytes.size();
 }
 
 size_t NetPacketGameCommandData::copyBytes(UnsignedByte *buffer, const NetCommandRef &ref)
 {
-	const CommandMsg *cmdMsg = static_cast<const CommandMsg *>(ref.getCommand());
-	GameMessage *gmsg = cmdMsg->constructGameMessage();
-	GameMessageParser *parser = newInstance(GameMessageParser)(gmsg);
-
-	size_t size = 0;
-
-	size += network::writePrimitive(buffer + size, (Int)gmsg->getType());
-	size += network::writePrimitive(buffer + size, (UnsignedByte)parser->getNumTypes());
-
-	GameMessageParserArgumentType *argType = parser->getFirstArgumentType();
-	while (argType != nullptr)
-	{
-		size += network::writePrimitive(buffer + size, (UnsignedByte)argType->getType());
-		size += network::writePrimitive(buffer + size, (UnsignedByte)argType->getArgCount());
-		argType = argType->getNext();
-	}
-
-	const Int numArgs = gmsg->getArgumentCount();
-	for (Int i = 0; i < numArgs; ++i)
-	{
-		GameMessageArgumentDataType type = gmsg->getArgumentDataType(i);
-		GameMessageArgumentType arg = *gmsg->getArgument(i);
-		switch (type)
-		{
-		case ARGUMENTDATATYPE_INTEGER:
-			size += network::writePrimitive(buffer + size, arg.integer);
-			break;
-		case ARGUMENTDATATYPE_REAL:
-			size += network::writePrimitive(buffer + size, arg.real);
-			break;
-		case ARGUMENTDATATYPE_BOOLEAN:
-			size += network::writePrimitive(buffer + size, arg.boolean);
-			break;
-		case ARGUMENTDATATYPE_OBJECTID:
-			size += network::writePrimitive(buffer + size, arg.objectID);
-			break;
-		case ARGUMENTDATATYPE_DRAWABLEID:
-			size += network::writePrimitive(buffer + size, arg.drawableID);
-			break;
-		case ARGUMENTDATATYPE_TEAMID:
-			size += network::writePrimitive(buffer + size, arg.teamID);
-			break;
-		case ARGUMENTDATATYPE_LOCATION:
-			size += network::writePrimitive(buffer + size, arg.location);
-			break;
-		case ARGUMENTDATATYPE_PIXEL:
-			size += network::writePrimitive(buffer + size, arg.pixel);
-			break;
-		case ARGUMENTDATATYPE_PIXELREGION:
-			size += network::writePrimitive(buffer + size, arg.pixelRegion);
-			break;
-		case ARGUMENTDATATYPE_TIMESTAMP:
-			size += network::writePrimitive(buffer + size, arg.timestamp);
-			break;
-		case ARGUMENTDATATYPE_WIDECHAR:
-			size += network::writePrimitive(buffer + size, arg.wChar);
-			break;
-		}
-	}
-
-	deleteInstance(parser);
-	deleteInstance(gmsg);
-
-	return size;
+    const CommandMsg *cmdMsg = static_cast<const CommandMsg *>(ref.getCommand());
+    std::vector<std::uint8_t> bytes;
+    if (!NetGameCommandToEvolutionBytes(*cmdMsg, bytes))
+    {
+        DEBUG_CRASH(("Failed to encode Evolution game command."));
+        return 0;
+    }
+    if (!bytes.empty())
+        memcpy(buffer, bytes.data(), bytes.size());
+    return bytes.size();
 }
 
 size_t NetPacketGameCommandData::readMessage(NetCommandRef &ref, NetPacketBuf buf)
 {
-	CommandMsg *cmdMsg = static_cast<CommandMsg *>(ref.getCommand());
-	GameMessageParser *parser = newInstance(GameMessageParser)();
-	Int newType = 0;
-	UnsignedByte numArgTypes = 0;
+    CommandMsg *cmdMsg = static_cast<CommandMsg *>(ref.getCommand());
+    evolution::Command command;
+    const evolution::DecodeResult result = evolution::decodeCommandV1(buf.data(), buf.size(), command);
+    if (!result.ok())
+    {
+        DEBUG_CRASH(("Invalid Evolution game-command payload (error %d).", static_cast<Int>(result.error)));
+        return 0;
+    }
 
-	size_t size = 0;
-	size += network::readObject(newType, buf.offset(size));
-	size += network::readObject(numArgTypes, buf.offset(size));
-
-	cmdMsg->setGameMessageType(static_cast<GameMessage::Type>(newType));
-
-	Int totalArgCount = 0;
-	Int argIndex = 0;
-
-	for (; argIndex < (Int)numArgTypes; ++argIndex)
-	{
-		UnsignedByte type = (UnsignedByte)ARGUMENTDATATYPE_UNKNOWN;
-		UnsignedByte argCount = 0;
-
-		size += network::readObject(type, buf.offset(size));
-		size += network::readObject(argCount, buf.offset(size));
-
-		parser->addArgType(static_cast<GameMessageArgumentDataType>(type), argCount);
-		totalArgCount += argCount;
-	}
-
-	GameMessageParserArgumentType *parserArgType = parser->getFirstArgumentType();
-	GameMessageArgumentDataType lastType = ARGUMENTDATATYPE_UNKNOWN;
-	Int argsLeftForType = 0;
-
-	if (parserArgType != nullptr)
-	{
-		lastType = parserArgType->getType();
-		argsLeftForType = parserArgType->getArgCount();
-	}
-
-	for (argIndex = 0; argIndex < totalArgCount; ++argIndex)
-	{
-		GameMessageArgumentType arg;
-		const size_t sizeBefore = size;
-
-		switch (lastType)
-		{
-		case ARGUMENTDATATYPE_INTEGER:
-			size += network::readObject(arg.integer, buf.offset(size));
-			break;
-		case ARGUMENTDATATYPE_REAL:
-			size += network::readObject(arg.real, buf.offset(size));
-			break;
-		case ARGUMENTDATATYPE_BOOLEAN:
-			size += network::readObject(arg.boolean, buf.offset(size));
-			break;
-		case ARGUMENTDATATYPE_OBJECTID:
-			size += network::readObject(arg.objectID, buf.offset(size));
-			break;
-		case ARGUMENTDATATYPE_DRAWABLEID:
-			size += network::readObject(arg.drawableID, buf.offset(size));
-			break;
-		case ARGUMENTDATATYPE_TEAMID:
-			size += network::readObject(arg.teamID, buf.offset(size));
-			break;
-		case ARGUMENTDATATYPE_LOCATION:
-			size += network::readObject(arg.location, buf.offset(size));
-			break;
-		case ARGUMENTDATATYPE_PIXEL:
-			size += network::readObject(arg.pixel, buf.offset(size));
-			break;
-		case ARGUMENTDATATYPE_PIXELREGION:
-			size += network::readObject(arg.pixelRegion, buf.offset(size));
-			break;
-		case ARGUMENTDATATYPE_TIMESTAMP:
-			size += network::readObject(arg.timestamp, buf.offset(size));
-			break;
-		case ARGUMENTDATATYPE_WIDECHAR:
-			size += network::readObject(arg.wChar, buf.offset(size));
-			break;
-		}
-
-		if (size > sizeBefore)
-		{
-			cmdMsg->addArgument(lastType, arg);
-		}
-
-		--argsLeftForType;
-
-		if (argsLeftForType == 0)
-		{
-			if (parserArgType == nullptr)
-			{
-				DEBUG_CRASH(("parserArgType was null when it shouldn't have been."));
-				break;
-			}
-
-			parserArgType = parserArgType->getNext();
-			// parserArgType is allowed to be null here
-			if (parserArgType != nullptr)
-			{
-				argsLeftForType = parserArgType->getArgCount();
-				lastType = parserArgType->getType();
-			}
-		}
-	}
-
-	deleteInstance(parser);
-
-	return size;
+    cmdMsg->setGameMessageType(static_cast<GameMessage::Type>(command.messageType));
+    GameMessage *gmsg = newInstance(GameMessage)(static_cast<GameMessage::Type>(command.messageType));
+    if (gmsg == nullptr || !evolution::appendEvolutionCommandToGameMessage(command, *gmsg))
+    {
+        if (gmsg != nullptr) deleteInstance(gmsg);
+        DEBUG_CRASH(("Failed to adapt Evolution command to GameMessage."));
+        return 0;
+    }
+    const UnsignedByte argumentCount = gmsg->getArgumentCount();
+    for (UnsignedByte i = 0; i < argumentCount; ++i)
+        cmdMsg->addArgument(gmsg->getArgumentDataType(i), *gmsg->getArgument(i));
+    deleteInstance(gmsg);
+    return result.bytesConsumed;
 }
 
 size_t NetPacketGameCommandBase::copyBytes(UnsignedByte *buffer, const NetCommandRef &ref)
 {
-	const NetCommandMsg *msg = ref.getCommand();
-	CommandBase base;
-	base.commandType.commandType = msg->getNetCommandType();
-	base.relay.relay = ref.getRelay();
-	base.frame.frame = msg->getExecutionFrame();
-	base.playerId.playerId = msg->getPlayerID();
-	base.commandId.commandId = msg->getID();
+    const NetCommandMsg *msg = ref.getCommand();
+    CommandBase base;
+    base.commandType.commandType = msg->getNetCommandType();
+    base.relay.relay = ref.getRelay();
+    base.frame.frame = msg->getExecutionFrame();
+    base.playerId.playerId = msg->getPlayerID();
+    base.commandId.commandId = msg->getID();
 
-	return network::writeObject(buffer, base);
+    return network::writeObject(buffer, base);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

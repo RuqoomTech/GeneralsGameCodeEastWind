@@ -4,6 +4,8 @@ This file is the authoritative state marker for modernization work. Read it befo
 
 ## Baseline identity
 
+- **Step 04E1 authoritative input:** `GeneralsGameCode-Step04D6-i686-Oracle-TestHarness-Hotfix-full.zip`, SHA-256 `61f5f4ba146c6d15154b983b1e5e8eadca7d963bb2b2c715e701b0532243d7c3`.
+- Step 04D6 is fully Windows cross-architecture verified: x64 17/17 + fixture, i686 17/17 + Step 01 determinism gate, and identical eight-checkpoint timelines through frame 12000.
 - **Step 04D3 authoritative local input:** `GeneralsGameCodeEastWind.zip`, SHA-256 `e290c9bb51c4fc271ed89428b531d33298e498336f61fa4a8db6abcab5ad8502`.
 - **Step 04D3 upstream comparison snapshot:** `GeneralsGameCode-main (1).zip`, SHA-256 `c5c561ca47ffe874c31732c3cb86bcc0016f246f5ee36cc3435bae50e26427d1`.
 - EastWind remains the architecture baseline; upstream is used selectively for correctness/gameplay/runtime fixes.
@@ -155,7 +157,7 @@ Local validation: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan a
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
 | MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
 | HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
-| x64 engine migration | **ACTIVE — Windows x64 focused lane verified at 17/17 + matched headless fixture; Step 04D6 fixes the frozen-i686 allocator probe contract and PowerShell timeline encoding; i686-vs-x64 certification pending rerun** |
+| x64 engine migration | **ACTIVE — Step 04D fully Windows cross-architecture verified: x64 17/17 + fixture, i686 17/17 + Step 01 guard, and identical 8-checkpoint timelines through frame 12000; Step 04E1 protocol foundation implemented locally** |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
 | W3X top-level child-element discovery | **Done — A2** |
@@ -200,7 +202,7 @@ Step 04A begins the engine migration without pretending the full runtime is alre
 
 Local host-native GCC 14.2 and Clang 17 focused configure/build/CTest runs pass 7/7 tests, including `-O0`/`-O2`/`-O3` coverage; GCC ASan and UBSan are also green. The validation container has no MinGW-w64 x86_64 compiler, so no Windows `mingw64-tests` pass is claimed until actual output is provided.
 
-Before Step 04E, rerun the 17-test `mingw64-tests` graph on Windows and complete the explicit i686-vs-x64 Step 04D timeline comparison. Then the next implementation slice is **Step 04E — Evolution network/replay protocol + x64 validation**: define an explicit versioned fixed-width Evolution wire protocol, validate x64-to-x64 command streams/CRCs, and use the Step 04D timeline machinery plus representative replay fixtures as compatibility gates. The frozen i686 build remains only until the deterministic/replay oracle is fully replaced.
+Step 04D is now fully Windows cross-architecture verified: the real x64 and frozen i686 focused graphs both passed 17/17, the Step 01 i686 determinism guard passed, and the i686/x64 Step 04D timelines matched at all eight checkpoints through frame 12000. Step 04E is therefore active. 04E1 defines the fixed-width Evolution command/network/replay protocol foundation; 04E2 will wire the new outer network/replay containers into the full runtime, followed by x64-to-x64 multiplayer and replay validation. The frozen i686 build remains only until the Evolution network/replay golden gates fully replace it as an oracle.
 
 ### Step 04D4 Windows bootstrap follow-up — 2026-09-12
 
@@ -219,3 +221,14 @@ The real Windows Step 04D3/04D4 x64 lane passed **17/17** and matched the checke
 The user also successfully emitted both i686 and x64 Step 04D timelines, but Windows PowerShell redirected them as UTF-16LE and the Python comparator assumed UTF-8. `compare-determinism-timelines.py` now accepts BOM-marked UTF-16 plus UTF-8/UTF-8-BOM, and its self-test covers the PowerShell-style encoding. No checkpoint value, CRC algorithm, RNG state, allocator layout, or protocol field changed.
 
 No i686-vs-x64 match is claimed until the user reruns the 17-test i686 graph, the correctly separated `z_determinismcheck` command, and the timeline comparator.
+
+
+## Step 04E1 Evolution protocol foundation — 2026-09-12
+
+- Added an explicit little-endian command codec with fixed protocol widths; native pointer width, `size_t`, object padding and compiler enum layout are not serialized.
+- Added `EVN1` network v1 framing and explicit command-batch records carrying player ID, command ID and length-delimited command bytes.
+- Added additive `EVR1` replay v1 framing carrying frame/player metadata and the same command codec payload.
+- Migrated live `NetPacketGameCommandData` payload serialization to the shared codec; legacy transport outer framing remains until 04E2.
+- Kept the legacy Recorder path unchanged so old `.rep` reading/writing is not silently broken; new Evolution replay runtime wiring is 04E2.
+- Added exact byte fixtures, round-trip tests, malformed/truncated/version rejection, and a source-policy guard. The focused graph is now 19 tests locally.
+- Local validation for 04E1 passes **19/19** under GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan, and GCC UBSan; the Step 04D deterministic fixture and Step 04E golden-byte fixture both remain identical in every configuration. No real Windows 19-test result or x64-to-x64 multiplayer session is claimed yet for 04E1.

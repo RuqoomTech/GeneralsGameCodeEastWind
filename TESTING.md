@@ -326,3 +326,23 @@ python .\scripts\compare-determinism-timelines.py build\step04d-i686.txt build\s
 ```
 
 Do not concatenate the `cmake --build ... --target z_determinismcheck` command with another command on the same PowerShell line.
+
+
+## Step 04E1 Evolution protocol v1
+
+The focused graph grows from 17 to 19 tests with `evolution_protocol_v1_step04e` and `evolution_protocol_source_policy_step04e`. Both i686 and x64 Windows focused lanes also compile the production `EvolutionGameMessageAdapter` object.
+
+Canonical Windows x64 validation:
+
+```powershell
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+cmake --build --preset mingw64-tests --target z_evolutionprotocolcheck z_headlessdeterminismcheck
+```
+
+The protocol test freezes exact v1 command, command-batch, network-packet, replay-header and replay-record bytes. It rejects unsupported versions/types, invalid argument widths/tags, non-canonical booleans, non-zero reserved bytes, truncation and length mismatches.
+
+Local 04E1 validation on 2026-09-12: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan all pass **19/19**. `z_headlessdeterminismcheck` matches the unchanged Step 04D fixture and `z_evolutionprotocolcheck` matches the Step 04E v1 golden-byte fixture in every configuration. Real Windows 04E1 validation remains pending.
+
+The frozen i686 lane may be rerun to prove the same byte fixture is architecture-independent, but it is no longer a future multiplayer peer.

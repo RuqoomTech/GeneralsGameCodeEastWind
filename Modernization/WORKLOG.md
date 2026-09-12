@@ -333,3 +333,18 @@ Shared material divergence against this upstream snapshot fell from **93 to 63 f
 - Updated `compare-determinism-timelines.py` to read plain UTF-8, UTF-8 BOM, or BOM-marked UTF-16 timeline files; the self-test now covers Windows PowerShell-style UTF-16 output.
 - No deterministic checkpoint, CRC/RNG state, network/replay layout, or allocator implementation changed.
 - The final i686 17-test rerun, `z_determinismcheck`, and i686-vs-x64 timeline match remain the last Step 04D certification gate before Step 04E.
+
+
+## 2026-09-12 — Step 04D final Windows cross-architecture certification
+
+- Real Windows x64 MinGW-w64 GCC 16.2 focused graph passed 17/17 and matched the Step 04D headless fixture.
+- Frozen Windows i686 focused graph passed 17/17; Step 01 `z_determinismcheck` passed with the signed-off CRC/RNG/Xfer/snapshot/ABI/replay checkpoint set.
+- i686 and x64 Step 04D timelines matched all eight checkpoints through frame 12000. Step 04D is closed.
+
+## 2026-09-12 — Step 04E1: Evolution protocol v1 foundation
+
+Authoritative input: `GeneralsGameCode-Step04D6-i686-Oracle-TestHarness-Hotfix-full.zip` (`61f5f4ba146c6d15154b983b1e5e8eadca7d963bb2b2c715e701b0532243d7c3`).
+
+Implemented explicit little-endian fixed-width command serialization, a shared GameMessage adapter, EVN1 network framing with explicit command batches, and additive EVR1 replay framing using the same command bytes. `NetPacketGameCommandData` now routes game-command payloads through the Evolution codec. Legacy `.rep` Recorder behavior is intentionally untouched until runtime replay integration. Added exact byte fixtures plus malformed/version/truncation source/runtime guards; local focused graph grows from 17 to 19 tests.
+
+04E remains active: full transport/Recorder wiring and real x64-to-x64 multiplayer/replay session validation are next.

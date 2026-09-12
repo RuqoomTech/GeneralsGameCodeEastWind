@@ -575,6 +575,9 @@ set(GAMEENGINE_SRC
     Source/Common/crc.cpp
     Source/Common/CRCDebug.cpp
     Source/Common/DamageFX.cpp
+    Source/Common/EvolutionCommandCodec.cpp
+    Source/Common/EvolutionGameMessageAdapter.cpp
+    Source/Common/EvolutionReplayFormat.cpp
     Source/Common/Diagnostic/SimulationMathCrc.cpp
     Source/Common/Dict.cpp
     Source/Common/DiscreteCircle.cpp
@@ -1107,6 +1110,7 @@ set(GAMEENGINE_SRC
     Source/GameNetwork/ConnectionManager.cpp
     Source/GameNetwork/DisconnectManager.cpp
     Source/GameNetwork/DownloadManager.cpp
+    Source/GameNetwork/EvolutionProtocol.cpp
     Source/GameNetwork/FileTransfer.cpp
     Source/GameNetwork/FirewallHelper.cpp
     Source/GameNetwork/FrameData.cpp

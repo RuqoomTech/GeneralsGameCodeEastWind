@@ -79,3 +79,14 @@ Future upstream refreshes are selective integrations, not branch replacements.
 - adapt upstream runtime/build changes to EastWind's x64, determinism and D3D12 decisions instead of copying x86 assumptions;
 - never overwrite fixed-width wire/replay/Xfer guarantees, native-width allocator work, strict-aliasing fixes or the focused test graph merely to reduce diff size;
 - document intentional divergence and add regression coverage for imported compatibility-sensitive behavior.
+
+## 2026-09-12 — Evolution protocol v1 is explicit little-endian fixed-width data
+
+Evolution network/replay compatibility is defined by versioned byte encodings, never by C++ object layout.
+
+- command/network/replay fields use explicit fixed widths and little-endian encoding;
+- `GameMessage`, STL container layout, native enums, pointers, `size_t`, padding and allocator state are never serialized as protocol state;
+- network and replay share one command codec but retain separate outer containers;
+- legacy `.rep` loading may remain as a compatibility path, but new Evolution format design is independent of legacy Recorder object layout;
+- unsupported protocol/replay/command versions are rejected explicitly rather than guessed;
+- retail x86 multiplayer packet compatibility is intentionally outside the Evolution contract.
