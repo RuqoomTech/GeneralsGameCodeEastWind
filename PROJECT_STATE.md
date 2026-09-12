@@ -4,6 +4,9 @@ This file is the authoritative state marker for modernization work. Read it befo
 
 ## Baseline identity
 
+- **Step 04D3 authoritative local input:** `GeneralsGameCodeEastWind.zip`, SHA-256 `e290c9bb51c4fc271ed89428b531d33298e498336f61fa4a8db6abcab5ad8502`.
+- **Step 04D3 upstream comparison snapshot:** `GeneralsGameCode-main (1).zip`, SHA-256 `c5c561ca47ffe874c31732c3cb86bcc0016f246f5ee36cc3435bae50e26427d1`.
+- EastWind remains the architecture baseline; upstream is used selectively for correctness/gameplay/runtime fixes.
 - **Step 04D2 authoritative input:** `GeneralsGameCode-Step04D1-Windows-WIDL-Bootstrap-Hotfix-full.zip`.
 - SHA-256 of the exact Step 04D1 archive used for this hotfix: `e88521da197d004012672076e71a11e63e0e4c19c6596760425f080cde81dae5`.
 - Step 04D2 was produced strictly from those bytes after the first successful Windows `mingw64-tests` configure exposed GCC 16.2 runtime-ABI compile blockers.
@@ -121,7 +124,27 @@ Local GCC 14.2 and Clang 17 O0/O2/O3 builds, GCC ASan, and GCC UBSan all pass 15
 
 Windows bootstrap follow-up (2026-09-12): a user-supplied run successfully updated/installed the MSYS2 x64 dependencies and discovered GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2, and WIDL. The run then exposed a repository bootstrap bug: WIDL was queried with unsupported `--version`. The script now uses WIDL's supported `-V` option for both x64 and optional i686 verification, with a source-policy regression guard. The interrupted run is not counted as a passing Windows test gate; rerun/sign-off remains pending.
 
-Windows x64 compile follow-up (2026-09-12): after the WIDL hotfix, the user successfully configured `mingw64-tests` with MSYS2 MinGW-w64 GCC 16.2.0. The build then stopped in the Step 04C production allocator target because legacy global `operator delete`/`delete[]` declarations lacked the modern C++ `noexcept` contract and because a release-disabled `WWASSERT` left `block_count` set-but-unused under `-Werror`. Step 04D2 aligns the shared WWLib/GameMemory global delete declarations/definitions with the standard non-throwing contract and scopes the block counter to `DEBUG_CRASHING`. This is a compile-barrier fix; a passing Windows build/test gate still requires rerun output.
+Windows x64 sign-off follow-up (2026-09-12): after Step 04D2, the user rebuilt `mingw64-tests` with MSYS2 MinGW-w64 GCC 16.2.0. The build completed, `ctest --preset mingw64-tests --output-on-failure` passed **15/15**, and `z_headlessdeterminismcheck` matched the checked-in Step 04D fixture. This is a real Windows x64 focused-lane pass for the pre-04D3 baseline. The explicit i686-vs-x64 timeline comparison remains pending.
+
+## Step 04D3 implementation state — 2026-09-12
+
+Authoritative local input: `GeneralsGameCodeEastWind.zip`, SHA-256 `e290c9bb51c4fc271ed89428b531d33298e498336f61fa4a8db6abcab5ad8502`. Upstream comparison snapshot: `GeneralsGameCode-main (1).zip`, SHA-256 `c5c561ca47ffe874c31732c3cb86bcc0016f246f5ee36cc3435bae50e26427d1`.
+
+Implemented selectively rather than by wholesale merge:
+
+- imported Dozer/Worker disabled-task resumption in both editions and corrected Xfer version gating from `currentVersion` to the serialized/read `version`;
+- imported the newer production cancellation/refund flow for both editions, including the non-refundable started-batch guard;
+- imported the neutron outer-radius search/damage corrections behind explicit compatibility switches and added only the required coordinate unary operators;
+- retained EastWind's strict-aliasing-safe float helpers, native-width GameMemory sizing/alignment and Step 04D2 `noexcept` delete contract;
+- adapted upstream GameMemory robustness: portable `NOINLINE`, noinline pre-main init, debug-only link-tester accounting, null-safe delete/free paths and sized global delete overloads;
+- replaced Bink/Miles import-stub linkage with the source-built runtime loaders, which fail neutrally on x64 when the legacy 32-bit DLLs cannot load;
+- imported the 512-point font clamp and dynamically sized glyph buffers for compatibility-renderer safety;
+- added `upstream_coordinate_ops_step04d3` and `upstream_alignment_source_policy_step04d3`, increasing the focused graph from 15 to 17 tests;
+- fixed Step 04D fixture-header reading to accept LF or CRLF without changing any checkpoint value.
+
+Shared-tree material divergence against the supplied upstream snapshot fell from **93 files to 63**. Full details and intentional non-imports are recorded in `Modernization/STEP_04D3_UPSTREAM_ALIGNMENT.md`.
+
+Local validation: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan all pass **17/17** and verify the unchanged Step 04D timeline. No Windows Step 04D3 pass is claimed yet; rerun `mingw64-tests` on Windows after this sync.
 
 ## Current modernization status
 
@@ -132,7 +155,7 @@ Windows x64 compile follow-up (2026-09-12): after the WIDL hotfix, the user succ
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
 | MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
 | HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
-| x64 engine migration | **ACTIVE — Step 04D deterministic/headless CRC timeline lane implemented; Windows i686-vs-x64 certification pending** |
+| x64 engine migration | **ACTIVE — Step 04D Windows x64 focused lane verified; Step 04D3 upstream alignment implemented locally; i686-vs-x64 certification pending** |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
 | W3X top-level child-element discovery | **Done — A2** |
@@ -177,4 +200,4 @@ Step 04A begins the engine migration without pretending the full runtime is alre
 
 Local host-native GCC 14.2 and Clang 17 focused configure/build/CTest runs pass 7/7 tests, including `-O0`/`-O2`/`-O3` coverage; GCC ASan and UBSan are also green. The validation container has no MinGW-w64 x86_64 compiler, so no Windows `mingw64-tests` pass is claimed until actual output is provided.
 
-The next implementation slice is **Step 04E — Evolution network/replay protocol + x64 validation**: define an explicit versioned fixed-width Evolution wire protocol, validate x64-to-x64 command streams/CRCs, and use the Step 04D timeline machinery plus representative replay fixtures as compatibility gates. The frozen i686 build remains only until the deterministic/replay oracle is fully replaced.
+Before Step 04E, rerun the 17-test `mingw64-tests` graph on Windows and complete the explicit i686-vs-x64 Step 04D timeline comparison. Then the next implementation slice is **Step 04E — Evolution network/replay protocol + x64 validation**: define an explicit versioned fixed-width Evolution wire protocol, validate x64-to-x64 command streams/CRCs, and use the Step 04D timeline machinery plus representative replay fixtures as compatibility gates. The frozen i686 build remains only until the deterministic/replay oracle is fully replaced.

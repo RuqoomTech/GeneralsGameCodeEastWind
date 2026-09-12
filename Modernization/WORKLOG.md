@@ -285,3 +285,24 @@ No Windows/Win64 execution is claimed. The candidate fixture becomes a signed-of
 - Scoped the object-pool block-count verification to `DEBUG_CRASHING`, preserving the debug invariant without release warning noise.
 - Extended the existing Step 04C runtime source audit rather than creating another overlapping audit module.
 - Focused GCC and Clang allocator/runtime tests pass locally; Windows build/CTest remains pending user rerun and is not claimed here.
+
+## 2026-09-12 — Step 04D3: selective upstream alignment / divergence reduction
+
+Authoritative local input: `GeneralsGameCodeEastWind.zip` (`e290c9bb51c4fc271ed89428b531d33298e498336f61fa4a8db6abcab5ad8502`).
+
+Upstream comparison snapshot: `GeneralsGameCode-main (1).zip` (`c5c561ca47ffe874c31732c3cb86bcc0016f246f5ee36cc3435bae50e26427d1`).
+
+Implemented:
+
+- imported/adapted newer Dozer/Worker disabled-task handling in both editions and corrected old-stream Xfer gating to branch on the stream `version`;
+- imported newer production cancellation/refund behavior and started-batch guard;
+- imported corrected neutron-missile radius/search/damage behavior behind retail-preservation gates and added the required coordinate unary operators without replacing EastWind's strict-aliasing-safe float helpers;
+- merged upstream GameMemory robustness into the existing x64-native allocator rather than reverting pointer alignment/`size_t` work;
+- switched active Bink/Miles runtime consumers from stub link targets to the repository runtime loaders so x64 bring-up can degrade cleanly when legacy 32-bit multimedia DLLs are unavailable;
+- imported large-glyph/font-buffer safety;
+- made the Step 04D fixture header reader tolerate CRLF/LF while leaving all CRC/RNG checkpoint data unchanged;
+- added coordinate and source-policy regression tests; focused graph increased from 15 to 17 tests.
+
+Deliberately not imported: upstream's older pointer-width allocator assumptions, unsafe float aliasing, pointer-truncating audio changes, older CMake/network architecture, or the full Miles lifecycle refactor before native-width userdata auditing. EastWind remains the architecture authority.
+
+Shared material divergence against this upstream snapshot fell from **93 to 63 files**. Local GCC 14.2/Clang 17 O0/O2/O3 plus GCC ASan/UBSan all pass **17/17**, preserving the same Step 04D deterministic timeline. The immediately preceding Step 04D2 baseline has a user-supplied Windows x64 15/15 + fixture pass; Step 04D3 itself still awaits the Windows 17-test rerun and the i686-vs-x64 timeline certification.

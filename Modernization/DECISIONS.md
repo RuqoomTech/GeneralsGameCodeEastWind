@@ -68,3 +68,14 @@ Future multiplayer compatibility is required between our own Evolution/game edit
 - Native x64 pointers/handles/`size_t` must never leak into that protocol or CRC/replay state.
 - The frozen i686 build remains only as a temporary deterministic/replay behavior oracle until golden x64 gates replace it.
 - Retail packet-layout quirks must not block x64 runtime cleanup or the future D3D12 architecture.
+
+## 2026-09-12 — EastWind owns architecture; upstream is a recurring correctness source
+
+Future upstream refreshes are selective integrations, not branch replacements.
+
+- hash and record the EastWind and upstream snapshots before each sync;
+- normalize line endings when measuring divergence;
+- import coherent gameplay/correctness groups into both Generals and Zero Hour where applicable;
+- adapt upstream runtime/build changes to EastWind's x64, determinism and D3D12 decisions instead of copying x86 assumptions;
+- never overwrite fixed-width wire/replay/Xfer guarantees, native-width allocator work, strict-aliasing fixes or the focused test graph merely to reduce diff size;
+- document intentional divergence and add regression coverage for imported compatibility-sensitive behavior.

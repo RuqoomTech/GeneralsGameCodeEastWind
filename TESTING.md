@@ -265,3 +265,14 @@ A user-supplied Windows run configured `mingw64-tests` successfully with MSYS2 M
 - `ObjectPoolClass::~ObjectPoolClass()` maintained `block_count` only for `WWASSERT`, but release builds compile `WWASSERT` away, causing GCC 16 `-Werror=unused-but-set-variable`. The counter now exists only under `DEBUG_CRASHING`.
 
 The existing `runtime_pointer_source_audit_step04c` policy test now locks the `noexcept` global-delete contract and the debug-only pool counter. Focused local GCC/Clang builds of the exact allocator test target pass after the repair. This does **not** claim a Windows build pass; rerun `cmake --build --preset mingw64-tests` and CTest on Windows for sign-off.
+
+## Step 04D3 upstream-alignment validation
+
+The focused graph grows to 17 tests with:
+
+- `upstream_coordinate_ops_step04d3` — compiles/runs the coordinate unary operators required by the corrected neutron-radius implementation;
+- `upstream_alignment_source_policy_step04d3` — locks the imported Dozer/Worker Xfer-version behavior, production cancellation guards, neutron compatibility switches, EastWind-safe GameMemory adaptation, runtime Bink/Miles loader wiring, strict-aliasing-safe float helpers, and dynamic glyph-buffer behavior.
+
+Local validation on the Step 04D3 tree passed GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`, plus GCC ASan and UBSan: **17/17** in every configuration. The Step 04D headless timeline is unchanged in all runs.
+
+The user's real Windows x64 pass on the immediately preceding Step 04D2 baseline remains recorded separately (15/15 plus the headless fixture). Do not treat it as a Step 04D3 Windows pass; rerun the canonical `mingw64-tests` commands after applying this sync.

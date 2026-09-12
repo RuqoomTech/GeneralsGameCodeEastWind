@@ -91,6 +91,14 @@
 #define PRESERVE_RETAIL_PARTICLES (1) // Preserve original look of particles present in retail Generals 1.08 and Zero Hour 1.04
 #endif
 
+#ifndef PRESERVE_RETAIL_NUKE_MISSILE_OUTER_RADIUS_SEARCH
+#define PRESERVE_RETAIL_NUKE_MISSILE_OUTER_RADIUS_SEARCH (0) // Corrected Evolution behavior unless retail CRC compatibility is explicitly requested.
+#endif
+
+#ifndef PRESERVE_RETAIL_NUKE_MISSILE_OUTER_RADIUS_DAMAGE
+#define PRESERVE_RETAIL_NUKE_MISSILE_OUTER_RADIUS_DAMAGE (0) // Corrected Evolution behavior unless retail CRC compatibility is explicitly requested.
+#endif
+
 #ifndef RETAIL_COMPATIBLE_CRC
 #define RETAIL_COMPATIBLE_CRC (1) // Game is expected to be CRC compatible with retail Generals 1.08, Zero Hour 1.04
 #endif

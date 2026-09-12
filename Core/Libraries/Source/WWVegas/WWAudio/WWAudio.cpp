@@ -55,6 +55,7 @@
 #include "WWSaveLoad/definitionclassids.h"
 #include "WWDebug/wwmemlog.h"
 #include "WWDebug/wwprofile.h"
+#include "MilesLoader.h"
 
 
 #ifdef G_CODE_BASE
@@ -129,6 +130,12 @@ WWAudioClass::WWAudioClass ()
 {
 	::InitializeCriticalSection (&MMSLockClass::_MSSLockCriticalSection);
 
+	// Load the legacy Miles DLL only at runtime. On x64 the loader intentionally
+	// resolves to neutral stubs so audio cannot block engine bring-up.
+	if (!MilesLoader::load ()) {
+		WWDEBUG_SAY (("Failed to load mss32.dll (error %d). Audio will not play.", MilesLoader::getLastError ()));
+	}
+
 	//
 	// Start Miles Sound System
 	//
@@ -161,6 +168,7 @@ WWAudioClass::~WWAudioClass ()
 	WWAudioThreadsClass::End_Delayed_Release_Thread ();
 
 	Shutdown ();
+	MilesLoader::unload ();
 	_theInstance = nullptr;
 	::CloseHandle(_TimerSyncEvent);
 	_TimerSyncEvent = nullptr;

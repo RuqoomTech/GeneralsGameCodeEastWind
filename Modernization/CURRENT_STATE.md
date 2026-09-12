@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts plus accepted modernization changes through Step 04D on 2026-09-12.
+This document records verified source facts plus accepted modernization changes through Step 04D3 on 2026-09-12.
 
 ## Build system
 
@@ -16,7 +16,7 @@ This document records verified source facts plus accepted modernization changes 
 - Generals and Zero Hour install rules use `rts_install_runtime_target()` instead of repeating MSVC-only PDB generator expressions. MSVC keeps optional PDB installation; MinGW Release installs the `.debug` sidecar emitted by the existing strip workflow.
 - MinGW toolchain discovery is now shared by tiny i686/x86_64 wrappers. `mingw64-tests` is the canonical x64 deterministic/headless lane and intentionally configures only the focused modernization graph.
 - Full MinGW x64 runtime configuration is still blocked by design until runtime/platform/renderer dependencies are migrated subsystem-by-subsystem.
-- Local host-native GCC and Clang focused validation is green at 15/15 tests through Step 04D, including the 12,000-frame deterministic timeline gate. The user reports the real Step 02B Windows build path working; no Step 02 Windows console transcript is archived in this tree.
+- Local host-native GCC and Clang focused validation is green at 17/17 tests through Step 04D3, including the unchanged 12,000-frame deterministic timeline gate. Immediately before Step 04D3, the user supplied a real Windows x64 MinGW-w64 GCC 16.2 run that built the focused lane, passed 15/15 CTest tests, and matched `z_headlessdeterminismcheck`. Step 04D3 itself still needs the Windows 17-test rerun.
 
 ## Performance telemetry
 
@@ -31,12 +31,13 @@ This document records verified source facts plus accepted modernization changes 
 
 ## x64 migration
 
-- Step 04 is active; Steps 04A-04D are implemented, with Windows x64/cross-architecture certification still pending.
+- Step 04 is active; Steps 04A-04D3 are implemented. The pre-04D3 Windows x64 focused lane is verified; the Step 04D3 Windows rerun and i686-vs-x64 certification remain pending.
 - `cmake/toolchains/mingw-w64-common.cmake` centralizes MinGW-w64 discovery; i686 and x86_64 wrappers select architecture/triplet/root/pointer width.
 - `mingw64-tests` enables `RTS_BUILD_X64_READINESS` and `RTS_BUILD_X64_HEADLESS_CORE`; it remains renderer-free and is the canonical x86_64 Windows migration preset.
 - Focused x64 readiness does not link legacy D3D8/DirectInput/DirectSound and does not populate ReactOS ATL when there is no consumer.
 - `architecture_width_step04a` enforces fixed-width engine/wire primitives and IDs while permitting native pointers/`uintptr_t` to widen.
 - Step 04D centralizes `setFPMode()` in Core, preserves the frozen i686 x87 precision contract, defines x64 round-to-nearest behavior, and adds a production RNG/CRC 12k-frame timeline with fixed-width field hashing only.
+- Step 04D3 selectively aligns with the supplied upstream snapshot: Dozer/Worker Xfer/task fixes, production cancellation, neutron radius behavior, adapted GameMemory robustness, runtime Bink/Miles loading, and glyph-buffer safety. Material shared-file divergence fell from 93 to 63 without replacing EastWind x64/determinism infrastructure.
 - The full x64 Zero Hour executable is not enabled yet. Client/platform dependencies and explicit Evolution network/replay work remain before x86 retirement.
 - The i686 runtime remains the temporary deterministic/replay oracle only; retail x86 multiplayer interoperability is not required.
 

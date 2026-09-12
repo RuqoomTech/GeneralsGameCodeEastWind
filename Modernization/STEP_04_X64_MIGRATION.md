@@ -206,6 +206,24 @@ Expected comparison success line after real Windows certification:
 Step 04D timelines match: 8 checkpoints, final frame 12000.
 ```
 
+### Step 04D3 — selective upstream alignment — IMPLEMENTED
+
+Step 04D3 reduces divergence against the supplied upstream snapshot without allowing upstream's older 32-bit assumptions to overwrite Evolution architecture decisions.
+
+Imported/adapted:
+
+- Generals and Zero Hour Dozer/Worker disabled-task handling, including the Xfer-reader fix that tests the stream `version` rather than `currentVersion`;
+- newer production-cancellation/refund behavior, including the started-batch guard;
+- neutron-missile outer-radius search/damage corrections behind explicit retail-preservation gates plus the required coordinate unary operators;
+- selected GameMemory robustness (`NOINLINE` pre-main initialization, debug-only link bookkeeping, sized non-throwing deletes) merged into EastWind's native-width allocator implementation;
+- Bink/Miles runtime-loader wiring so x64 can bring the engine up without hard-linking the legacy 32-bit multimedia DLL stubs;
+- oversized glyph-buffer handling and font-size safety;
+- a CRLF/LF-tolerant Step 04D fixture header reader, with checkpoint contents unchanged.
+
+Deliberately retained from EastWind: native-width allocator layouts and `size_t` arithmetic, strict-aliasing-safe float bit conversion, fixed-width wire/replay guards, CMake/toolchain modernization, deterministic FP policy, and x64-only/D3D12 direction. The larger upstream Miles audio lifecycle refactor is deferred until its pointer/userdata assumptions are audited rather than importing 32-bit casts into the x64 lane.
+
+The shared-tree material difference count against the supplied upstream snapshot drops from **93 to 63**. See `STEP_04D3_UPSTREAM_ALIGNMENT.md` for provenance and the recurring sync policy.
+
 ### Step 04E — Evolution network/replay protocol + x64 validation
 
 - define an explicit versioned Evolution wire protocol rather than inheriting C++ object layout;
@@ -227,16 +245,16 @@ After the x64 core is stable enough, continue to the renderer-neutral scene/asse
 
 ## Current validation
 
-Local host-native validation for Step 04D:
+Local host-native validation through Step 04D3:
 
-- GCC 14.2: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **15/15 passed** in each configuration;
-- Clang 17: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **15/15 passed** in each configuration;
-- GCC AddressSanitizer — **15/15 passed**;
-- GCC UndefinedBehaviorSanitizer — **15/15 passed**;
-- all eight configurations emitted the same Step 04D 8-checkpoint timeline through frame 12000;
-- production allocator/native-width tests from 04C remain in the same graph.
+- GCC 14.2: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **17/17 passed** in each configuration;
+- Clang 17: focused CMake/Ninja/CTest at `-O0`, `-O2`, `-O3` — **17/17 passed** in each configuration;
+- GCC AddressSanitizer — **17/17 passed**;
+- GCC UndefinedBehaviorSanitizer — **17/17 passed**;
+- all eight configurations still verify the same Step 04D 8-checkpoint timeline through frame 12000;
+- production allocator/native-width and upstream-alignment source guards remain in the same graph.
 
-No MinGW-w64 x86_64 compiler or PowerShell runtime is available in this environment, so no Windows/Win64 pass and no Windows i686-vs-x64 timeline match is claimed.
+The user supplied a real Windows x64 MinGW-w64 GCC 16.2.0 run on the immediately preceding Step 04D2 baseline: build passed, CTest passed **15/15**, and `z_headlessdeterminismcheck` matched the fixture. Step 04D3 itself still requires the Windows **17-test** rerun, and the Windows i686-vs-x64 timeline comparison remains pending.
 
 Canonical Windows Step 04D x64 gate:
 

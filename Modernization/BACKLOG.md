@@ -17,7 +17,8 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 04A | x64 readiness build lane | DONE* | `mingw64-tests`, shared MinGW toolchain, architecture-width guard; Windows transcript pending |
 | 04B | Wire/replay ABI freeze + pointer/handle audit | DONE | Explicit fixed-width wire contract; first native pointer/handle truncations removed |
 | 04C | Native-width runtime substrate + dependency bootstrap | DONE* | Object/Fast/GameMemory allocator safety, GUI/native fixes, x64-default setup script; Windows transcript pending |
-| 04D | x64 deterministic/headless core bring-up | DONE* | Shared FPU policy + production RNG/CRC 12k-frame timeline; Windows i686-vs-x64 certification pending |
+| 04D | x64 deterministic/headless core bring-up | DONE* | Shared FPU policy + production RNG/CRC 12k-frame timeline; Windows x64 focused lane verified, i686-vs-x64 certification pending |
+| 04D3 | Upstream alignment / divergence reduction | DONE* | Selected gameplay/runtime fixes imported and adapted; material shared-file divergence 93 → 63; Windows rerun pending |
 | 04E | Evolution network/replay protocol + x64 validation | NEXT | Versioned fixed-width x64-to-x64 command streams/CRC; no retail multiplayer requirement |
 | 04F | Retire x86 | PLANNED | Remove i686 after golden replay/simulation/network gates pass |
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |
@@ -45,7 +46,7 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 23 | W3X completeness/tooling | PLANNED | Documented support matrix/toolchain |
 | 24 | Advanced GPU optimization | PLANNED | Only measured bottlenecks |
 
-`DONE*` records implementation where the relevant Windows console transcript/cross-architecture certification is not archived. Steps 04C and 04D therefore still require their real Windows gates even though their implementation slices are complete.
+`DONE*` records implementation where a relevant Windows/cross-architecture gate remains outstanding. The pre-04D3 Windows x64 focused lane is verified at 15/15 plus the headless fixture; Step 04D still awaits i686-vs-x64 timeline certification, and Step 04D3 awaits its 17-test Windows rerun.
 
 ## Cross-cutting backlog
 

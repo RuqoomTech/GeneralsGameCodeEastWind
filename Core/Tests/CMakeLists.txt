@@ -255,6 +255,33 @@ add_test(
         -P ${CMAKE_SOURCE_DIR}/cmake/tests/X64RuntimePointerAuditStep04CTest.cmake
 )
 
+# Step 04D3 upstream-alignment guards. The runtime check exercises the only
+# shared math API added by the sync; the source-policy check locks the selected
+# upstream fixes while explicitly protecting EastWind-owned x64 adaptations.
+add_executable(upstream_alignment_step04d3_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/UpstreamAlignmentStep04D3Test.cpp
+)
+target_include_directories(upstream_alignment_step04d3_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+)
+target_link_libraries(upstream_alignment_step04d3_test PRIVATE
+    core_config
+    core_utility_no_pch
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(upstream_alignment_step04d3_test PRIVATE
+        -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
+    )
+endif()
+add_test(NAME upstream_coordinate_ops_step04d3 COMMAND upstream_alignment_step04d3_test)
+
+add_test(
+    NAME upstream_alignment_source_policy_step04d3
+    COMMAND ${CMAKE_COMMAND}
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/UpstreamAlignmentStep04D3Test.cmake
+)
+
 
 # Step 04D deterministic/headless core gate. This is deliberately renderer-free:
 # it compiles the production GameLogic RNG and the shared production FPU policy,
