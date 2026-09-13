@@ -157,7 +157,7 @@ Local validation: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan a
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
 | MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
 | HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
-| x64 engine migration | **ACTIVE — Step 04D fully Windows cross-architecture verified: x64 17/17 + fixture, i686 17/17 + Step 01 guard, and identical 8-checkpoint timelines through frame 12000; Step 04E1 protocol foundation implemented locally** |
+| x64 engine migration | **ACTIVE — Step 04D fully Windows cross-architecture verified: x64 17/17 + fixture, i686 17/17 + Step 01 guard, and identical 8-checkpoint timelines through frame 12000; Step 04E1 sealed; Step 04E2 staged EVN1/EVR1 runtime bridge sealed locally** |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
 | W3X top-level child-element discovery | **Done — A2** |
@@ -232,3 +232,12 @@ No i686-vs-x64 match is claimed until the user reruns the 17-test i686 graph, th
 - Kept the legacy Recorder path unchanged so old `.rep` reading/writing is not silently broken; new Evolution replay runtime wiring is 04E2.
 - Added exact byte fixtures, round-trip tests, malformed/truncated/version rejection, and a source-policy guard. The focused graph is now 19 tests locally.
 - Local validation for 04E1 passes **19/19** under GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan, and GCC UBSan; the Step 04D deterministic fixture and Step 04E golden-byte fixture both remain identical in every configuration. No real Windows 19-test result or x64-to-x64 multiplayer session is claimed yet for 04E1.
+
+
+## Step 04E2 implementation state — 2026-09-13
+
+Authoritative input: sealed Step04E1 full repository, SHA-256 `8f87a75d2e7429b572a597abb0669618f9c58397783fb17bc8dd4045c3ecac58`.
+
+The production 04E2 runtime bridge is Win64-only; the frozen i686 runtime keeps legacy networking/replay behavior and only the portable codec/framing fixtures remain architecture-independent. Gameplay commands now have a staged raw-EVN1 UDP path using `RoutedCommandBatch`; legacy ACK/retry/session-control traffic remains on the historical transport. The receive bridge reconstructs the existing command/ref objects so current ACK/relay semantics stay authoritative. Both Recorder implementations now write EVR1 command sidecars alongside the legacy replay and prefer a valid sidecar for command playback while retaining the legacy stream as the open-time fallback. Partial/stale sidecars are actively invalidated.
+
+The focused graph is 21 tests. The portable 04E2 implementation passed the GCC O0/O2/O3, Clang O0/O2/O3, GCC ASan and GCC UBSan matrix plus all three explicit gates before the final Win64-only runtime guard; the exact final sealed tree was then rebuilt from Step04E1 and revalidated at 21/21 with the Step04D, 04E1 protocol and 04E2 runtime-bridge gates. The release patch applies cleanly to the exact sealed Step04E1 baseline and reproduces the final repository byte-for-byte. Real Windows 04E2 runtime/session validation is still pending and must not be inferred from these host results.

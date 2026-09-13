@@ -26,6 +26,7 @@ enum class NetworkPacketType : std::uint16_t
     CommandBatch = 1,
     KeepAlive = 2,
     Disconnect = 3,
+    RoutedCommandBatch = 4,
 };
 
 struct NetworkPacketHeader
@@ -38,6 +39,7 @@ struct NetworkPacketHeader
 struct NetworkCommandRecord
 {
     std::uint8_t playerId = 0;
+    std::uint8_t relayMask = 0;
     std::uint16_t commandId = 0;
     Command command;
 };
@@ -63,6 +65,14 @@ struct NetworkDecodeResult
 
 bool encodeCommandBatchV1(const std::vector<NetworkCommandRecord> &commands, std::vector<std::uint8_t> &output);
 NetworkDecodeResult decodeCommandBatchV1(
+    const std::uint8_t *data,
+    std::size_t size,
+    std::vector<NetworkCommandRecord> &commands);
+
+// Routed batches use the byte reserved by direct CommandBatch records as an
+// explicit destination/relay mask. Direct CommandBatch v1 bytes remain frozen.
+bool encodeRoutedCommandBatchV1(const std::vector<NetworkCommandRecord> &commands, std::vector<std::uint8_t> &output);
+NetworkDecodeResult decodeRoutedCommandBatchV1(
     const std::uint8_t *data,
     std::size_t size,
     std::vector<NetworkCommandRecord> &commands);

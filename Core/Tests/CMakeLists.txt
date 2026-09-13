@@ -414,3 +414,43 @@ if(WIN32)
         )
     endif()
 endif()
+
+# Step 04E2 staged runtime bridge. This portable executable proves that routed
+# EVN1 metadata survives decode and that the same command payload can be written
+# to/read from EVR1 without byte drift. Production legacy runtime TUs remain a
+# Windows/full-runtime gate; the source-policy test below pins their bridge seam.
+add_executable(evolution_runtime_bridge_step04e2_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/EvolutionRuntimeBridgeStep04E2Test.cpp
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/EvolutionCommandCodec.cpp
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/EvolutionReplayFormat.cpp
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/GameNetwork/EvolutionProtocol.cpp
+)
+target_include_directories(evolution_runtime_bridge_step04e2_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
+)
+set_target_properties(evolution_runtime_bridge_step04e2_test PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(evolution_runtime_bridge_step04e2_test PRIVATE
+        -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
+    )
+endif()
+add_test(
+    NAME evolution_runtime_bridge_step04e2
+    COMMAND evolution_runtime_bridge_step04e2_test
+)
+add_custom_target(z_evolutionruntimecheck
+    COMMAND $<TARGET_FILE:evolution_runtime_bridge_step04e2_test>
+    DEPENDS evolution_runtime_bridge_step04e2_test
+    USES_TERMINAL
+)
+
+add_test(
+    NAME evolution_runtime_integration_policy_step04e2
+    COMMAND ${CMAKE_COMMAND}
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/EvolutionRuntimeIntegrationPolicyStep04E2Test.cmake
+)

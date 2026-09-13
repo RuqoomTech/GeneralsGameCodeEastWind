@@ -25,6 +25,9 @@
 #pragma once
 
 #include "Common/MessageStream.h"
+#if defined(_WIN64)
+#include "Common/EvolutionReplayStream.h"
+#endif
 #include "GameNetwork/GameInfo.h"
 
 class File;
@@ -198,6 +201,13 @@ protected:
 	Int m_originalGameMode; // valid in replays
 
 	UnsignedInt m_nextFrame;												///< The Frame that the next message is to be executed on.  This can be -1.
+
+#if defined(_WIN64)
+	evolution::EvolutionReplayStream m_evolutionReplay;
+	evolution::ReplayCommandRecord m_evolutionNextRecord;
+	AsciiString m_evolutionReplayPath;
+	Bool m_useEvolutionReplay;
+#endif
 };
 
 extern RecorderClass *TheRecorder;

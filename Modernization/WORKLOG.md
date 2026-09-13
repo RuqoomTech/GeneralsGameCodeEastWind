@@ -348,3 +348,25 @@ Authoritative input: `GeneralsGameCode-Step04D6-i686-Oracle-TestHarness-Hotfix-f
 Implemented explicit little-endian fixed-width command serialization, a shared GameMessage adapter, EVN1 network framing with explicit command batches, and additive EVR1 replay framing using the same command bytes. `NetPacketGameCommandData` now routes game-command payloads through the Evolution codec. Legacy `.rep` Recorder behavior is intentionally untouched until runtime replay integration. Added exact byte fixtures plus malformed/version/truncation source/runtime guards; local focused graph grows from 17 to 19 tests.
 
 04E remains active: full transport/Recorder wiring and real x64-to-x64 multiplayer/replay session validation are next.
+
+## 2026-09-13 — Step 04E2: staged EVN1 transport + EVR1 Recorder runtime bridge
+
+Authoritative input: sealed `GeneralsGameCode-Step04E1-Evolution-Protocol-v1-full.zip`, SHA-256 `8f87a75d2e7429b572a597abb0669618f9c58397783fb17bc8dd4045c3ecac58`.
+
+Implemented:
+
+- restricted production EVN1/EVR1 runtime activation to Win64 so the frozen i686 runtime remains feature-frozen on the legacy path while portable protocol tests remain cross-architecture;
+
+- extended EVN1 additively with `RoutedCommandBatch`; direct 04E1 `CommandBatch` bytes remain frozen and require the per-record reserved byte to stay zero;
+- routed gameplay commands through raw EVN1 UDP queues at the Transport boundary while leaving legacy ACK/control/session traffic on the existing packet transport;
+- preserved current retry/ACK/relay behavior by reconstructing `NetGameCommandMsg`/`NetCommandRef` objects at receive and feeding the existing `ConnectionManager` logic;
+- fixed the staged receive seam so legacy packets are decrypted before copying/CRC validation after EVN1 detection;
+- added `EvolutionReplayStream` as the shared EVR1 runtime file bridge;
+- wired both Generals and Zero Hour Recorder implementations to write transitional `.rep.evr` sidecars and prefer them for command playback when valid, with legacy command-stream fallback when the sidecar cannot be opened/validated;
+- delete partial EVR1 sidecars on write/flush failure and synchronize sidecars when saving/archiving replays to avoid stale command streams;
+- added routed-network golden bytes, an executable EVN1-to-EVR1 bridge regression, runtime integration source policy, and `z_evolutionruntimecheck`;
+- focused graph increased from 19 to 21 tests.
+
+Local validation: GCC O0/O2/O3, Clang O0/O2/O3, GCC ASan and GCC UBSan all pass 21/21. The Step04D deterministic fixture, 04E1 golden protocol fixture, and 04E2 runtime bridge gate pass in every configuration. No real Windows 04E2 runtime or x64-to-x64 multiplayer session is claimed yet.
+
+Release seal: the final Win64-only runtime-gated tree was reconstructed from the exact sealed Step04E1 ZIP, revalidated at 21/21 plus all three explicit gates, patched onto a fresh Step04E1 extraction, and byte-compared with zero repository mismatches. No real Windows 04E2 runtime or x64-to-x64 multiplayer session is claimed yet.

@@ -14,6 +14,7 @@ namespace evolution
 
 static constexpr std::uint16_t COMMAND_CODEC_VERSION_V1 = 1;
 static constexpr std::size_t MAX_COMMAND_ARGUMENTS_V1 = 256;
+static constexpr std::size_t MAX_ENCODED_COMMAND_BYTES_V1 = 8U + MAX_COMMAND_ARGUMENTS_V1 * (4U + 16U);
 
 // Wire tags are frozen protocol values. They intentionally mirror the historical
 // GameMessage argument ordering, but do not depend on compiler enum width.

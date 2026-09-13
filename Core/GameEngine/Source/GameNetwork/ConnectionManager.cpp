@@ -38,11 +38,17 @@
 #include "Common/PlayerList.h"
 #include "Common/RandomValue.h"
 #include "Common/Recorder.h"
+#if defined(_WIN64)
+#include "Common/EvolutionGameMessageAdapter.h"
+#endif
 
 #include "GameClient/Diplomacy.h"
 #include "GameClient/GameText.h"
 #include "GameClient/MessageBox.h"
 #include "GameNetwork/ConnectionManager.h"
+#if defined(_WIN64)
+#include "GameNetwork/EvolutionProtocol.h"
+#endif
 #include "GameNetwork/LANAPICallbacks.h"
 #include "GameNetwork/NAT.h"
 #include "GameNetwork/NetCommandWrapperList.h"
@@ -459,6 +465,68 @@ void ConnectionManager::destroyGameMessages() {
  * assumption that a command will only be relayed once.
  */
 void ConnectionManager::doRelay() {
+#if defined(_WIN64)
+	// Step 04E2: gameplay commands can arrive as raw routed EVN1 datagrams.
+	// Decode those first and feed the resulting NetGameCommandMsg through the
+	// existing ACK/process/relay machinery so reliability semantics remain shared.
+	for (size_t i = 0; i < ARRAY_SIZE(m_transport->m_evolutionInBuffer); ++i) {
+		EvolutionTransportMessage &transportMessage = m_transport->m_evolutionInBuffer[i];
+		if (transportMessage.length <= 0) {
+			break;
+		}
+
+		evolution::NetworkPacketHeader header;
+		const std::uint8_t *payload = nullptr;
+		std::size_t payloadSize = 0;
+		const evolution::NetworkDecodeResult packetResult = evolution::decodeNetworkPacketV1(
+			transportMessage.data, static_cast<std::size_t>(transportMessage.length), header, payload, payloadSize);
+
+		if (packetResult.ok() && header.packetType == evolution::NetworkPacketType::RoutedCommandBatch) {
+			std::vector<evolution::NetworkCommandRecord> records;
+			const evolution::NetworkDecodeResult batchResult = evolution::decodeRoutedCommandBatchV1(
+				payload, payloadSize, records);
+			if (batchResult.ok()) {
+				for (const evolution::NetworkCommandRecord &record : records) {
+					if (record.playerId >= MAX_SLOTS) {
+						continue;
+					}
+
+					GameMessage *gameMessage = newInstance(GameMessage)(static_cast<GameMessage::Type>(record.command.messageType));
+					if (gameMessage == nullptr || !evolution::appendEvolutionCommandToGameMessage(record.command, *gameMessage)) {
+						if (gameMessage != nullptr) {
+							deleteInstance(gameMessage);
+						}
+						continue;
+					}
+
+					NetGameCommandMsg *netMessage = newInstance(NetGameCommandMsg)(gameMessage);
+					deleteInstance(gameMessage);
+					if (netMessage == nullptr) {
+						continue;
+					}
+					netMessage->setPlayerID(record.playerId);
+					netMessage->setID(record.commandId);
+					netMessage->setExecutionFrame(header.frame);
+
+					NetCommandRef *ref = NEW_NETCOMMANDREF(netMessage);
+					ref->setRelay(record.relayMask);
+					netMessage->detach();
+
+					if (CommandRequiresAck(ref->getCommand())) {
+						ackCommand(ref, m_localSlot);
+					}
+					if (!processNetCommand(ref)) {
+						sendRemoteCommand(ref);
+					}
+					deleteInstance(ref);
+				}
+			}
+		}
+
+		transportMessage.length = 0;
+	}
+#endif
+
 	for (size_t i = 0; i < ARRAY_SIZE(m_transport->m_inBuffer); ++i) {
 		if (m_transport->m_inBuffer[i].length > 0) {
 			// This transport buffer has yet to be processed.

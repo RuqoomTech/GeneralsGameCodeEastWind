@@ -321,6 +321,21 @@ void reallySaveReplay()
 		return;
 	}
 
+#if defined(_WIN64)
+	// Keep the transitional EVR1 sidecar synchronized with the named legacy replay.
+	AsciiString oldEvolutionFilename = oldFilename;
+	oldEvolutionFilename.concat(".evr");
+	AsciiString newEvolutionFilename = filename;
+	newEvolutionFilename.concat(".evr");
+	if (TheLocalFileSystem->doesFileExist(newEvolutionFilename.str()))
+		DeleteFile(newEvolutionFilename.str());
+	if (TheLocalFileSystem->doesFileExist(oldEvolutionFilename.str()) &&
+		CopyFile(oldEvolutionFilename.str(), newEvolutionFilename.str(), FALSE) == 0)
+	{
+		DEBUG_LOG(("reallySaveReplay - Failed to copy EVR1 sidecar %s to %s", oldEvolutionFilename.str(), newEvolutionFilename.str()));
+	}
+#endif
+
 	// get the listbox that will have the save games in it
 	GameWindow *listboxGames = TheWindowManager->winGetWindowFromId( parent, listboxGamesKey );
 	DEBUG_ASSERTCRASH( listboxGames != nullptr, ("reallySaveReplay - Unable to find games listbox") );

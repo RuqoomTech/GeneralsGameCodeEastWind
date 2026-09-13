@@ -48,12 +48,17 @@ bool readU32(const std::uint8_t *data, std::size_t size, std::size_t &pos, std::
 bool isKnownPacketType(std::uint16_t value)
 {
     return value >= static_cast<std::uint16_t>(NetworkPacketType::CommandBatch) &&
-        value <= static_cast<std::uint16_t>(NetworkPacketType::Disconnect);
+        value <= static_cast<std::uint16_t>(NetworkPacketType::RoutedCommandBatch);
 }
 } // namespace
 
 
-bool encodeCommandBatchV1(const std::vector<NetworkCommandRecord> &commands, std::vector<std::uint8_t> &output)
+namespace
+{
+bool encodeCommandBatchImplV1(
+    const std::vector<NetworkCommandRecord> &commands,
+    bool routed,
+    std::vector<std::uint8_t> &output)
 {
     if (commands.size() > MAX_NETWORK_COMMANDS_V1) return false;
 
@@ -62,13 +67,16 @@ bool encodeCommandBatchV1(const std::vector<NetworkCommandRecord> &commands, std
     appendU16(output, 0); // reserved
     for (const NetworkCommandRecord &record : commands)
     {
+        if (!routed && record.relayMask != 0)
+            return false;
+
         std::vector<std::uint8_t> commandBytes;
         if (!encodeCommandV1(record.command, commandBytes) ||
             commandBytes.size() > std::numeric_limits<std::uint32_t>::max())
             return false;
 
         output.push_back(record.playerId);
-        output.push_back(0); // reserved
+        output.push_back(routed ? record.relayMask : 0U);
         appendU16(output, record.commandId);
         appendU32(output, static_cast<std::uint32_t>(commandBytes.size()));
         output.insert(output.end(), commandBytes.begin(), commandBytes.end());
@@ -76,9 +84,10 @@ bool encodeCommandBatchV1(const std::vector<NetworkCommandRecord> &commands, std
     return true;
 }
 
-NetworkDecodeResult decodeCommandBatchV1(
+NetworkDecodeResult decodeCommandBatchImplV1(
     const std::uint8_t *data,
     std::size_t size,
+    bool routed,
     std::vector<NetworkCommandRecord> &commands)
 {
     if (data == nullptr || size < NETWORK_COMMAND_BATCH_HEADER_BYTES_V1)
@@ -101,8 +110,9 @@ NetworkDecodeResult decodeCommandBatchV1(
 
         NetworkCommandRecord record;
         record.playerId = data[pos++];
-        const std::uint8_t recordReserved = data[pos++];
-        if (recordReserved != 0) return {NetworkDecodeError::ReservedFieldNonZero};
+        const std::uint8_t relayOrReserved = data[pos++];
+        if (!routed && relayOrReserved != 0) return {NetworkDecodeError::ReservedFieldNonZero};
+        record.relayMask = routed ? relayOrReserved : 0U;
         if (!readU16(data, size, pos, record.commandId)) return {NetworkDecodeError::Truncated};
         std::uint32_t commandBytes = 0;
         if (!readU32(data, size, pos, commandBytes)) return {NetworkDecodeError::Truncated};
@@ -118,6 +128,33 @@ NetworkDecodeResult decodeCommandBatchV1(
 
     commands = decoded;
     return {NetworkDecodeError::None};
+}
+} // namespace
+
+bool encodeCommandBatchV1(const std::vector<NetworkCommandRecord> &commands, std::vector<std::uint8_t> &output)
+{
+    return encodeCommandBatchImplV1(commands, false, output);
+}
+
+NetworkDecodeResult decodeCommandBatchV1(
+    const std::uint8_t *data,
+    std::size_t size,
+    std::vector<NetworkCommandRecord> &commands)
+{
+    return decodeCommandBatchImplV1(data, size, false, commands);
+}
+
+bool encodeRoutedCommandBatchV1(const std::vector<NetworkCommandRecord> &commands, std::vector<std::uint8_t> &output)
+{
+    return encodeCommandBatchImplV1(commands, true, output);
+}
+
+NetworkDecodeResult decodeRoutedCommandBatchV1(
+    const std::uint8_t *data,
+    std::size_t size,
+    std::vector<NetworkCommandRecord> &commands)
+{
+    return decodeCommandBatchImplV1(data, size, true, commands);
 }
 
 bool encodeNetworkPacketV1(

@@ -28,6 +28,9 @@
 #include "Common/crc.h"
 #include "GameNetwork/Transport.h"
 #include "GameNetwork/NetworkInterface.h"
+#if defined(_WIN64)
+#include "GameNetwork/EvolutionProtocol.h"
+#endif
 
 
 //--------------------------------------------------------------------------
@@ -130,6 +133,10 @@ Bool Transport::init( UnsignedInt ip, UnsignedShort port )
 	{
 		m_outBuffer[i].length = 0;
 		m_inBuffer[i].length = 0;
+#if defined(_WIN64)
+		m_evolutionOutBuffer[i].length = 0;
+		m_evolutionInBuffer[i].length = 0;
+#endif
 #if defined(RTS_DEBUG)
 		m_delayedInBuffer[i].message.length = 0;
 #endif
@@ -210,7 +217,36 @@ Bool Transport::doSend() {
 		m_unknownBytes[m_statisticsSlot] = 0;
 	}
 
-	// Send all messages
+#if defined(_WIN64)
+	// Evolution packets are already complete EVN1 datagrams. They bypass the
+	// legacy transport header, CRC and XOR wrapper.
+	for (size_t i = 0; i < ARRAY_SIZE(m_evolutionOutBuffer); ++i)
+	{
+		if (m_evolutionOutBuffer[i].length > 0)
+		{
+			const int bytesToSend = m_evolutionOutBuffer[i].length;
+			const int bytesSent = m_udpsock->Write(
+				m_evolutionOutBuffer[i].data, bytesToSend,
+				m_evolutionOutBuffer[i].addr, m_evolutionOutBuffer[i].port);
+			if (bytesSent > 0)
+			{
+				m_outgoingPackets[m_statisticsSlot]++;
+				m_outgoingBytes[m_statisticsSlot] += bytesToSend;
+				m_evolutionOutBuffer[i].length = 0;
+				if (bytesSent != bytesToSend)
+				{
+					DEBUG_LOG(("Transport::doSend - EVN1 wanted to send %d bytes, only sent %d bytes", bytesToSend, bytesSent));
+				}
+			}
+			else
+			{
+				retval = FALSE;
+			}
+		}
+	}
+#endif
+
+	// Send all legacy messages
 	for (size_t i = 0; i < ARRAY_SIZE(m_outBuffer); ++i)
 	{
 		if (m_outBuffer[i].length > 0)
@@ -292,9 +328,13 @@ Bool Transport::doRecv()
 	// But the max network message size needs to include the bytes of the transport message header and equal the max udp payload
 	// Therefore, when receiving data we use the max udp payload size to receive the game packet payload and network header
 	TransportMessage incomingMessage;
-	unsigned char *buf = (unsigned char *)&incomingMessage;
+	UnsignedByte rawBuffer[MAX_NETWORK_MESSAGE_LEN];
+	unsigned char *buf = rawBuffer;
 	int len = MAX_NETWORK_MESSAGE_LEN;
 	size_t bufferIndex = 0;
+#if defined(_WIN64)
+	size_t evolutionBufferIndex = 0;
+#endif
 //	DEBUG_LOG(("Transport::doRecv - checking"));
 	while ( (len=m_udpsock->Read(buf, MAX_NETWORK_MESSAGE_LEN, &from)) > 0 )
 	{
@@ -309,14 +349,65 @@ Bool Transport::doRecv()
 		}
 #endif
 
+#if defined(_WIN64)
+		// EVN1 datagrams are explicit little-endian packets and must be recognized
+		// before the legacy packet is decrypted in place. A packet carrying the EVN1
+		// magic but failing v1 framing validation is rejected rather than reinterpreted
+		// as a legacy encrypted packet.
+		if (len >= 4 && rawBuffer[0] == 'E' && rawBuffer[1] == 'V' && rawBuffer[2] == 'N' && rawBuffer[3] == '1')
+		{
+			evolution::NetworkPacketHeader evolutionHeader;
+			const std::uint8_t *evolutionPayload = nullptr;
+			std::size_t evolutionPayloadSize = 0;
+			const evolution::NetworkDecodeResult evolutionResult = evolution::decodeNetworkPacketV1(
+				rawBuffer, static_cast<std::size_t>(len), evolutionHeader, evolutionPayload, evolutionPayloadSize);
+			if (!evolutionResult.ok())
+			{
+				m_unknownPackets[m_statisticsSlot]++;
+				m_unknownBytes[m_statisticsSlot] += len;
+				continue;
+			}
+
+			Bool queuedEvolutionPacket = FALSE;
+			for (; evolutionBufferIndex < ARRAY_SIZE(m_evolutionInBuffer); ++evolutionBufferIndex)
+			{
+				if (m_evolutionInBuffer[evolutionBufferIndex].length <= 0)
+				{
+					m_evolutionInBuffer[evolutionBufferIndex].length = len;
+					m_evolutionInBuffer[evolutionBufferIndex].addr = ntohl(from.sin_addr.S_un.S_addr);
+					m_evolutionInBuffer[evolutionBufferIndex].port = ntohs(from.sin_port);
+					memcpy(m_evolutionInBuffer[evolutionBufferIndex].data, rawBuffer, static_cast<size_t>(len));
+					++evolutionBufferIndex;
+					queuedEvolutionPacket = TRUE;
+					break;
+				}
+			}
+
+			if (queuedEvolutionPacket)
+			{
+				m_incomingPackets[m_statisticsSlot]++;
+				m_incomingBytes[m_statisticsSlot] += len;
+			}
+			else
+			{
+				DEBUG_LOG(("Evolution receive queue is full, dropping packet"));
+				m_unknownPackets[m_statisticsSlot]++;
+				m_unknownBytes[m_statisticsSlot] += len;
+			}
+			continue;
+		}
+#endif
+
 //		DEBUG_LOG(("Transport::doRecv - Got something! len = %d", len));
-		// Decrypt the packet
+		// Decrypt the legacy packet in the raw receive buffer only after EVN1
+		// detection, then copy the decrypted bytes into the historical structure.
 //		DEBUG_LOG_RAW(("buffer = "));
 //		for (Int munkee = 0; munkee < len; ++munkee) {
 //			DEBUG_LOG_RAW(("%02x", *(buf + munkee)));
 //		}
 //		DEBUG_LOG_RAW(("\n"));
 		decryptBuf(buf, len);
+		memcpy(&incomingMessage, rawBuffer, static_cast<size_t>(len));
 
 		incomingMessage.length = len - sizeof(TransportMessageHeader);
 
@@ -423,6 +514,41 @@ Bool Transport::queueSend(UnsignedInt addr, UnsignedShort port, const UnsignedBy
 	DEBUG_LOG(("Send Queue is getting full, dropping packets"));
 	return false;
 }
+
+#if defined(_WIN64)
+Bool Transport::queueEvolutionSend(UnsignedInt addr, UnsignedShort port, const UnsignedByte *buf, Int len)
+{
+	if (buf == nullptr || len < static_cast<Int>(evolution::NETWORK_HEADER_BYTES_V1) || len > MAX_NETWORK_MESSAGE_LEN)
+	{
+		DEBUG_LOG(("Transport::queueEvolutionSend - Invalid EVN1 packet size"));
+		return FALSE;
+	}
+
+	evolution::NetworkPacketHeader header;
+	const std::uint8_t *payload = nullptr;
+	std::size_t payloadSize = 0;
+	if (!evolution::decodeNetworkPacketV1(buf, static_cast<std::size_t>(len), header, payload, payloadSize).ok())
+	{
+		DEBUG_LOG(("Transport::queueEvolutionSend - Invalid EVN1 packet"));
+		return FALSE;
+	}
+
+	for (size_t i = 0; i < ARRAY_SIZE(m_evolutionOutBuffer); ++i)
+	{
+		if (m_evolutionOutBuffer[i].length <= 0)
+		{
+			m_evolutionOutBuffer[i].length = len;
+			m_evolutionOutBuffer[i].addr = addr;
+			m_evolutionOutBuffer[i].port = port;
+			memcpy(m_evolutionOutBuffer[i].data, buf, static_cast<size_t>(len));
+			return TRUE;
+		}
+	}
+
+	DEBUG_LOG(("Evolution send queue is full, dropping packet"));
+	return FALSE;
+}
+#endif
 
 Bool Transport::isGeneralsPacket( TransportMessage *msg )
 {

@@ -27,9 +27,75 @@
 
 #include "GameNetwork/Connection.h"
 #include "GameNetwork/networkutil.h"
+#if defined(_WIN64)
+#include "GameNetwork/EvolutionProtocol.h"
+#include "Common/EvolutionGameMessageAdapter.h"
+#endif
 #include "GameLogic/GameLogic.h"
 
+#if defined(_WIN64)
+#include <cstdint>
+#include <vector>
+#endif
+
 enum { MaxQuitFlushTime = 30000 }; // wait this many milliseconds at most to retry things before quitting
+
+#if defined(_WIN64)
+namespace
+{
+Bool QueueEvolutionGameCommand(Transport *transport, const User *user, const NetCommandRef &ref)
+{
+	if (transport == nullptr || user == nullptr || ref.getCommand() == nullptr ||
+		ref.getCommand()->getNetCommandType() != NETCOMMANDTYPE_GAMECOMMAND)
+	{
+		return FALSE;
+	}
+
+	const NetGameCommandMsg *netMessage = static_cast<const NetGameCommandMsg *>(ref.getCommand());
+	GameMessage *gameMessage = netMessage->constructGameMessage();
+	if (gameMessage == nullptr)
+	{
+		return FALSE;
+	}
+
+	evolution::Command command;
+	const bool converted = evolution::gameMessageToEvolutionCommand(*gameMessage, command);
+	deleteInstance(gameMessage);
+	if (!converted)
+	{
+		return FALSE;
+	}
+
+	evolution::NetworkCommandRecord record;
+	record.playerId = static_cast<std::uint8_t>(netMessage->getPlayerID());
+	record.relayMask = ref.getRelay();
+	record.commandId = netMessage->getID();
+	record.command = command;
+
+	std::vector<evolution::NetworkCommandRecord> records(1, record);
+	std::vector<std::uint8_t> payload;
+	if (!evolution::encodeRoutedCommandBatchV1(records, payload))
+	{
+		return FALSE;
+	}
+
+	evolution::NetworkPacketHeader header;
+	header.packetType = evolution::NetworkPacketType::RoutedCommandBatch;
+	header.sequence = (static_cast<std::uint32_t>(record.playerId) << 16U) | record.commandId;
+	header.frame = netMessage->getExecutionFrame();
+
+	std::vector<std::uint8_t> packet;
+	if (!evolution::encodeNetworkPacketV1(header, payload.data(), payload.size(), packet) ||
+		packet.size() > static_cast<std::size_t>(MAX_NETWORK_MESSAGE_LEN))
+	{
+		return FALSE;
+	}
+
+	return transport->queueEvolutionSend(
+		user->GetIPAddr(), user->GetPort(), packet.data(), static_cast<Int>(packet.size()));
+}
+} // namespace
+#endif
 
 /**
  * The constructor.
@@ -241,11 +307,9 @@ UnsignedInt Connection::doSend() {
 	}
 
 	if ((curtime - m_lastTimeSent) < m_frameGrouping) {
-//		DEBUG_LOG(("not sending packet, time = %d, m_lastFrameSent = %d, m_frameGrouping = %d", curtime, m_lastTimeSent, m_frameGrouping));
 		return 0;
 	}
 
-	// iterate through all the messages and put them into a packet(s).
 	NetCommandRef *msg = m_netCommandList->getFirstMessage();
 
 	while ((msg != nullptr) && couldQueue) {
@@ -253,17 +317,39 @@ UnsignedInt Connection::doSend() {
 		packet.setAddress(m_user->GetIPAddr(), m_user->GetPort());
 
 		Bool notDone = TRUE;
-
-		// add the command messages until either we run out of messages or the packet is full.
 		while ((msg != nullptr) && notDone) {
-			NetCommandRef *next = msg->getNext(); // Need this since msg could be deleted
-
+			NetCommandRef *next = msg->getNext();
 			time_t timeLastSent = msg->getTimeLastSent();
 
 			if (((curtime - timeLastSent) > m_retryTime) || (timeLastSent == -1)) {
+#if defined(_WIN64)
+				// Step 04E2: gameplay commands leave the legacy transport wrapper and are
+				// sent as routed EVN1 datagrams. The command remains in the existing
+				// Connection retry/ACK list, so reliability semantics do not change yet.
+				if (msg->getCommand()->getNetCommandType() == NETCOMMANDTYPE_GAMECOMMAND &&
+					QueueEvolutionGameCommand(m_transport, m_user, *msg))
+				{
+					if (CommandRequiresAck(msg->getCommand())) {
+						if (timeLastSent != -1) {
+							++m_numRetries;
+						}
+						doRetryMetrics();
+						msg->setTimeLastSent(curtime);
+					} else {
+						m_netCommandList->removeMessage(msg);
+						deleteInstance(msg);
+					}
+					++numpackets;
+					m_lastTimeSent = curtime;
+					msg = next;
+					continue;
+				}
+#endif
+
+				// Control/reliability traffic and any gameplay command that could not
+				// be represented/queued as EVN1 retain the proven legacy packet path.
 				notDone = packet.addCommand(msg);
 				if (notDone) {
-					// the msg command was added to the packet.
 					if (CommandRequiresAck(msg->getCommand())) {
 						if (timeLastSent != -1) {
 							++m_numRetries;
@@ -283,14 +369,12 @@ UnsignedInt Connection::doSend() {
 			DEBUG_LOG(("didn't finish sending all commands in connection"));
 		}
 
-		++numpackets;
-
-		/// @todo Make the act of giving the transport object a packet to send more efficient.  Make the transport take a NetPacket object rather than the raw data, thus avoiding an extra memcpy.
 		if (packet.getNumCommands() > 0) {
-			// If the packet actually has any information to give, give it to the transport object
-			// for transmission.
 			couldQueue = m_transport->queueSend(packet.getAddr(), packet.getPort(), packet.getData(), packet.getLength());
-			m_lastTimeSent = curtime;
+			if (couldQueue) {
+				++numpackets;
+				m_lastTimeSent = curtime;
+			}
 		}
 	}
 

@@ -346,3 +346,21 @@ The protocol test freezes exact v1 command, command-batch, network-packet, repla
 Local 04E1 validation on 2026-09-12: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan all pass **19/19**. `z_headlessdeterminismcheck` matches the unchanged Step 04D fixture and `z_evolutionprotocolcheck` matches the Step 04E v1 golden-byte fixture in every configuration. Real Windows 04E1 validation remains pending.
 
 The frozen i686 lane may be rerun to prove the same byte fixture is architecture-independent, but it is no longer a future multiplayer peer.
+
+
+## Step 04E2 staged runtime integration
+
+The production 04E2 runtime hooks are Win64-only; the i686 oracle retains legacy networking/replay behavior while still exercising the portable wire-format tests. The focused graph grows from 19 to **21 tests** with `evolution_runtime_bridge_step04e2` and `evolution_runtime_integration_policy_step04e2`. The former exercises routed EVN1 -> decode -> EVR1 -> decode and checks byte-identical command payload plus frame/player/relay identity. The latter pins the production Transport/Connection/ConnectionManager/Recorder/PopupReplay bridge and the transitional legacy fallback policy.
+
+Canonical focused Windows gate:
+
+```powershell
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck z_evolutionprotocolcheck z_evolutionruntimecheck
+```
+
+Expected graph: **21/21**. `z_evolutionruntimecheck` must report `Step 04E2 runtime bridge passed: routed EVN1 metadata and EVR1 command payloads remain stable.`
+
+Local 04E2 validation on 2026-09-13: GCC O0/O2/O3, Clang O0/O2/O3, GCC ASan and GCC UBSan all pass **21/21** and all three explicit gates. The focused tests do not constitute a real two-peer Windows multiplayer session; that remains Step04E3.

@@ -25,6 +25,9 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
 #include "Common/Recorder.h"
+#if defined(_WIN64)
+#include "Common/EvolutionGameMessageAdapter.h"
+#endif
 #include "Common/file.h"
 #include "Common/FileSystem.h"
 #include "Common/PlayerList.h"
@@ -70,6 +73,15 @@ static const UnsignedInt frameCountOffset = endTimeOffset + sizeof(replay_time_t
 static const UnsignedInt desyncOffset = frameCountOffset + sizeof(UnsignedInt);
 static const UnsignedInt quitEarlyOffset = desyncOffset + sizeof(Bool);
 static const UnsignedInt disconOffset = quitEarlyOffset + sizeof(Bool);
+
+#if defined(_WIN64)
+static AsciiString getEvolutionReplayPath(const AsciiString &legacyPath)
+{
+	AsciiString path = legacyPath;
+	path.concat(".evr");
+	return path;
+}
+#endif
 
 static void writeAtOffset(File* file, Int offset, const void* data, Int dataSize)
 {
@@ -340,6 +352,11 @@ RecorderClass::RecorderClass()
 	m_originalGameMode = GAME_NONE;
 	m_mode = RECORDERMODETYPE_RECORD;
 	m_file = nullptr;
+#if defined(_WIN64)
+	m_evolutionReplay.close();
+	m_evolutionReplayPath.clear();
+	m_useEvolutionReplay = FALSE;
+#endif
 	m_fileName.clear();
 	m_currentFilePosition = 0;
 	m_doingAnalysis = FALSE;
@@ -366,6 +383,11 @@ void RecorderClass::init() {
 	m_originalGameMode = GAME_NONE;
 	m_mode = RECORDERMODETYPE_NONE;
 	m_file = nullptr;
+#if defined(_WIN64)
+	m_evolutionReplay.close();
+	m_evolutionReplayPath.clear();
+	m_useEvolutionReplay = FALSE;
+#endif
 	m_fileName.clear();
 	m_currentFilePosition = 0;
 	m_gameInfo.clearSlotList();
@@ -448,6 +470,11 @@ void RecorderClass::stopPlayback() {
 		m_file->close();
 		m_file = nullptr;
 	}
+#if defined(_WIN64)
+	m_evolutionReplay.close();
+	m_evolutionReplayPath.clear();
+	m_useEvolutionReplay = FALSE;
+#endif
 	m_fileName.clear();
 
 	if (!m_doingAnalysis)
@@ -507,6 +534,15 @@ void RecorderClass::updateRecord()
 	if (needFlush) {
 		DEBUG_ASSERTCRASH(m_file != nullptr, ("RecorderClass::updateRecord() - unexpected call to fflush(m_file)"));
 		m_file->flush();
+#if defined(_WIN64)
+		if (m_evolutionReplay.isOpen() && !m_evolutionReplay.flush()) {
+			DEBUG_LOG(("RecorderClass::updateRecord - failed to flush EVR1 sidecar; disabling Evolution replay recording."));
+			m_evolutionReplay.close();
+			if (!m_evolutionReplayPath.isEmpty())
+				DeleteFile(m_evolutionReplayPath.str());
+			m_evolutionReplayPath.clear();
+		}
+#endif
 	}
 }
 
@@ -534,6 +570,18 @@ void RecorderClass::startRecording(GameDifficulty diff, Int originalGameMode, In
 		DEBUG_ASSERTCRASH(m_file != nullptr, ("Failed to create replay file"));
 		return;
 	}
+
+#if defined(_WIN64)
+	m_evolutionReplayPath = getEvolutionReplayPath(filepath);
+	if (TheFileSystem->doesFileExist(m_evolutionReplayPath.str()))
+		DeleteFile(m_evolutionReplayPath.str());
+	if (!m_evolutionReplay.openForWrite(m_evolutionReplayPath.str())) {
+		DEBUG_LOG(("RecorderClass::startRecording - unable to create EVR1 sidecar %s; legacy replay recording remains active.", m_evolutionReplayPath.str()));
+		DeleteFile(m_evolutionReplayPath.str());
+		m_evolutionReplayPath.clear();
+	}
+#endif
+
 	// TheSuperHackers @info the null terminator needs to be ignored to maintain retail replay file layout
 	m_file->writeFormat("%s", s_genrep);
 
@@ -701,10 +749,19 @@ void RecorderClass::stopRecording() {
 	if (m_file != nullptr) {
 		m_file->close();
 		m_file = nullptr;
-
+#if defined(_WIN64)
+		m_evolutionReplay.close();
+#endif
 		if (m_archiveReplays)
 			archiveReplay(m_fileName);
+#if defined(_WIN64)
+	} else {
+		m_evolutionReplay.close();
+#endif
 	}
+#if defined(_WIN64)
+	m_evolutionReplayPath.clear();
+#endif
 	m_fileName.clear();
 }
 
@@ -735,6 +792,16 @@ void RecorderClass::archiveReplay(AsciiString fileName)
 
 	if (!CopyFile(sourcePath.str(), destPath.str(), FALSE))
 		DEBUG_LOG(("RecorderClass::archiveReplay: Failed to copy %s to %s", sourcePath.str(), destPath.str()));
+
+#if defined(_WIN64)
+	const AsciiString evolutionSource = getEvolutionReplayPath(sourcePath);
+	const AsciiString evolutionDest = getEvolutionReplayPath(destPath);
+	if (TheFileSystem->doesFileExist(evolutionSource.str()) &&
+		!CopyFile(evolutionSource.str(), evolutionDest.str(), FALSE))
+	{
+		DEBUG_LOG(("RecorderClass::archiveReplay: Failed to copy EVR1 sidecar %s to %s", evolutionSource.str(), evolutionDest.str()));
+	}
+#endif
 }
 
 /**
@@ -744,6 +811,18 @@ void RecorderClass::writeToFile(GameMessage * msg) {
 	// Write the frame number for this command.
 	UnsignedInt frame = TheGameLogic->getFrame();
 	m_file->write(&frame, sizeof(frame));
+
+#if defined(_WIN64)
+	if (m_evolutionReplay.isOpen() &&
+		!m_evolutionReplay.writeGameMessage(frame, msg->getPlayerIndex(), *msg))
+	{
+		DEBUG_LOG(("RecorderClass::writeToFile - EVR1 sidecar write failed; legacy replay recording remains active."));
+		m_evolutionReplay.close();
+		if (!m_evolutionReplayPath.isEmpty())
+			DeleteFile(m_evolutionReplayPath.str());
+		m_evolutionReplayPath.clear();
+	}
+#endif
 
 	// Write the command type
 	GameMessage::Type type = msg->getType();
@@ -1172,6 +1251,18 @@ Bool RecorderClass::playbackFile(AsciiString filename)
 	// Otherwise a crc message remains and messes up the crc calculation on the restarted replay.
 	TheCommandList->reset();
 
+#if defined(_WIN64)
+	AsciiString legacyReplayPath = getReplayDir();
+	legacyReplayPath.concat(filename);
+	m_evolutionReplayPath = getEvolutionReplayPath(legacyReplayPath);
+	m_useEvolutionReplay = m_evolutionReplay.openForRead(m_evolutionReplayPath.str()) ? TRUE : FALSE;
+	if (m_useEvolutionReplay) {
+		DEBUG_LOG(("RecorderClass::playbackFile - using EVR1 command sidecar %s", m_evolutionReplayPath.str()));
+	} else {
+		m_evolutionReplayPath.clear();
+	}
+#endif
+
 	readNextFrame();
 	// readNextFrame() closes m_file via stopPlayback() if the first frame cannot be read.
 	if(m_file == nullptr)
@@ -1269,6 +1360,23 @@ AsciiString RecorderClass::readAsciiString() {
  * is stopped and the next frame is said to be -1.
  */
 void RecorderClass::readNextFrame() {
+#if defined(_WIN64)
+	if (m_useEvolutionReplay) {
+		const evolution::ReplayStreamReadStatus status = m_evolutionReplay.readRecord(m_evolutionNextRecord);
+		if (status == evolution::ReplayStreamReadStatus::Record) {
+			m_nextFrame = m_evolutionNextRecord.frame;
+			return;
+		}
+
+		if (status == evolution::ReplayStreamReadStatus::Error) {
+			DEBUG_LOG(("RecorderClass::readNextFrame - invalid/truncated EVR1 sidecar on frame %d", TheGameLogic->getFrame()));
+		}
+		m_nextFrame = -1;
+		stopPlayback();
+		return;
+	}
+#endif
+
 	Int bytesRead = m_file->read(&m_nextFrame, sizeof(m_nextFrame));
 	if (bytesRead != sizeof(m_nextFrame)) {
 		DEBUG_LOG(("RecorderClass::readNextFrame - read failed on frame %d", TheGameLogic->getFrame()));
@@ -1281,6 +1389,27 @@ void RecorderClass::readNextFrame() {
  * This reads the next command from the replay file and appends it to TheCommandList.
  */
 void RecorderClass::appendNextCommand() {
+#if defined(_WIN64)
+	if (m_useEvolutionReplay) {
+		const GameMessage::Type type = static_cast<GameMessage::Type>(m_evolutionNextRecord.command.messageType);
+		GameMessage *msg = newInstance(GameMessage)(type);
+		if (msg == nullptr || !evolution::appendEvolutionCommandToGameMessage(m_evolutionNextRecord.command, *msg)) {
+			if (msg != nullptr) {
+				deleteInstance(msg);
+			}
+			DEBUG_LOG(("RecorderClass::appendNextCommand - failed to reconstruct EVR1 command on frame %d", m_nextFrame));
+			return;
+		}
+		msg->friend_setPlayerIndex(m_evolutionNextRecord.playerIndex);
+
+		if (type != GameMessage::MSG_BEGIN_NETWORK_MESSAGES && type != GameMessage::MSG_CLEAR_GAME_DATA && !m_doingAnalysis) {
+			TheCommandList->appendMessage(msg);
+		} else {
+			deleteInstance(msg);
+		}
+		return;
+	}
+#endif
 	GameMessage::Type type;
 	Int bytesRead = m_file->read(&type, sizeof(type));
 	if (bytesRead != sizeof(type)) {

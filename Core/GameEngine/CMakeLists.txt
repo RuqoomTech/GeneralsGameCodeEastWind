@@ -578,6 +578,7 @@ set(GAMEENGINE_SRC
     Source/Common/EvolutionCommandCodec.cpp
     Source/Common/EvolutionGameMessageAdapter.cpp
     Source/Common/EvolutionReplayFormat.cpp
+    Source/Common/EvolutionReplayStream.cpp
     Source/Common/Diagnostic/SimulationMathCrc.cpp
     Source/Common/Dict.cpp
     Source/Common/DiscreteCircle.cpp

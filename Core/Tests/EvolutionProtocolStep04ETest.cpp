@@ -245,6 +245,35 @@ void CheckNetworkFraming(const std::map<std::string, Bytes> &fixtures)
         "Network header changed");
     Expect(payloadSize == batch.size() && Bytes(payload, payload + payloadSize) == batch, "Network payload changed");
 
+    // 04E2 adds routed gameplay batches without changing the already-frozen
+    // direct CommandBatch bytes from 04E1. The formerly-reserved record byte
+    // is the relay mask only for RoutedCommandBatch.
+    record.relayMask = 0xA4U;
+    records = {record};
+    Bytes routedBatch;
+    Expect(!evolution::encodeCommandBatchV1(records, routedBatch),
+        "Direct command-batch encoder accepted routed metadata");
+    Expect(evolution::encodeRoutedCommandBatchV1(records, routedBatch), "Routed command-batch encode failed");
+    Expect(routedBatch == Fixture(fixtures, "network_routed_batch"), "Routed command-batch bytes changed from the Step04E2 fixture");
+
+    decodedRecords.clear();
+    Expect(evolution::decodeRoutedCommandBatchV1(routedBatch.data(), routedBatch.size(), decodedRecords).ok(),
+        "Routed command-batch decode failed");
+    Expect(decodedRecords.size() == 1U && decodedRecords[0].playerId == 2U && decodedRecords[0].relayMask == 0xA4U &&
+        decodedRecords[0].commandId == 0x3456U && decodedRecords[0].command.messageType == 1095,
+        "Routed command-batch metadata changed");
+
+    header.packetType = evolution::NetworkPacketType::RoutedCommandBatch;
+    Bytes routedPacket;
+    Expect(evolution::encodeNetworkPacketV1(header, routedBatch.data(), routedBatch.size(), routedPacket),
+        "Routed network packet encode failed");
+    Expect(routedPacket == Fixture(fixtures, "network_routed"), "Routed network packet bytes changed from the Step04E2 fixture");
+    Expect(evolution::decodeNetworkPacketV1(routedPacket.data(), routedPacket.size(), decodedHeader, payload, payloadSize).ok(),
+        "Routed network packet decode failed");
+    Expect(decodedHeader.packetType == evolution::NetworkPacketType::RoutedCommandBatch &&
+        payloadSize == routedBatch.size() && Bytes(payload, payload + payloadSize) == routedBatch,
+        "Routed network packet metadata changed");
+
     Bytes brokenBatch = batch;
     brokenBatch[2] = 1U;
     Expect(evolution::decodeCommandBatchV1(brokenBatch.data(), brokenBatch.size(), decodedRecords).error == evolution::NetworkDecodeError::ReservedFieldNonZero,

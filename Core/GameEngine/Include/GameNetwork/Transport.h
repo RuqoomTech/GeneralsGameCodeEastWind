@@ -31,6 +31,17 @@
 #include "GameNetwork/udp.h"
 #include "GameNetwork/NetworkDefs.h"
 
+
+#if defined(_WIN64)
+struct EvolutionTransportMessage
+{
+	UnsignedByte data[MAX_NETWORK_MESSAGE_LEN];
+	Int length;
+	UnsignedInt addr;
+	UnsignedShort port;
+};
+#endif
+
 /**
  * The transport layer handles the UDP socket for the game, and will packetize and
  * de-packetize multiple ACK/CommandPacket/etc packets into larger aggregates.
@@ -54,7 +65,10 @@ public:
 	Bool doSend();		///< call this to service the send queue.
 
 	Bool queueSend(UnsignedInt addr, UnsignedShort port, const UnsignedByte *buf, Int len /*,
-		NetMessageFlags flags, Int id */);				///< Queue a packet for sending to the specified address and port.  This will be sent on the next update() call.
+		NetMessageFlags flags, Int id */);
+#if defined(_WIN64)
+	Bool queueEvolutionSend(UnsignedInt addr, UnsignedShort port, const UnsignedByte *buf, Int len);				///< Queue an Evolution x64 EVN1 datagram.
+#endif
 
 	Bool allowBroadcasts(Bool val) { if (!m_udpsock) return false; return (m_udpsock->AllowBroadcasts(val))?true:false; }
 
@@ -72,6 +86,10 @@ public:
 
 	TransportMessage m_outBuffer[MAX_MESSAGES];
 	TransportMessage m_inBuffer[MAX_MESSAGES];
+#if defined(_WIN64)
+	EvolutionTransportMessage m_evolutionOutBuffer[MAX_MESSAGES];
+	EvolutionTransportMessage m_evolutionInBuffer[MAX_MESSAGES];
+#endif
 
 #if defined(RTS_DEBUG)
 	DelayedTransportMessage m_delayedInBuffer[MAX_MESSAGES];
