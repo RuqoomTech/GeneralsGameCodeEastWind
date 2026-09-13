@@ -370,3 +370,9 @@ Local 04E2 validation on 2026-09-13: GCC O0/O2/O3, Clang O0/O2/O3, GCC ASan and 
 Observed Windows failure: `evolution_game_message_adapter_step04e` could not parse legacy headers because `CPP_11` / `FUNCTION_DELETE` were not defined in the standalone no-PCH object target. The production adapter now includes `Utility/CppMacros.h` first, and `EvolutionProtocolPolicyStep04ETest.cmake` locks that include ordering.
 
 Local host focused graph after the hotfix: **21/21 passed**, including the Step 04D determinism, Step 04E1 protocol, and Step 04E2 runtime-bridge tests. This does not claim a post-hotfix MinGW-w64 Windows pass; rerun `cmake --build --preset mingw64-tests`, `ctest --preset mingw64-tests --output-on-failure`, and the three explicit 04D/04E gates on Windows.
+
+## Step 04E2B — Windows MinGW C++ runtime-family guard
+
+A clean `mingw64-tests` rebuild compiled the Step04E2A adapter successfully, then `evolution_protocol_step04e_test.exe` crashed before protocol assertions while reading `Step04EEvolutionProtocolV1.txt`. GDB showed `std::getline` executing from `C:\msys64\ucrt64\bin\libstdc++-6.dll` even though the executable was compiled by `C:\msys64\mingw64\bin\g++.exe`. The protocol/runtime-bridge source was not at fault; Windows had loaded a different MSYS2 C++ runtime family through the ambient PATH.
+
+All focused MinGW test executables are therefore linked with `-static-libgcc -static-libstdc++` at the `Core/Tests` directory level. This matches the existing `core_config` deployment policy while preserving the portable tests' independence from legacy engine compile definitions/libraries. Validate on Windows from a clean `build/mingw64-tests` directory with `cmake --preset mingw64-tests`, `cmake --build --preset mingw64-tests`, `ctest --preset mingw64-tests --output-on-failure`, then the Step04D/04E1/04E2 explicit check targets.

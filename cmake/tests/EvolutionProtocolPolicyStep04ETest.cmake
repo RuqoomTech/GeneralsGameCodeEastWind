@@ -18,6 +18,17 @@ rts_read("Core/GameEngine/Source/GameNetwork/EvolutionProtocol.cpp" protocol_cpp
 rts_read("Core/GameEngine/Source/GameNetwork/NetPacketStructs.cpp" netpacket_cpp)
 rts_read("Core/GameEngine/Include/GameNetwork/NetworkDefs.h" network_defs)
 rts_read("Core/Tests/Fixtures/Step04EEvolutionProtocolV1.txt" fixture)
+rts_read("Core/Tests/CMakeLists.txt" tests_cmake)
+
+
+# Portable Step 04E tests intentionally do not link core_config. On MinGW they still
+# need a deterministic matching GCC runtime, otherwise Windows may resolve libstdc++
+# from another MSYS2 environment (for example ucrt64) through PATH and crash in STL IO.
+string(FIND "${tests_cmake}" "if(MINGW)" _tests_mingw_guard)
+string(FIND "${tests_cmake}" "add_link_options(-static-libgcc -static-libstdc++)" _tests_static_runtime)
+if(_tests_mingw_guard EQUAL -1 OR _tests_static_runtime EQUAL -1)
+    message(FATAL_ERROR "Focused MinGW tests must statically link libgcc/libstdc++ to avoid MSYS2 runtime-family mixing")
+endif()
 
 # The production GameMessage adapter is also compiled as a standalone MinGW
 # focused-graph target. Legacy engine headers depend on the C++ compatibility

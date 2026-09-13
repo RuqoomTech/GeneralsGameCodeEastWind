@@ -378,3 +378,11 @@ Release seal: the final Win64-only runtime-gated tree was reconstructed from the
 - Added an explicit first include of `Utility/CppMacros.h` in the adapter translation unit rather than reintroducing a broad PCH/transitive dependency.
 - Extended the existing Step04E source-policy regression to require `CppMacros.h` before `MessageStream.h`.
 - Local focused graph passes 21/21 after the hotfix. No wire/replay/deterministic semantics changed; Windows post-hotfix validation remains pending.
+
+## 2026-09-13 — Step 04E2B: Windows MinGW runtime-family isolation
+
+- Step04E2A fixed the standalone adapter compile and a clean Windows x64 rebuild completed all focused targets, but `evolution_protocol_v1_step04e` crashed with `0xC0000005`.
+- GDB placed the failure in `std::getline` during fixture loading and showed `libstdc++-6.dll` loaded from MSYS2 `ucrt64` while the binary was compiled with the `mingw64` GCC 16.2 toolchain. This is a C++ runtime ABI-family mismatch caused by ambient PATH resolution, not an EVN1/EVR1 serialization defect.
+- Added directory-scoped MinGW link options `-static-libgcc -static-libstdc++` for the focused `Core/Tests` graph, matching `core_config`'s self-contained GCC runtime policy without pulling legacy engine dependencies into portable protocol tests.
+- Extended the existing Step04E source-policy test to require the scoped static runtime rule.
+- Local focused graph remains 21/21. No protocol bytes, replay bytes, deterministic checkpoints, runtime layouts, or gameplay semantics changed. Windows post-hotfix rerun remains pending.

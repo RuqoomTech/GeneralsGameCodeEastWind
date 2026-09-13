@@ -2,6 +2,15 @@
 # This directory intentionally stays independent of the monolithic game targets so
 # `RTS_BUILD_TESTS_ONLY=ON` does not fetch/configure renderer, tool, or runtime deps.
 
+# MinGW focused tests must not resolve libstdc++/libgcc from the ambient PATH.
+# A mixed MSYS2 PATH (for example mingw64 compiler + ucrt64 runtime DLL) is ABI-incompatible
+# and can crash otherwise portable tests inside the C++ standard library before the test body runs.
+# Mirror the self-contained GCC runtime policy already carried by core_config, but keep these
+# standalone tests free of legacy engine libraries/definitions.
+if(MINGW)
+    add_link_options(-static-libgcc -static-libstdc++)
+endif()
+
 function(rts_add_w3x_test target_name source_file)
     add_executable(${target_name} ${source_file} ${ARGN})
     target_include_directories(${target_name} PRIVATE
