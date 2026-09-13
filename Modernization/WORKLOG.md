@@ -370,3 +370,11 @@ Implemented:
 Local validation: GCC O0/O2/O3, Clang O0/O2/O3, GCC ASan and GCC UBSan all pass 21/21. The Step04D deterministic fixture, 04E1 golden protocol fixture, and 04E2 runtime bridge gate pass in every configuration. No real Windows 04E2 runtime or x64-to-x64 multiplayer session is claimed yet.
 
 Release seal: the final Win64-only runtime-gated tree was reconstructed from the exact sealed Step04E1 ZIP, revalidated at 21/21 plus all three explicit gates, patched onto a fresh Step04E1 extraction, and byte-compared with zero repository mismatches. No real Windows 04E2 runtime or x64-to-x64 multiplayer session is claimed yet.
+
+## 2026-09-13 — Step 04E2A Windows standalone-adapter compatibility hotfix
+
+- Real Windows x64 Step04E2 configure succeeded with MinGW-w64 GCC 16.2.0, but the focused build failed in the standalone `evolution_game_message_adapter_step04e` object target.
+- Root cause: the target intentionally does not use the legacy engine PCH, while `EvolutionGameMessageAdapter.cpp` included `MessageStream.h` before the compatibility macro header; `CPP_11`/`FUNCTION_DELETE` were therefore undefined.
+- Added an explicit first include of `Utility/CppMacros.h` in the adapter translation unit rather than reintroducing a broad PCH/transitive dependency.
+- Extended the existing Step04E source-policy regression to require `CppMacros.h` before `MessageStream.h`.
+- Local focused graph passes 21/21 after the hotfix. No wire/replay/deterministic semantics changed; Windows post-hotfix validation remains pending.

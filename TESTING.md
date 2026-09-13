@@ -364,3 +364,9 @@ cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck z_evolu
 Expected graph: **21/21**. `z_evolutionruntimecheck` must report `Step 04E2 runtime bridge passed: routed EVN1 metadata and EVR1 command payloads remain stable.`
 
 Local 04E2 validation on 2026-09-13: GCC O0/O2/O3, Clang O0/O2/O3, GCC ASan and GCC UBSan all pass **21/21** and all three explicit gates. The focused tests do not constitute a real two-peer Windows multiplayer session; that remains Step04E3.
+
+## Step 04E2A Windows adapter compile hotfix — 2026-09-13
+
+Observed Windows failure: `evolution_game_message_adapter_step04e` could not parse legacy headers because `CPP_11` / `FUNCTION_DELETE` were not defined in the standalone no-PCH object target. The production adapter now includes `Utility/CppMacros.h` first, and `EvolutionProtocolPolicyStep04ETest.cmake` locks that include ordering.
+
+Local host focused graph after the hotfix: **21/21 passed**, including the Step 04D determinism, Step 04E1 protocol, and Step 04E2 runtime-bridge tests. This does not claim a post-hotfix MinGW-w64 Windows pass; rerun `cmake --build --preset mingw64-tests`, `ctest --preset mingw64-tests --output-on-failure`, and the three explicit 04D/04E gates on Windows.

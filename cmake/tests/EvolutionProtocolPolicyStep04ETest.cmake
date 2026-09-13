@@ -12,11 +12,22 @@ function(rts_read relative out_var)
 endfunction()
 
 rts_read("Core/GameEngine/Source/Common/EvolutionCommandCodec.cpp" codec_cpp)
+rts_read("Core/GameEngine/Source/Common/EvolutionGameMessageAdapter.cpp" adapter_cpp)
 rts_read("Core/GameEngine/Source/Common/EvolutionReplayFormat.cpp" replay_cpp)
 rts_read("Core/GameEngine/Source/GameNetwork/EvolutionProtocol.cpp" protocol_cpp)
 rts_read("Core/GameEngine/Source/GameNetwork/NetPacketStructs.cpp" netpacket_cpp)
 rts_read("Core/GameEngine/Include/GameNetwork/NetworkDefs.h" network_defs)
 rts_read("Core/Tests/Fixtures/Step04EEvolutionProtocolV1.txt" fixture)
+
+# The production GameMessage adapter is also compiled as a standalone MinGW
+# focused-graph target. Legacy engine headers depend on the C++ compatibility
+# macros being visible before MessageStream/GameCommon/STL headers are parsed.
+string(FIND "${adapter_cpp}" "#include \"Utility/CppMacros.h\"" _adapter_cppmacros)
+string(FIND "${adapter_cpp}" "#include \"Common/MessageStream.h\"" _adapter_message_stream)
+if(_adapter_cppmacros EQUAL -1 OR _adapter_message_stream EQUAL -1 OR
+   NOT _adapter_cppmacros LESS _adapter_message_stream)
+    message(FATAL_ERROR "Evolution GameMessage adapter must include Utility/CppMacros.h before legacy MessageStream headers")
+endif()
 
 foreach(_content IN ITEMS codec_cpp replay_cpp protocol_cpp)
     if("${${_content}}" MATCHES "reinterpret_cast<[^>]*\\*>\\([^)]*\\)" OR
