@@ -55,13 +55,13 @@ if(NOT transport_cpp MATCHES "queueEvolutionSend" OR NOT transport_cpp MATCHES "
     message(FATAL_ERROR "Transport no longer exposes the staged raw EVN1 queues")
 endif()
 
-if(NOT connection_cpp MATCHES "encodeRoutedCommandBatchV1" OR
+if(NOT connection_cpp MATCHES "encodeRoutedCommandPacketV1" OR
    NOT connection_cpp MATCHES "queueEvolutionSend" OR
    NOT connection_cpp MATCHES "NETCOMMANDTYPE_GAMECOMMAND")
     message(FATAL_ERROR "Connection no longer routes gameplay commands through EVN1")
 endif()
 
-if(NOT manager_cpp MATCHES "decodeRoutedCommandBatchV1" OR
+if(NOT manager_cpp MATCHES "decodeRoutedCommandPacketV1" OR
    NOT manager_cpp MATCHES "ackCommand" OR
    NOT manager_cpp MATCHES "sendRemoteCommand")
     message(FATAL_ERROR "ConnectionManager no longer bridges EVN1 into existing ACK/relay semantics")

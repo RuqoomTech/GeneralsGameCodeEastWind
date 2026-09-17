@@ -157,6 +157,39 @@ NetworkDecodeResult decodeRoutedCommandBatchV1(
     return decodeCommandBatchImplV1(data, size, true, commands);
 }
 
+bool encodeRoutedCommandPacketV1(
+    std::uint32_t sequence,
+    std::uint32_t frame,
+    const std::vector<NetworkCommandRecord> &commands,
+    std::vector<std::uint8_t> &output)
+{
+    std::vector<std::uint8_t> payload;
+    if (!encodeRoutedCommandBatchV1(commands, payload))
+        return false;
+
+    NetworkPacketHeader header;
+    header.packetType = NetworkPacketType::RoutedCommandBatch;
+    header.sequence = sequence;
+    header.frame = frame;
+    return encodeNetworkPacketV1(header, payload.data(), payload.size(), output);
+}
+
+NetworkDecodeResult decodeRoutedCommandPacketV1(
+    const std::uint8_t *data,
+    std::size_t size,
+    NetworkPacketHeader &header,
+    std::vector<NetworkCommandRecord> &commands)
+{
+    const std::uint8_t *payload = nullptr;
+    std::size_t payloadSize = 0;
+    const NetworkDecodeResult packetResult = decodeNetworkPacketV1(data, size, header, payload, payloadSize);
+    if (!packetResult.ok())
+        return packetResult;
+    if (header.packetType != NetworkPacketType::RoutedCommandBatch)
+        return {NetworkDecodeError::InvalidPacketType};
+    return decodeRoutedCommandBatchV1(payload, payloadSize, commands);
+}
+
 bool encodeNetworkPacketV1(
     const NetworkPacketHeader &header,
     const std::uint8_t *payload,

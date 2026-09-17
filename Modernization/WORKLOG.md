@@ -386,3 +386,14 @@ Release seal: the final Win64-only runtime-gated tree was reconstructed from the
 - Added directory-scoped MinGW link options `-static-libgcc -static-libstdc++` for the focused `Core/Tests` graph, matching `core_config`'s self-contained GCC runtime policy without pulling legacy engine dependencies into portable protocol tests.
 - Extended the existing Step04E source-policy test to require the scoped static runtime rule.
 - Local focused graph remains 21/21. No protocol bytes, replay bytes, deterministic checkpoints, runtime layouts, or gameplay semantics changed. Windows post-hotfix rerun remains pending.
+
+## 2026-09-17 — Step 04E3: deterministic x64 two-endpoint Evolution session gate
+
+Authoritative input: `GeneralsGameCode-Step04E2B-Windows-MinGW-Runtime-Isolation-Hotfix-full.zip`, SHA-256 `fb0d1f1d9f3553a6338cb08b8597a1390185d4d8f2bd637ce142af47e2680900`.
+
+- Consolidated routed gameplay datagram composition/decomposition into the existing `EvolutionProtocol` module and switched the production Win64 `Connection` / `ConnectionManager` bridge to those helpers without changing frozen 04E1 direct `CommandBatch` bytes.
+- Added an x64-only deterministic two-endpoint harness using production Evolution command/framing code rather than a parallel test protocol.
+- Covered command sequence/ID, frame, player identity, relay masks, packet loss/retry, legacy ACK interaction, duplicates, delayed/out-of-order delivery, frame synchronization, deterministic ordering, peer CRC agreement, `MSG_LOGIC_CRC = 1095` checkpoint transport, malformed runtime-boundary rejection, and intentional EVN1 emission failure/fallback reachability.
+- Added a source-policy gate that keeps reliability/control/session/disconnect traffic on the existing legacy machinery and verifies successful EVN1 gameplay emission cannot also enter the legacy packetizer.
+- Kept i686 feature-frozen: the new session tests are x64-only.
+- Local GCC 14.2 Release/Debug, Clang 17 Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer focused graphs all pass **23/23**. Real Windows 04E3 sign-off and representative full-client multiplayer validation are not claimed yet.

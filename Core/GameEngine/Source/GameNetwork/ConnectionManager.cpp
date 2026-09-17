@@ -476,50 +476,44 @@ void ConnectionManager::doRelay() {
 		}
 
 		evolution::NetworkPacketHeader header;
-		const std::uint8_t *payload = nullptr;
-		std::size_t payloadSize = 0;
-		const evolution::NetworkDecodeResult packetResult = evolution::decodeNetworkPacketV1(
-			transportMessage.data, static_cast<std::size_t>(transportMessage.length), header, payload, payloadSize);
+		std::vector<evolution::NetworkCommandRecord> records;
+		const evolution::NetworkDecodeResult routedResult = evolution::decodeRoutedCommandPacketV1(
+			transportMessage.data, static_cast<std::size_t>(transportMessage.length), header, records);
 
-		if (packetResult.ok() && header.packetType == evolution::NetworkPacketType::RoutedCommandBatch) {
-			std::vector<evolution::NetworkCommandRecord> records;
-			const evolution::NetworkDecodeResult batchResult = evolution::decodeRoutedCommandBatchV1(
-				payload, payloadSize, records);
-			if (batchResult.ok()) {
-				for (const evolution::NetworkCommandRecord &record : records) {
-					if (record.playerId >= MAX_SLOTS) {
-						continue;
-					}
-
-					GameMessage *gameMessage = newInstance(GameMessage)(static_cast<GameMessage::Type>(record.command.messageType));
-					if (gameMessage == nullptr || !evolution::appendEvolutionCommandToGameMessage(record.command, *gameMessage)) {
-						if (gameMessage != nullptr) {
-							deleteInstance(gameMessage);
-						}
-						continue;
-					}
-
-					NetGameCommandMsg *netMessage = newInstance(NetGameCommandMsg)(gameMessage);
-					deleteInstance(gameMessage);
-					if (netMessage == nullptr) {
-						continue;
-					}
-					netMessage->setPlayerID(record.playerId);
-					netMessage->setID(record.commandId);
-					netMessage->setExecutionFrame(header.frame);
-
-					NetCommandRef *ref = NEW_NETCOMMANDREF(netMessage);
-					ref->setRelay(record.relayMask);
-					netMessage->detach();
-
-					if (CommandRequiresAck(ref->getCommand())) {
-						ackCommand(ref, m_localSlot);
-					}
-					if (!processNetCommand(ref)) {
-						sendRemoteCommand(ref);
-					}
-					deleteInstance(ref);
+		if (routedResult.ok()) {
+			for (const evolution::NetworkCommandRecord &record : records) {
+				if (record.playerId >= MAX_SLOTS) {
+					continue;
 				}
+
+				GameMessage *gameMessage = newInstance(GameMessage)(static_cast<GameMessage::Type>(record.command.messageType));
+				if (gameMessage == nullptr || !evolution::appendEvolutionCommandToGameMessage(record.command, *gameMessage)) {
+					if (gameMessage != nullptr) {
+						deleteInstance(gameMessage);
+					}
+					continue;
+				}
+
+				NetGameCommandMsg *netMessage = newInstance(NetGameCommandMsg)(gameMessage);
+				deleteInstance(gameMessage);
+				if (netMessage == nullptr) {
+					continue;
+				}
+				netMessage->setPlayerID(record.playerId);
+				netMessage->setID(record.commandId);
+				netMessage->setExecutionFrame(header.frame);
+
+				NetCommandRef *ref = NEW_NETCOMMANDREF(netMessage);
+				ref->setRelay(record.relayMask);
+				netMessage->detach();
+
+				if (CommandRequiresAck(ref->getCommand())) {
+					ackCommand(ref, m_localSlot);
+				}
+				if (!processNetCommand(ref)) {
+					sendRemoteCommand(ref);
+				}
+				deleteInstance(ref);
 			}
 		}
 

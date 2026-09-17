@@ -144,3 +144,11 @@ The exact 04E2 candidate passes **21/21** locally with GCC O0/O2/O3, Clang O0/O2
 These focused host tests exercise the portable bridge and source-policy integration. They do not compile/run the complete Windows multiplayer runtime or constitute an x64-to-x64 network session. Real Windows compilation/execution and representative two-peer session validation remain required before the legacy transport can be retired.
 
 04E2 is sealed as an implementation baseline only after a fresh Step04E1 + patch byte-identity check and a fresh-tree 21/21 + explicit-gates run. Windows runtime compilation/execution remains the next gate.
+
+## 04E3 deterministic x64 session validation — 2026-09-17
+
+04E3 begins session-level validation without prematurely requiring two physical game clients. The production routed gameplay composition is now centralized as `encodeRoutedCommandPacketV1` / `decodeRoutedCommandPacketV1` in the existing `EvolutionProtocol` module; runtime send, runtime receive, and the new deterministic test harness all share that exact seam. This consolidation changes no frozen 04E1 direct `CommandBatch` bytes.
+
+The x64-only two-endpoint harness deterministically injects loss, retry, duplicates and delayed/out-of-order delivery while using production EVN1 command/framing code. It verifies player/command/frame/relay metadata, frame stalls until synchronized command sets are complete, deterministic ordering, peer CRC equality, transport/agreement of `MSG_LOGIC_CRC = 1095` checkpoints, malformed datagram rejection, and an EVN1 emission failure case that keeps the staged legacy fallback reachable. ACK arrival is scheduled by the harness because ACK/control/session/disconnect packets deliberately remain on the legacy transport in 04E3; the source-policy gate ensures production `ConnectionManager` still owns those semantics.
+
+The x64 focused graph is now 23 tests locally and passes under GCC 14.2 Release/Debug, Clang 17 Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer. Real Windows MinGW x64 execution of the 23-test graph and `z_evolutionsessioncheck` is still required. Representative full game-client multiplayer/replay golden sessions remain 04E4 work, and the frozen i686 oracle must not be removed before those gates are authoritative.

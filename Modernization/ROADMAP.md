@@ -98,8 +98,10 @@ The sync deliberately does **not** replace EastWind's x64 allocator/pointer work
 
 Current/remaining staged slices:
 
-- **04E1 implemented:** explicit little-endian command codec, command-batch/network v1 framing, replay v1 framing, golden bytes, malformed-input rejection, and migration of live `NetPacketGameCommandData` payloads to the shared codec;
-- **04E2 next:** route the complete x64 transport and new Recorder path through those containers, then run real x64-to-x64 sessions/replay validation;
+- **04E1 done:** explicit little-endian command codec, command-batch/network v1 framing, replay v1 framing, golden bytes, malformed-input rejection, and migration of live `NetPacketGameCommandData` payloads to the shared codec;
+- **04E2 done / Windows signed off:** staged Win64 routed EVN1 gameplay datagrams plus EVR1 Recorder sidecars, retaining legacy ACK/control/session traffic and legacy replay fallback;
+- **04E3 implemented locally / verification active:** deterministic in-process x64 two-endpoint session harness using production routed EVN1 helpers, covering loss/retry/ACK timing, duplicate delivery, delayed/out-of-order arrival, relay metadata, frame stalls, deterministic ordering, CRC checkpoint commands, malformed datagrams, and intentional EVN1 emission failure/fallback boundary;
+- **04E4 next:** representative replay/network full-session golden gates, version/corruption/compatibility behavior, and full-client validation;
 - **04F:** retire frozen x86 after the Evolution network/replay golden gates pass.
 
 See `STEP_04_X64_MIGRATION.md`.

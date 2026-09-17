@@ -73,19 +73,10 @@ Bool QueueEvolutionGameCommand(Transport *transport, const User *user, const Net
 	record.command = command;
 
 	std::vector<evolution::NetworkCommandRecord> records(1, record);
-	std::vector<std::uint8_t> payload;
-	if (!evolution::encodeRoutedCommandBatchV1(records, payload))
-	{
-		return FALSE;
-	}
-
-	evolution::NetworkPacketHeader header;
-	header.packetType = evolution::NetworkPacketType::RoutedCommandBatch;
-	header.sequence = (static_cast<std::uint32_t>(record.playerId) << 16U) | record.commandId;
-	header.frame = netMessage->getExecutionFrame();
-
 	std::vector<std::uint8_t> packet;
-	if (!evolution::encodeNetworkPacketV1(header, payload.data(), payload.size(), packet) ||
+	const std::uint32_t sequence = (static_cast<std::uint32_t>(record.playerId) << 16U) | record.commandId;
+	if (!evolution::encodeRoutedCommandPacketV1(
+			sequence, netMessage->getExecutionFrame(), records, packet) ||
 		packet.size() > static_cast<std::size_t>(MAX_NETWORK_MESSAGE_LEN))
 	{
 		return FALSE;

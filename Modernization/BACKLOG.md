@@ -19,10 +19,10 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 04C | Native-width runtime substrate + dependency bootstrap | DONE | Native allocator/pointer tests verified in the real Windows x64 and frozen i686 focused graphs |
 | 04D | x64 deterministic/headless core bring-up | DONE | Windows x64 17/17, i686 17/17, Step 01 oracle pass, and identical 8-checkpoint i686/x64 timeline through frame 12000 |
 | 04D3 | Upstream alignment / divergence reduction | DONE | Selected gameplay/runtime fixes imported/adapted; Windows x64 17/17 plus unchanged Step 04D fixture |
-| 04E | Evolution network/replay protocol + x64 validation | ACTIVE | 04E1 protocol foundation sealed; 04E2 staged EVN1 transport + EVR1 Recorder bridge implemented; Windows/session validation pending |
-| 04E1 | Protocol v1 foundation + game-command payload migration | DONE* | Golden byte fixtures + malformed-input gates; Windows 19-test rerun pending |
-| 04E2 | Staged EVN1 transport + EVR1 Recorder integration | SEALED* | Win64-only gameplay datagrams + dual-format replay runtime bridge; Windows 21-test/runtime gate pending |
-| 04E3 | Evolution x64-to-x64 multiplayer session validation | NEXT | Two-peer command stream/ACK/CRC validation and session identity |
+| 04E | Evolution network/replay protocol + x64 validation | ACTIVE | 04E1/04E2 Windows-signed-off; 04E3 deterministic x64 two-endpoint session gate implemented locally |
+| 04E1 | Protocol v1 foundation + game-command payload migration | DONE | Golden byte fixtures + malformed-input gates; covered by the Step04E2B Windows 21/21 sign-off |
+| 04E2 | Staged EVN1 transport + EVR1 Recorder integration | DONE | Win64-only gameplay datagrams + dual-format replay runtime bridge; real Windows MinGW x64 21/21 + explicit gates passed |
+| 04E3 | Evolution x64-to-x64 multiplayer session validation | VERIFY | Deterministic in-process x64 two-endpoint EVN1 session harness passes locally; real Windows 23-test sign-off/full-client follow-up pending |
 | 04E4 | Replay/network golden session gates | PLANNED | Representative EVR1 sessions, version/corruption/compatibility gates |
 | 04F | Retire x86 | PLANNED | Remove i686 after golden replay/simulation/network gates pass |
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |
@@ -50,7 +50,7 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 23 | W3X completeness/tooling | PLANNED | Documented support matrix/toolchain |
 | 24 | Advanced GPU optimization | PLANNED | Only measured bottlenecks |
 
-`DONE*` records implementation where a relevant Windows gate remains outstanding. Step 04D is fully cross-architecture verified; 04E1 awaits the real Windows 19-test rerun.
+`DONE*` records implementation where a relevant Windows gate remains outstanding. Step 04D and Step 04E2 are Windows-signed-off; Step 04E3 is implemented locally and awaits real Windows x64 verification plus later full-client session follow-up.
 
 ## Cross-cutting backlog
 

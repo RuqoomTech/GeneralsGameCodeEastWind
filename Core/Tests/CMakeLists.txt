@@ -463,3 +463,51 @@ add_test(
         -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
         -P ${CMAKE_SOURCE_DIR}/cmake/tests/EvolutionRuntimeIntegrationPolicyStep04E2Test.cmake
 )
+
+
+# Step 04E3 deterministic two-endpoint Evolution session gate. This is x64-only:
+# i686 remains frozen as the legacy oracle and receives no new runtime/session work.
+# The harness uses the production command codec and routed EVN1 packet composition;
+# it only controls deterministic delivery faults and legacy ACK arrival timing.
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    add_executable(evolution_session_step04e3_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/EvolutionSessionStep04E3Test.cpp
+        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/EvolutionCommandCodec.cpp
+        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/GameNetwork/EvolutionProtocol.cpp
+    )
+    target_include_directories(evolution_session_step04e3_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    )
+    target_link_libraries(evolution_session_step04e3_test PRIVATE
+        core_config
+        core_utility_no_pch
+    )
+    set_target_properties(evolution_session_step04e3_test PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS NO
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(evolution_session_step04e3_test PRIVATE
+            -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
+            -fno-fast-math
+            -ffp-contract=off
+        )
+    elseif(MSVC)
+        target_compile_options(evolution_session_step04e3_test PRIVATE /fp:strict)
+    endif()
+    add_test(NAME evolution_session_x64_step04e3 COMMAND evolution_session_step04e3_test)
+    add_custom_target(z_evolutionsessioncheck
+        COMMAND $<TARGET_FILE:evolution_session_step04e3_test>
+        DEPENDS evolution_session_step04e3_test
+        USES_TERMINAL
+    )
+
+    add_test(
+        NAME evolution_session_integration_policy_step04e3
+        COMMAND ${CMAKE_COMMAND}
+            -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -P ${CMAKE_SOURCE_DIR}/cmake/tests/EvolutionSessionPolicyStep04E3Test.cmake
+    )
+endif()

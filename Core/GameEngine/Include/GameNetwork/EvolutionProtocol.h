@@ -77,6 +77,21 @@ NetworkDecodeResult decodeRoutedCommandBatchV1(
     std::size_t size,
     std::vector<NetworkCommandRecord> &commands);
 
+// Compose/decompose the production Step 04E2 routed gameplay datagram in one
+// place so runtime send/receive and deterministic session tests cannot drift
+// on outer-header versus routed-batch validation. These helpers do not change
+// the frozen CommandBatch v1 representation.
+bool encodeRoutedCommandPacketV1(
+    std::uint32_t sequence,
+    std::uint32_t frame,
+    const std::vector<NetworkCommandRecord> &commands,
+    std::vector<std::uint8_t> &output);
+NetworkDecodeResult decodeRoutedCommandPacketV1(
+    const std::uint8_t *data,
+    std::size_t size,
+    NetworkPacketHeader &header,
+    std::vector<NetworkCommandRecord> &commands);
+
 bool encodeNetworkPacketV1(
     const NetworkPacketHeader &header,
     const std::uint8_t *payload,

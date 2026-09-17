@@ -376,3 +376,28 @@ Local host focused graph after the hotfix: **21/21 passed**, including the Step 
 A clean `mingw64-tests` rebuild compiled the Step04E2A adapter successfully, then `evolution_protocol_step04e_test.exe` crashed before protocol assertions while reading `Step04EEvolutionProtocolV1.txt`. GDB showed `std::getline` executing from `C:\msys64\ucrt64\bin\libstdc++-6.dll` even though the executable was compiled by `C:\msys64\mingw64\bin\g++.exe`. The protocol/runtime-bridge source was not at fault; Windows had loaded a different MSYS2 C++ runtime family through the ambient PATH.
 
 All focused MinGW test executables are therefore linked with `-static-libgcc -static-libstdc++` at the `Core/Tests` directory level. This matches the existing `core_config` deployment policy while preserving the portable tests' independence from legacy engine compile definitions/libraries. Validate on Windows from a clean `build/mingw64-tests` directory with `cmake --preset mingw64-tests`, `cmake --build --preset mingw64-tests`, `ctest --preset mingw64-tests --output-on-failure`, then the Step04D/04E1/04E2 explicit check targets.
+
+## Step 04E3 — deterministic Evolution x64 two-endpoint session gate
+
+04E3 adds two tests only when `CMAKE_SIZEOF_VOID_P == 8`, so the frozen i686 graph receives no new runtime/session feature work. The x64 focused graph grows from **21 to 23 tests**:
+
+- `evolution_session_x64_step04e3` uses the production Evolution command codec and the same consolidated routed-EVN1 packet composition helpers used by `Connection`/`ConnectionManager`. Its deterministic link schedule covers one-packet loss/retry, legacy ACK identity/removal semantics, duplicate datagrams, delayed/out-of-order delivery, relay masks, frame stalls/recovery, deterministic command order, peer CRC agreement, `MSG_LOGIC_CRC = 1095` checkpoint transport, malformed packet rejection, and an unrepresentable command that forces EVN1 emission failure.
+- `evolution_session_integration_policy_step04e3` pins the Win64 staged-runtime seam: EVN1 gameplay-only activation, no legacy double-send after successful EVN1 emission, intentional legacy fallback on emission failure, existing ACK/process/relay machinery, EVN1-before-legacy-decrypt ordering, and production `NetCommandList` duplicate/order ownership.
+
+Canonical Windows x64 validation from a clean build directory:
+
+```powershell
+Remove-Item -Recurse -Force build\mingw64-tests -ErrorAction SilentlyContinue
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck z_evolutionprotocolcheck z_evolutionruntimecheck z_evolutionsessioncheck
+```
+
+Expected focused graph: **23/23**. The new explicit gate must print:
+
+```text
+Step 04E3 Evolution session validation passed: two-peer routed EVN1 flow, retry/ACK, duplicates, delayed ordering, frame sync, CRC checkpoints, malformed rejection, and fallback boundary are stable.
+```
+
+Also confirm the unchanged existing gates still print their Step04D, Step04E1 and Step04E2 success messages. Local 04E3 validation on 2026-09-17 passes **23/23** under GCC 14.2 Release, GCC 14.2 Debug, Clang 17 Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer. A successful local/Windows in-process harness does **not** yet replace a later representative two-full-client Evolution multiplayer run; 04E4 remains the full-session replay/network golden and compatibility/corruption phase.
