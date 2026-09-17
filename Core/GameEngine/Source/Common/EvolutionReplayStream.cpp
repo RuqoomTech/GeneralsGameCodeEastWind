@@ -100,6 +100,7 @@ void EvolutionReplayStream::close()
         m_file = nullptr;
     }
     m_writing = false;
+    m_sequence = {};
 }
 
 bool EvolutionReplayStream::flush()
@@ -122,7 +123,13 @@ bool EvolutionReplayStream::writeGameMessage(
         return false;
 
     std::vector<std::uint8_t> bytes;
-    return encodeReplayCommandRecordV1(record, bytes) && writeAll(m_file, bytes);
+    ReplaySequenceState nextSequence = m_sequence;
+    if (!encodeReplayCommandRecordV1(record, bytes) || !advanceReplaySequenceV1(nextSequence, record.frame) ||
+        !writeAll(m_file, bytes))
+        return false;
+
+    m_sequence = nextSequence;
+    return true;
 }
 
 ReplayStreamReadStatus EvolutionReplayStream::readRecord(ReplayCommandRecord &record)
@@ -148,8 +155,12 @@ ReplayStreamReadStatus EvolutionReplayStream::readRecord(ReplayCommandRecord &re
         return ReplayStreamReadStatus::Error;
 
     const ReplayDecodeResult result = decodeReplayCommandRecordV1(bytes.data(), bytes.size(), record);
-    if (!result.ok() || result.bytesConsumed != bytes.size())
+    ReplaySequenceState nextSequence = m_sequence;
+    if (!result.ok() || result.bytesConsumed != bytes.size() ||
+        !advanceReplaySequenceV1(nextSequence, record.frame))
         return ReplayStreamReadStatus::Error;
+
+    m_sequence = nextSequence;
     return ReplayStreamReadStatus::Record;
 }
 

@@ -510,4 +510,54 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
             -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
             -P ${CMAKE_SOURCE_DIR}/cmake/tests/EvolutionSessionPolicyStep04E3Test.cmake
     )
+
+    # Step 04E4 freezes a representative end-to-end command session as exact
+    # EVN1/EVR1 transcript bytes. It replays the same deterministic command/CRC
+    # timeline through both media and locks version/corruption/fallback policy.
+    add_executable(evolution_full_session_step04e4_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/EvolutionFullSessionStep04E4Test.cpp
+        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/EvolutionCommandCodec.cpp
+        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/EvolutionReplayFormat.cpp
+        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/GameNetwork/EvolutionProtocol.cpp
+    )
+    target_include_directories(evolution_full_session_step04e4_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    )
+    target_link_libraries(evolution_full_session_step04e4_test PRIVATE
+        core_config
+        core_utility_no_pch
+    )
+    set_target_properties(evolution_full_session_step04e4_test PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS NO
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(evolution_full_session_step04e4_test PRIVATE
+            -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
+            -fno-fast-math
+            -ffp-contract=off
+        )
+    elseif(MSVC)
+        target_compile_options(evolution_full_session_step04e4_test PRIVATE /fp:strict)
+    endif()
+    add_test(
+        NAME evolution_full_session_x64_step04e4
+        COMMAND evolution_full_session_step04e4_test
+            ${CMAKE_CURRENT_SOURCE_DIR}/Fixtures/Step04E4EvolutionFullSessionV1.txt
+    )
+    add_custom_target(z_evolutionfullsessioncheck
+        COMMAND $<TARGET_FILE:evolution_full_session_step04e4_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/Fixtures/Step04E4EvolutionFullSessionV1.txt
+        DEPENDS evolution_full_session_step04e4_test
+        USES_TERMINAL
+    )
+
+    add_test(
+        NAME evolution_full_session_integration_policy_step04e4
+        COMMAND ${CMAKE_COMMAND}
+            -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -P ${CMAKE_SOURCE_DIR}/cmake/tests/EvolutionFullSessionPolicyStep04E4Test.cmake
+    )
 endif()

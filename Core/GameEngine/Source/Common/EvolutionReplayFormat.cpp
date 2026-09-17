@@ -135,4 +135,13 @@ ReplayDecodeResult decodeReplayCommandRecordV1(
     return {ReplayDecodeError::None, pos};
 }
 
+bool advanceReplaySequenceV1(ReplaySequenceState &state, std::uint32_t frame)
+{
+    if (state.hasRecord && frame < state.lastFrame)
+        return false;
+    state.lastFrame = frame;
+    state.hasRecord = true;
+    return true;
+}
+
 } // namespace evolution

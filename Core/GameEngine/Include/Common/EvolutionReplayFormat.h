@@ -31,6 +31,12 @@ struct ReplayCommandRecord
     Command command;
 };
 
+struct ReplaySequenceState
+{
+    std::uint32_t lastFrame = 0;
+    bool hasRecord = false;
+};
+
 enum class ReplayDecodeError
 {
     None,
@@ -57,5 +63,10 @@ ReplayDecodeResult decodeReplayCommandRecordV1(
     const std::uint8_t *data,
     std::size_t size,
     ReplayCommandRecord &record);
+
+// A replay may contain multiple commands for the same frame, but frames must
+// never move backwards. Keep this stateful rule centralized so runtime file
+// playback and full-session golden validation cannot disagree.
+bool advanceReplaySequenceV1(ReplaySequenceState &state, std::uint32_t frame);
 
 } // namespace evolution

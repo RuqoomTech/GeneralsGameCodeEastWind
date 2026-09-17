@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACTIVE. 04E1 protocol foundation implemented on 2026-09-12.**
+**ACTIVE. 04E1/04E2/04E3 are Windows-signed-off; 04E4 full-session golden validation is implemented locally and awaiting Windows/full-client verification.**
 
 Step 04D is fully Windows cross-architecture verified: the x64 and frozen i686 focused graphs both passed 17/17, the Step 01 i686 determinism gate passed, and the 12,000-frame i686/x64 timelines matched at all eight checkpoints. Step 04E therefore stops treating the retail x86 ABI as a future multiplayer contract.
 
@@ -151,4 +151,17 @@ These focused host tests exercise the portable bridge and source-policy integrat
 
 The x64-only two-endpoint harness deterministically injects loss, retry, duplicates and delayed/out-of-order delivery while using production EVN1 command/framing code. It verifies player/command/frame/relay metadata, frame stalls until synchronized command sets are complete, deterministic ordering, peer CRC equality, transport/agreement of `MSG_LOGIC_CRC = 1095` checkpoints, malformed datagram rejection, and an EVN1 emission failure case that keeps the staged legacy fallback reachable. ACK arrival is scheduled by the harness because ACK/control/session/disconnect packets deliberately remain on the legacy transport in 04E3; the source-policy gate ensures production `ConnectionManager` still owns those semantics.
 
-The x64 focused graph is now 23 tests locally and passes under GCC 14.2 Release/Debug, Clang 17 Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer. Real Windows MinGW x64 execution of the 23-test graph and `z_evolutionsessioncheck` is still required. Representative full game-client multiplayer/replay golden sessions remain 04E4 work, and the frozen i686 oracle must not be removed before those gates are authoritative.
+The x64 focused graph is 23 tests and passes under GCC 14.2 Release/Debug, Clang 17 Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer. The user then supplied a clean real-Windows MinGW-w64 GCC 16.2 run with **23/23** plus `z_headlessdeterminismcheck`, `z_evolutionprotocolcheck`, `z_evolutionruntimecheck`, and `z_evolutionsessioncheck`, so 04E3 is Windows-signed-off. Representative full game-client multiplayer/replay execution remains separate from this focused gate.
+
+
+## 04E4 full-session golden / compatibility validation — 2026-09-17
+
+04E4 freezes a representative Evolution command session across both network and replay media without changing the v1 wire format. `evolution_full_session_step04e4_test` builds 136 commands across 68 frames, including four dedicated logic-CRC checkpoint frames. The production command codec, `encodeRoutedCommandPacketV1`, EVR1 record encoder/decoder, and production `CRC` implementation are used directly.
+
+`Core/Tests/Fixtures/Step04E4EvolutionFullSessionV1.txt` freezes exact bytes for the complete routed-EVN1 datagram transcript and the corresponding EVR1 sidecar stream, plus final CRC and command count. The network path is reconstructed under deterministic loss/retry, duplicate and delayed delivery; unique commands are then ordered by fixed player/command identity and must exactly match the canonical replay sequence and every `MSG_LOGIC_CRC = 1095` checkpoint.
+
+The gate rejects unsupported EVN1 protocol versions, unsupported command-codec versions, unsupported EVR1 format/codec versions, corrupted replay command payloads, truncated replay tails and backward replay-frame ordering. `ReplaySequenceState` / `advanceReplaySequenceV1` centralizes the nondecreasing-frame rule and is used by both the portable golden validator and runtime `EvolutionReplayStream` read/write paths. Multiple records on the same frame remain valid. No serialized byte changes.
+
+The source-policy test preserves the transitional compatibility contract: x64 playback prefers a valid `.rep.evr` sidecar at open time; missing/invalid sidecars fall back to legacy `.rep`; after EVR1 is selected, a later sidecar error stops playback instead of silently switching command sources. Legacy replay metadata, ACK/control/session/disconnect transport and the frozen i686 oracle remain in place.
+
+The x64 focused graph grows from 23 to **25 tests**. The exact candidate passes 25/25 under GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer, with all prior explicit gates unchanged. Real Windows execution of the 25-test graph and `z_evolutionfullsessioncheck`, followed by representative full game-client multiplayer/replay validation, are still required before 04F may retire i686.

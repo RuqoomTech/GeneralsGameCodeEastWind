@@ -397,3 +397,24 @@ Authoritative input: `GeneralsGameCode-Step04E2B-Windows-MinGW-Runtime-Isolation
 - Added a source-policy gate that keeps reliability/control/session/disconnect traffic on the existing legacy machinery and verifies successful EVN1 gameplay emission cannot also enter the legacy packetizer.
 - Kept i686 feature-frozen: the new session tests are x64-only.
 - Local GCC 14.2 Release/Debug, Clang 17 Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer focused graphs all pass **23/23**. Real Windows 04E3 sign-off and representative full-client multiplayer validation are not claimed yet.
+
+
+## 2026-09-17 — Step 04E4: full-session EVN1/EVR1 golden + compatibility gate
+
+Authoritative input: `GeneralsGameCode-Step04E3-Deterministic-X64-Session-Validation-full.zip`, SHA-256 `70b4d429181fed0920a92a6180f52c68dea5ec150ed11e47858e540d0d6a4fd4`.
+
+The user first supplied real Windows MinGW-w64 GCC 16.2 output for that baseline: clean configure/build, **23/23** CTest pass, and successful Step04D, 04E1, 04E2 and 04E3 explicit gates. Step 04E3 is therefore Windows-signed-off.
+
+04E4 work:
+
+- added an x64-only 136-command / 68-frame representative full-session harness using production command, routed-EVN1, EVR1 and CRC components;
+- froze exact full-session network and replay transcript bytes, final deterministic CRC and command count in `Step04E4EvolutionFullSessionV1.txt`;
+- reconstructs the network side under deterministic first-attempt loss/retry, duplicates and delayed delivery, then requires the same canonical command/CRC timeline as EVR1 replay;
+- validates four `MSG_LOGIC_CRC = 1095` checkpoint frames;
+- rejects unsupported EVN1/EVR1/command-codec versions, corrupted command payloads, truncated replay tails and backward frame ordering;
+- centralized nondecreasing replay-frame validation as `ReplaySequenceState` / `advanceReplaySequenceV1` and reused it in runtime `EvolutionReplayStream` reads/writes without changing EVR1 bytes;
+- added a source-policy gate freezing valid-sidecar preference, open-time legacy `.rep` fallback and fail-closed behavior after a selected sidecar becomes corrupt;
+- kept legacy control/session/disconnect transport and the i686 oracle unchanged;
+- local GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer and GCC UndefinedBehaviorSanitizer focused graphs all pass **25/25**, with all prior explicit gates unchanged.
+
+Windows 04E4 sign-off and representative full-client multiplayer/replay execution are not claimed until supplied separately.

@@ -400,4 +400,32 @@ Expected focused graph: **23/23**. The new explicit gate must print:
 Step 04E3 Evolution session validation passed: two-peer routed EVN1 flow, retry/ACK, duplicates, delayed ordering, frame sync, CRC checkpoints, malformed rejection, and fallback boundary are stable.
 ```
 
-Also confirm the unchanged existing gates still print their Step04D, Step04E1 and Step04E2 success messages. Local 04E3 validation on 2026-09-17 passes **23/23** under GCC 14.2 Release, GCC 14.2 Debug, Clang 17 Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer. A successful local/Windows in-process harness does **not** yet replace a later representative two-full-client Evolution multiplayer run; 04E4 remains the full-session replay/network golden and compatibility/corruption phase.
+Also confirm the unchanged existing gates still print their Step04D, Step04E1 and Step04E2 success messages. Local 04E3 validation on 2026-09-17 passes **23/23** under GCC 14.2 Release, GCC 14.2 Debug, Clang 17 Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer. The user then supplied real Windows MinGW-w64 GCC 16.2 output showing **23/23** plus all four explicit gates passing, so the focused 04E3 Windows sign-off is complete. A successful in-process session still does **not** replace a representative two-full-client Evolution multiplayer run.
+
+
+## Step 04E4 — full-session EVN1/EVR1 golden and compatibility gate
+
+04E4 adds two x64-only focused tests, growing the x64 graph from **23 to 25 tests** while leaving the frozen i686 graph unchanged:
+
+- `evolution_full_session_x64_step04e4` generates a representative 136-command / 68-frame session using the production command codec, routed EVN1 packet helper, EVR1 record format, and production `CRC`. Exact network and replay transcript bytes are compared with `Core/Tests/Fixtures/Step04E4EvolutionFullSessionV1.txt`. Deterministic loss/retry, duplicate and delayed delivery must reconstruct the same canonical command order and final CRC as replay playback.
+- `evolution_full_session_integration_policy_step04e4` pins v1 framing constants, runtime replay sequence validation, open-time EVR1 preference with legacy `.rep` fallback, and fail-closed handling if a selected EVR1 stream later becomes corrupt.
+
+The EVR1 runtime stream now shares `advanceReplaySequenceV1` with the portable full-session validator. Multiple commands on one frame are valid; a later record whose frame moves backwards is rejected. This is a corruption/order hardening rule only and changes no EVR1 bytes.
+
+Canonical Windows x64 validation from a clean build directory:
+
+```powershell
+Remove-Item -Recurse -Force build\mingw64-tests -ErrorAction SilentlyContinue
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck z_evolutionprotocolcheck z_evolutionruntimecheck z_evolutionsessioncheck z_evolutionfullsessioncheck
+```
+
+Expected focused graph: **25/25**. The new explicit gate must print:
+
+```text
+Step 04E4 full-session golden passed: EVN1 delivery and EVR1 replay preserve one deterministic command/CRC timeline; version, corruption, truncation, and compatibility boundaries are stable.
+```
+
+The Step04D, 04E1, 04E2 and 04E3 explicit gate messages must remain unchanged. This focused gate does not by itself constitute a two-full-client gameplay/replay run.

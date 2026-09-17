@@ -236,7 +236,7 @@ The shared-tree material difference count against the supplied upstream snapshot
 - exact golden fixtures and malformed/truncated/version rejection tests freeze v1 bytes;
 - legacy Recorder `.rep` behavior remains untouched for compatibility while the new container is additive.
 
-**04E2/validation remaining:** route the complete x64 transport and new recording/playback path through the Evolution containers, run Evolution x64-to-x64 multiplayer command-stream/CRC validation, and add representative Evolution replay golden sessions. Retail x86 multiplayer is not a compatibility requirement.
+**04E validation status:** 04E2 supplies the staged Win64 EVN1/EVR1 runtime bridge; 04E3 has real Windows x64 sign-off for the deterministic two-endpoint command/retry/CRC session; 04E4 adds exact full-session network/replay golden bytes plus version/corruption/order/fallback gates and awaits Windows/full-client verification. Retail x86 multiplayer is not a compatibility requirement.
 
 See `STEP_04E_EVOLUTION_PROTOCOL.md`.
 

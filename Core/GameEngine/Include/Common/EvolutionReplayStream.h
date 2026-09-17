@@ -38,6 +38,7 @@ public:
 private:
     File *m_file = nullptr;
     bool m_writing = false;
+    ReplaySequenceState m_sequence;
 };
 
 } // namespace evolution
