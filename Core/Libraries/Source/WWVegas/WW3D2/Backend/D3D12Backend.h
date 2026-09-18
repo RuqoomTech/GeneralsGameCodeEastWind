@@ -60,6 +60,20 @@ public:
         unsigned int index_count) override;
     bool Draw_Static_Indexed_Color_Geometry(RenderBackendGeometryHandle geometry) override;
     void Release_Static_Geometry(RenderBackendGeometryHandle geometry) override;
+    RenderBackendGeometryHandle Create_Static_Indexed_Textured_Geometry(
+        const RenderBackendTexturedVertex *vertices,
+        unsigned int vertex_count,
+        const unsigned short *indices,
+        unsigned int index_count) override;
+    RenderBackendTextureHandle Create_Static_RGBA8_Texture(
+        unsigned int width,
+        unsigned int height,
+        const unsigned char *pixels,
+        unsigned int row_pitch) override;
+    bool Draw_Static_Indexed_Textured_Geometry(
+        RenderBackendGeometryHandle geometry,
+        RenderBackendTextureHandle texture) override;
+    void Release_Static_Texture(RenderBackendTextureHandle texture) override;
 
     void Set_Ambient(const Vector3 &color) override;
     void Set_Light_Environment(LightEnvironmentClass *light_env) override;
@@ -73,7 +87,18 @@ private:
         ID3D12Resource *index_buffer = nullptr;
         unsigned int vertex_bytes = 0;
         unsigned int index_bytes = 0;
+        unsigned int vertex_stride = 0;
         unsigned int index_count = 0;
+        unsigned int generation = 0;
+        bool textured = false;
+        bool occupied = false;
+    };
+
+    struct StaticTextureResource
+    {
+        ID3D12Resource *texture = nullptr;
+        unsigned int width = 0;
+        unsigned int height = 0;
         unsigned int generation = 0;
         bool occupied = false;
     };
@@ -88,12 +113,22 @@ private:
     void createDepthStencil();
     void createSynchronizationObjects();
     void createPrimitivePipeline();
+    void ensureTextureDescriptorCapacity(std::size_t required_capacity);
+    RenderBackendGeometryHandle createStaticGeometry(
+        const void *vertices,
+        unsigned int vertex_count,
+        unsigned int vertex_stride,
+        const unsigned short *indices,
+        unsigned int index_count,
+        bool textured);
+    bool drawStaticGeometry(RenderBackendGeometryHandle geometry, bool textured);
     void applyPendingClear();
     void submitScene(bool present);
     void presentPendingFrame();
     void waitForFrame(std::uint32_t frame_index);
     void releaseFrameUploads(std::uint32_t frame_index) noexcept;
     void releaseStaticGeometry(StaticGeometryResource &geometry) noexcept;
+    void releaseStaticTexture(StaticTextureResource &texture) noexcept;
     void waitForGpu();
     void releaseObjects() noexcept;
 
@@ -107,12 +142,14 @@ private:
     IDXGISwapChain3 *m_swap_chain = nullptr;
     ID3D12DescriptorHeap *m_rtv_heap = nullptr;
     ID3D12DescriptorHeap *m_dsv_heap = nullptr;
+    ID3D12DescriptorHeap *m_texture_srv_heap = nullptr;
     ID3D12Resource *m_render_targets[FrameCount]{};
     ID3D12Resource *m_depth_stencil = nullptr;
     ID3D12CommandAllocator *m_command_allocators[FrameCount]{};
     ID3D12GraphicsCommandList *m_command_list = nullptr;
     ID3D12RootSignature *m_primitive_root_signature = nullptr;
     ID3D12PipelineState *m_primitive_pipeline = nullptr;
+    ID3D12PipelineState *m_textured_pipeline = nullptr;
     ID3D12Fence *m_fence = nullptr;
     void *m_fence_event = nullptr;
 
@@ -126,9 +163,12 @@ private:
     bool m_present_pending = false;
 
     std::uint32_t m_rtv_descriptor_size = 0;
+    std::uint32_t m_srv_descriptor_size = 0;
+    std::uint32_t m_texture_descriptor_capacity = 0;
     std::uint32_t m_frame_index = 0;
     std::uint64_t m_next_fence_value = 1;
     std::uint64_t m_frame_fence_values[FrameCount]{};
     std::vector<ID3D12Resource *> m_frame_uploads[FrameCount];
     std::vector<StaticGeometryResource> m_static_geometry;
+    std::vector<StaticTextureResource> m_static_textures;
 };

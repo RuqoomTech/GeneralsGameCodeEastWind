@@ -8,7 +8,7 @@ Step 04 is complete and Windows-signed-off. The supported Evolution path is x64-
 
 Step 05A is Windows-signed-off. Step 05B's temporary standalone D3D12 shell is also Windows-signed-off: MinGW-w64 GCC 16.2 built it successfully, Intel UHD 770 and WARP both presented frames, the staged executable ran, and the focused graph passed 26/26.
 
-Step 05C2 and Step 05D are Windows-signed-off. The production D3D12 backend lives behind the existing WW3D renderer seam; the standalone `Evolution/` tree is gone, the Windows graph passes 27/27, and the backend now submits real indexed geometry. Step 05E shader-asset foundation is locally complete: the temporary embedded HLSL is removed in favor of a canonical shader asset staged beside both the smoke executable and the normal x64 game target. Step 05F is the active resource slice: persistent indexed geometry now has an explicit renderer-neutral lifetime contract backed by D3D12 default-heap vertex/index buffers.
+Step 05C2 through Step 05F are Windows-signed-off. The production D3D12 backend lives behind the existing WW3D renderer seam; the standalone `Evolution/` tree is gone, the Windows graph passes 27/27, canonical HLSL is staged beside the executable, and persistent indexed geometry uses D3D12 default-heap buffers. Step 05G is the active resource slice: sampled RGBA8 textures now gain renderer-neutral handles, default-heap upload, shader-visible SRVs and explicit sampler binding.
 
 ## Locked architecture
 
@@ -46,9 +46,9 @@ Current order:
 2. **05B — D3D12 proof shell — DONE / Windows signed off / architecture superseded.** It proved the Windows x64 D3D12 fundamentals and is now being removed rather than retained as a second runtime.
 3. **05C — in-place D3D12 backend integration — DONE / Windows signed off.** The WW3D backend owns the x64 device/frame lifecycle and the temporary standalone shell is removed.
 4. **05D — indexed primitive foundation — DONE / Windows signed off.** The first renderer-neutral indexed position/color draw contract, D3D12 root signature/PSO, shader compilation, transient upload lifetime, and production GPU smoke proof are green.
-5. **05E — shader asset foundation — DONE / Windows verification pending.** D3D12 shader source lives in canonical HLSL staged beside the executable; legacy `.nvp/.nvv` terrain/filter/tree/water sources remain behavior references until their real paths migrate.
-6. **05F — persistent indexed geometry — ACTIVE.** Renderer-neutral create/draw/release handles own persistent D3D12 default-heap vertex/index buffers with explicit upload/copy transitions.
-7. **05G+ — texture/state + real caller migration:** add SRV/sampler/texture binding, then translate and route the first complete legacy shader-backed WW3D path rather than porting shader text in isolation.
+5. **05E — shader asset foundation — DONE / Windows signed off.** D3D12 shader source lives in canonical HLSL staged beside the executable; legacy `.nvp/.nvv` terrain/filter/tree/water sources remain behavior references until their real paths migrate.
+6. **05F — persistent indexed geometry — DONE / Windows signed off.** Renderer-neutral create/draw/release handles own persistent D3D12 default-heap vertex/index buffers with explicit upload/copy transitions and real GPU reuse/release validation.
+7. **05G — texture/SRV/sampler foundation — ACTIVE / Windows verification pending.** Add default-heap RGBA8 texture upload, shader-visible SRV allocation, static sampler binding, and textured indexed drawing through the existing backend. **05H** then translates and routes the first complete legacy shader-backed WW3D path so the migration begins producing visible normal-game rendering.
 8. **W3X parser/import:** resume real XML parsing and renderer-neutral W3D/W3X mesh convergence once the D3D12 indexed-mesh path exists to exercise both formats through the same renderer.
 
 The current full x64 game build remains deliberately gated while direct `DX8Wrapper` callers still exist. The gate is removed only when the normal runtime can compile/link without the DX8 renderer implementation; no parallel replacement executable will be maintained.

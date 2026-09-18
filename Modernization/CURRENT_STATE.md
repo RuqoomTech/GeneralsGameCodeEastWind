@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts through the Step 05F persistent-geometry candidate on 2026-09-18. Step 05D is Windows-signed-off: the production D3D12 backend passed 27/27 on Windows, submitted indexed geometry through `IRenderBackend`, and passed every deterministic/Evolution/x64 gate. Step 05E moves the bootstrap shader into a canonical HLSL asset staged beside the executable and establishes the migration convention for the existing D3D8-era shader sources.
+This document records verified source facts through the Step 05G sampled-texture candidate on 2026-09-18. Steps 05D, 05E and 05F are Windows-signed-off: the production D3D12 backend passed 27/27 on Windows, canonical HLSL loaded from the staged shader asset, and persistent default-heap indexed geometry was reused/released on the real GPU while every deterministic/Evolution/x64 gate remained green.
 
 ## Build system
 
@@ -15,7 +15,7 @@ This document records verified source facts through the Step 05F persistent-geom
 - Generals and Zero Hour install rules use `rts_install_runtime_target()` instead of repeating MSVC-only PDB generator expressions. MSVC keeps optional PDB installation; MinGW Release installs the `.debug` sidecar emitted by the existing strip workflow.
 - MinGW toolchain discovery is x86_64-only through `mingw-w64-common.cmake` plus the canonical x86_64 wrapper. `mingw64-tests` configures the focused regression graph, including the Windows x64 D3D12 backend smoke test.
 - The monolithic game runtime remains blocked from the x64 MinGW lane until direct renderer/platform dependencies are migrated explicitly. There is no parallel Evolution application tree; the normal game executable remains the convergence target.
-- Step 04, Step 05A, Step 05C2, and Step 05D are Windows-signed-off. The temporary Step 05B proof shell was Windows-verified and then removed. The host-portable graph remains 26 tests; Windows x64 adds the real `d3d12_backend_smoke` GPU test. Step 05E keeps that test path but stages/loads the canonical HLSL shader asset instead of compiling C++-embedded shader text. Step 05F extends the same backend with renderer-neutral persistent geometry handles backed by D3D12 default-heap vertex/index resources; Windows GPU verification is pending.
+- Step 04, Step 05A, Step 05C2, Step 05D, Step 05E and Step 05F are Windows-signed-off. The temporary Step 05B proof shell was Windows-verified and then removed. The host-portable graph remains 26 tests; Windows x64 adds the real `d3d12_backend_smoke` GPU test. Step 05G extends that same production path with sampled RGBA8 texture upload, shader-visible SRVs, explicit sampler binding and textured indexed geometry; Windows GPU verification is pending.
 
 ## Performance telemetry
 
@@ -42,7 +42,7 @@ This document records verified source facts through the Step 05F persistent-geom
 
 ## Renderer
 
-The x64 renderer is now migrating in-place behind WW3D `IRenderBackend`. The production D3D12 backend owns DXGI adapter/device creation, command submission, flip-model swap chain, render/depth targets, viewport/scissor, clears, present and fences. Step 05D adds an immutable root signature/PSO, shader compilation, transient upload-buffer lifetime tracking, and `DrawIndexedInstanced` for the first renderer-neutral indexed position/color primitive. Step 05E externalizes that shader into canonical HLSL. Step 05F adds persistent default-heap vertex/index resources with explicit create/draw/release lifetime and upload-to-default copy transitions. The DX8 backend is excluded from the x64 WW3D source selection; remaining direct `DX8Wrapper` callers are the explicit migration backlog before the full game target is enabled.
+The x64 renderer is now migrating in-place behind WW3D `IRenderBackend`. The production D3D12 backend owns DXGI adapter/device creation, command submission, flip-model swap chain, render/depth targets, viewport/scissor, clears, present and fences. Step 05D adds an immutable root signature/PSO, shader compilation, transient upload-buffer lifetime tracking, and `DrawIndexedInstanced` for the first renderer-neutral indexed position/color primitive. Step 05E externalizes that shader into canonical HLSL. Step 05F adds persistent default-heap vertex/index resources with explicit create/draw/release lifetime and upload-to-default copy transitions. Step 05G adds the first sampled-texture path: default-heap RGBA8 upload, shader-visible SRVs, a D3D12 static sampler and persistent textured indexed drawing. The DX8 backend is excluded from the x64 WW3D source selection; remaining direct `DX8Wrapper` callers are the explicit migration backlog before the full game target is enabled.
 
 The backend direction is now:
 
@@ -56,7 +56,7 @@ IRenderBackend
     `-- DX8Backend     (archival 32-bit/reference path only)
 ```
 
-Verified routed operations include scene begin/end, deferred present/flip, clear, viewport, gamma, ambient/light environment, and cached-state invalidation. The D3D12 backend does not emulate the full `DX8Wrapper` API. Meshes, textures, buffers, pipelines, materials, render targets and the remaining renderer state/draw call sites must move across the existing seam or into renderer-neutral WW3D structures deliberately.
+Verified routed operations include scene begin/end, deferred present/flip, clear, viewport, gamma, ambient/light environment, and cached-state invalidation. The D3D12 backend does not emulate the full `DX8Wrapper` API. Meshes, materials, transforms, render targets and the remaining renderer state/draw call sites must move across the existing seam or into renderer-neutral WW3D structures deliberately. Texture upload/SRV/sampler ownership now has a first D3D12 path; Step 05H targets the first complete visible game caller rather than another synthetic backend-only feature.
 
 ## Asset system
 

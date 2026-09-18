@@ -150,6 +150,56 @@ rts_policy_require_contains(
     "PrimitiveColor.hlsl"
     "the installed x64 game must carry the canonical D3D12 shader asset")
 
+
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "Create_Static_RGBA8_Texture"
+    "D3D12 texture lifetime must cross the existing renderer-neutral backend seam")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "Create_Static_Indexed_Textured_Geometry"
+    "textured indexed geometry must use a renderer-neutral WW3D vertex contract")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "CopyTextureRegion"
+    "RGBA8 texture creation must upload through an explicit D3D12 texture copy")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE"
+    "sampled textures must live in a shader-visible SRV descriptor heap")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "CreateShaderResourceView"
+    "sampled textures must expose real D3D12 shader-resource views")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "D3D12_STATIC_SAMPLER_DESC"
+    "the first texture path must bind an explicit D3D12 sampler rather than inherit DX8 state")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "SetGraphicsRootDescriptorTable"
+    "textured draws must bind SRV descriptors through the D3D12 root signature")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl"
+    "Texture2D PrimitiveTexture"
+    "the canonical D3D12 shader asset must include the first sampled-texture path")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl"
+    "float4 PSTextured"
+    "the canonical D3D12 shader asset must shade textured indexed geometry")
+rts_policy_require_contains(
+    "Core/Tests/D3D12BackendSmokeTest.cpp"
+    "Create_Static_RGBA8_Texture"
+    "the Windows GPU smoke test must upload real RGBA8 texture data")
+rts_policy_require_contains(
+    "Core/Tests/D3D12BackendSmokeTest.cpp"
+    "Draw_Static_Indexed_Textured_Geometry"
+    "the Windows GPU smoke test must sample the uploaded texture on indexed geometry")
+rts_policy_require_contains(
+    "Core/Tests/D3D12BackendSmokeTest.cpp"
+    "Release_Static_Texture"
+    "the Windows GPU smoke test must cover explicit texture destruction")
+
 foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
     rts_policy_require_absent(
         "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
@@ -157,4 +207,4 @@ foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
         "the D3D12 backend must not include ${_legacy_header}")
 endforeach()
 
-message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL plus transient and persistent default-heap indexed geometry")
+message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, and sampled RGBA8 SRV/static-sampler texture binding")

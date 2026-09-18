@@ -125,9 +125,10 @@ Current Step 05 slices:
 - **05B — D3D12 proof shell (DONE / Windows signed off):** validated Win32/DXGI/D3D12 device, queue/list, flip-model swap chain, clear/present and fences on hardware and WARP; the temporary standalone process is not retained as architecture;
 - **05C — in-place D3D12 backend integration (DONE / Windows signed off):** the proven device/frame implementation now lives in the existing WW3D backend seam and the standalone `Evolution/` tree is removed;
 - **05D — indexed primitive foundation (DONE / Windows signed off):** first renderer-neutral indexed draw contract, D3D12 root signature/PSO, shader compilation and fence-safe transient upload lifetime through the production backend;
-- **05E — shader asset foundation (DONE / Windows verification pending):** canonical HLSL staging/loading for D3D12, with legacy `.nvp/.nvv` sources retained only as behavior references until their actual terrain/filter/tree/water paths migrate;
-- **05F — persistent indexed geometry (ACTIVE):** renderer-neutral geometry handles own persistent D3D12 default-heap vertex/index resources uploaded through explicit copy transitions;
-- **05G+ — resource/state and real-caller migration:** add texture SRV/sampler binding, then move complete `DX8Wrapper` shader/state/draw callers to D3D12-capable abstractions until the normal Zero Hour x64 executable links/renders without the DX8 renderer;
+- **05E — shader asset foundation (DONE / Windows signed off):** canonical HLSL staging/loading for D3D12, with legacy `.nvp/.nvv` sources retained only as behavior references until their actual terrain/filter/tree/water paths migrate;
+- **05F — persistent indexed geometry (DONE / Windows signed off):** renderer-neutral geometry handles own persistent D3D12 default-heap vertex/index resources uploaded through explicit copy transitions;
+- **05G — texture/SRV/sampler foundation:** default-heap RGBA8 upload, shader-visible descriptors, explicit sampler binding and textured indexed geometry;
+- **05H+ — visible real-caller migration:** move complete `DX8Wrapper` shader/state/draw callers to D3D12-capable abstractions, beginning with one normal-game path that can be visually verified, then continue until the normal Zero Hour x64 executable links/renders without the DX8 renderer;
 - **05W1 — XML parser component (after D3D12 indexed-mesh foundation):** integrate a real XML parser behind the existing shared W3X document seam;
 - **05W2 — neutral import model + rigid mesh:** decode the first representative mesh fixture into renderer-neutral data;
 - **05W3 — format routing/validation:** route W3D to the existing loader and W3X to the importer with useful diagnostics and no W3D behavior regression.

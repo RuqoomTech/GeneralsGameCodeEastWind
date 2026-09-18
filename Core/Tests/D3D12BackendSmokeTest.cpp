@@ -89,19 +89,48 @@ int main()
         return 3;
     }
 
+    const RenderBackendTexturedVertex textured_vertices[] = {
+        {-0.75f, -0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f},
+        {-0.75f,  0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
+        { 0.75f,  0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
+        { 0.75f, -0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    };
+    const unsigned short textured_indices[] = {0, 1, 2, 0, 2, 3};
+    const unsigned char checker_rgba[] = {
+        255,  64,  64, 255,    64, 255,  64, 255,
+         64,  64, 255, 255,   255, 255,  64, 255,
+    };
+    const RenderBackendGeometryHandle textured_quad =
+        backend->Create_Static_Indexed_Textured_Geometry(textured_vertices, 4, textured_indices, 6);
+    const RenderBackendTextureHandle checker_texture =
+        backend->Create_Static_RGBA8_Texture(2, 2, checker_rgba, 8);
+    if (!textured_quad.Is_Valid() || !checker_texture.Is_Valid())
+    {
+        backend->Release_Static_Texture(checker_texture);
+        backend->Release_Static_Geometry(textured_quad);
+        backend->Release_Static_Geometry(static_triangle);
+        delete backend;
+        DestroyWindow(window);
+        UnregisterClassW(WindowClassName, instance);
+        std::cerr << "D3D12 backend smoke failed: persistent textured resources could not be created.\n";
+        return 4;
+    }
+
     // Exercise WW3D's deferred-present contract first: End_Scene(false) may
     // be followed by another scene before Flip_To_Primary(). This is used by
     // existing multi-pass/off-screen callers and must not dead-end the frame.
     backend->Clear(true, true, Vector3(0.04f, 0.08f, 0.12f), 1.0f, 1.0f, 0);
     backend->Begin_Scene();
-    if (!backend->Draw_Static_Indexed_Color_Geometry(static_triangle))
+    if (!backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, checker_texture))
     {
+        backend->Release_Static_Texture(checker_texture);
+        backend->Release_Static_Geometry(textured_quad);
         backend->Release_Static_Geometry(static_triangle);
         delete backend;
         DestroyWindow(window);
         UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: persistent indexed triangle submission failed.\n";
-        return 4;
+        std::cerr << "D3D12 backend smoke failed: textured indexed geometry submission failed.\n";
+        return 5;
     }
     backend->End_Scene(false);
 
@@ -115,26 +144,31 @@ int main()
         const float phase = static_cast<float>(frame) / 5.0f;
         backend->Clear(true, true, Vector3(0.08f + phase * 0.08f, 0.08f, 0.12f), 1.0f, 1.0f, 0);
         backend->Begin_Scene();
-        const bool draw_ok = frame == 0
+        const bool color_draw_ok = frame == 0
             ? backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3)
             : backend->Draw_Static_Indexed_Color_Geometry(static_triangle);
-        if (!draw_ok)
+        const bool textured_draw_ok = backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, checker_texture);
+        if (!color_draw_ok || !textured_draw_ok)
         {
+            backend->Release_Static_Texture(checker_texture);
+            backend->Release_Static_Geometry(textured_quad);
             backend->Release_Static_Geometry(static_triangle);
             delete backend;
             DestroyWindow(window);
             UnregisterClassW(WindowClassName, instance);
-            std::cerr << "D3D12 backend smoke failed: indexed triangle submission failed.\n";
-            return 5;
+            std::cerr << "D3D12 backend smoke failed: indexed geometry submission failed.\n";
+            return 6;
         }
         backend->End_Scene(true);
     }
 
+    backend->Release_Static_Texture(checker_texture);
+    backend->Release_Static_Geometry(textured_quad);
     backend->Release_Static_Geometry(static_triangle);
     delete backend;
     DestroyWindow(window);
     UnregisterClassW(WindowClassName, instance);
 
-    std::cout << "D3D12 backend smoke passed: WW3D created persistent default-heap indexed geometry, reused it across frames, preserved transient/deferred-present drawing, and released it safely.\n";
+    std::cout << "D3D12 backend smoke passed: WW3D uploaded RGBA8 texture data, bound shader-visible SRV/static-sampler state, reused textured/default-heap geometry across frames, and released resources safely.\n";
     return 0;
 }

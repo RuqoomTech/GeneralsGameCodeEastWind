@@ -64,10 +64,10 @@ resources PSOs   command submission
 
 1. **device/frame backend — done / Windows signed off:** D3D12 device, swap chain, render/depth targets, viewport, clear, present, fences;
 2. **draw foundation — done / Windows signed off:** root signature, PSO and indexed triangle draw through `IRenderBackend`;
-3. **shader asset foundation — locally done / Windows verification pending:** canonical HLSL assets staged beside the x64 executable; translate the existing D3D8-era terrain/filter/tree/water assembly only when each real rendering path is migrated;
-4. **buffer foundation — active:** persistent/default-heap indexed position/color geometry is now available beside the transient path;
-5. **texture binding:** establish D3D12 texture upload, SRV descriptor and sampler ownership before translating the legacy texture shaders;
-6. **complete legacy shader-backed caller:** translate one real `.nvp/.nvv` behavior together with its texture/constants/state and route its WW3D caller off `DX8Wrapper`;
+3. **shader asset foundation — done / Windows signed off:** canonical HLSL assets staged beside the x64 executable; translate the existing D3D8-era terrain/filter/tree/water assembly only when each real rendering path is migrated;
+4. **buffer foundation — done / Windows signed off:** persistent/default-heap indexed position/color geometry is available beside the transient path;
+5. **texture binding — active:** establish default-heap RGBA8 upload, shader-visible SRV descriptors, static sampler ownership and persistent textured indexed drawing before translating the legacy texture shaders;
+6. **complete legacy shader-backed caller / first visible game effect:** translate one real `.nvp/.nvv` behavior together with its texture/constants/state and route its normal-game WW3D caller off `DX8Wrapper`;
 7. **representative W3D rigid mesh:** render existing W3D geometry through the D3D12 path;
 8. **W3X rigid mesh:** feed the same renderer-neutral mesh path from W3X;
 9. materials/textures;

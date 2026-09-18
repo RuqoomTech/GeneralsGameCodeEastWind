@@ -40,6 +40,19 @@ struct RenderBackendColorVertex
     float a;
 };
 
+struct RenderBackendTexturedVertex
+{
+    float x;
+    float y;
+    float z;
+    float r;
+    float g;
+    float b;
+    float a;
+    float u;
+    float v;
+};
+
 struct RenderBackendViewport
 {
     unsigned int x;
@@ -57,6 +70,17 @@ struct RenderBackendGeometryHandle
 
     RenderBackendGeometryHandle() : slot(0), generation(0) {}
     RenderBackendGeometryHandle(unsigned int slot_value, unsigned int generation_value)
+        : slot(slot_value), generation(generation_value) {}
+    bool Is_Valid() const { return slot != 0 && generation != 0; }
+};
+
+struct RenderBackendTextureHandle
+{
+    unsigned int slot;
+    unsigned int generation;
+
+    RenderBackendTextureHandle() : slot(0), generation(0) {}
+    RenderBackendTextureHandle(unsigned int slot_value, unsigned int generation_value)
         : slot(slot_value), generation(generation_value) {}
     bool Is_Valid() const { return slot != 0 && generation != 0; }
 };
@@ -128,6 +152,46 @@ public:
     virtual void Release_Static_Geometry(RenderBackendGeometryHandle geometry)
     {
         (void)geometry;
+    }
+
+    virtual RenderBackendGeometryHandle Create_Static_Indexed_Textured_Geometry(
+        const RenderBackendTexturedVertex *vertices,
+        unsigned int vertex_count,
+        const unsigned short *indices,
+        unsigned int index_count)
+    {
+        (void)vertices;
+        (void)vertex_count;
+        (void)indices;
+        (void)index_count;
+        return RenderBackendGeometryHandle();
+    }
+
+    virtual RenderBackendTextureHandle Create_Static_RGBA8_Texture(
+        unsigned int width,
+        unsigned int height,
+        const unsigned char *pixels,
+        unsigned int row_pitch)
+    {
+        (void)width;
+        (void)height;
+        (void)pixels;
+        (void)row_pitch;
+        return RenderBackendTextureHandle();
+    }
+
+    virtual bool Draw_Static_Indexed_Textured_Geometry(
+        RenderBackendGeometryHandle geometry,
+        RenderBackendTextureHandle texture)
+    {
+        (void)geometry;
+        (void)texture;
+        return false;
+    }
+
+    virtual void Release_Static_Texture(RenderBackendTextureHandle texture)
+    {
+        (void)texture;
     }
 
     virtual void Set_Ambient(const Vector3 & color) = 0;

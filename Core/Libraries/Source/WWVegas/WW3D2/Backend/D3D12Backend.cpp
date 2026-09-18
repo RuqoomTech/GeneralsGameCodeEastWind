@@ -333,7 +333,39 @@ void D3D12Backend::createFactoryAndDevice()
 
 void D3D12Backend::createPrimitivePipeline()
 {
+    D3D12_DESCRIPTOR_RANGE texture_range{};
+    texture_range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    texture_range.NumDescriptors = 1;
+    texture_range.BaseShaderRegister = 0;
+    texture_range.RegisterSpace = 0;
+    texture_range.OffsetInDescriptorsFromTableStart = 0;
+
+    D3D12_ROOT_PARAMETER texture_parameter{};
+    texture_parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    texture_parameter.DescriptorTable.NumDescriptorRanges = 1;
+    texture_parameter.DescriptorTable.pDescriptorRanges = &texture_range;
+    texture_parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    D3D12_STATIC_SAMPLER_DESC sampler{};
+    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    sampler.MipLODBias = 0.0f;
+    sampler.MaxAnisotropy = 1;
+    sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
+    sampler.MinLOD = 0.0f;
+    sampler.MaxLOD = D3D12_FLOAT32_MAX;
+    sampler.ShaderRegister = 0;
+    sampler.RegisterSpace = 0;
+    sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
     D3D12_ROOT_SIGNATURE_DESC root_desc{};
+    root_desc.NumParameters = 1;
+    root_desc.pParameters = &texture_parameter;
+    root_desc.NumStaticSamplers = 1;
+    root_desc.pStaticSamplers = &sampler;
     root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
     ID3DBlob *serialized_root = nullptr;
@@ -368,18 +400,15 @@ void D3D12Backend::createPrimitivePipeline()
     releaseCom(serialized_root);
 
     const std::wstring shader_path = getPrimitiveShaderPath();
-    ID3DBlob *vertex_shader = compileShaderFromFile(shader_path.c_str(), "VSMain", "vs_5_1");
-    ID3DBlob *pixel_shader = nullptr;
+    ID3DBlob *color_vertex_shader = compileShaderFromFile(shader_path.c_str(), "VSMain", "vs_5_1");
+    ID3DBlob *color_pixel_shader = nullptr;
+    ID3DBlob *textured_vertex_shader = nullptr;
+    ID3DBlob *textured_pixel_shader = nullptr;
     try
     {
-        pixel_shader = compileShaderFromFile(shader_path.c_str(), "PSMain", "ps_5_1");
-
-        const D3D12_INPUT_ELEMENT_DESC input_elements[] = {
-            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
-             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-            {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,
-             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        };
+        color_pixel_shader = compileShaderFromFile(shader_path.c_str(), "PSMain", "ps_5_1");
+        textured_vertex_shader = compileShaderFromFile(shader_path.c_str(), "VSTextured", "vs_5_1");
+        textured_pixel_shader = compileShaderFromFile(shader_path.c_str(), "PSTextured", "ps_5_1");
 
         D3D12_BLEND_DESC blend{};
         blend.RenderTarget[0].BlendEnable = FALSE;
@@ -421,31 +450,125 @@ void D3D12Backend::createPrimitivePipeline()
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline{};
         pipeline.pRootSignature = m_primitive_root_signature;
-        pipeline.VS = {vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize()};
-        pipeline.PS = {pixel_shader->GetBufferPointer(), pixel_shader->GetBufferSize()};
         pipeline.BlendState = blend;
         pipeline.SampleMask = std::numeric_limits<UINT>::max();
         pipeline.RasterizerState = rasterizer;
         pipeline.DepthStencilState = depth_stencil;
-        pipeline.InputLayout = {input_elements, 2};
         pipeline.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         pipeline.NumRenderTargets = 1;
         pipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
         pipeline.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
         pipeline.SampleDesc.Count = 1;
 
+        const D3D12_INPUT_ELEMENT_DESC color_elements[] = {
+            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,
+             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        };
+        pipeline.VS = {color_vertex_shader->GetBufferPointer(), color_vertex_shader->GetBufferSize()};
+        pipeline.PS = {color_pixel_shader->GetBufferPointer(), color_pixel_shader->GetBufferSize()};
+        pipeline.InputLayout = {color_elements, 2};
         checkHresult(
-            "ID3D12Device::CreateGraphicsPipelineState",
+            "ID3D12Device::CreateGraphicsPipelineState(color)",
             m_device->CreateGraphicsPipelineState(&pipeline, IID_PPV_ARGS(&m_primitive_pipeline)));
+
+        const D3D12_INPUT_ELEMENT_DESC textured_elements[] = {
+            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,
+             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28,
+             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        };
+        pipeline.VS = {textured_vertex_shader->GetBufferPointer(), textured_vertex_shader->GetBufferSize()};
+        pipeline.PS = {textured_pixel_shader->GetBufferPointer(), textured_pixel_shader->GetBufferSize()};
+        pipeline.InputLayout = {textured_elements, 3};
+        checkHresult(
+            "ID3D12Device::CreateGraphicsPipelineState(textured)",
+            m_device->CreateGraphicsPipelineState(&pipeline, IID_PPV_ARGS(&m_textured_pipeline)));
     }
     catch (...)
     {
-        releaseCom(pixel_shader);
-        releaseCom(vertex_shader);
+        releaseCom(textured_pixel_shader);
+        releaseCom(textured_vertex_shader);
+        releaseCom(color_pixel_shader);
+        releaseCom(color_vertex_shader);
         throw;
     }
-    releaseCom(pixel_shader);
-    releaseCom(vertex_shader);
+    releaseCom(textured_pixel_shader);
+    releaseCom(textured_vertex_shader);
+    releaseCom(color_pixel_shader);
+    releaseCom(color_vertex_shader);
+}
+
+void D3D12Backend::ensureTextureDescriptorCapacity(std::size_t required_capacity)
+{
+    if (required_capacity <= m_texture_descriptor_capacity)
+    {
+        return;
+    }
+    if (m_scene_open || required_capacity > std::numeric_limits<UINT>::max())
+    {
+        throw std::runtime_error("D3D12 texture descriptor heap cannot grow during an open scene");
+    }
+
+    std::size_t new_capacity = m_texture_descriptor_capacity == 0 ? 64u : m_texture_descriptor_capacity;
+    while (new_capacity < required_capacity)
+    {
+        if (new_capacity > (std::numeric_limits<UINT>::max() / 2u))
+        {
+            new_capacity = required_capacity;
+            break;
+        }
+        new_capacity *= 2u;
+    }
+
+    if (m_texture_srv_heap != nullptr)
+    {
+        waitForGpu();
+    }
+
+    D3D12_DESCRIPTOR_HEAP_DESC heap_desc{};
+    heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    heap_desc.NumDescriptors = static_cast<UINT>(new_capacity);
+    heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+    ID3D12DescriptorHeap *new_heap = nullptr;
+    checkHresult(
+        "ID3D12Device::CreateDescriptorHeap(texture SRV)",
+        m_device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&new_heap)));
+
+    if (m_srv_descriptor_size == 0)
+    {
+        m_srv_descriptor_size = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    }
+
+    if (m_texture_srv_heap != nullptr)
+    {
+        const D3D12_CPU_DESCRIPTOR_HANDLE old_start = m_texture_srv_heap->GetCPUDescriptorHandleForHeapStart();
+        const D3D12_CPU_DESCRIPTOR_HANDLE new_start = new_heap->GetCPUDescriptorHandleForHeapStart();
+        for (std::size_t index = 0; index < m_static_textures.size(); ++index)
+        {
+            if (!m_static_textures[index].occupied)
+            {
+                continue;
+            }
+            D3D12_CPU_DESCRIPTOR_HANDLE source = old_start;
+            source.ptr += index * m_srv_descriptor_size;
+            D3D12_CPU_DESCRIPTOR_HANDLE destination = new_start;
+            destination.ptr += index * m_srv_descriptor_size;
+            m_device->CopyDescriptorsSimple(
+                1,
+                destination,
+                source,
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        }
+    }
+
+    releaseCom(m_texture_srv_heap);
+    m_texture_srv_heap = new_heap;
+    m_texture_descriptor_capacity = static_cast<std::uint32_t>(new_capacity);
 }
 
 void D3D12Backend::createCommandObjects()
@@ -815,19 +938,51 @@ RenderBackendGeometryHandle D3D12Backend::Create_Static_Indexed_Color_Geometry(
     const unsigned short *indices,
     unsigned int index_count)
 {
-    if (m_scene_open || vertices == nullptr || indices == nullptr ||
+    return createStaticGeometry(
+        vertices,
+        vertex_count,
+        sizeof(RenderBackendColorVertex),
+        indices,
+        index_count,
+        false);
+}
+
+RenderBackendGeometryHandle D3D12Backend::Create_Static_Indexed_Textured_Geometry(
+    const RenderBackendTexturedVertex *vertices,
+    unsigned int vertex_count,
+    const unsigned short *indices,
+    unsigned int index_count)
+{
+    return createStaticGeometry(
+        vertices,
+        vertex_count,
+        sizeof(RenderBackendTexturedVertex),
+        indices,
+        index_count,
+        true);
+}
+
+RenderBackendGeometryHandle D3D12Backend::createStaticGeometry(
+    const void *vertices,
+    unsigned int vertex_count,
+    unsigned int vertex_stride,
+    const unsigned short *indices,
+    unsigned int index_count,
+    bool textured)
+{
+    if (m_scene_open || vertices == nullptr || indices == nullptr || vertex_stride == 0 ||
         vertex_count == 0 || index_count < 3 || (index_count % 3) != 0)
     {
         return RenderBackendGeometryHandle();
     }
 
-    if (vertex_count > (std::numeric_limits<std::size_t>::max() / sizeof(RenderBackendColorVertex)) ||
+    if (vertex_count > (std::numeric_limits<std::size_t>::max() / vertex_stride) ||
         index_count > (std::numeric_limits<std::size_t>::max() / sizeof(unsigned short)))
     {
         return RenderBackendGeometryHandle();
     }
 
-    const std::size_t vertex_bytes = static_cast<std::size_t>(vertex_count) * sizeof(RenderBackendColorVertex);
+    const std::size_t vertex_bytes = static_cast<std::size_t>(vertex_count) * vertex_stride;
     const std::size_t index_bytes = static_cast<std::size_t>(index_count) * sizeof(unsigned short);
     if (vertex_bytes > std::numeric_limits<UINT>::max() || index_bytes > std::numeric_limits<UINT>::max())
     {
@@ -933,7 +1088,9 @@ RenderBackendGeometryHandle D3D12Backend::Create_Static_Indexed_Color_Geometry(
         geometry.index_buffer = index_buffer;
         geometry.vertex_bytes = static_cast<unsigned int>(vertex_bytes);
         geometry.index_bytes = static_cast<unsigned int>(index_bytes);
+        geometry.vertex_stride = vertex_stride;
         geometry.index_count = index_count;
+        geometry.textured = textured;
         geometry.occupied = true;
         vertex_buffer = nullptr;
         index_buffer = nullptr;
@@ -951,7 +1108,7 @@ RenderBackendGeometryHandle D3D12Backend::Create_Static_Indexed_Color_Geometry(
     }
 }
 
-bool D3D12Backend::Draw_Static_Indexed_Color_Geometry(RenderBackendGeometryHandle geometry_handle)
+bool D3D12Backend::drawStaticGeometry(RenderBackendGeometryHandle geometry_handle, bool textured)
 {
     if (!m_scene_open || !geometry_handle.Is_Valid())
     {
@@ -966,7 +1123,8 @@ bool D3D12Backend::Draw_Static_Indexed_Color_Geometry(RenderBackendGeometryHandl
 
     const StaticGeometryResource &geometry = m_static_geometry[slot];
     if (!geometry.occupied || geometry.generation != geometry_handle.generation ||
-        geometry.vertex_buffer == nullptr || geometry.index_buffer == nullptr)
+        geometry.vertex_buffer == nullptr || geometry.index_buffer == nullptr ||
+        geometry.textured != textured)
     {
         return false;
     }
@@ -974,7 +1132,7 @@ bool D3D12Backend::Draw_Static_Indexed_Color_Geometry(RenderBackendGeometryHandl
     D3D12_VERTEX_BUFFER_VIEW vertex_view{};
     vertex_view.BufferLocation = geometry.vertex_buffer->GetGPUVirtualAddress();
     vertex_view.SizeInBytes = geometry.vertex_bytes;
-    vertex_view.StrideInBytes = sizeof(RenderBackendColorVertex);
+    vertex_view.StrideInBytes = geometry.vertex_stride;
 
     D3D12_INDEX_BUFFER_VIEW index_view{};
     index_view.BufferLocation = geometry.index_buffer->GetGPUVirtualAddress();
@@ -990,14 +1148,14 @@ bool D3D12Backend::Draw_Static_Indexed_Color_Geometry(RenderBackendGeometryHandl
     return true;
 }
 
+bool D3D12Backend::Draw_Static_Indexed_Color_Geometry(RenderBackendGeometryHandle geometry_handle)
+{
+    return drawStaticGeometry(geometry_handle, false);
+}
+
 void D3D12Backend::Release_Static_Geometry(RenderBackendGeometryHandle geometry_handle)
 {
-    if (!geometry_handle.Is_Valid())
-    {
-        return;
-    }
-
-    if (m_scene_open)
+    if (!geometry_handle.Is_Valid() || m_scene_open)
     {
         return;
     }
@@ -1018,6 +1176,267 @@ void D3D12Backend::Release_Static_Geometry(RenderBackendGeometryHandle geometry_
         return;
     }
     releaseStaticGeometry(m_static_geometry[slot]);
+}
+
+RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
+    unsigned int width,
+    unsigned int height,
+    const unsigned char *pixels,
+    unsigned int row_pitch)
+{
+    if (m_scene_open || width == 0 || height == 0 || pixels == nullptr ||
+        width > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION ||
+        height > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION ||
+        width > (std::numeric_limits<unsigned int>::max() / 4u) ||
+        row_pitch < width * 4u)
+    {
+        return RenderBackendTextureHandle();
+    }
+
+    std::size_t slot = 0;
+    while (slot < m_static_textures.size() && m_static_textures[slot].occupied)
+    {
+        ++slot;
+    }
+    if (slot >= std::numeric_limits<unsigned int>::max())
+    {
+        return RenderBackendTextureHandle();
+    }
+
+    ID3D12Resource *texture = nullptr;
+    ID3D12Resource *upload = nullptr;
+    ID3D12CommandAllocator *upload_allocator = nullptr;
+    ID3D12GraphicsCommandList *upload_list = nullptr;
+
+    try
+    {
+        ensureTextureDescriptorCapacity(slot + 1);
+
+        D3D12_HEAP_PROPERTIES heap_properties{};
+        heap_properties.Type = D3D12_HEAP_TYPE_DEFAULT;
+        heap_properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        heap_properties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        heap_properties.CreationNodeMask = 1;
+        heap_properties.VisibleNodeMask = 1;
+
+        D3D12_RESOURCE_DESC texture_desc{};
+        texture_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        texture_desc.Width = width;
+        texture_desc.Height = height;
+        texture_desc.DepthOrArraySize = 1;
+        texture_desc.MipLevels = 1;
+        texture_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        texture_desc.SampleDesc.Count = 1;
+        texture_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+
+        checkHresult(
+            "ID3D12Device::CreateCommittedResource(texture)",
+            m_device->CreateCommittedResource(
+                &heap_properties,
+                D3D12_HEAP_FLAG_NONE,
+                &texture_desc,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                nullptr,
+                IID_PPV_ARGS(&texture)));
+
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
+        UINT row_count = 0;
+        UINT64 row_size = 0;
+        UINT64 upload_size = 0;
+        m_device->GetCopyableFootprints(
+            &texture_desc,
+            0,
+            1,
+            0,
+            &footprint,
+            &row_count,
+            &row_size,
+            &upload_size);
+        if (row_count != height || row_size < static_cast<UINT64>(width) * 4u ||
+            upload_size > std::numeric_limits<std::size_t>::max())
+        {
+            throw std::runtime_error("unexpected D3D12 RGBA8 upload footprint");
+        }
+
+        upload = createUploadBuffer(m_device, static_cast<std::size_t>(upload_size));
+        D3D12_RANGE no_read{0, 0};
+        void *mapped = nullptr;
+        checkHresult("ID3D12Resource::Map(texture upload)", upload->Map(0, &no_read, &mapped));
+        auto *destination = static_cast<unsigned char *>(mapped) + static_cast<std::size_t>(footprint.Offset);
+        const std::size_t copy_bytes = static_cast<std::size_t>(width) * 4u;
+        for (unsigned int row = 0; row < height; ++row)
+        {
+            std::memcpy(
+                destination + static_cast<std::size_t>(row) * footprint.Footprint.RowPitch,
+                pixels + static_cast<std::size_t>(row) * row_pitch,
+                copy_bytes);
+        }
+        upload->Unmap(0, nullptr);
+
+        checkHresult(
+            "ID3D12Device::CreateCommandAllocator(texture upload)",
+            m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&upload_allocator)));
+        checkHresult(
+            "ID3D12Device::CreateCommandList(texture upload)",
+            m_device->CreateCommandList(
+                0,
+                D3D12_COMMAND_LIST_TYPE_DIRECT,
+                upload_allocator,
+                nullptr,
+                IID_PPV_ARGS(&upload_list)));
+
+        D3D12_TEXTURE_COPY_LOCATION destination_location{};
+        destination_location.pResource = texture;
+        destination_location.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        destination_location.SubresourceIndex = 0;
+        D3D12_TEXTURE_COPY_LOCATION source_location{};
+        source_location.pResource = upload;
+        source_location.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        source_location.PlacedFootprint = footprint;
+        upload_list->CopyTextureRegion(
+            &destination_location,
+            0,
+            0,
+            0,
+            &source_location,
+            nullptr);
+
+        D3D12_RESOURCE_BARRIER barrier{};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = texture;
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        upload_list->ResourceBarrier(1, &barrier);
+
+        checkHresult("ID3D12GraphicsCommandList::Close(texture upload)", upload_list->Close());
+        ID3D12CommandList *lists[] = {upload_list};
+        m_command_queue->ExecuteCommandLists(1, lists);
+        const std::uint64_t signal_value = m_next_fence_value++;
+        checkHresult("ID3D12CommandQueue::Signal(texture upload)", m_command_queue->Signal(m_fence, signal_value));
+        if (m_fence->GetCompletedValue() < signal_value)
+        {
+            checkHresult(
+                "ID3D12Fence::SetEventOnCompletion(texture upload)",
+                m_fence->SetEventOnCompletion(signal_value, static_cast<HANDLE>(m_fence_event)));
+            if (WaitForSingleObject(static_cast<HANDLE>(m_fence_event), INFINITE) != WAIT_OBJECT_0)
+            {
+                throw std::runtime_error("WaitForSingleObject failed while uploading D3D12 texture");
+            }
+        }
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
+        srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srv_desc.Texture2D.MostDetailedMip = 0;
+        srv_desc.Texture2D.MipLevels = 1;
+        srv_desc.Texture2D.ResourceMinLODClamp = 0.0f;
+        D3D12_CPU_DESCRIPTOR_HANDLE srv = m_texture_srv_heap->GetCPUDescriptorHandleForHeapStart();
+        srv.ptr += slot * m_srv_descriptor_size;
+        m_device->CreateShaderResourceView(texture, &srv_desc, srv);
+
+        releaseCom(upload_list);
+        releaseCom(upload_allocator);
+        releaseCom(upload);
+
+        if (slot == m_static_textures.size())
+        {
+            m_static_textures.push_back(StaticTextureResource{});
+        }
+        StaticTextureResource &stored = m_static_textures[slot];
+        ++stored.generation;
+        if (stored.generation == 0)
+        {
+            ++stored.generation;
+        }
+        stored.texture = texture;
+        stored.width = width;
+        stored.height = height;
+        stored.occupied = true;
+        texture = nullptr;
+        return RenderBackendTextureHandle(static_cast<unsigned int>(slot + 1), stored.generation);
+    }
+    catch (...)
+    {
+        releaseCom(upload_list);
+        releaseCom(upload_allocator);
+        releaseCom(upload);
+        releaseCom(texture);
+        return RenderBackendTextureHandle();
+    }
+}
+
+bool D3D12Backend::Draw_Static_Indexed_Textured_Geometry(
+    RenderBackendGeometryHandle geometry_handle,
+    RenderBackendTextureHandle texture_handle)
+{
+    if (!m_scene_open || !geometry_handle.Is_Valid() || !texture_handle.Is_Valid() ||
+        m_texture_srv_heap == nullptr || m_textured_pipeline == nullptr)
+    {
+        return false;
+    }
+
+    const std::size_t geometry_slot = static_cast<std::size_t>(geometry_handle.slot - 1);
+    const std::size_t texture_slot = static_cast<std::size_t>(texture_handle.slot - 1);
+    if (geometry_slot >= m_static_geometry.size() || texture_slot >= m_static_textures.size())
+    {
+        return false;
+    }
+
+    const StaticGeometryResource &geometry = m_static_geometry[geometry_slot];
+    const StaticTextureResource &texture = m_static_textures[texture_slot];
+    if (!geometry.occupied || geometry.generation != geometry_handle.generation || !geometry.textured ||
+        geometry.vertex_buffer == nullptr || geometry.index_buffer == nullptr ||
+        !texture.occupied || texture.generation != texture_handle.generation || texture.texture == nullptr)
+    {
+        return false;
+    }
+
+    D3D12_VERTEX_BUFFER_VIEW vertex_view{};
+    vertex_view.BufferLocation = geometry.vertex_buffer->GetGPUVirtualAddress();
+    vertex_view.SizeInBytes = geometry.vertex_bytes;
+    vertex_view.StrideInBytes = geometry.vertex_stride;
+    D3D12_INDEX_BUFFER_VIEW index_view{};
+    index_view.BufferLocation = geometry.index_buffer->GetGPUVirtualAddress();
+    index_view.SizeInBytes = geometry.index_bytes;
+    index_view.Format = DXGI_FORMAT_R16_UINT;
+
+    ID3D12DescriptorHeap *heaps[] = {m_texture_srv_heap};
+    m_command_list->SetDescriptorHeaps(1, heaps);
+    m_command_list->SetGraphicsRootSignature(m_primitive_root_signature);
+    m_command_list->SetPipelineState(m_textured_pipeline);
+    D3D12_GPU_DESCRIPTOR_HANDLE srv = m_texture_srv_heap->GetGPUDescriptorHandleForHeapStart();
+    srv.ptr += texture_slot * m_srv_descriptor_size;
+    m_command_list->SetGraphicsRootDescriptorTable(0, srv);
+    m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
+    m_command_list->IASetIndexBuffer(&index_view);
+    m_command_list->DrawIndexedInstanced(geometry.index_count, 1, 0, 0, 0);
+    return true;
+}
+
+void D3D12Backend::Release_Static_Texture(RenderBackendTextureHandle texture_handle)
+{
+    if (!texture_handle.Is_Valid() || m_scene_open)
+    {
+        return;
+    }
+    const std::size_t slot = static_cast<std::size_t>(texture_handle.slot - 1);
+    if (slot >= m_static_textures.size() || !m_static_textures[slot].occupied ||
+        m_static_textures[slot].generation != texture_handle.generation)
+    {
+        return;
+    }
+    try
+    {
+        waitForGpu();
+    }
+    catch (...)
+    {
+        return;
+    }
+    releaseStaticTexture(m_static_textures[slot]);
 }
 
 void D3D12Backend::Set_Ambient(const Vector3 &color)
@@ -1105,8 +1524,18 @@ void D3D12Backend::releaseStaticGeometry(StaticGeometryResource &geometry) noexc
     releaseCom(geometry.vertex_buffer);
     geometry.vertex_bytes = 0;
     geometry.index_bytes = 0;
+    geometry.vertex_stride = 0;
     geometry.index_count = 0;
+    geometry.textured = false;
     geometry.occupied = false;
+}
+
+void D3D12Backend::releaseStaticTexture(StaticTextureResource &texture) noexcept
+{
+    releaseCom(texture.texture);
+    texture.width = 0;
+    texture.height = 0;
+    texture.occupied = false;
 }
 
 void D3D12Backend::waitForGpu()
@@ -1145,6 +1574,12 @@ void D3D12Backend::releaseObjects() noexcept
         releaseStaticGeometry(geometry);
     }
     m_static_geometry.clear();
+    for (StaticTextureResource &texture : m_static_textures)
+    {
+        releaseStaticTexture(texture);
+    }
+    m_static_textures.clear();
+    releaseCom(m_textured_pipeline);
     releaseCom(m_primitive_pipeline);
     releaseCom(m_primitive_root_signature);
     for (auto &render_target : m_render_targets)
@@ -1158,6 +1593,7 @@ void D3D12Backend::releaseObjects() noexcept
     {
         releaseCom(allocator);
     }
+    releaseCom(m_texture_srv_heap);
     releaseCom(m_dsv_heap);
     releaseCom(m_rtv_heap);
     releaseCom(m_swap_chain);
