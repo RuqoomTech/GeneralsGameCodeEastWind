@@ -32,10 +32,13 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 05 | Evolution runtime + W3X import foundation | ACTIVE | Clean x64/D3D12 process root plus parser/import/routing gates |
 | 05A | Developer baseline cleanup | DONE | Real Windows GCC 16.2 passed 25/25 cleaned-name graph plus all explicit deterministic/Evolution/x64 checks |
 | 05B | D3D12 proof shell | DONE | Windows-signed-off hardware/WARP clear-present proof; temporary architecture superseded by 05C |
-| 05C | In-place D3D12 backend | VERIFY | Move proven D3D12 lifecycle into existing WW3D backend, remove standalone `Evolution/` tree, exclude DX8 backend from x64 graph |
-| 05C | W3X XML parser component | NEXT | Real XML parser behind shared project-owned interface |
-| 05D | W3X neutral rigid-mesh import | PLANNED | Representative rigid mesh reaches renderer-neutral import model |
-| 05E | W3D/W3X routing and validation | PLANNED | Existing W3D path unchanged; W3X routed to validated importer |
+| 05C | In-place D3D12 backend | DONE | Real Windows x64 production backend passes 27/27 plus explicit GPU gate |
+| 05D | D3D12 indexed primitive foundation | DONE | Real Windows backend submits indexed geometry through `IRenderBackend` and passes 27/27 |
+| 05E | D3D12 shader asset foundation | ACTIVE | Canonical HLSL replaces embedded shader source and is staged for smoke/game executables |
+| 05F | D3D12 persistent buffers + first WW3D caller migration | NEXT | First real `DX8Wrapper` draw/buffer responsibility crosses the backend seam |
+| 05W1 | W3X XML parser component | PLANNED | Real XML parser behind shared project-owned interface |
+| 05W2 | W3X neutral rigid-mesh import | PLANNED | Representative rigid mesh reaches renderer-neutral import model |
+| 05W3 | W3D/W3X routing and validation | PLANNED | Existing W3D path unchanged; W3X routed to validated importer |
 | 06 | HD texture pipeline | PLANNED | Efficient/correct 2K/4K assets |
 | 07 | High-poly / 32-bit geometry | PLANNED | >65k-class geometry path where needed |
 | 08 | Instancing/batching expansion | PLANNED | Reduce repeated-object CPU/draw cost |

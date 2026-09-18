@@ -23,6 +23,17 @@ target_link_libraries(z_generals PRIVATE
 
 if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     target_link_libraries(z_generals PRIVATE d3d12 dxgi)
+    set(RTS_D3D12_PRIMITIVE_SHADER
+        "${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl")
+    set_property(TARGET z_generals APPEND PROPERTY LINK_DEPENDS
+        "${RTS_D3D12_PRIMITIVE_SHADER}")
+    add_custom_command(TARGET z_generals POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:z_generals>/Shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${RTS_D3D12_PRIMITIVE_SHADER}"
+            "$<TARGET_FILE_DIR:z_generals>/Shaders/PrimitiveColor.hlsl"
+        VERBATIM
+    )
 else()
     target_link_libraries(z_generals PRIVATE d3d8 d3dx8)
 endif()

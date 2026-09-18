@@ -15,6 +15,7 @@ The initial D3D12 proof was Windows-verified in Step 05B on Intel UHD 770 and WA
 - color and depth/stencil clears, viewport/scissor, present and fence synchronization are implemented through D3D12;
 - a Windows smoke target exercises the production backend through the same factory used by WW3D;
 - Step 05D adds the first indexed position/color primitive contract, root signature, PSO, shader compilation and upload-buffer lifetime tracking without introducing a second renderer abstraction;
+- Step 05E moves the bootstrap shader out of C++ into the first canonical HLSL asset (`Shaders/PrimitiveColor.hlsl`) and stages the same asset for the Windows smoke binary and normal x64 game target;
 - the temporary standalone `Evolution/` runtime tree and shell preset are removed.
 
 The full x64 game is not yet enabled because many legacy render callers still invoke `DX8Wrapper` directly. Those call sites are now the renderer migration backlog; they must move behind D3D12-capable interfaces rather than being hidden behind a permanent DX8 emulation layer.
@@ -61,9 +62,10 @@ resources PSOs   command submission
 ## Immediate migration slices
 
 1. **device/frame backend — done / Windows signed off:** D3D12 device, swap chain, render/depth targets, viewport, clear, present, fences;
-2. **draw foundation — active:** root signature, shader compilation, PSO and indexed triangle draw through `IRenderBackend`;
-3. **buffer foundation:** replace per-draw transient upload geometry with persistent/static vertex/index resources where real WW3D callers require them;
-4. **WW3D primitive migration:** move the first direct `DX8Wrapper` draw/state callers;
+2. **draw foundation — done / Windows signed off:** root signature, PSO and indexed triangle draw through `IRenderBackend`;
+3. **shader asset foundation — active:** canonical HLSL assets staged beside the x64 executable; translate the existing D3D8-era terrain/filter/tree/water assembly only when each real rendering path is migrated;
+4. **buffer foundation:** replace per-draw transient upload geometry with persistent/static vertex/index resources where real WW3D callers require them;
+5. **WW3D primitive migration:** move the first direct `DX8Wrapper` draw/state callers;
 5. **representative W3D rigid mesh:** render existing W3D geometry through the D3D12 path;
 6. **W3X rigid mesh:** feed the same renderer-neutral mesh path from W3X;
 7. materials/textures;

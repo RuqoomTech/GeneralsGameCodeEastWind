@@ -42,8 +42,20 @@ rts_policy_require_contains(
     "the in-place backend must issue indexed Direct3D 12 geometry draws")
 rts_policy_require_contains(
     "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
-    "D3DCompile"
-    "the first primitive pipeline must compile its minimal shader contract")
+    "D3DCompileFromFile"
+    "the D3D12 backend must compile canonical HLSL shader assets rather than embedding shader source in C++")
+rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "BasicPrimitiveShader"
+    "the temporary embedded bootstrap shader must not return")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl"
+    "PSInput VSMain"
+    "the first canonical D3D12 shader asset must contain the indexed primitive vertex shader")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl"
+    "float4 PSMain"
+    "the first canonical D3D12 shader asset must contain the indexed primitive pixel shader")
 rts_policy_require_contains(
     "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
     "Draw_Indexed_Triangles"
@@ -89,6 +101,27 @@ rts_policy_require_contains(
     "#include \"Utility/CppMacros.h\""
     "the smoke translation unit must establish the WWVegas compatibility macros before legacy headers")
 
+rts_policy_require_contains(
+    "Core/Tests/CMakeLists.txt"
+    "Shaders/PrimitiveColor.hlsl"
+    "the Windows backend smoke test must stage the canonical HLSL shader asset beside the executable")
+rts_policy_require_contains(
+    "GeneralsMD/Code/Main/CMakeLists.txt"
+    "Shaders/PrimitiveColor.hlsl"
+    "the x64 game executable must stage the same canonical HLSL shader asset used by the production backend")
+rts_policy_require_contains(
+    "Core/Tests/CMakeLists.txt"
+    "LINK_DEPENDS"
+    "shader edits must invalidate the Windows smoke executable so its staged HLSL stays current")
+rts_policy_require_contains(
+    "GeneralsMD/Code/Main/CMakeLists.txt"
+    "LINK_DEPENDS"
+    "shader edits must invalidate the x64 game executable so its staged HLSL stays current")
+rts_policy_require_contains(
+    "GeneralsMD/CMakeLists.txt"
+    "PrimitiveColor.hlsl"
+    "the installed x64 game must carry the canonical D3D12 shader asset")
+
 foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
     rts_policy_require_absent(
         "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
@@ -96,4 +129,4 @@ foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
         "the D3D12 backend must not include ${_legacy_header}")
 endforeach()
 
-message(STATUS "D3D12 backend policy passed: the in-place renderer owns the frame lifecycle and first indexed D3D12 primitive path")
+message(STATUS "D3D12 backend policy passed: the in-place renderer owns indexed drawing and its canonical HLSL shader asset path")

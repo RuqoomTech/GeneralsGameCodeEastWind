@@ -41,6 +41,11 @@ endif()
 
 if(RTS_INSTALL_PREFIX_ZEROHOUR)
     rts_install_runtime_target(z_generals "${RTS_INSTALL_PREFIX_ZEROHOUR}")
+    if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        install(FILES
+            "${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl"
+            DESTINATION "${RTS_INSTALL_PREFIX_ZEROHOUR}/Shaders")
+    endif()
 
     foreach(_rts_install_target IN ITEMS
         z_worldbuilder

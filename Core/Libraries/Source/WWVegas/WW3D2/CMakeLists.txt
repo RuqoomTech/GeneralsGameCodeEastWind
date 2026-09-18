@@ -71,6 +71,7 @@ set(WW3D2_SRC
     #htreemgr.cpp
     #htreemgr.h
     IRenderBackend.h
+    Shaders/PrimitiveColor.hlsl
     intersec.cpp
     intersec.h
     intersec.inl

@@ -478,3 +478,9 @@ Step 05C local seal:
 - local GCC Release, GCC Debug, Clang Release, GCC ASan, and GCC UBSan focused graphs all pass **26/26**, and all deterministic/Evolution/x64/D3D12 source-policy gates remain green.
 
 The production D3D12 backend itself still requires real Windows MinGW compilation and execution. Step 05C Windows sign-off therefore requires the Windows 27/27 graph plus `check_d3d12_backend`; no Windows pass is claimed from host validation.
+
+## 2026-09-18 — Step 05D Windows sign-off and Step 05E D3D12 shader asset foundation
+
+The user supplied real Windows MinGW-w64 GCC/G++ 16.2 output for Step 05D. The focused graph passed **27/27**, including `d3d12_backend_smoke`; `check_d3d12_backend` confirmed indexed position/color geometry submission through the production WW3D backend; and all deterministic, EVN1/EVR1, session, x64-platform, and D3D12 policy gates remained green. Step 05D is therefore Windows-signed-off.
+
+Step 05E starts the real shader migration without adding a parallel shader subsystem. The temporary C++-embedded primitive HLSL is removed and replaced by `Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl`. `D3D12Backend` resolves and compiles the staged HLSL beside the executable; the Windows smoke target and normal Zero Hour x64 target stage the same file, shader edits participate in link dependencies so staging cannot silently go stale, and the Zero Hour install path includes the shader asset. The existing D3D8-era `.nvp/.nvv` terrain/filter/tree shader sources remain reference inputs and will be translated only as their matching texture/state/draw paths move to D3D12. No placeholder ports are added.

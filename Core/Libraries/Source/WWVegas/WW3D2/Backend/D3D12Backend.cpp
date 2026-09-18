@@ -111,43 +111,46 @@ void selectHardwareAdapter(IDXGIFactory4 *factory, IDXGIAdapter1 **adapter_out)
 }
 
 
-constexpr char BasicPrimitiveShader[] = R"HLSL(
-struct VSInput
+std::wstring getExecutableDirectory()
 {
-    float3 position : POSITION;
-    float4 color : COLOR0;
-};
+    std::wstring path(512, L'\0');
+    for (;;)
+    {
+        const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+        if (length == 0)
+        {
+            throw std::runtime_error("GetModuleFileNameW failed while resolving D3D12 shader assets");
+        }
+        if (length < path.size())
+        {
+            path.resize(length);
+            break;
+        }
+        path.resize(path.size() * 2);
+    }
 
-struct PSInput
-{
-    float4 position : SV_POSITION;
-    float4 color : COLOR0;
-};
-
-PSInput VSMain(VSInput input)
-{
-    PSInput output;
-    output.position = float4(input.position, 1.0f);
-    output.color = input.color;
-    return output;
+    const std::size_t slash = path.find_last_of(L"\\/");
+    if (slash == std::wstring::npos)
+    {
+        return L".";
+    }
+    path.resize(slash);
+    return path;
 }
 
-float4 PSMain(PSInput input) : SV_TARGET
+std::wstring getPrimitiveShaderPath()
 {
-    return input.color;
+    return getExecutableDirectory() + L"\\Shaders\\PrimitiveColor.hlsl";
 }
-)HLSL";
 
-ID3DBlob *compileShader(const char *entry_point, const char *target)
+ID3DBlob *compileShaderFromFile(const wchar_t *path, const char *entry_point, const char *target)
 {
     ID3DBlob *shader = nullptr;
     ID3DBlob *errors = nullptr;
-    const HRESULT result = D3DCompile(
-        BasicPrimitiveShader,
-        sizeof(BasicPrimitiveShader) - 1,
-        "WW3D D3D12 basic primitive",
+    const HRESULT result = D3DCompileFromFile(
+        path,
         nullptr,
-        nullptr,
+        D3D_COMPILE_STANDARD_FILE_INCLUDE,
         entry_point,
         target,
         D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3,
@@ -157,7 +160,7 @@ ID3DBlob *compileShader(const char *entry_point, const char *target)
 
     if (FAILED(result))
     {
-        std::string message = "D3DCompile failed";
+        std::string message = "D3DCompileFromFile failed for the WW3D D3D12 primitive shader";
         if (errors != nullptr && errors->GetBufferPointer() != nullptr)
         {
             message.assign(
@@ -332,11 +335,12 @@ void D3D12Backend::createPrimitivePipeline()
             IID_PPV_ARGS(&m_primitive_root_signature)));
     releaseCom(serialized_root);
 
-    ID3DBlob *vertex_shader = compileShader("VSMain", "vs_5_1");
+    const std::wstring shader_path = getPrimitiveShaderPath();
+    ID3DBlob *vertex_shader = compileShaderFromFile(shader_path.c_str(), "VSMain", "vs_5_1");
     ID3DBlob *pixel_shader = nullptr;
     try
     {
-        pixel_shader = compileShader("PSMain", "ps_5_1");
+        pixel_shader = compileShaderFromFile(shader_path.c_str(), "PSMain", "ps_5_1");
 
         const D3D12_INPUT_ELEMENT_DESC input_elements[] = {
             {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,

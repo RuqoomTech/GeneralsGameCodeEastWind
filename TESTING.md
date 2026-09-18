@@ -95,7 +95,7 @@ Protocol/replay golden bytes remain frozen unless an explicit versioned format c
 
 The D3D12 implementation now lives in the existing WW3D backend tree; there is no standalone Evolution shell preset or application folder.
 
-On Windows x64, the normal `mingw64-tests` build compiles a smoke executable from the production `D3D12Backend.cpp`. The test creates a hidden HWND, constructs the backend through `Create_Render_Backend()`, performs color + depth/stencil clears, submits indexed position/color geometry, preserves deferred-present behavior, presents several frames, waits through normal backend destruction, and exits.
+On Windows x64, the normal `mingw64-tests` build compiles a smoke executable from the production `D3D12Backend.cpp`. The build stages the canonical `Shaders/PrimitiveColor.hlsl` asset beside that executable. The test creates a hidden HWND, constructs the backend through `Create_Render_Backend()`, compiles the staged HLSL, performs color + depth/stencil clears, submits indexed position/color geometry, preserves deferred-present behavior, presents several frames, waits through normal backend destruction, and exits.
 
 Run only that GPU smoke test with:
 

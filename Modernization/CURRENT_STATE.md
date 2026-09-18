@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts through the Step 05D indexed-primitive candidate on 2026-09-18. Step 05C2 is Windows-signed-off: the production D3D12 backend passed 27/27 on Windows plus its explicit GPU smoke gate. Step 05D builds directly on that in-place backend and adds the first indexed geometry submission path through `IRenderBackend`.
+This document records verified source facts through the Step 05E shader-asset candidate on 2026-09-18. Step 05D is Windows-signed-off: the production D3D12 backend passed 27/27 on Windows, submitted indexed geometry through `IRenderBackend`, and passed every deterministic/Evolution/x64 gate. Step 05E moves the bootstrap shader into a canonical HLSL asset staged beside the executable and establishes the migration convention for the existing D3D8-era shader sources.
 
 ## Build system
 
@@ -15,7 +15,7 @@ This document records verified source facts through the Step 05D indexed-primiti
 - Generals and Zero Hour install rules use `rts_install_runtime_target()` instead of repeating MSVC-only PDB generator expressions. MSVC keeps optional PDB installation; MinGW Release installs the `.debug` sidecar emitted by the existing strip workflow.
 - MinGW toolchain discovery is x86_64-only through `mingw-w64-common.cmake` plus the canonical x86_64 wrapper. `mingw64-tests` configures the focused regression graph, including the Windows x64 D3D12 backend smoke test.
 - The monolithic game runtime remains blocked from the x64 MinGW lane until direct renderer/platform dependencies are migrated explicitly. There is no parallel Evolution application tree; the normal game executable remains the convergence target.
-- Step 04 and Step 05A are Windows-signed-off. The temporary Step 05B proof shell is also Windows-signed-off on hardware and WARP. Step 05C2 replaced the temporary shell with the production backend and is Windows-signed-off. The host-portable graph remains 26 tests; Windows x64 adds the real `d3d12_backend_smoke` GPU test, now extended by Step 05D to submit indexed geometry.
+- Step 04, Step 05A, Step 05C2, and Step 05D are Windows-signed-off. The temporary Step 05B proof shell was Windows-verified and then removed. The host-portable graph remains 26 tests; Windows x64 adds the real `d3d12_backend_smoke` GPU test. Step 05E keeps that test path but stages/loads the canonical HLSL shader asset instead of compiling C++-embedded shader text.
 
 ## Performance telemetry
 

@@ -494,6 +494,8 @@ add_custom_target(check_d3d12_backend_policy
 )
 
 if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(RTS_D3D12_PRIMITIVE_SHADER
+        "${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl")
     add_executable(d3d12_backend_smoke_test
         ${CMAKE_CURRENT_SOURCE_DIR}/D3D12BackendSmokeTest.cpp
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp
@@ -523,6 +525,16 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
         )
     endif()
+    set_property(TARGET d3d12_backend_smoke_test APPEND PROPERTY LINK_DEPENDS
+        "${RTS_D3D12_PRIMITIVE_SHADER}")
+    add_custom_command(TARGET d3d12_backend_smoke_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:d3d12_backend_smoke_test>/Shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${RTS_D3D12_PRIMITIVE_SHADER}"
+            "$<TARGET_FILE_DIR:d3d12_backend_smoke_test>/Shaders/PrimitiveColor.hlsl"
+        VERBATIM
+    )
+
     add_test(NAME d3d12_backend_smoke COMMAND d3d12_backend_smoke_test)
     set_tests_properties(d3d12_backend_smoke PROPERTIES LABELS "gpu")
     add_custom_target(check_d3d12_backend
