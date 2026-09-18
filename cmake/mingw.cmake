@@ -27,11 +27,10 @@ if(MINGW)
             "The focused x64 test graph requires RTS_BUILD_HEADLESS_CORE. "
             "Use preset 'mingw64-tests'.")
     endif()
-    if(NOT RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_D3D12_SHELL)
+    if(NOT RTS_BUILD_TESTS_ONLY)
         message(FATAL_ERROR
-            "The supported x64 MinGW runtime surface is subsystem-gated. "
-            "Use preset 'mingw64-tests' for regression tests or 'mingw64-d3d12-shell' "
-            "for the standalone Evolution Direct3D 12 runtime shell.")
+            "The x64 full-game runtime remains gated while direct DX8Wrapper call sites are migrated "
+            "onto the in-place Direct3D 12 backend. Use preset 'mingw64-tests' during this renderer migration.")
     endif()
 
     # Preserve the legacy code assumptions without applying them to downloaded
@@ -69,25 +68,8 @@ if(MINGW)
         imm32
     )
 
-    # Renderer/input/audio compatibility libraries are not needed by the focused
-    # modernization graph. Keeping them out is what allows the first x64 lane to
-    # compile architecture/serialization guards before the D3D8 runtime is ported.
-    if(NOT RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_D3D12_SHELL)
-        target_link_libraries(core_config INTERFACE d3d8 dinput8 dsound)
-    endif()
-
     # Keep GCC runtime deployment self-contained for command-line builds.
     target_link_options(core_config INTERFACE -static-libgcc -static-libstdc++)
-
-    # min-dx8-sdk exposes d3dx8d for MinGW. Retain the historical d3dx8 name
-    # used by the game executable without creating a global linker rewrite.
-    if(NOT RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_D3D12_SHELL AND NOT TARGET d3dx8)
-        add_library(d3dx8 INTERFACE IMPORTED GLOBAL)
-        set_target_properties(d3dx8 PROPERTIES
-            INTERFACE_LINK_LIBRARIES "d3dx8d"
-        )
-        message(STATUS "Created d3dx8 -> d3dx8d alias for MinGW-w64")
-    endif()
 
     message(STATUS "MinGW-w64 configuration complete")
 endif()

@@ -7,10 +7,13 @@ target_compile_definitions(core_wwcommon INTERFACE
 )
 
 target_link_libraries(core_wwcommon INTERFACE
-    d3d8lib
     milesloader
     stlport
 )
+
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    target_link_libraries(core_wwcommon INTERFACE d3d8lib)
+endif()
 
 target_include_directories(core_wwcommon INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}

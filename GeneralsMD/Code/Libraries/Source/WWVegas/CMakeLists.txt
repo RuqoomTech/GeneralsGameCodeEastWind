@@ -3,10 +3,13 @@ add_library(z_wwcommon INTERFACE)
 
 target_link_libraries(z_wwcommon INTERFACE
     core_wwcommon
-    d3d8lib
     milesloader
     stlport
 )
+
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    target_link_libraries(z_wwcommon INTERFACE d3d8lib)
+endif()
 
 target_include_directories(z_wwcommon INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}

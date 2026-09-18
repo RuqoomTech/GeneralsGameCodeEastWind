@@ -10,8 +10,6 @@ endif()
 target_link_libraries(z_generals PRIVATE
     binkloader
     comctl32
-    d3d8
-    d3dx8
     dinput8
     dxguid
     imm32
@@ -22,6 +20,12 @@ target_link_libraries(z_generals PRIVATE
     z_gameenginedevice
     zi_always
 )
+
+if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    target_link_libraries(z_generals PRIVATE d3d12 dxgi)
+else()
+    target_link_libraries(z_generals PRIVATE d3d8 d3dx8)
+endif()
 
 # TODO Originally referred to build host and user, replace with git info perhaps?
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/GeneratedVersion.h

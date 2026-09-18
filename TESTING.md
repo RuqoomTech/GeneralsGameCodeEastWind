@@ -22,7 +22,7 @@ The preset is x64-only and does not require the Visual Studio IDE.
 
 ## Focused test inventory
 
-The focused graph currently contains 26 tests. Names describe permanent responsibilities rather than the milestone in which each test was introduced.
+The host-portable focused graph contains 26 tests. On Windows x64 it contains one additional real GPU/backend smoke test (`d3d12_backend_smoke`), for 27 tests total. Names describe permanent responsibilities rather than the milestone in which each test was introduced.
 
 ### W3X
 
@@ -49,7 +49,7 @@ The focused graph currently contains 26 tests. Names describe permanent responsi
 - `coordinate_ops`
 - `runtime_compatibility_policy`
 - `x64_platform_policy`
-- `d3d12_shell_policy`
+- `d3d12_backend_policy`
 
 ### Evolution network/replay
 
@@ -74,7 +74,8 @@ cmake --build --preset mingw64-tests --target `
     check_evolution_runtime `
     check_evolution_session `
     check_evolution_full_session `
-    check_x64_platform
+    check_x64_platform `
+    check_d3d12_backend_policy
 ```
 
 Expected success messages use subsystem names rather than historical step numbers.
@@ -90,39 +91,37 @@ The active golden fixtures are:
 Protocol/replay golden bytes remain frozen unless an explicit versioned format change is introduced. The headless timeline is deterministic and must not be regenerated merely to make a failing test pass.
 
 
-## Evolution D3D12 runtime shell
+## Direct3D 12 backend validation
 
-The first x64 Evolution executable is a standalone D3D12 clear/present shell. It deliberately does not configure the legacy D3D8 game runtime.
+The D3D12 implementation now lives in the existing WW3D backend tree; there is no standalone Evolution shell preset or application folder.
 
-Configure and build it on Windows with the canonical MinGW-w64 toolchain:
+On Windows x64, the normal `mingw64-tests` build compiles a smoke executable from the production `D3D12Backend.cpp`. The test creates a hidden HWND, constructs the backend through `Create_Render_Backend()`, performs color + depth/stencil clears, presents several frames, waits through normal backend destruction, and exits.
 
-```powershell
-cmake --preset mingw64-d3d12-shell
-cmake --build --preset mingw64-d3d12-shell
-```
-
-Interactive launch:
+Run only that GPU smoke test with:
 
 ```powershell
-.\build\mingw64-d3d12-shell\Evolution\GeneralsEvolution.exe
+ctest --preset mingw64-tests -R d3d12_backend_smoke --output-on-failure
 ```
 
-Automated smoke run (creates the real D3D12 device/swap chain, renders 120 frames, waits for GPU completion and exits):
+Or use the explicit target:
 
 ```powershell
-.\build\mingw64-d3d12-shell\Evolution\GeneralsEvolution.exe --frames 120
+cmake --build --preset mingw64-tests --target check_d3d12_backend
 ```
 
-Useful diagnostic options are `--debug`, `--warp`, and `--no-vsync`. `--debug` requests the Windows D3D12 debug layer when the optional Graphics Tools component is installed.
+Expected success message:
 
-To stage a self-contained MinGW executable (apart from Windows system graphics DLLs):
+```text
+D3D12 backend smoke passed: WW3D backend factory created, cleared, deferred-presented, depth-cleared, and presented frames.
+```
+
+The source-policy half remains host-portable:
 
 ```powershell
-cmake --install build\mingw64-d3d12-shell
-.\build\mingw64-d3d12-shell\stage\GeneralsEvolution.exe --frames 120
+cmake --build --preset mingw64-tests --target check_d3d12_backend_policy
 ```
 
-Expected runtime output includes the selected adapter, negotiated D3D feature level, initialization success, and a successful frame-count exit. A real Windows build/run transcript is required before the D3D12 shell is marked Windows-signed-off.
+The full Zero Hour x64 executable is intentionally still gated while direct `DX8Wrapper` callers are migrated. Do not restore the removed standalone shell as a workaround.
 
 ## Local host validation
 
@@ -148,7 +147,7 @@ For significant deterministic/network/replay changes, validate Release and Debug
 
 Do not claim a Windows gate passed from host/container testing. Windows sign-off requires actual Windows console output using the authoritative candidate tree.
 
-The final Step 04F baseline is Windows-signed-off with MinGW-w64 GCC/G++ 16.2. Step 05A is also Windows-signed-off: 25/25 cleaned-name tests plus every explicit deterministic/Evolution/x64-platform gate passed. Step 05B adds one host-portable D3D12-shell policy test, taking the focused graph to 26 tests; the actual D3D12 executable still requires its own Windows build/smoke transcript.
+The final Step 04F and Step 05A baselines are Windows-signed-off with MinGW-w64 GCC/G++ 16.2. Step 05B is also Windows-signed-off: the D3D12 proof executable built, presented successfully on Intel UHD 770 and WARP, installed/staged correctly, and the 26-test focused graph remained green. Step 05C replaces that temporary shell architecture with the in-place backend; its new Windows sign-off requires 27/27 plus `check_d3d12_backend`.
 
 ## Known warnings
 

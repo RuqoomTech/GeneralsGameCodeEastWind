@@ -51,13 +51,13 @@ include(cmake/config.cmake)
 # dependencies so a missing MSYS2 tool fails immediately and diagnostically.
 if(MINGW)
     include(cmake/mingw.cmake)
-    if(NOT RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_D3D12_SHELL)
+    if(NOT RTS_BUILD_TESTS_ONLY)
         include(cmake/widl.cmake)
         rts_require_widl_for_runtime()
     endif()
     # The focused x64 modernization graph has no ATL consumer. Full runtime
     # targets may still consume the source-only ReactOS ATL compatibility seam.
-    if(NOT RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_D3D12_SHELL)
+    if(NOT RTS_BUILD_TESTS_ONLY)
         include(cmake/reactos-atl.cmake)
     endif()
 endif()
@@ -71,11 +71,8 @@ if(RTS_BUILD_TESTS)
     add_subdirectory(Core/Tests)
 endif()
 
-if(RTS_BUILD_D3D12_SHELL)
-    add_subdirectory(Evolution)
-endif()
 
-if(NOT RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_D3D12_SHELL)
+if(NOT RTS_BUILD_TESTS_ONLY)
     # Debug symbol stripping is only relevant to installable MinGW binaries.
     include(cmake/debug_strip.cmake)
 

@@ -122,10 +122,12 @@ Runtime routing, includes/references, child-content decoding, neutral import str
 Current Step 05 slices:
 
 - **05A — developer baseline cleanup (DONE / Windows signed off):** normalized permanent test/build names, consolidated policy-test boilerplate, removed stale wrappers, separated historical milestone documents, and simplified current documentation;
-- **05B — Evolution D3D12 runtime shell (implemented locally; Windows seal pending):** create the new x64 `GeneralsEvolution.exe` process with Win32 windowing, DXGI adapter selection, D3D12 device/queue/list, flip-model swap chain, RTVs, explicit barriers, clear/present, fences and automated frame-limited smoke mode, isolated from the legacy D3D8/input/audio graph;
-- **05C — XML parser component:** integrate a real XML parser behind the existing shared W3X document seam;
-- **05D — neutral import model + rigid mesh:** decode the first representative mesh fixture into renderer-neutral data;
-- **05E — format routing/validation:** route W3D to the existing loader and W3X to the importer with useful diagnostics and no W3D behavior regression.
+- **05B — D3D12 proof shell (DONE / Windows signed off):** validated Win32/DXGI/D3D12 device, queue/list, flip-model swap chain, clear/present and fences on hardware and WARP; the temporary standalone process is not retained as architecture;
+- **05C — in-place D3D12 backend integration (ACTIVE):** move that proven implementation into the existing WW3D backend seam, remove the standalone `Evolution/` tree, select D3D12 for x64 and keep DX8 backend code out of the x64 compile graph;
+- **05D+ — renderer migration:** move direct `DX8Wrapper` resource/state/draw callers to D3D12-capable abstractions until the normal Zero Hour x64 executable links/renders without the DX8 renderer;
+- **05W1 — XML parser component (after D3D12 indexed-mesh foundation):** integrate a real XML parser behind the existing shared W3X document seam;
+- **05W2 — neutral import model + rigid mesh:** decode the first representative mesh fixture into renderer-neutral data;
+- **05W3 — format routing/validation:** route W3D to the existing loader and W3X to the importer with useful diagnostics and no W3D behavior regression.
 
 The first D3D12 foundation slice was intentionally pulled forward from Step 12 so W3D/W3X work can be exercised in the real future x64 process. This does not change the renderer-isolation rule: asset parsing/import remains CPU-side and renderer-neutral.
 

@@ -13,8 +13,6 @@ set(WW3D2_SRC
     #assetmgr.h
     assetstatus.cpp
     assetstatus.h
-    Backend/DX8Backend.cpp
-    Backend/DX8Backend.h
     Backend/RenderBackend.h
     bitmaphandler.cpp
     bitmaphandler.h
@@ -46,27 +44,6 @@ set(WW3D2_SRC
     distlod.cpp
     distlod.h
     dllist.h
-    dx8caps.cpp
-    dx8caps.h
-    dx8fvf.cpp
-    dx8fvf.h
-    dx8indexbuffer.cpp
-    dx8indexbuffer.h
-    dx8list.h
-    dx8polygonrenderer.cpp
-    dx8polygonrenderer.h
-    dx8renderer.cpp
-    dx8renderer.h
-    dx8rendererdebugger.cpp
-    dx8rendererdebugger.h
-    dx8texman.cpp
-    dx8texman.h
-    dx8vertexbuffer.cpp
-    dx8vertexbuffer.h
-    dx8webbrowser.cpp
-    dx8webbrowser.h
-    dx8wrapper.cpp
-    dx8wrapper.h
     dynamesh.cpp
     dynamesh.h
     font3d.cpp
@@ -237,6 +214,42 @@ set(WW3D2_SRC
     ww3dtrig.h
 )
 
+# The x64 runtime uses Direct3D 12 in-place through the existing WW3D backend
+# seam. The old DX8 implementation remains source-only reference for 32-bit
+# archival builds; it is not part of the Evolution x64 compile graph.
+if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    list(APPEND WW3D2_SRC
+        Backend/D3D12Backend.cpp
+        Backend/D3D12Backend.h
+    )
+else()
+    list(APPEND WW3D2_SRC
+        Backend/DX8Backend.cpp
+        Backend/DX8Backend.h
+        dx8caps.cpp
+        dx8caps.h
+        dx8fvf.cpp
+        dx8fvf.h
+        dx8indexbuffer.cpp
+        dx8indexbuffer.h
+        dx8list.h
+        dx8polygonrenderer.cpp
+        dx8polygonrenderer.h
+        dx8renderer.cpp
+        dx8renderer.h
+        dx8rendererdebugger.cpp
+        dx8rendererdebugger.h
+        dx8texman.cpp
+        dx8texman.h
+        dx8vertexbuffer.cpp
+        dx8vertexbuffer.h
+        dx8webbrowser.cpp
+        dx8webbrowser.h
+        dx8wrapper.cpp
+        dx8wrapper.h
+    )
+endif()
+
 add_library(corei_ww3d2 INTERFACE)
 
 target_sources(corei_ww3d2 INTERFACE ${WW3D2_SRC})
@@ -256,3 +269,7 @@ target_link_libraries(corei_ww3d2 INTERFACE
     core_wwlib
     core_wwmath
 )
+
+if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    target_link_libraries(corei_ww3d2 INTERFACE d3d12 dxgi dxguid)
+endif()

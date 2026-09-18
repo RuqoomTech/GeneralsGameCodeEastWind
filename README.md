@@ -19,7 +19,7 @@ The active modernization direction is intentionally narrow:
 
 There is no planned Direct3D 9 or Direct3D 11 intermediate renderer.
 
-Step 04 completed the x64 migration foundation and retired the active i686 modernization lane. Step 05 is active: the developer baseline is cleaned and Windows-signed-off, and the first standalone x64 Direct3D 12 Evolution runtime shell now precedes W3X parser/import growth so new assets can be tested in the real future process.
+Step 04 completed the x64 migration foundation and retired the active i686 modernization lane. Step 05 is renderer-first: the temporary D3D12 proof shell has been validated on Windows and its implementation is now being consolidated into the existing WW3D backend so the normal game runtime migrates in place. W3X work resumes after the first D3D12 indexed-mesh path is available.
 
 ## Windows quick start
 
@@ -36,17 +36,11 @@ The preset uses MinGW-w64 GCC, Ninja, x64-only platform checks, deterministic/he
 
 For the detailed test inventory and optional explicit checks, see [`TESTING.md`](TESTING.md).
 
-### First Evolution D3D12 executable
+### Direct3D 12 migration
 
-The new Evolution process is separate from the legacy D3D8 game executable. Build the current clear/present shell with:
+Direct3D 12 now lives behind the existing WW3D `IRenderBackend` seam. The temporary standalone `Evolution/` shell used for initial device/swap-chain proof is not permanent architecture and is removed by the in-place integration work.
 
-```powershell
-cmake --preset mingw64-d3d12-shell
-cmake --build --preset mingw64-d3d12-shell
-.\build\mingw64-d3d12-shell\Evolution\GeneralsEvolution.exe --frames 120
-```
-
-The shell currently proves Win32 windowing, DXGI hardware-adapter selection, D3D12 device/queue/list creation, flip-model swap chain, render-target views, explicit transitions, fences, clear/present and clean shutdown. Game simulation and asset rendering are attached in later slices; see `TESTING.md` and `Modernization/D3D12_RENDERER.md`.
+On Windows x64 the focused graph also builds and runs a production-backend smoke test. See [`TESTING.md`](TESTING.md) for the exact command. The normal Zero Hour executable remains gated until the remaining direct `DX8Wrapper` callers have been migrated; we do not keep a second game executable as a shortcut.
 
 ## Legacy/reference builds
 

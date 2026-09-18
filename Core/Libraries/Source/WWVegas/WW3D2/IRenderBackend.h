@@ -18,7 +18,8 @@
 
 // TheSuperHackers @refactor bobtista 10/04/2026 Abstract W3D-facing rendering
 // interface so WW3D2 rendering can be re-targeted to other backends while the
-// existing DX8 path stays as the reference implementation.
+// x64 runtime is migrated to Direct3D 12 while the legacy DX8 path remains
+// available only to archival 32-bit/reference builds.
 
 #pragma once
 
@@ -40,8 +41,9 @@ struct RenderBackendViewport
 
 // A method appears here once a caller routes through it, not in anticipation of
 // one. The set below is what current callers route through; the rest of the
-// DX8Wrapper API stays reachable through DX8Wrapper's static methods until a
-// caller migrates, at which point the method it needs moves here.
+// legacy DX8Wrapper API remains reachable only in code that has not yet moved
+// across this seam. Each migrated renderer responsibility belongs here (or in a
+// renderer-neutral WW3D abstraction), not in a D3D8-on-D3D12 compatibility shim.
 //
 // Method names intentionally match the existing DX8Wrapper names so migrating a
 // caller is a mechanical DX8Wrapper::X(...) -> Get_Render_Backend()->X(...)

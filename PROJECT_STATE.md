@@ -4,64 +4,53 @@ Updated: 2026-09-18
 
 ## Current baseline
 
-Step 04 is complete and Windows-signed-off. The supported Evolution modernization path is x64-only.
+Step 04 is complete and Windows-signed-off. The supported Evolution path is x64-only.
 
-Real Windows MinGW-w64 GCC/G++ 16.2 validation for the final Step 04F baseline passed the complete 25-test focused graph plus the explicit deterministic, protocol, runtime, session, full-session and x64-platform checks.
+Step 05A is Windows-signed-off. Step 05B's temporary standalone D3D12 shell is also Windows-signed-off: MinGW-w64 GCC 16.2 built it successfully, Intel UHD 770 and WARP both presented frames, the staged executable ran, and the focused graph passed 26/26.
 
-Step 05 is active. Step 05A is Windows-signed-off. By project-owner priority, 05B brings up the first standalone Evolution Direct3D 12 runtime executable before W3X parser growth so new asset work can be exercised in a real x64/D3D12 process as it lands.
+Step 05C is implemented locally and supersedes the standalone-shell architecture. The proven D3D12 device/frame code now lives behind the existing WW3D renderer backend seam, the standalone `Evolution/` tree is removed, and the host-portable regression graph passes 26/26 across GCC/Clang/sanitizer configurations. Windows production-backend smoke validation remains pending.
 
 ## Locked architecture
 
 - Evolution runtime is x64-only.
-- New renderer work targets Direct3D 12 only; no D3D9/D3D11 intermediate.
-- The D3D8-era renderer remains a temporary compatibility/reference implementation.
-- CMake + Ninja + MinGW-w64 GCC is the primary Windows modernization toolchain; Clang is secondary.
+- Direct3D 12 is the only Evolution renderer target; no D3D9/D3D11 intermediate.
+- `IRenderBackend` is the current WW3D migration seam. It should grow only for real migrated callers.
+- The x64 backend is D3D12. The DX8 backend/source remains 32-bit historical/reference material only while direct legacy call sites are removed.
+- CMake + Ninja + MinGW-w64 GCC is the primary Windows toolchain; Clang is secondary.
 - Simulation, replay, networking, CRC, RNG, Xfer and snapshot behavior remain deterministic.
-- `Int`, `UnsignedInt`, `ObjectID`, `DrawableID` remain 32-bit; `Short` remains 16-bit; `Real` remains float32.
-- Pointers, `uintptr_t`, `intptr_t`, `size_t` and `ptrdiff_t` use native width and are never serialized as protocol state.
-- Evolution network/replay formats use explicit fixed-width fields and versioning.
-- W3D remains intact. W3X is additive EA SAGE XML support and is not connected to the runtime asset manager until the staged importer is ready.
-- Future multiplayer compatibility is Evolution-to-Evolution only; retail x86 interoperability is not required.
-- Prefer consolidation over duplicate helpers/files.
+- Fixed-width game/wire/replay fields do not widen on x64.
+- W3D remains supported. W3X is additive EA SAGE XML and remains renderer-neutral.
+- Future multiplayer compatibility is Evolution-to-Evolution only.
+- Prefer consolidation over duplicate helpers, executables, or subsystem trees.
 
 ## Completed foundation
 
 - Determinism characterization and fixed replay/CRC anchors.
 - Command-line CMake/Ninja build foundation.
-- Performance telemetry schema and summary tooling.
+- Performance telemetry.
 - x64 native-width runtime substrate.
-- Renderer-free deterministic 12,000-frame timeline.
-- Fixed-width Evolution command codec, EVN1 network framing and EVR1 replay framing.
-- Staged Win64 EVN1 gameplay routing while legacy ACK/control/session traffic remains in place.
-- EVR1 replay sidecar recording/playback with legacy replay compatibility behavior.
-- Deterministic two-endpoint session validation including loss/retry, duplicates, delay/order and CRC checkpoints.
-- Full-session network/replay golden transcript and corruption/version validation.
-- Retirement of the active i686 MinGW modernization/oracle lane.
+- 12,000-frame deterministic timeline.
+- EVN1/EVR1 fixed-width network/replay formats and staged runtime integration.
+- Deterministic two-endpoint and full-session network/replay gates.
+- Retirement of the active i686 modernization lane.
+- Developer-facing repository cleanup.
+- Proven Win32/DXGI/D3D12 device, swap-chain, clear/present and fence implementation on real Windows hardware.
 
 Historical milestone detail is kept in `Modernization/WORKLOG.md` and `Modernization/History/`.
 
-## Step 05 — W3X parser/import foundation
+## Step 05 — renderer-first modernization + asset foundation
 
-Existing W3X pre-work already provides:
+Current order:
 
-- W3D/W3X format recognition;
-- XML document-envelope probing;
-- direct `AssetDeclaration` child discovery/classification;
-- one shared public API in `rts/w3x_document.h` with implementation in `Core/Libraries/Source/rts/w3x_document.cpp`.
+1. **05A — developer baseline cleanup — DONE / Windows signed off.**
+2. **05B — D3D12 proof shell — DONE / Windows signed off / architecture superseded.** It proved the Windows x64 D3D12 fundamentals and is now being removed rather than retained as a second runtime.
+3. **05C — in-place D3D12 backend integration — ACTIVE.** Move the proven D3D12 device/frame lifecycle into `WW3D2/Backend`, select it for x64, remove the standalone `Evolution/` tree, and stop linking D3D8/D3DX8 from the x64 game target.
+4. **Next renderer slices:** migrate the remaining direct `DX8Wrapper` state/resource/draw call sites into D3D12-capable renderer abstractions until the normal Zero Hour executable links and renders on D3D12.
+5. **W3X parser/import:** resume real XML parsing and renderer-neutral W3D/W3X mesh convergence once the D3D12 indexed-mesh path exists to exercise both formats through the same renderer.
 
-Step 05 proceeds in coherent slices:
-
-1. **05A — developer baseline cleanup (DONE / Windows signed off):** permanent test/build naming, policy-helper consolidation, stale wrapper removal, historical-doc organization and documentation cleanup.
-2. **05B — Evolution D3D12 runtime shell (VERIFY):** standalone x64 Win32/DXGI/D3D12 executable with hardware-adapter selection, command queue/list, flip-model swap chain, RTVs, fences, clear/present, clean shutdown and frame-limited smoke mode. It is isolated from D3D8/D3D9/D3D11 and the legacy input/audio/runtime graph.
-3. **05C — XML parser component:** integrate a real XML parser behind the shared W3X document seam with useful source diagnostics.
-4. **05D — neutral W3X import model + rigid mesh fixture:** decode the first supported W3X content without renderer/GPU types.
-5. **05E — format routing/validation:** route W3D to the existing chunk path and W3X to the importer while keeping W3D behavior unchanged.
-
-The D3D12 shell is the new Evolution process root. Game/runtime subsystems and renderer-neutral W3D/W3X assets will be attached to it incrementally; the old D3D8 game executable is not the x64 Evolution runtime. Runtime asset-manager integration remains deliberately deferred until the parser/import gates are stable.
+The current full x64 game build remains deliberately gated while direct `DX8Wrapper` callers still exist. The gate is removed only when the normal runtime can compile/link without the DX8 renderer implementation; no parallel replacement executable will be maintained.
 
 ## Current developer commands
-
-Windows focused graph:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1
@@ -70,10 +59,8 @@ cmake --build --preset mingw64-tests
 ctest --preset mingw64-tests --output-on-failure
 ```
 
-The current durable explicit checks and the separate `GeneralsEvolution.exe` D3D12 shell build/run commands are documented in `TESTING.md`.
+See `TESTING.md` for the D3D12 backend smoke gate and explicit deterministic/network checks.
 
 ## Known non-blockers
 
-Legacy `GameMemory` warnings such as custom `operator new` returning null remain known technical debt unless they become errors or affect the active work.
-
-Representative full-client multiplayer/replay execution remains an x64 stabilization task. It is not a reason to restore the retired i686 modernization lane.
+Legacy `GameMemory` warnings such as custom `operator new` returning null remain known technical debt unless they become errors or affect active work.

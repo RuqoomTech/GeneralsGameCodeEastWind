@@ -2,41 +2,32 @@
 
 ## Mission
 
-Build a clean x64 Direct3D 12 renderer for the Evolution runtime without carrying the entire old DX8 state-machine architecture forward.
-
+Replace the DX8-era renderer in the existing game architecture with a clean x64 Direct3D 12 backend. Do not build a parallel engine or preserve a second Evolution application tree.
 
 ## Current implementation status
 
-The first foundation slice is now implemented locally as the standalone `GeneralsEvolution.exe` runtime shell:
+The initial D3D12 proof was Windows-verified in Step 05B on Intel UHD 770 and WARP. Step 05C folds that proven implementation into the pre-existing WW3D backend seam:
 
-- Win32 window/message loop;
-- DXGI factory and hardware-adapter selection (WARP optional for diagnostics);
-- D3D12 device and feature-level query;
-- direct command queue;
-- two frame command allocators and one graphics command list;
-- flip-discard HWND swap chain;
-- RTV descriptor heap and back-buffer views;
-- explicit PRESENT <-> RENDER_TARGET barriers;
-- clear/present;
-- per-frame fence synchronization and GPU-idle shutdown;
-- optional D3D12 debug layer;
-- `--frames N` automated smoke mode;
-- dedicated `mingw64-d3d12-shell` preset with static MinGW runtime linkage.
+- `Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.*` owns the x64 device/frame lifecycle;
+- `Create_Render_Backend()` selects D3D12 on the x64 path;
+- DX8 backend/implementation sources are excluded from the x64 WW3D source graph;
+- the normal Zero Hour executable selects `d3d12` + `dxgi` on x64 instead of `d3d8` + `d3dx8`;
+- color and depth/stencil clears, viewport/scissor, present and fence synchronization are implemented through D3D12;
+- a Windows smoke target exercises the production backend through the same factory used by WW3D;
+- the temporary standalone `Evolution/` runtime tree and shell preset are removed.
 
-This shell is intentionally isolated from D3D8/D3D9/D3D11, DirectInput, DirectSound, ATL, Bink, Miles and the monolithic legacy game graph. It is the process root that later Evolution runtime/game subsystems will join. Windows build/smoke sign-off is still required before this slice is considered complete.
+The full x64 game is not yet enabled because many legacy render callers still invoke `DX8Wrapper` directly. Those call sites are now the renderer migration backlog; they must move behind D3D12-capable interfaces rather than being hidden behind a permanent DX8 emulation layer.
 
-## Current starting point
+## Migration rule
 
-The source already has a partial `IRenderBackend` seam and a `DX8Backend` adapter. This is migration groundwork, not the final D3D12 design.
+Prefer the smallest existing abstraction that matches the real responsibility:
 
-## Non-goals
+- frame/device lifecycle -> `IRenderBackend`;
+- GPU buffers/textures/descriptors -> renderer resource abstractions;
+- draw/material state -> renderer-neutral draw/pipeline descriptions;
+- asset parsing -> CPU-side W3D/W3X structures, never D3D12 objects.
 
-- no D3D9 intermediate backend;
-- no D3D11 intermediate backend;
-- no immediate removal of the DX8 reference path;
-- no feature maximalism before basic correctness;
-- no simulation changes driven by renderer timing;
-- no requirement for cutting-edge GPU features simply because D3D12 exposes them.
+Do not mechanically add hundreds of DX8-style methods to `IRenderBackend`. Where DX8's fixed-function/state-machine model is the wrong abstraction, replace the caller with a higher-level D3D12-oriented concept.
 
 ## Target architecture
 
@@ -66,85 +57,27 @@ resources PSOs   command submission
           GPU
 ```
 
-## D3D12 foundation
+## Immediate migration slices
 
-### Device/platform
+1. **device/frame backend — active:** D3D12 device, swap chain, render/depth targets, viewport, clear, present, fences;
+2. **draw foundation:** root signature, shader compilation, PSO and triangle draw;
+3. **buffer foundation:** static vertex/index buffers and upload path;
+4. **WW3D primitive migration:** move the first direct `DX8Wrapper` draw/state callers;
+5. **representative W3D rigid mesh:** render existing W3D geometry through the D3D12 path;
+6. **W3X rigid mesh:** feed the same renderer-neutral mesh path from W3X;
+7. materials/textures;
+8. camera/depth completeness;
+9. skinned mesh/animation;
+10. terrain, shadows, particles/effects and full scene coverage.
 
-- DXGI adapter selection;
-- D3D12 device creation;
-- capability query;
-- debug layer in development builds;
-- robust device-removed diagnostics.
+## Non-goals
 
-### Frame model
+- no D3D9 or D3D11 intermediate;
+- no permanent DX8 compatibility renderer in the x64 runtime;
+- no second Evolution executable/process architecture;
+- no simulation changes driven by render timing;
+- no advanced GPU feature maximalism before correctness and profiling.
 
-- direct command queue;
-- per-frame command allocator(s);
-- graphics command list(s);
-- swap chain/back buffers;
-- fence values per in-flight frame;
-- explicit synchronization only where required.
+## Later decisions
 
-### Resource model
-
-- GPU-local/default resources;
-- upload staging strategy;
-- descriptor management;
-- explicit buffer/texture descriptions;
-- resource-state/barrier tracking;
-- fence-safe deferred destruction;
-- memory accounting from the beginning.
-
-### Shader model
-
-- DXC;
-- modern HLSL / DXIL;
-- root signatures;
-- PSO descriptors/cache;
-- controlled shader permutations.
-
-## Migration slices
-
-1. device + clear/present — implemented locally in the standalone runtime shell;
-2. triangle;
-3. indexed textured mesh;
-4. representative W3D rigid mesh;
-5. camera/depth;
-6. representative W3X rigid mesh;
-7. multiple materials;
-8. skinned mesh/animation;
-9. terrain;
-10. shadows;
-11. particles/effects;
-12. full scene coverage.
-
-At each stage compare against deterministic/reference input where practical.
-
-## Heavy-mod design
-
-Organize work around:
-
-- persistent GPU resources;
-- sorted render queues;
-- repeated-mesh instancing;
-- low PSO/state churn;
-- batched uploads;
-- 32-bit indices for Evolution assets;
-- separate shadow LOD;
-- compressed HD textures;
-- configurable resource budgets;
-- asynchronous work only where measurements justify it.
-
-## Advanced features are later decisions
-
-Do not make these initial requirements:
-
-- ray tracing;
-- mesh shaders;
-- work graphs;
-- VRS;
-- DirectStorage;
-- fully GPU-driven rendering;
-- bindless-everything.
-
-Evaluate them only after the basic D3D12 renderer is correct, profiled, and handling the real mod workload.
+Ray tracing, mesh shaders, VRS, DirectStorage, GPU-driven rendering and broad bindless designs remain optional future evaluations after the real game is stable on the basic D3D12 renderer.

@@ -31,7 +31,8 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | W3X-A2R | Consolidate W3X A1/A2 parser seam | DONE | One public API + one shared implementation; no duplicate parser headers |
 | 05 | Evolution runtime + W3X import foundation | ACTIVE | Clean x64/D3D12 process root plus parser/import/routing gates |
 | 05A | Developer baseline cleanup | DONE | Real Windows GCC 16.2 passed 25/25 cleaned-name graph plus all explicit deterministic/Evolution/x64 checks |
-| 05B | Evolution D3D12 runtime shell | VERIFY | `GeneralsEvolution.exe` clear/present shell implemented locally; Windows build + `--frames` smoke run pending |
+| 05B | D3D12 proof shell | DONE | Windows-signed-off hardware/WARP clear-present proof; temporary architecture superseded by 05C |
+| 05C | In-place D3D12 backend | VERIFY | Move proven D3D12 lifecycle into existing WW3D backend, remove standalone `Evolution/` tree, exclude DX8 backend from x64 graph |
 | 05C | W3X XML parser component | NEXT | Real XML parser behind shared project-owned interface |
 | 05D | W3X neutral rigid-mesh import | PLANNED | Representative rigid mesh reaches renderer-neutral import model |
 | 05E | W3D/W3X routing and validation | PLANNED | Existing W3D path unchanged; W3X routed to validated importer |

@@ -460,3 +460,21 @@ Implemented Step 05B locally:
 - added host-portable `d3d12_shell_policy`, bringing the focused graph to **26/26** locally.
 
 Local GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer and GCC UndefinedBehaviorSanitizer focused graphs all pass 26/26. The actual D3D12 target cannot be compiled/run in the Linux container because the Windows MinGW/D3D12 SDK environment is not present; real Windows configure/build plus `GeneralsEvolution.exe --frames 120` is required for Step 05B sign-off. No simulation, protocol, replay, W3D or W3X parsing semantics changed.
+
+## 2026-09-18 — Step 05B Windows sign-off and 05C in-place renderer pivot
+
+Real Windows MinGW-w64 GCC/G++ 16.2 verified the temporary D3D12 proof shell: it linked, selected Intel(R) UHD Graphics 770 at feature level 12.1, completed the 120-frame hardware smoke run with exit code 0, ran interactively, completed a WARP smoke run, installed/staged correctly, and preserved the 26/26 focused regression graph plus all explicit deterministic/Evolution/x64/D3D12 policy gates.
+
+The project owner then rejected the standalone `Evolution/` folder as permanent architecture and directed immediate in-place DX8 replacement. Step 05C therefore removes the standalone shell target/preset/tree and moves the proven device/swap-chain/frame synchronization implementation into the existing `Core/Libraries/Source/WWVegas/WW3D2/Backend` seam as the x64 D3D12 backend. The x64 game target selects D3D12/DXGI; DX8 backend/implementation sources are excluded from the x64 WW3D source selection. Remaining direct `DX8Wrapper` callers are an explicit migration backlog before the full x64 game build is ungated.
+
+
+Step 05C local seal:
+
+- removed the temporary standalone `Evolution/` application tree, its dedicated shell preset/option, and the obsolete shell policy test;
+- added `D3D12Backend` behind the existing WW3D `IRenderBackend` seam and selected it for Windows x64;
+- excluded the DX8 backend/implementation source set and D3D8/D3DX8 game link libraries from the x64 renderer selection while retaining the archival 32-bit path;
+- added a Windows x64 smoke test that constructs the production backend through `Create_Render_Backend()`, covers clear-before-begin, depth/stencil clear, deferred `End_Scene(false)` followed by another scene, explicit flip, regular present, and destruction/GPU synchronization;
+- retained the full-game x64 configure gate while direct `DX8Wrapper` callers remain, avoiding a D3D8-on-D3D12 compatibility facade;
+- local GCC Release, GCC Debug, Clang Release, GCC ASan, and GCC UBSan focused graphs all pass **26/26**, and all deterministic/Evolution/x64/D3D12 source-policy gates remain green.
+
+The production D3D12 backend itself still requires real Windows MinGW compilation and execution. Step 05C Windows sign-off therefore requires the Windows 27/27 graph plus `check_d3d12_backend`; no Windows pass is claimed from host validation.

@@ -482,13 +482,48 @@ add_custom_target(check_x64_platform
     USES_TERMINAL
 )
 
-# The first Evolution runtime executable is intentionally isolated from the
-# legacy D3D8 game runtime. This source-policy gate stays host-portable while
-# the actual D3D12 executable is built and smoke-tested on Windows.
-rts_add_source_policy_test(d3d12_shell_policy D3D12ShellPolicyTest.cmake)
-add_custom_target(check_d3d12_shell_policy
+# Direct3D 12 is integrated behind the existing WW3D backend seam. The policy
+# test is host-portable; Windows x64 additionally compiles and runs the real
+# production backend against a hidden HWND.
+rts_add_source_policy_test(d3d12_backend_policy D3D12BackendPolicyTest.cmake)
+add_custom_target(check_d3d12_backend_policy
     COMMAND ${CMAKE_COMMAND}
         -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
-        -P ${CMAKE_SOURCE_DIR}/cmake/tests/D3D12ShellPolicyTest.cmake
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/D3D12BackendPolicyTest.cmake
     USES_TERMINAL
 )
+
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    add_executable(d3d12_backend_smoke_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/D3D12BackendSmokeTest.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp
+    )
+    target_include_directories(d3d12_backend_smoke_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
+    )
+    target_link_libraries(d3d12_backend_smoke_test PRIVATE
+        core_config
+        core_utility_no_pch
+        d3d12
+        dxgi
+        dxguid
+        user32
+    )
+    set_target_properties(d3d12_backend_smoke_test PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS NO
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(d3d12_backend_smoke_test PRIVATE
+            -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
+        )
+    endif()
+    add_test(NAME d3d12_backend_smoke COMMAND d3d12_backend_smoke_test)
+    set_tests_properties(d3d12_backend_smoke PROPERTIES LABELS "gpu")
+    add_custom_target(check_d3d12_backend
+        COMMAND $<TARGET_FILE:d3d12_backend_smoke_test>
+        DEPENDS d3d12_backend_smoke_test
+        USES_TERMINAL
+    )
+endif()

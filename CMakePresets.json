@@ -179,26 +179,6 @@
         "RTS_BUILD_EVOLUTION_X64": "ON",
         "RTS_BUILD_HEADLESS_CORE": "ON"
       }
-    },
-    {
-      "name": "mingw64-d3d12-shell",
-      "displayName": "Evolution x64 Direct3D 12 runtime shell",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/${presetName}/stage",
-        "RTS_BUILD_D3D12_SHELL": "ON",
-        "RTS_BUILD_EVOLUTION_X64": "ON",
-        "RTS_BUILD_HEADLESS_CORE": "OFF",
-        "RTS_BUILD_TESTS": "OFF",
-        "RTS_BUILD_TESTS_ONLY": "OFF",
-        "RTS_BUILD_ZEROHOUR": "OFF",
-        "RTS_BUILD_GENERALS": "OFF",
-        "RTS_BUILD_CORE_TOOLS": "OFF"
-      }
     }
   ],
   "buildPresets": [
@@ -286,12 +266,6 @@
       "configurePreset": "mingw64-tests",
       "displayName": "Build Evolution x64 focused tests",
       "description": "Build the focused MinGW-w64 x86_64 Evolution test graph"
-    },
-    {
-      "name": "mingw64-d3d12-shell",
-      "configurePreset": "mingw64-d3d12-shell",
-      "displayName": "Build Evolution x64 Direct3D 12 runtime shell",
-      "description": "Build the standalone Generals Evolution D3D12 clear/present executable"
     }
   ],
   "workflowPresets": [
@@ -465,19 +439,6 @@
         {
           "type": "test",
           "name": "mingw64-tests"
-        }
-      ]
-    },
-    {
-      "name": "mingw64-d3d12-shell",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "mingw64-d3d12-shell"
-        },
-        {
-          "type": "build",
-          "name": "mingw64-d3d12-shell"
         }
       ]
     }

@@ -102,13 +102,20 @@ The project owner elected to close the temporary cross-architecture oracle era o
 - Representative full-client multiplayer/replay validation remains important for x64 stabilization, but it no longer justifies retaining an i686 build lane.
 - Step 05 W3X importer work may begin after the final 04F Windows x64 policy run; no further i686 certification is required.
 
-## 2026-09-18 — Establish the D3D12 Evolution process before W3X parser growth
+## 2026-09-18 — D3D12 proof before W3X parser growth (superseded architecture)
 
-The project owner prioritized an executable in-game/visual test path before continuing the W3X parser slice. The first D3D12 foundation slice is therefore pulled forward into Step 05B.
+The project owner prioritized an executable visual/GPU proof before continuing the W3X parser slice. Step 05B therefore built a temporary isolated Win32/DXGI/D3D12 shell and verified it on real Windows hardware. That proof succeeded; the later in-place integration decision below supersedes the shell as permanent architecture.
 
-- `GeneralsEvolution.exe` is the new x64 Evolution process root.
-- The first shell owns Win32 windowing, DXGI/D3D12 device/frame/present infrastructure only; it does not pretend the full game has already migrated.
-- The shell must not depend on D3D8/D3D9/D3D11, DirectInput, DirectSound, ATL, Bink, Miles or other legacy runtime subsystems merely to become executable.
-- Existing W3D behavior remains in the reference runtime until renderer-neutral W3D data is migrated into Evolution.
-- W3X parsing/import remains renderer-neutral and follows the shell bring-up; the parser must not expose D3D12 objects.
-- Future game subsystems attach to the Evolution process incrementally, preserving the deterministic/network/replay contracts already signed off in Step 04.
+- The shell was a validation vehicle for device/frame/present infrastructure, not a second long-term game runtime.
+- W3X parsing/import remains renderer-neutral and must not expose D3D12 objects.
+- The deterministic/network/replay contracts signed off in Step 04 remain independent from renderer migration.
+
+## 2026-09-18 — Integrate D3D12 in place; do not maintain a parallel Evolution application
+
+After the Step 05B shell was Windows-verified, the project owner rejected a permanent separate `Evolution/` application tree. The shell served only as a hardware/API proof.
+
+- D3D12 ownership moves into the existing `WW3D2/Backend` seam.
+- The normal game executable is the target runtime; there is no second Evolution game executable architecture.
+- x64 selects D3D12; DX8 backend/implementation code is excluded from the x64 renderer graph and retained only as temporary 32-bit historical/reference material while call sites are migrated.
+- Do not solve migration by building a giant D3D8-on-D3D12 emulation layer. Move real callers to renderer-neutral resource/draw concepts where the fixed-function API is the wrong abstraction.
+- W3X parser/import work remains renderer-neutral and resumes after the D3D12 indexed-mesh path is ready to consume both W3D and W3X data.

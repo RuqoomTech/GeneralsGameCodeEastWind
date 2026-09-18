@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts through the Step 05B D3D12 runtime-shell candidate on 2026-09-18. Step 05A is Windows-signed-off; the new D3D12 shell is locally source/policy validated and awaits its real Windows build/smoke transcript.
+This document records verified source facts through the Step 05C in-place D3D12 backend candidate on 2026-09-18. Step 05A and the temporary Step 05B D3D12 proof shell are Windows-signed-off. Step 05C removes that temporary shell architecture and moves the proven device/frame implementation behind the existing WW3D backend seam; its production-backend Windows smoke test is the remaining sign-off gate.
 
 ## Build system
 
@@ -11,11 +11,11 @@ This document records verified source facts through the Step 05B D3D12 runtime-s
 - C++-only `-Wsuggest-override` and MinGW compatibility/link settings are target-scoped through `core_config` rather than globally leaking into C/vendored targets.
 - Direct `FetchContent_Populate()` use in the ReactOS ATL, legacy zlib, and LZHL source-only paths has been removed.
 - The MinGW toolchain validates the `x86_64-w64-mingw32` triplet, supports `RTS_MINGW_ROOT`, and shares its resolved bin path with WIDL/debug-strip discovery. WIDL supports explicit root/include overrides and is not required for the focused test graph.
-- Legacy full-game MinGW runtime configuration requires WIDL before populating its runtime FetchContent dependencies; the standalone D3D12 Evolution shell deliberately bypasses that legacy browser/runtime dependency graph.
+- Legacy full-game MinGW runtime configuration requires WIDL before populating runtime FetchContent dependencies; the focused `mingw64-tests` graph intentionally avoids those unrelated full-runtime dependencies.
 - Generals and Zero Hour install rules use `rts_install_runtime_target()` instead of repeating MSVC-only PDB generator expressions. MSVC keeps optional PDB installation; MinGW Release installs the `.debug` sidecar emitted by the existing strip workflow.
-- MinGW toolchain discovery is x86_64-only through `mingw-w64-common.cmake` plus the canonical x86_64 wrapper. `mingw64-tests` configures the focused regression graph; `mingw64-d3d12-shell` configures only the new standalone Evolution runtime shell.
-- The monolithic legacy game runtime remains blocked from the x64 MinGW lane until its subsystems are migrated explicitly; the new D3D12 shell is the supported process root for that convergence.
-- Step 04 is fully Windows-signed-off. Step 05A is also Windows-signed-off from the supplied GCC 16.2 run. Step 05B adds `d3d12_shell_policy`, so the focused graph is now 26 tests locally.
+- MinGW toolchain discovery is x86_64-only through `mingw-w64-common.cmake` plus the canonical x86_64 wrapper. `mingw64-tests` configures the focused regression graph, including the Windows x64 D3D12 backend smoke test.
+- The monolithic game runtime remains blocked from the x64 MinGW lane until direct renderer/platform dependencies are migrated explicitly. There is no parallel Evolution application tree; the normal game executable remains the convergence target.
+- Step 04 and Step 05A are Windows-signed-off. The temporary Step 05B proof shell is also Windows-signed-off on hardware and WARP. Step 05C replaces its shell policy with `d3d12_backend_policy`; the host-portable graph remains 26 tests, while Windows x64 adds the real `d3d12_backend_smoke` test.
 
 ## Performance telemetry
 
@@ -32,19 +32,19 @@ This document records verified source facts through the Step 05B D3D12 runtime-s
 
 - Step 04 is complete and Windows verified. The final 04F baseline passed 25/25 on real Windows MinGW-w64 GCC 16.2 plus every explicit deterministic/Evolution/x64-platform gate.
 - `cmake/toolchains/mingw-w64-common.cmake` now describes only x86_64. The former i686 wrapper/preset/bootstrap path is retired by 04F.
-- `mingw64-tests` enables `RTS_BUILD_EVOLUTION_X64` and `RTS_BUILD_HEADLESS_CORE`; it remains renderer-free and is the canonical x86_64 Evolution focused preset.
+- `mingw64-tests` enables `RTS_BUILD_EVOLUTION_X64` and `RTS_BUILD_HEADLESS_CORE`; it is the canonical x86_64 focused preset and additionally builds the real D3D12 backend smoke executable on Windows.
 - Focused x64 readiness does not link legacy D3D8/DirectInput/DirectSound and does not populate ReactOS ATL when there is no consumer.
 - `architecture_abi` enforces fixed-width engine/wire primitives and IDs while permitting native pointers/`uintptr_t` to widen.
 - Step 04D centralized `setFPMode()` in Core and established the x64 round-to-nearest deterministic timeline; the historical i686 x87 result remains recorded as provenance, not as an active build lane.
 - Step 04D3 selectively aligns with the supplied upstream snapshot: Dozer/Worker Xfer/task fixes, production cancellation, neutron radius behavior, adapted GameMemory robustness, runtime Bink/Miles loading, and glyph-buffer safety. Material shared-file divergence fell from 93 to 63 without replacing EastWind x64/determinism infrastructure.
-- The legacy monolithic x64 Zero Hour executable is not enabled. Instead, Step 05B introduces `GeneralsEvolution.exe`, a clean x64 Win32/DXGI/D3D12 process root. Game simulation, input, audio, networking and assets will move into that process subsystem-by-subsystem while the existing EVN1/EVR1 deterministic contracts remain protected.
+- The full x64 Zero Hour executable remains gated while direct `DX8Wrapper` callers are migrated. Step 05C removes the temporary standalone process and makes the existing WW3D backend seam the only D3D12 migration path; the normal game executable is the eventual x64 runtime target.
 - The i686 modernization/oracle lane is retired. Retail x86 multiplayer interoperability is not required; supported Evolution development proceeds on x64.
 
 ## Renderer
 
-The shipping/reference game renderer is still fundamentally the legacy Direct3D 8-era WW3D implementation, but Step 05B now adds the first real Evolution D3D12 runtime process. The standalone `GeneralsEvolution.exe` shell owns a Win32 window, DXGI factory/hardware adapter selection, D3D12 device, direct queue, command allocators/list, flip-model swap chain, back-buffer RTVs, explicit transitions, clear/present, fences, optional debug layer and deterministic frame-limited smoke mode. It deliberately does not link D3D8/D3D9/D3D11, DirectInput or DirectSound.
+The x64 renderer is now migrating in-place behind WW3D `IRenderBackend`. The production D3D12 backend owns DXGI adapter/device creation, command submission, flip-model swap chain, render/depth targets, viewport/scissor, clears, present and fences. The DX8 backend is excluded from the x64 WW3D source selection; remaining direct `DX8Wrapper` callers are the explicit migration backlog before the full game target is enabled.
 
-The earlier partial abstraction remains:
+The backend direction is now:
 
 ```text
 WW3D callers
@@ -52,16 +52,11 @@ WW3D callers
     v
 IRenderBackend
     |
-    v
-DX8Backend
-    |
-    v
-DX8Wrapper / D3D8
+    +-- D3D12Backend   (Windows x64 / Evolution)
+    `-- DX8Backend     (archival 32-bit/reference path only)
 ```
 
-Verified routed operations include scene begin/end, present/flip, clear, viewport, gamma, ambient/light environment, and cached-state invalidation.
-
-This is useful legacy-side groundwork for Step 11. The new D3D12 shell is not implemented as a giant `DX8Wrapper` emulation; it establishes the modern process/device/frame boundary first. Meshes, textures, buffers, pipelines, materials and renderer-neutral submission still need to cross that boundary deliberately.
+Verified routed operations include scene begin/end, deferred present/flip, clear, viewport, gamma, ambient/light environment, and cached-state invalidation. The D3D12 backend does not emulate the full `DX8Wrapper` API. Meshes, textures, buffers, pipelines, materials, render targets and the remaining renderer state/draw call sites must move across the existing seam or into renderer-neutral WW3D structures deliberately.
 
 ## Asset system
 
