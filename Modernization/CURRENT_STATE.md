@@ -1,27 +1,26 @@
 # Current Source State
 
-This document records verified source facts plus accepted modernization changes through the Step 04E3 local candidate on 2026-09-17.
+This document records verified source facts plus accepted modernization changes through the Step 04F x64-only retirement candidate on 2026-09-17.
 
 ## Build system
 
 - Top-level project uses CMake 3.25+; modern project code uses C++20 through `core_config` while the standalone W3X characterization targets remain C++98-compatible.
 - VC6 and existing MSVC preset families remain available as historical/comparison paths.
-- The canonical i686 MinGW/Ninja names are `mingw32-release`, `mingw32-debug`, `mingw32-profile`, and `mingw32-tests`; older `mingw-w64-i686*` names remain compatibility aliases.
-- `mingw32-tests` enables a focused root graph (`RTS_BUILD_TESTS_ONLY`) instead of configuring the full Zero Hour renderer/tool/dependency tree.
+- The supported MinGW/Ninja modernization lane is x86_64-only and uses `mingw64-tests`; Step 04F removes the former `mingw32-*` and `mingw-w64-i686*` presets rather than preserving dormant aliases.
 - `Core/Tests/CMakeLists.txt` integrates W3X A0/A1/A2 and the Step 01 determinism test with CTest while preserving `z_determinismcheck`.
 - C++-only `-Wsuggest-override` and MinGW compatibility/link settings are target-scoped through `core_config` rather than globally leaking into C/vendored targets.
 - Direct `FetchContent_Populate()` use in the ReactOS ATL, legacy zlib, and LZHL source-only paths has been removed.
-- The i686 toolchain validates the selected GCC triplet, supports `RTS_MINGW_ROOT`, and shares its resolved bin path with WIDL/debug-strip discovery. WIDL supports explicit root/include overrides and is not required for the focused test graph.
+- The MinGW toolchain validates the `x86_64-w64-mingw32` triplet, supports `RTS_MINGW_ROOT`, and shares its resolved bin path with WIDL/debug-strip discovery. WIDL supports explicit root/include overrides and is not required for the focused test graph.
 - Full MinGW runtime configuration now requires WIDL before populating runtime FetchContent dependencies; native Windows also validates the `oaidl.idl` and `ocidl.idl` imports used by the EABrowser IDLs.
 - Generals and Zero Hour install rules use `rts_install_runtime_target()` instead of repeating MSVC-only PDB generator expressions. MSVC keeps optional PDB installation; MinGW Release installs the `.debug` sidecar emitted by the existing strip workflow.
-- MinGW toolchain discovery is now shared by tiny i686/x86_64 wrappers. `mingw64-tests` is the canonical x64 deterministic/headless lane and intentionally configures only the focused modernization graph.
+- MinGW toolchain discovery is now x86_64-only through `mingw-w64-common.cmake` plus the canonical x86_64 wrapper. `mingw64-tests` intentionally configures only the focused modernization graph.
 - Full MinGW x64 runtime configuration is still blocked by design until runtime/platform/renderer dependencies are migrated subsystem-by-subsystem.
-- Step 04D is fully Windows cross-architecture verified. Step 04E2B is also real-Windows x64 signed off with MinGW-w64 GCC 16.2 at 21/21 plus the Step04D, 04E1 and 04E2 explicit gates. Step 04E3 grows the x64 focused graph to 23 tests locally.
+- Step 04D is fully Windows cross-architecture verified as historical provenance. Steps 04E2B, 04E3, and 04E4 are real-Windows x64 signed off; the user-supplied 04E4 run passed 25/25 plus every explicit 04D-through-04E4 gate. Step 04F now replaces the retired comparator test with the x64-retirement policy gate, so the focused graph remains 25 tests.
 
 ## Performance telemetry
 
 - Step 03 is complete. `rts/profile.h` exposes one consolidated `PerformanceTelemetry` seam; no second profiler hierarchy was introduced.
-- `mingw32-profile` enables `RTS_BUILD_OPTION_PERF_TELEMETRY`; normal release/debug builds do not compile the engine/client telemetry call sites.
+- The historical `mingw32-profile` capture preset is retired by Step 04F. Telemetry remains compile-time gated and observational; a new real gameplay capture waits for the full Win64 profile/runtime target.
 - CSV schema v2 emits one observational row per `GameEngine::update()` with update/client/message/network/logic CPU phases plus the primary WW3D render CPU bracket.
 - The same row carries draw/geometry/texture/resource counters and a drawable total/visible/shrouded visibility proxy.
 - `scripts/perf-summary.py` reports timing percentiles and mean/max resource counters using only the Python standard library.
@@ -31,15 +30,15 @@ This document records verified source facts plus accepted modernization changes 
 
 ## x64 migration
 
-- Step 04 is active; Steps 04A-04D, 04E2 and 04E3 are Windows verified. Step 04E4 is implemented locally as the x64-only full-session EVN1/EVR1 golden plus version/corruption/compatibility gate and awaits real Windows/full-client follow-up.
-- `cmake/toolchains/mingw-w64-common.cmake` centralizes MinGW-w64 discovery; i686 and x86_64 wrappers select architecture/triplet/root/pointer width.
+- Step 04 is in final 04F verification. Steps 04A-04D, 04E2, 04E3, and 04E4 are Windows verified; the user-supplied 04E4 run passed 25/25 plus every explicit 04D-through-04E4 gate.
+- `cmake/toolchains/mingw-w64-common.cmake` now describes only x86_64. The former i686 wrapper/preset/bootstrap path is retired by 04F.
 - `mingw64-tests` enables `RTS_BUILD_X64_READINESS` and `RTS_BUILD_X64_HEADLESS_CORE`; it remains renderer-free and is the canonical x86_64 Windows migration preset.
 - Focused x64 readiness does not link legacy D3D8/DirectInput/DirectSound and does not populate ReactOS ATL when there is no consumer.
 - `architecture_width_step04a` enforces fixed-width engine/wire primitives and IDs while permitting native pointers/`uintptr_t` to widen.
-- Step 04D centralizes `setFPMode()` in Core, preserves the frozen i686 x87 precision contract, defines x64 round-to-nearest behavior, and adds a production RNG/CRC 12k-frame timeline with fixed-width field hashing only.
+- Step 04D centralized `setFPMode()` in Core and established the x64 round-to-nearest deterministic timeline; the historical i686 x87 result remains recorded as provenance, not as an active build lane.
 - Step 04D3 selectively aligns with the supplied upstream snapshot: Dozer/Worker Xfer/task fixes, production cancellation, neutron radius behavior, adapted GameMemory robustness, runtime Bink/Miles loading, and glyph-buffer safety. Material shared-file divergence fell from 93 to 63 without replacing EastWind x64/determinism infrastructure.
-- The full x64 Zero Hour executable is not enabled yet. 04E2 supplies staged Win64 EVN1/EVR1 runtime integration; 04E3 validates and Windows-signs-off the deterministic two-endpoint session contract; 04E4 freezes a representative network/replay command+CRC transcript and hardens replay corruption/order behavior. Representative full game-client multiplayer/replay execution still remains before x86 retirement.
-- The i686 runtime remains the temporary deterministic/replay oracle only; retail x86 multiplayer interoperability is not required.
+- The full x64 Zero Hour executable is not enabled yet. 04E2 supplies staged Win64 EVN1/EVR1 runtime integration; 04E3 validates the deterministic two-endpoint session contract; 04E4 freezes the representative command/CRC transcript; 04F removes the frozen i686 modernization/oracle machinery. Representative full-client multiplayer/replay execution remains a later x64 stabilization gate.
+- The i686 modernization/oracle lane is retired. Retail x86 multiplayer interoperability is not required; supported Evolution development proceeds on x64.
 
 ## Renderer
 
@@ -89,11 +88,11 @@ The modernization program defines W3X as the EA SAGE XML-based evolution of W3D 
 
 ## Determinism guard
 
-Step 01 now has a consolidated characterization harness in `Core/Tests/DeterminismPrimitivesTest.cpp`. The lightweight path directly exercises production CRC, game-logic RNG, and compiler-sensitive float helpers under GCC/Clang optimization variants. The Windows `z_determinismtest` extends that same harness through production Xfer primitives, XferCRC, the real `DamageInfoOutput::xfer()` snapshot method, Win32 ABI/network assumptions, and a replay command-record checkpoint. It is now built as a focused standalone target from six implementation units instead of linking the monolithic `z_gameengine` archive.
+Step 01 now has a consolidated characterization harness in `Core/Tests/DeterminismPrimitivesTest.cpp`. The lightweight path directly exercises production CRC, game-logic RNG, and compiler-sensitive float helpers under GCC/Clang optimization variants. Historically, the retired Windows/i686 `z_determinismtest` extended that same harness through production Xfer primitives, XferCRC, the real `DamageInfoOutput::xfer()` snapshot method, Win32 ABI/network assumptions, and a replay command-record checkpoint. Step 04F no longer builds that x86-only branch; active x64 coverage is supplied by the portable Step 01 primitives plus the 04A-04E4 fixed-width, deterministic timeline, replay/network, session, and CRC gates.
 
 One concrete compiler hazard was removed without changing the legacy numeric algorithm: modern/non-VC6 `fast_float_trunc`, `fast_float_floor`, and `fast_float_ceil` now move IEEE-754 bits with `memcpy` rather than aliasing a `float` through an `unsigned *`. A 199,122-input before/after probe produced identical output bits; the VC6/reference assembly branch remains untouched.
 
-The Step 01G Windows gate remains signed off: on 2026-09-10, `z_determinismcheck` passed on MinGW-w64 i686 / GCC 16.2 + Ninja with the complete float-helper, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoint set. Step 02A relocates only the CMake ownership of that focused target into `Core/Tests`; its Windows source set, header-prelude contract, and MinGW IPO isolation are preserved. The new Step 02A Windows run still requires fresh validation.
+The Step 01G Windows gate remains signed-off historical provenance: on 2026-09-10, the retired MinGW-w64 i686 / GCC 16.2 + Ninja `z_determinismcheck` passed the complete float-helper, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoint set. Step 04F deliberately does not preserve an active i686 compiler lane merely to rerun that historical gate.
 
 ## Modernization risk areas
 

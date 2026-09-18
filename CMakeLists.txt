@@ -55,9 +55,9 @@ if(MINGW)
         include(cmake/widl.cmake)
         rts_require_widl_for_runtime()
     endif()
-    # The focused x64 readiness graph has no ATL consumer. The signed-off i686
-    # determinism gate still uses the ReactOS ATL compatibility seam.
-    if(NOT RTS_BUILD_TESTS_ONLY OR CMAKE_SIZEOF_VOID_P EQUAL 4)
+    # The focused x64 modernization graph has no ATL consumer. Full runtime
+    # targets may still consume the source-only ReactOS ATL compatibility seam.
+    if(NOT RTS_BUILD_TESTS_ONLY)
         include(cmake/reactos-atl.cmake)
     endif()
 endif()

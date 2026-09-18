@@ -418,3 +418,13 @@ The user first supplied real Windows MinGW-w64 GCC 16.2 output for that baseline
 - local GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer and GCC UndefinedBehaviorSanitizer focused graphs all pass **25/25**, with all prior explicit gates unchanged.
 
 Windows 04E4 sign-off and representative full-client multiplayer/replay execution are not claimed until supplied separately.
+
+## 2026-09-17 — Step 04F: retire the frozen i686 modernization/oracle lane
+
+Authoritative input: Windows-signed-off Step04E4 full repository, SHA-256 `b21a9a42e8ec00c6305ea100efec1f1c976e79ef35b5056a6fd4771fe2f416d4`. The user-supplied Windows transcript records MinGW-w64 GCC/G++ 16.2, 25/25 focused tests, and successful Step04D, 04E1, 04E2, 04E3, and 04E4 explicit gates.
+
+Implemented the final Step 04 retirement boundary: removed i686 MinGW presets/toolchain/bootstrap/comparator surfaces; made the canonical MinGW toolchain x86_64-only; rejected non-64-bit MinGW configuration; removed the focused Step01 i686 production/ATL branch; switched WIDL to Win64 generation; strengthened `ArchitectureMigrationTest` to require 64-bit native pointers; and added `x64_retirement_policy_step04f` / `z_step04fcheck`. The old comparator CTest was removed, so the focused graph remains 25 tests.
+
+Project-owner decision: representative full-client multiplayer/replay validation remains a later x64 stabilization task and no longer blocks i686 retirement. Historical x86 verification records remain documentation provenance only.
+
+Local GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer focused graphs all pass **25/25**. The unchanged Step04D/04E1/04E2/04E3/04E4 gates, `z_determinismcheck`, and the new Step04F policy target all pass. The final patch applies to a fresh extraction of the exact Step04E4 ZIP, reproduces all 4,579 source files byte-for-byte, and that reconstructed tree also passes 25/25 plus every explicit gate. Windows Step04F validation is pending and must not be claimed until its console output is supplied.

@@ -74,7 +74,7 @@ endif()
 
 if(NOT tests_cmake MATCHES "if\\(CMAKE_SIZEOF_VOID_P EQUAL 8\\)" OR
    NOT tests_cmake MATCHES "evolution_session_x64_step04e3")
-    message(FATAL_ERROR "Step 04E3 session gate must remain x64-only; i686 is frozen")
+    message(FATAL_ERROR "Step 04E3 session gate must remain x64-only")
 endif()
 
 foreach(_required IN ITEMS

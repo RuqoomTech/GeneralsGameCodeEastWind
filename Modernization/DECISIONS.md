@@ -90,3 +90,14 @@ Evolution network/replay compatibility is defined by versioned byte encodings, n
 - legacy `.rep` loading may remain as a compatibility path, but new Evolution format design is independent of legacy Recorder object layout;
 - unsupported protocol/replay/command versions are rejected explicitly rather than guessed;
 - retail x86 multiplayer packet compatibility is intentionally outside the Evolution contract.
+
+## 2026-09-17 — Retire the i686 modernization/oracle lane after 04E4
+
+The project owner elected to close the temporary cross-architecture oracle era once the deterministic, protocol, runtime-bridge, two-endpoint session, and full-session network/replay gates were all Windows-signed-off.
+
+- MinGW-w64 modernization/development support is x86_64-only from Step 04F onward.
+- `mingw32-*`, `mingw-w64-i686*`, the i686 toolchain wrapper, `-IncludeLegacyX86`, and the cross-architecture timeline comparator are retired rather than maintained as dormant compatibility paths.
+- Historical VC6/Win32 material may remain for provenance/reference but is not a supported Evolution runtime or a multiplayer compatibility target.
+- Fixed-width game/wire/replay/Xfer/CRC/RNG fields do not widen merely because the process is x64-only.
+- Representative full-client multiplayer/replay validation remains important for x64 stabilization, but it no longer justifies retaining an i686 build lane.
+- Step 05 W3X importer work may begin after the final 04F Windows x64 policy run; no further i686 certification is required.

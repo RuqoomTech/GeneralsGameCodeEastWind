@@ -32,7 +32,7 @@ file(READ "${RTS_SOURCE_DIR}/Core/Tests/DeterminismPrimitivesTest.cpp" _step01_g
 string(FIND "${_step01_guard}" "#include \"Common/MessageStream.h\"" _message_stream_include)
 if(_message_stream_include EQUAL -1)
     message(FATAL_ERROR
-        "The frozen i686 determinism guard must include Common/MessageStream.h explicitly; "
+        "The determinism guard must include Common/MessageStream.h explicitly; "
         "do not rely on NetworkDefs.h or another transitive include for GameMessage ABI/replay definitions.")
 endif()
 

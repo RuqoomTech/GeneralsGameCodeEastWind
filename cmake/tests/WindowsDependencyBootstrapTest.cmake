@@ -15,32 +15,35 @@ foreach(_required
     "mingw-w64-x86_64-cmake"
     "mingw-w64-x86_64-ninja"
     "mingw-w64-x86_64-python"
-    "mingw-w64-i686-toolchain"
-    "IncludeLegacyX86"
     "mingw64-tests"
-    "z_determinismcheck"
     "z_headlessdeterminismcheck"
-    "compare-determinism-timelines.py"
+    "z_evolutionfullsessioncheck"
+    "z_step04fcheck"
 )
     string(FIND "${_contents}" "${_required}" _pos)
     if(_pos EQUAL -1)
-        message(FATAL_ERROR "Dependency bootstrap is missing required token: ${_required}")
+        message(FATAL_ERROR "Dependency bootstrap is missing required x64 token: ${_required}")
     endif()
 endforeach()
 
+foreach(_retired
+    "IncludeLegacyX86"
+    "mingw-w64-i686"
+    "mingw32"
+    "compare-determinism-timelines.py"
+)
+    string(FIND "${_contents}" "${_retired}" _pos)
+    if(NOT _pos EQUAL -1)
+        message(FATAL_ERROR "Step 04F regression: Windows bootstrap still exposes retired x86 token '${_retired}'")
+    endif()
+endforeach()
 
 # MSYS2/Wine widl uses -V for its version query; --version prints usage and
-# exits non-zero. Keep the bootstrap aligned with cmake/widl.cmake so dependency
-# verification cannot regress after a successful toolchain installation.
-foreach(_widl_check
-    "Assert-Tool (Join-Path $mingw64Bin 'widl.exe') 'WIDL' @('-V')"
-    "Assert-Tool (Join-Path $mingw32Bin 'widl.exe') 'i686 WIDL' @('-V')"
-)
-    string(FIND "${_contents}" "${_widl_check}" _widl_pos)
-    if(_widl_pos EQUAL -1)
-        message(FATAL_ERROR "Dependency bootstrap must verify WIDL with -V: ${_widl_check}")
-    endif()
-endforeach()
+# exits non-zero. Keep the bootstrap aligned with cmake/widl.cmake.
+string(FIND "${_contents}" "Assert-Tool (Join-Path $mingw64Bin 'widl.exe') 'WIDL' @('-V')" _widl_pos)
+if(_widl_pos EQUAL -1)
+    message(FATAL_ERROR "Dependency bootstrap must verify x64 WIDL with -V")
+endif()
 
 string(FIND "${_contents}" "widl.exe') 'WIDL' @('--version')" _bad_widl_long_version)
 if(NOT _bad_widl_long_version EQUAL -1)
@@ -48,9 +51,7 @@ if(NOT _bad_widl_long_version EQUAL -1)
 endif()
 
 # Native tool verification must capture the full process output and snapshot
-# LASTEXITCODE before piping the text through Select-Object. Directly piping a
-# native process into Select-Object -First can make Windows PowerShell report
-# a successful tool probe as exit -1 after the consumer closes the pipe early.
+# LASTEXITCODE before piping the text through Select-Object.
 string(FIND "${_contents}" "$output = @(& $Path @Arguments 2>&1)" _capture_output)
 string(FIND "${_contents}" "$exitCode = $LASTEXITCODE" _capture_exit)
 string(FIND "${_contents}" "$output | Select-Object -First 2" _display_output)
@@ -66,12 +67,4 @@ if(NOT _bad_direct_probe_pipe EQUAL -1)
     message(FATAL_ERROR "Dependency bootstrap must not pipe native version probes directly into Select-Object -First")
 endif()
 
-# x64 must remain the default path. The i686 install may only happen behind the
-# explicit compatibility-oracle switch.
-string(FIND "${_contents}" "if ($IncludeLegacyX86)" _legacy_guard)
-string(FIND "${_contents}" "pacman -S --needed --noconfirm mingw-w64-i686-toolchain" _legacy_install)
-if(_legacy_guard EQUAL -1 OR _legacy_install EQUAL -1 OR _legacy_guard GREATER _legacy_install)
-    message(FATAL_ERROR "The i686 dependency install is not guarded by IncludeLegacyX86")
-endif()
-
-message(STATUS "Step 04C Windows dependency bootstrap policy passed")
+message(STATUS "Step 04C/04F Windows x64 dependency bootstrap policy passed")

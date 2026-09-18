@@ -1,9 +1,9 @@
 /*
 ** Step 04A architecture-width migration guard.
 **
-** The x86 compatibility runtime and the x64 modernization lane must agree on
-** fixed serialization/network widths while allowing native pointers/size_t to
-** follow the target architecture.
+** Step 04F retires the x86 modernization/oracle lane. Evolution native
+** pointers are now required to be 64-bit while serialization/network widths
+** remain explicitly fixed and architecture-independent.
 */
 
 #include "Utility/CppMacros.h"
@@ -37,15 +37,11 @@ int main()
 	Expect_Size("Real wire width", 4U, sizeof(Real));
 	Expect_Size("ObjectID wire width", 4U, sizeof(ObjectID));
 	Expect_Size("DrawableID wire width", 4U, sizeof(DrawableID));
+	Expect_Size("Evolution native pointer width", 8U, sizeof(void *));
 	Expect_Size("uintptr_t follows pointer width", sizeof(void *), sizeof(uintptr_t));
 
 #if defined(_WIN32)
 	Expect_Size("Windows WideChar compatibility width", 2U, sizeof(WideChar));
-# if defined(_WIN64)
-	Expect_Size("Win64 pointer width", 8U, sizeof(void *));
-# else
-	Expect_Size("Win32 pointer width", 4U, sizeof(void *));
-# endif
 #endif
 
 	int value = 7;

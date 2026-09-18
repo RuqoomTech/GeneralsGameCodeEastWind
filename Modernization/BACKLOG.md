@@ -13,23 +13,23 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 03 | HD-mod performance telemetry | DONE | Schema v2 update/render phases + visibility/resource counters + summary tool |
 | 03A | Render-frame telemetry / CSV schema v1 | DONE | Folded into completed Step 03 schema v2 |
 | 03B | Update-phase / visibility telemetry + capture summary | DONE | Local GCC/Clang focused regression; observational only |
-| 04 | x64 engine migration | ACTIVE | x64-only Evolution target; frozen i686 retained temporarily as deterministic oracle |
+| 04 | x64 engine migration | VERIFY | 04E4 Windows-signed-off; 04F x64-only retirement implemented locally, final Windows policy run pending |
 | 04A | x64 readiness build lane | DONE | `mingw64-tests` verified on real Windows x64 as part of the Step 04D/04D3 17-test gate |
 | 04B | Wire/replay ABI freeze + pointer/handle audit | DONE | Explicit fixed-width wire contract; first native pointer/handle truncations removed |
 | 04C | Native-width runtime substrate + dependency bootstrap | DONE | Native allocator/pointer tests verified in the real Windows x64 and frozen i686 focused graphs |
 | 04D | x64 deterministic/headless core bring-up | DONE | Windows x64 17/17, i686 17/17, Step 01 oracle pass, and identical 8-checkpoint i686/x64 timeline through frame 12000 |
 | 04D3 | Upstream alignment / divergence reduction | DONE | Selected gameplay/runtime fixes imported/adapted; Windows x64 17/17 plus unchanged Step 04D fixture |
-| 04E | Evolution network/replay protocol + x64 validation | ACTIVE | 04E1/04E2/04E3 Windows-signed-off; 04E4 full-session golden/compatibility candidate implemented locally |
+| 04E | Evolution network/replay protocol + x64 validation | DONE | 04E1-04E4 complete; 04E4 Windows MinGW x64 passed 25/25 plus all explicit gates |
 | 04E1 | Protocol v1 foundation + game-command payload migration | DONE | Golden byte fixtures + malformed-input gates; covered by the Step04E2B Windows 21/21 sign-off |
 | 04E2 | Staged EVN1 transport + EVR1 Recorder integration | DONE | Win64-only gameplay datagrams + dual-format replay runtime bridge; real Windows MinGW x64 21/21 + explicit gates passed |
 | 04E3 | Evolution x64-to-x64 multiplayer session validation | DONE | Real Windows MinGW-w64 GCC 16.2 passed 23/23 plus all Step04D/04E1/04E2/04E3 explicit gates |
-| 04E4 | Replay/network golden session gates | VERIFY | 136-command/68-frame exact EVN1+EVR1 session fixture, CRC equality, corruption/version/order and fallback policy; Windows/full-client follow-up pending |
-| 04F | Retire x86 | PLANNED | Remove i686 after golden replay/simulation/network gates pass |
+| 04E4 | Replay/network golden session gates | DONE | Real Windows GCC 16.2 passed 25/25 + explicit full-session gate; representative full-client run moved to x64 stabilization |
+| 04F | Retire x86 modernization/oracle lane | VERIFY | i686 MinGW presets/toolchain/bootstrap/comparator removed; x64-only policy gate passes locally; Windows run pending |
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |
 | W3X-A1 | W3X document-envelope probe | DONE | Root/namespace/SAGE envelope recognition |
 | W3X-A2 | W3X top-level child-element discovery | DONE | Direct-child classification without content decoding |
 | W3X-A2R | Consolidate W3X A1/A2 parser seam | DONE | One public API + one shared implementation; no duplicate parser headers |
-| 05 | W3X-A parser/import foundation | PLANNED | Parse/validate child content without renderer |
+| 05 | W3X-A parser/import foundation | NEXT | Begin immediately after Step 04F Windows x64 retirement check |
 | 06 | HD texture pipeline | PLANNED | Efficient/correct 2K/4K assets |
 | 07 | High-poly / 32-bit geometry | PLANNED | >65k-class geometry path where needed |
 | 08 | Instancing/batching expansion | PLANNED | Reduce repeated-object CPU/draw cost |
@@ -50,7 +50,7 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 23 | W3X completeness/tooling | PLANNED | Documented support matrix/toolchain |
 | 24 | Advanced GPU optimization | PLANNED | Only measured bottlenecks |
 
-`DONE*` records implementation where a relevant Windows gate remains outstanding. Step 04D and Step 04E2 are Windows-signed-off; Step 04E3 is implemented locally and awaits real Windows x64 verification plus later full-client session follow-up.
+`DONE*` records implementation where a relevant Windows gate remains outstanding. Steps 04D and 04E1-04E4 are Windows-signed-off. Step 04F is the only remaining Step 04 verification item; representative full-client session/replay execution is tracked as later x64 stabilization rather than as an i686-retention gate.
 
 ## Cross-cutting backlog
 

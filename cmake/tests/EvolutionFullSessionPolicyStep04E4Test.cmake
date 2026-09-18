@@ -52,7 +52,7 @@ endforeach()
 string(FIND "${tests_cmake}" "if(CMAKE_SIZEOF_VOID_P EQUAL 8)" _x64_guard)
 string(FIND "${tests_cmake}" "evolution_full_session_x64_step04e4" _e4_target)
 if(_x64_guard EQUAL -1 OR _e4_target EQUAL -1 OR NOT _x64_guard LESS _e4_target)
-    message(FATAL_ERROR "Step 04E4 full-session gate must remain x64-only; i686 is frozen")
+    message(FATAL_ERROR "Step 04E4 full-session gate must remain x64-only")
 endif()
 
 foreach(_required IN ITEMS

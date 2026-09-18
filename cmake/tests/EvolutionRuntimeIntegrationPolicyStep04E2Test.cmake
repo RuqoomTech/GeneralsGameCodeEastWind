@@ -26,7 +26,7 @@ rts_read("Generals/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/Popu
 rts_read("GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/PopupReplay.cpp" zh_popup)
 
 
-# The staged runtime bridge is an Evolution x64 feature. The frozen i686 lane
+# The staged runtime bridge is an Evolution x64 feature. The retired i686 lane
 # may compile/test the portable codec but must keep legacy runtime networking
 # and replay class layouts/behavior.
 foreach(_guarded IN ITEMS transport_h transport_cpp connection_cpp manager_cpp generals_recorder_h generals_recorder zh_recorder_h zh_recorder generals_popup zh_popup)

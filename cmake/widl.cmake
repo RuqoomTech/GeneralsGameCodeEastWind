@@ -1,5 +1,5 @@
 # WIDL integration for MinGW-w64 Windows builds.
-# Native MSYS2 MINGW32 provides widl.exe and the Windows IDL headers directly
+# Native MSYS2 MINGW64 provides widl.exe and the Windows IDL headers directly
 # under the selected MinGW root. Linux cross-build hosts may instead use Wine's
 # WIDL/include layout. Do not mutate PATH to make either layout work.
 
@@ -69,7 +69,7 @@ else()
             "${_rts_widl_env_root}/include/wine/wine/windows")
     endif()
     if(RTS_MINGW_ROOT)
-        # Canonical MSYS2 MINGW32 layout: /mingw32/include/oaidl.idl.
+        # Canonical MSYS2 MINGW64 layout: /mingw64/include/oaidl.idl.
         list(APPEND _rts_widl_include_hints "${RTS_MINGW_ROOT}/include")
     endif()
     if(NOT CMAKE_HOST_WIN32)
@@ -111,14 +111,14 @@ function(rts_require_widl_for_runtime)
     if(NOT IDL_COMPILER_FOUND)
         message(FATAL_ERROR
             "The MinGW runtime build requires WIDL for EABrowser IDL generation. "
-            "On MSYS2 MINGW32 install mingw-w64-i686-tools (included by the "
-            "mingw-w64-i686-toolchain group), or set RTS_WIDL_ROOT/WIDL_ROOT. "
+            "On MSYS2 MINGW64 install mingw-w64-x86_64-tools (included by the "
+            "mingw-w64-x86_64-toolchain group), or set RTS_WIDL_ROOT/WIDL_ROOT. "
             "No PATH override is required by the canonical presets.")
     endif()
 
     # The in-tree BrowserEngine/BrowserDispatch IDLs import oaidl.idl and
-    # ocidl.idl. Native MSYS2 installs both under /mingw32/include as part of
-    # mingw-w64-i686-headers. Fail before FetchContent if that canonical header
+    # ocidl.idl. Native MSYS2 installs both under /mingw64/include as part of
+    # mingw-w64-x86_64-headers. Fail before FetchContent if that canonical header
     # set is incomplete instead of waiting for a later custom-command failure.
     if(CMAKE_HOST_WIN32)
         if(NOT _rts_widl_system_include_dir
@@ -126,8 +126,8 @@ function(rts_require_widl_for_runtime)
            OR NOT EXISTS "${_rts_widl_system_include_dir}/ocidl.idl")
             message(FATAL_ERROR
                 "WIDL was found, but the required Windows IDL headers oaidl.idl/ocidl.idl "
-                "were not found. On MSYS2 MINGW32 install mingw-w64-i686-headers "
-                "(included by mingw-w64-i686-toolchain), or set RTS_WIDL_INCLUDE_DIR.")
+                "were not found. On MSYS2 MINGW64 install mingw-w64-x86_64-headers "
+                "(included by mingw-w64-x86_64-toolchain), or set RTS_WIDL_INCLUDE_DIR.")
         endif()
     endif()
 endfunction()
@@ -143,7 +143,7 @@ function(add_idl_file target_name idl_file)
     set(iid_file "${CMAKE_CURRENT_BINARY_DIR}/${idl_basename}_i.c")
 
     set(_widl_flags
-        --win32
+        --win64
         "-I${idl_dir}"
         ${WIDL_INCLUDE_PATHS}
         -D__WIDL__

@@ -74,13 +74,13 @@ Completed measurement foundation:
 
 Legacy D3D8 GPU timestamp work is intentionally deferred; native GPU timing belongs to the D3D12 command-queue implementation rather than a temporary renderer path. Memory/resident accounting moves with the x64 migration.
 
-### Step 04 — x64 Engine Migration — ACTIVE
+### Step 04 — x64 Engine Migration — FINAL VERIFICATION
 
 The earlier standalone “x86 memory survival” milestone is folded into the migration: x86 remains the compatibility/reference executable, but new effort now removes the x86 ceiling directly.
 
-**Steps 04A–04D fully verified; 04D3 implemented/Windows-x64 verified; 04E active:**
+**Steps 04A–04E4 Windows verified; 04F implemented as the final x64-only retirement slice:**
 
-- shared MinGW-w64 toolchain discovery for i686 and x86_64;
+- x64-only MinGW-w64 toolchain discovery after 04F retirement of the former i686 oracle lane;
 - `mingw64-tests` x64 readiness preset;
 - explicit `RTS_BUILD_X64_READINESS` guard;
 - 64-bit focused graph decoupled from legacy D3D8/input/audio link requirements;
@@ -101,8 +101,8 @@ Current/remaining staged slices:
 - **04E1 done:** explicit little-endian command codec, command-batch/network v1 framing, replay v1 framing, golden bytes, malformed-input rejection, and migration of live `NetPacketGameCommandData` payloads to the shared codec;
 - **04E2 done / Windows signed off:** staged Win64 routed EVN1 gameplay datagrams plus EVR1 Recorder sidecars, retaining legacy ACK/control/session traffic and legacy replay fallback;
 - **04E3 done / Windows signed off:** deterministic in-process x64 two-endpoint session harness using production routed EVN1 helpers; real Windows MinGW-w64 GCC 16.2 passed 23/23 plus Step04D/04E1/04E2/04E3 explicit gates;
-- **04E4 implemented locally / verification active:** exact representative EVN1/EVR1 full-session transcript, deterministic network fault reconstruction, CRC checkpoint equality, version/corruption/truncation rejection, monotonic replay-frame validation, and legacy replay fallback/fail-closed compatibility policy; representative full-client validation remains;
-- **04F:** retire frozen x86 after the Evolution network/replay golden gates pass.
+- **04E4 done / Windows signed off:** exact representative EVN1/EVR1 full-session transcript, deterministic network fault reconstruction, CRC checkpoint equality, version/corruption/truncation rejection, monotonic replay-frame validation, and legacy replay fallback/fail-closed compatibility policy;
+- **04F implemented / Windows verification pending:** remove the active i686 MinGW presets/toolchain/bootstrap/oracle comparator, require x64 native pointers on the modernization lane, switch WIDL generation to Win64, and lock retirement with a source-policy gate. Once its Windows x64 run passes, Step 04 closes and Step 05 becomes active.
 
 See `STEP_04_X64_MIGRATION.md`.
 

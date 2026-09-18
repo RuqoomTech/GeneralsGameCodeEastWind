@@ -1,5 +1,7 @@
 # Step 02 — Command-Line Build System Foundation
 
+> **Historical note:** Step 04F (2026-09-17) retired the MinGW i686 modernization lane described in this completed Step 02 record. `mingw32-*`, `mingw-w64-i686*`, and their toolchain/bootstrap commands are no longer supported; current Evolution work uses `mingw64-tests`.
+
 ## Status
 
 **IMPLEMENTATION COMPLETE / USER ACCEPTED.** The user reports the Step 02B Windows build path working; no console transcript was supplied for archival, so this document does not claim a newly captured Windows test pass.
@@ -133,9 +135,11 @@ This validates build-system wiring plus W3X A0/A1/A2 and the lightweight Step 01
 - Standalone W3X A0/A1/A2 passed with both GCC and Clang.
 - Preset/test/workflow JSON was accepted by CMake/CTest listing commands.
 
-## Windows validation record
+## Historical Windows validation record
 
-From PowerShell in an MSYS2 MINGW32-capable environment:
+The commands below document the Step 02-era MINGW32 validation surface. Step 04F retires these presets/toolchain aliases; do not treat them as current commands. Current modernization validation uses `mingw64-tests`.
+
+At the time, from PowerShell in an MSYS2 MINGW32-capable environment:
 
 ```powershell
 cmake --preset mingw32-tests
@@ -153,7 +157,7 @@ cmake --build --preset mingw32-release --target z_generals
 
 `mingw32-debug` and `mingw32-profile` are equivalent configure/build entry points for those configurations.
 
-The user reports these paths working after Step 02B. Because the actual Step 02 Windows console output is not stored with this baseline, retain the commands below as the reproducible re-validation gate and do not invent a formal transcript. The Step 01 direct gate must still end with:
+The user reported these paths working after Step 02B. Because the actual Step 02 Windows console output is not stored with this baseline, retain this section only as historical provenance and do not invent a formal transcript. The retired Step 01 direct gate ended with:
 
 ```text
 Step 01 determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.
@@ -167,7 +171,7 @@ Step 02 is no longer the active milestone. Build warnings, secondary Clang promo
 
 - no Direct3D 12 renderer implementation;
 - no Direct3D 11 intermediate renderer;
-- no x64 runtime port yet;
+- no x64 runtime port yet at the time of Step 02 (superseded by completed Step 04 migration work);
 - no simulation/replay/network/Xfer format changes;
 - no W3X runtime importer expansion;
 - no removal of VC6/reference build support.

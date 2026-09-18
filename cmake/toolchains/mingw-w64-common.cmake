@@ -1,23 +1,12 @@
-# Shared MinGW-w64 command-line toolchain discovery for modernization lanes.
-# Wrapper toolchains set RTS_MINGW_ARCH before including this file.
+# Shared MinGW-w64 x86_64 command-line toolchain discovery for Evolution.
+# Step 04F retired the former i686 modernization/oracle lane; this file now
+# intentionally describes one supported MinGW architecture only.
 
-if(NOT DEFINED RTS_MINGW_ARCH)
-    message(FATAL_ERROR "RTS_MINGW_ARCH must be set before including mingw-w64-common.cmake")
-endif()
-
-if(RTS_MINGW_ARCH STREQUAL "i686")
-    set(_rts_mingw_triplet "i686-w64-mingw32")
-    set(_rts_mingw_msys_dir "mingw32")
-    set(_rts_mingw_processor "i686")
-    set(_rts_mingw_pointer_size 4)
-elseif(RTS_MINGW_ARCH STREQUAL "x86_64")
-    set(_rts_mingw_triplet "x86_64-w64-mingw32")
-    set(_rts_mingw_msys_dir "mingw64")
-    set(_rts_mingw_processor "x86_64")
-    set(_rts_mingw_pointer_size 8)
-else()
-    message(FATAL_ERROR "Unsupported RTS_MINGW_ARCH='${RTS_MINGW_ARCH}'")
-endif()
+set(RTS_MINGW_ARCH "x86_64" CACHE INTERNAL "Supported Evolution MinGW architecture")
+set(_rts_mingw_triplet "x86_64-w64-mingw32")
+set(_rts_mingw_msys_dir "mingw64")
+set(_rts_mingw_processor "x86_64")
+set(_rts_mingw_pointer_size 8)
 
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR "${_rts_mingw_processor}")
@@ -30,8 +19,8 @@ if(CMAKE_HOST_WIN32)
             file(TO_CMAKE_PATH "$ENV{${_rts_prefix_env}}" _rts_candidate_root)
             if(_rts_candidate_root STREQUAL "/${_rts_mingw_msys_dir}")
                 # Native Windows CMake does not reliably resolve MSYS virtual roots.
-                # Preserve the Step 02 canonical MSYS2 installation mapping instead
-                # of requiring PATH or generator overrides.
+                # Preserve the canonical MSYS2 MINGW64 mapping instead of requiring
+                # PATH or generator overrides.
                 set(_rts_candidate_root "C:/msys64/${_rts_mingw_msys_dir}")
             endif()
             if(_rts_candidate_root MATCHES "[/\\]${_rts_mingw_msys_dir}/?$")
@@ -42,7 +31,7 @@ if(CMAKE_HOST_WIN32)
     endforeach()
 
     set(RTS_MINGW_ROOT "${_rts_mingw_default_root}" CACHE PATH
-        "MinGW-w64 ${RTS_MINGW_ARCH} installation root (MSYS2: C:/msys64/${_rts_mingw_msys_dir})")
+        "MinGW-w64 x86_64 installation root (MSYS2: C:/msys64/mingw64)")
     set(RTS_MINGW_BIN_DIR "${RTS_MINGW_ROOT}/bin" CACHE INTERNAL "Resolved MinGW-w64 binary directory")
 
     function(_rts_find_mingw_tool out_var unprefixed prefixed)
@@ -65,7 +54,7 @@ if(CMAKE_HOST_WIN32)
     _rts_find_mingw_tool(_RTS_MINGW_RANLIB ranlib "${_rts_mingw_triplet}-ranlib")
     _rts_find_mingw_tool(_RTS_MINGW_DLLTOOL dlltool "${_rts_mingw_triplet}-dlltool")
 else()
-    set(RTS_MINGW_ROOT "/usr/${_rts_mingw_triplet}" CACHE PATH "MinGW-w64 ${RTS_MINGW_ARCH} target root")
+    set(RTS_MINGW_ROOT "/usr/${_rts_mingw_triplet}" CACHE PATH "MinGW-w64 x86_64 target root")
     find_program(_RTS_MINGW_CC NAMES "${_rts_mingw_triplet}-gcc" REQUIRED)
     find_program(_RTS_MINGW_CXX NAMES "${_rts_mingw_triplet}-g++" REQUIRED)
     find_program(_RTS_MINGW_RC NAMES "${_rts_mingw_triplet}-windres" REQUIRED)
@@ -85,7 +74,7 @@ execute_process(
 if(NOT _rts_mingw_machine MATCHES "^${_rts_mingw_triplet}")
     message(FATAL_ERROR
         "Expected a ${_rts_mingw_triplet} compiler, but '${_RTS_MINGW_CC} -dumpmachine' returned "
-        "'${_rts_mingw_machine}'. Set RTS_MINGW_ROOT to the matching MSYS2 MinGW root.")
+        "'${_rts_mingw_machine}'. Set RTS_MINGW_ROOT to the matching MSYS2 MINGW64 root.")
 endif()
 
 set(CMAKE_C_COMPILER "${_RTS_MINGW_CC}")
@@ -101,10 +90,10 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 
 # Available before project() so the focused build graph can make architecture
-# decisions consistently with the selected wrapper toolchain.
+# decisions consistently with the x64-only toolchain.
 set(CMAKE_SIZEOF_VOID_P ${_rts_mingw_pointer_size})
 
-# MFC-dependent tools are outside both MinGW modernization lanes.
+# MFC-dependent tools remain outside the MinGW modernization lane.
 set(RTS_BUILD_CORE_TOOLS OFF CACHE BOOL "Disable MFC-dependent core tools for MinGW" FORCE)
 set(RTS_BUILD_GENERALS_TOOLS OFF CACHE BOOL "Disable MFC-dependent Generals tools for MinGW" FORCE)
 set(RTS_BUILD_ZEROHOUR_TOOLS OFF CACHE BOOL "Disable MFC-dependent Zero Hour tools for MinGW" FORCE)

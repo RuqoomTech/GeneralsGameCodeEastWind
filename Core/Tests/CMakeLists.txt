@@ -42,24 +42,13 @@ rts_add_w3x_test(
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/w3x_document.cpp
 )
 
-# Step 01 determinism gate. On Windows/i686 this is the exact compatibility gate
-# signed off in Step 01G: production RandomValue/Snapshot/Xfer/XferCRC/Damage units,
-# the legacy CppMacros prelude, and MinGW IPO to discard unused legacy link leakage.
-# Non-Windows builds exercise the lightweight CRC/RNG/float characterization from
-# the same test source so CTest can provide a local regression gate.
+# Step 01 determinism gate. Step 04F retired the former Windows/i686 oracle
+# configuration; this focused guard now exercises the architecture-independent
+# deterministic primitives on the supported x64 modernization graph.
 set(_rts_determinism_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/DeterminismPrimitivesTest.cpp
     ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/RandomValue.cpp
 )
-
-if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
-    list(APPEND _rts_determinism_sources
-        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/Snapshot.cpp
-        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/Xfer.cpp
-        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/XferCRC.cpp
-        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/GameLogic/System/Damage.cpp
-    )
-endif()
 
 add_executable(z_determinismtest ${_rts_determinism_sources})
 target_compile_definitions(z_determinismtest PRIVATE
@@ -74,40 +63,10 @@ target_link_libraries(z_determinismtest PRIVATE
     core_config
     core_utility_no_pch
 )
-
-if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
-    target_compile_definitions(z_determinismtest PRIVATE
-        RTS_ZEROHOUR=1
-        RTS_ENGINE_DETERMINISM_TEST=1
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(z_determinismtest PRIVATE
+        -Wall -Wextra -Werror -Wno-unknown-pragmas -Wno-unused-parameter -pedantic
     )
-    # Preserve Zero Hour header precedence from the former zi_gameengine_include
-    # linkage while keeping the focused test independent of GeneralsMD configure.
-    target_include_directories(z_determinismtest BEFORE PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include/Precompiled
-        ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Include
-    )
-    target_precompile_headers(z_determinismtest PRIVATE
-        [["Utility/CppMacros.h"]]
-    )
-
-    if(MINGW)
-        target_link_libraries(z_determinismtest PRIVATE reactos_atl)
-        include(CheckIPOSupported)
-        check_ipo_supported(RESULT _rts_determinism_ipo_supported OUTPUT _rts_determinism_ipo_error LANGUAGES CXX)
-        if(NOT _rts_determinism_ipo_supported)
-            message(FATAL_ERROR
-                "The Step 01 MinGW determinism gate requires C++ IPO/LTO to preserve the "
-                "focused link boundary. CMake reported: ${_rts_determinism_ipo_error}")
-        endif()
-        set_property(TARGET z_determinismtest PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-        target_link_options(z_determinismtest PRIVATE -mconsole)
-    endif()
-else()
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(z_determinismtest PRIVATE
-            -Wall -Wextra -Werror -Wno-unknown-pragmas -Wno-unused-parameter -pedantic
-        )
-    endif()
 endif()
 
 add_test(NAME determinism_step01 COMMAND z_determinismtest)
@@ -164,9 +123,9 @@ if(CMAKE_GENERATOR STREQUAL "Ninja")
     )
 endif()
 
-# Step 04A architecture-width migration guard. This intentionally runs on both
-# the x86 compatibility lane and the new x64 readiness lane: pointers may widen,
-# but fixed wire/serialization types and IDs must not do so implicitly.
+# Step 04A architecture-width migration guard. On the Step 04F x64-only lane,
+# this continues to prove that native pointers are 64-bit while fixed wire/
+# serialization types and IDs remain explicitly 16/32-bit.
 add_executable(architecture_migration_test
     ${CMAKE_CURRENT_SOURCE_DIR}/ArchitectureMigrationTest.cpp
 )
@@ -346,17 +305,8 @@ add_test(
         -P ${CMAKE_SOURCE_DIR}/cmake/tests/DeterministicHeadlessPolicyStep04DTest.cmake
 )
 
-find_package(Python3 COMPONENTS Interpreter QUIET)
-if(Python3_Interpreter_FOUND)
-    add_test(
-        NAME determinism_timeline_compare_tool_step04d
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_SOURCE_DIR}/scripts/compare-determinism-timelines.py --self-test
-    )
-endif()
-
 # Step 04E Evolution protocol/replay v1 guard. The codec and framers are standalone
-# fixed-width code so both i686 oracle and x64 Evolution lanes verify identical bytes.
+# fixed-width code; Step 04F keeps the exact frozen bytes while retiring i686.
 add_executable(evolution_protocol_step04e_test
     ${CMAKE_CURRENT_SOURCE_DIR}/EvolutionProtocolStep04ETest.cpp
     ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/EvolutionCommandCodec.cpp
@@ -466,7 +416,7 @@ add_test(
 
 
 # Step 04E3 deterministic two-endpoint Evolution session gate. This is x64-only:
-# i686 remains frozen as the legacy oracle and receives no new runtime/session work.
+# Step 04F retires i686; this remains an Evolution x64-only runtime/session gate.
 # The harness uses the production command codec and routed EVN1 packet composition;
 # it only controls deterministic delivery faults and legacy ACK arrival timing.
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -561,3 +511,19 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
             -P ${CMAKE_SOURCE_DIR}/cmake/tests/EvolutionFullSessionPolicyStep04E4Test.cmake
     )
 endif()
+
+# Step 04F retires the frozen i686 modernization/oracle surface. The policy gate
+# checks supported presets/toolchains/bootstrap/test wiring while preserving the
+# fixed-width wire/replay contracts already guarded by Steps 04A-04E4.
+add_test(
+    NAME x64_retirement_policy_step04f
+    COMMAND ${CMAKE_COMMAND}
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/X64RetirementPolicyStep04FTest.cmake
+)
+add_custom_target(z_step04fcheck
+    COMMAND ${CMAKE_COMMAND}
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/X64RetirementPolicyStep04FTest.cmake
+    USES_TERMINAL
+)

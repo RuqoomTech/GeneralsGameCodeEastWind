@@ -2,9 +2,9 @@
 
 ## Status
 
-**ACTIVE — Steps 04A through 04D implemented; Windows x64 and i686-vs-x64 determinism certification still require user console runs.**
+**FINAL VERIFICATION — Steps 04A through 04E4 are complete and Windows-verified; Step 04F has retired the i686 modernization/oracle surface locally and awaits one x64 Windows policy run.**
 
-Generals Evolution is an x64-only future target. The frozen i686 build is retained temporarily only as a deterministic simulation/replay reference while the x64 core is brought up. New Evolution features do not have to run on x86.
+Generals Evolution is an x64-only target. Step 04F retires the former frozen i686 deterministic/replay oracle after the x64 deterministic, protocol, session, and full-session golden gates passed on Windows. New Evolution features do not run on x86.
 
 The migration must not obtain a nominal “x64 build” by widening serialized/network types, truncating pointers, disabling compatibility checks, or wrapping the legacy D3D8 renderer in unsafe casts.
 
@@ -38,7 +38,7 @@ Evolution multiplayer compatibility is required **between our own Evolution/game
 
 Consequences:
 
-- the old i686 executable is a temporary behavior/determinism oracle, not a permanent network peer;
+- the retired i686 executable was a temporary behavior/determinism oracle and is no longer a supported modernization target;
 - Evolution may introduce a clean, explicit, versioned wire protocol;
 - old retail packet layout quirks do not constrain the future architecture;
 - fixed-width logical fields are still required so compiler/native ABI cannot leak into the protocol;
@@ -64,11 +64,7 @@ The default path prepares the x64 Evolution development lane and verifies:
 
 The script adds the MINGW64 tool directory to the user/current PATH unless `-SkipPathUpdate` is supplied.
 
-The frozen i686 oracle is optional and explicit:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86
-```
+Step 04F removes the former optional i686 bootstrap mode; `setup-windows-dev.ps1` now provisions and verifies only the MINGW64/x86_64 development lane.
 
 Useful maintenance modes:
 
@@ -87,12 +83,11 @@ The Linux validation environment cannot execute PowerShell or a real MinGW-w64 x
 Step 04A introduced the first real x64 build lane while deliberately keeping the full legacy runtime closed:
 
 1. MinGW discovery is consolidated in `cmake/toolchains/mingw-w64-common.cmake`.
-2. `mingw-w64-i686.cmake` remains the temporary oracle wrapper.
-3. `mingw-w64-x86_64.cmake` selects the future target.
-4. `mingw64-tests` configures/builds/runs the focused modernization graph with `RTS_BUILD_X64_READINESS=ON`.
-5. Full x64 runtime configuration remains deliberately blocked until enough runtime boundaries are safe.
-6. The focused x64 graph avoids the legacy D3D8/DirectInput/DirectSound and unused ATL dependency graph.
-7. `architecture_width_step04a` proves that native pointer width can vary while fixed engine/wire IDs stay 32-bit and pointer round-trips use `uintptr_t`.
+2. Step 04F removes the former `mingw-w64-i686.cmake` oracle wrapper; `mingw-w64-x86_64.cmake` is the sole supported MinGW modernization wrapper.
+3. `mingw64-tests` configures/builds/runs the focused modernization graph with `RTS_BUILD_X64_READINESS=ON`.
+4. Full x64 runtime configuration remains deliberately blocked until enough runtime boundaries are safe.
+5. The focused x64 graph avoids the legacy D3D8/DirectInput/DirectSound and unused ATL dependency graph.
+6. `architecture_width_step04a` now requires an 8-byte native pointer while fixed engine/wire IDs stay explicitly 16/32-bit and pointer round-trips use `uintptr_t`.
 
 The readiness lane is not a claim that the whole game already runs as a Win64 executable.
 
@@ -115,7 +110,7 @@ Step 04B freezes the old packet assumptions only long enough to prevent ABI leak
 
 ## Step 04C — native-width runtime substrate + dependency bootstrap — IMPLEMENTED
 
-Step 04C moves concrete shared-runtime infrastructure to native-width-safe behavior while preserving the frozen x86 oracle where possible.
+Step 04C moved concrete shared-runtime infrastructure to native-width-safe behavior while the then-active x86 oracle was still preserved for comparison. Step 04F has since retired that oracle.
 
 ### Allocator/pool conversion
 
@@ -148,7 +143,7 @@ Step 04C adds:
 
 - `runtime_native_width_step04c` — instantiates production `ObjectPoolClass`, `FastFixedAllocator` and `FastAllocatorGeneral`, forces multiple backing blocks, checks native alignment/uniqueness/corruption and exercises realloc grow/shrink;
 - `runtime_pointer_source_audit_step04c` — prevents the repaired pointer-width patterns from regressing in source paths not yet compiled by the focused graph;
-- `windows_dependency_bootstrap_step04c` — locks the x64-default dependency bootstrap and requires the i686 install to remain behind `-IncludeLegacyX86`.
+- `windows_dependency_bootstrap_step04c` — now locks the x64-only dependency bootstrap and rejects restoration of the retired i686 setup mode.
 
 The focused graph therefore contains 12 tests at Step 04C.
 
@@ -224,7 +219,7 @@ Deliberately retained from EastWind: native-width allocator layouts and `size_t`
 
 The shared-tree material difference count against the supplied upstream snapshot drops from **93 to 63**. See `STEP_04D3_UPSTREAM_ALIGNMENT.md` for provenance and the recurring sync policy.
 
-### Step 04E — Evolution network/replay protocol + x64 validation — ACTIVE
+### Step 04E — Evolution network/replay protocol + x64 validation — DONE
 
 **04E1 implemented:**
 
@@ -236,18 +231,13 @@ The shared-tree material difference count against the supplied upstream snapshot
 - exact golden fixtures and malformed/truncated/version rejection tests freeze v1 bytes;
 - legacy Recorder `.rep` behavior remains untouched for compatibility while the new container is additive.
 
-**04E validation status:** 04E2 supplies the staged Win64 EVN1/EVR1 runtime bridge; 04E3 has real Windows x64 sign-off for the deterministic two-endpoint command/retry/CRC session; 04E4 adds exact full-session network/replay golden bytes plus version/corruption/order/fallback gates and awaits Windows/full-client verification. Retail x86 multiplayer is not a compatibility requirement.
+**04E validation status:** 04E2 supplies the staged Win64 EVN1/EVR1 runtime bridge; 04E3 has real Windows x64 sign-off for the deterministic two-endpoint command/retry/CRC session; 04E4 has real Windows x64 sign-off at 25/25 with exact full-session network/replay golden bytes plus version/corruption/order/fallback gates. Representative full-client multiplayer/replay execution remains later x64 stabilization evidence. Retail x86 multiplayer is not a compatibility requirement.
 
 See `STEP_04E_EVOLUTION_PROTOCOL.md`.
 
-### Step 04F — retire x86
+### Step 04F — retire x86 — IMPLEMENTED / WINDOWS VERIFICATION PENDING
 
-After representative x64 replay/simulation/network gates are authoritative:
-
-- remove i686 presets/toolchain/runtime support;
-- remove obsolete Win32 object-layout guards that are not protocol guarantees;
-- keep fixed-width game/wire/replay assertions;
-- make x64 the sole authoritative Evolution engine architecture.
+The authoritative x64 deterministic/protocol/session/full-session gates are now in place, so 04F removes the active i686 MinGW modernization/oracle machinery, removes obsolete cross-architecture comparator wiring, keeps fixed-width game/wire/replay assertions, and makes x64 the sole authoritative Evolution engine architecture. Historical VC6/MSVC Win32 presets remain archival compatibility/reference paths outside Evolution.
 
 After the x64 core is stable enough, continue to the renderer-neutral scene/asset boundary and the D3D12 Evolution renderer. There is no D3D11 intermediate step.
 
@@ -273,7 +263,7 @@ cmake --build --preset mingw64-tests
 ctest --preset mingw64-tests --output-on-failure
 ```
 
-Cross-architecture certification requires `-IncludeLegacyX86` and the timeline comparison workflow documented above. The full renderer/game executable remains gated; Step 04D is the deterministic/headless core lane, not a D3D8 x64 compatibility build.
+The historical cross-architecture certification is complete and retained only as provenance; `-IncludeLegacyX86` and the comparator are removed by Step 04F. The full renderer/game executable remains gated; Step 04D is the deterministic/headless core lane, not a D3D8 x64 compatibility build.
 
 ### Windows bootstrap verification correction — 2026-09-12
 
@@ -298,3 +288,23 @@ cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck
 The frozen i686 CTest graph reached 16/17. The only failure was the Step 04C allocator regression probe: it used a `uint64_t` marker, accidentally requiring 8-byte `PoolProbe` alignment on MinGW i686. That exceeded the historical pool's pointer-alignment contract and was not required to validate the x64 block-header fix. The probe marker is now `uintptr_t` and a source-policy guard rejects reintroducing stronger-than-pointer alignment.
 
 Windows PowerShell redirected the emitted timelines as UTF-16LE. The comparison tool now auto-detects BOM-marked UTF-16, UTF-8 BOM, or plain UTF-8; its self-test compares a UTF-8 fixture against an equivalent UTF-16 file. No CRC/RNG checkpoint changes were made.
+
+## Step 04F — retire the frozen i686 oracle — 2026-09-17
+
+04E4 received real Windows MinGW-w64 GCC/G++ 16.2 sign-off at **25/25**, with all explicit Step04D/04E1/04E2/04E3/04E4 gates passing. By project-owner decision, those automated golden gates are sufficient to end the temporary i686 oracle era; a representative two-full-client run remains useful stabilization evidence but does not keep x86 support alive.
+
+04F removes the active i686 modernization surface instead of leaving dead aliases behind:
+
+- deletes `cmake/toolchains/mingw-w64-i686.cmake`;
+- removes `mingw32-*` and `mingw-w64-i686*` configure/build/test/workflow presets;
+- removes the `-IncludeLegacyX86` dependency-bootstrap mode and all MINGW32 package/tool checks;
+- removes the Step04D i686-vs-x64 timeline comparator and its CTest self-test;
+- removes the 32-bit production-unit/ReactOS-ATL branch from the focused Step01 test wiring;
+- simplifies the shared MinGW toolchain to x86_64 only and makes `cmake/mingw.cmake` reject non-64-bit pointers;
+- switches WIDL generation to `--win64` and MINGW64/x86_64 package diagnostics;
+- makes the architecture guard require an 8-byte Evolution native pointer while retaining all fixed-width game/wire assertions;
+- adds `x64_retirement_policy_step04f` and `z_step04fcheck` so the retired lane cannot silently return.
+
+No deterministic fixture or EVN1/EVR1 byte changes are part of 04F. The Step04D 12,000-frame fixture, Step04E1 golden bytes, Step04E2 runtime bridge, Step04E3 session semantics, Step04E4 136-command/68-frame full-session fixture, and `MSG_LOGIC_CRC = 1095` remain unchanged.
+
+Local Step04F validation is green at **25/25** under GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer, with all explicit 04D-04F gates unchanged. Once the final Windows `mingw64-tests` + `z_step04fcheck` run passes, Step 04 is closed and the active milestone becomes Step 05 W3X parser/import foundation.

@@ -157,7 +157,7 @@ Local validation: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan a
 | Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
 | MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
 | HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
-| x64 engine migration | **ACTIVE — Step 04D fully Windows cross-architecture verified; Step 04E2B signed off at 21/21; Step 04E3 real-Windows x64 signed off at 23/23 + explicit gates; Step 04E4 full-session EVN1/EVR1 golden/compatibility candidate implemented locally, Windows/full-client verification pending** |
+| x64 engine migration | **FINAL VERIFY — Step 04E4 is real-Windows x64 signed off at 25/25 + all explicit 04D-04E4 gates; Step 04F retires the active i686 modernization/oracle lane locally and awaits one x64 Windows policy run** |
 | W3X format-recognition pre-step | **Done — A0** |
 | W3X document-envelope probe | **Done — A1** |
 | W3X top-level child-element discovery | **Done — A2** |
@@ -182,9 +182,9 @@ None of these pre-steps is wired into the runtime asset manager. They do not cha
 
 ## Next implementation milestone
 
-**Step 03 is complete. Step 04 — x64 Engine Migration — is active.**
+**Step 03 is complete. Step 04 — x64 Engine Migration — is at the final 04F x64-only retirement verification gate. Step 05 becomes active immediately after that Windows check.**
 
-Step 01 remains the deterministic behavior contract. The frozen i686 MinGW/Ninja runtime is retained only as a temporary simulation/replay/CRC oracle while the x64 lane is brought up; it is not a future retail-multiplayer compatibility target. Step 02 remains user-accepted on Windows.
+Step 01 remains the historical deterministic behavior contract. The temporary i686 MinGW/Ninja oracle has now been retired by the Step 04F candidate; retail x86 multiplayer interoperability is not required. Step 02 remains user-accepted on Windows, while the supported modernization lane is x64-only.
 
 ### Step 03 completion
 
@@ -192,9 +192,9 @@ Step 03 extends the Step 03A renderer sample into stable CSV schema v2: one row 
 
 ### Step 04A — x64 readiness lane
 
-Step 04A begins the engine migration without pretending the full runtime is already 64-bit:
+Step 04A began the engine migration without pretending the full runtime was already 64-bit. Step 04F now seals its final architecture boundary:
 
-- MinGW-w64 discovery is consolidated into one common toolchain implementation used by i686 and x86_64 wrappers;
+- MinGW-w64 discovery is consolidated into one x86_64-only common toolchain implementation and wrapper;
 - `mingw64-tests` is the canonical x86_64 focused preset and enables `RTS_BUILD_X64_READINESS`;
 - a full x64 runtime configure is intentionally rejected until runtime boundaries are ported;
 - the x64 focused graph does not depend on legacy D3D8/DirectInput/DirectSound libraries or an unused ATL population;
@@ -202,7 +202,7 @@ Step 04A begins the engine migration without pretending the full runtime is alre
 
 Local host-native GCC 14.2 and Clang 17 focused configure/build/CTest runs pass 7/7 tests, including `-O0`/`-O2`/`-O3` coverage; GCC ASan and UBSan are also green. The validation container has no MinGW-w64 x86_64 compiler, so no Windows `mingw64-tests` pass is claimed until actual output is provided.
 
-Step 04D is fully Windows cross-architecture verified. Step 04E2B has real Windows x64 sign-off with MinGW-w64 GCC 16.2: 21/21 focused tests plus the unchanged Step04D fixture, 04E1 protocol gate, and 04E2 runtime bridge gate. Step 04E3 now also has real Windows x64 sign-off: the user supplied a clean GCC 16.2 configure/build with **23/23** focused tests and successful Step04D, 04E1, 04E2 and `z_evolutionsessioncheck` gates. Step 04E4 is implemented locally as the next x64-only validation layer: an exact multi-frame EVN1/EVR1 golden session, deterministic loss/retry/duplicate/delay reconstruction, logic-CRC checkpoints, version/corruption/truncation rejection, open-time legacy replay fallback policy, and fail-closed behavior after a selected EVR1 sidecar becomes corrupt. The frozen i686 build remains only until the Evolution network/replay golden gates and representative full-client validation fully replace it as an oracle.
+Step 04D is fully Windows cross-architecture verified. Step 04E2B has real Windows x64 sign-off with MinGW-w64 GCC 16.2: 21/21 focused tests plus the unchanged Step04D fixture, 04E1 protocol gate, and 04E2 runtime bridge gate. Step 04E3 now also has real Windows x64 sign-off: the user supplied a clean GCC 16.2 configure/build with **23/23** focused tests and successful Step04D, 04E1, 04E2 and `z_evolutionsessioncheck` gates. Step 04E4 is now Windows-signed-off: the user supplied GCC 16.2 output showing **25/25** focused tests plus all Step04D/04E1/04E2/04E3/04E4 explicit gates passing. The 04F candidate therefore retires the active i686 presets/toolchain/bootstrap/comparator surface. Representative full-client multiplayer/replay execution remains a later x64 stabilization task and no longer blocks i686 retirement.
 
 ### Step 04D4 Windows bootstrap follow-up — 2026-09-12
 
@@ -272,4 +272,13 @@ The executable reconstructs the network side under deterministic first-attempt l
 
 To keep runtime and test behavior aligned, replay frame-order validation is centralized in `EvolutionReplayFormat::advanceReplaySequenceV1` and consumed by `EvolutionReplayStream` for both reads and writes. This changes no serialized byte. The 04E4 source-policy gate also freezes the transitional compatibility rule: a valid EVR1 sidecar is preferred at playback open, an unavailable/invalid sidecar falls back to legacy `.rep`, but corruption after EVR1 has already been selected fails closed rather than silently switching command sources mid-session.
 
-Local validation for the 04E4 candidate passes **25/25** under GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer, including all unchanged 04D/04E1/04E2/04E3 gates. Real Windows sign-off is not claimed yet for 04E4. Representative full game-client multiplayer/replay execution also remains a follow-up validation before Step 04F may retire i686.
+Local validation for 04E4 passed **25/25** under GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer. Real Windows MinGW-w64 GCC 16.2 then passed **25/25** plus all explicit 04D-04E4 gates. Representative full game-client multiplayer/replay execution remains a later x64 stabilization task.
+
+
+## Step 04F x64-only retirement candidate — 2026-09-17
+
+Authoritative input: Windows-signed-off Step04E4 full repository, SHA-256 `b21a9a42e8ec00c6305ea100efec1f1c976e79ef35b5056a6fd4771fe2f416d4`. The user-supplied Windows transcript records MinGW-w64 GCC/G++ 16.2, **25/25** focused tests, and successful Step04D, 04E1, 04E2, 04E3 and 04E4 explicit gates.
+
+Step 04F removes the active i686 MinGW modernization/oracle surface: `mingw32-*` and `mingw-w64-i686*` presets, the i686 toolchain wrapper, `-IncludeLegacyX86`, MINGW32 bootstrap/package checks, and the cross-architecture timeline comparator. The shared MinGW toolchain is x86_64-only, `cmake/mingw.cmake` rejects non-64-bit pointers, WIDL generation uses `--win64`, and `architecture_width_step04a` requires an 8-byte Evolution native pointer while preserving the fixed-width game/wire/replay assertions. Historical VC6/MSVC Win32 presets remain archival compatibility/reference paths outside Evolution.
+
+`x64_retirement_policy_step04f` / `z_step04fcheck` locks the retirement boundary and preserves `MSG_LOGIC_CRC = 1095`. The obsolete comparator CTest is replaced by this policy gate, so the focused graph remains **25 tests**. Local GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer focused graphs all pass **25/25**. `z_determinismcheck`, Step04D, 04E1, 04E2, 04E3, 04E4 and 04F explicit checks also pass. The patch applies cleanly to a fresh extraction of the exact Step04E4 ZIP and reproduces all 4,579 candidate source files byte-for-byte. That reconstructed tree also passes **25/25** plus `z_determinismcheck` and every explicit Step04D-04F gate. Real Windows Step04F sign-off must still be supplied separately.

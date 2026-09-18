@@ -1,6 +1,5 @@
 [CmdletBinding()]
 param(
-    [switch]$IncludeLegacyX86,
     [switch]$SkipMsysUpdate,
     [switch]$SkipPathUpdate,
     [switch]$VerifyOnly
@@ -106,7 +105,6 @@ if (-not $msysRoot) {
 
 $bash = Join-Path $msysRoot 'usr\bin\bash.exe'
 $mingw64Bin = Join-Path $msysRoot 'mingw64\bin'
-$mingw32Bin = Join-Path $msysRoot 'mingw32\bin'
 
 if (-not $VerifyOnly) {
     if (-not $SkipMsysUpdate) {
@@ -118,11 +116,6 @@ if (-not $VerifyOnly) {
 
     Write-Step 'Installing the x64 Evolution build toolchain'
     Invoke-Msys $bash 'pacman -S --needed --noconfirm mingw-w64-x86_64-toolchain mingw-w64-x86_64-tools mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-python'
-
-    if ($IncludeLegacyX86) {
-        Write-Step 'Installing the frozen i686 determinism-oracle toolchain'
-        Invoke-Msys $bash 'pacman -S --needed --noconfirm mingw-w64-i686-toolchain'
-    }
 
     if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
         try {
@@ -154,26 +147,10 @@ Assert-Tool (Join-Path $mingw64Bin 'ninja.exe') 'Ninja'
 Assert-Tool (Join-Path $mingw64Bin 'widl.exe') 'WIDL' @('-V')
 Assert-Tool (Join-Path $mingw64Bin 'python.exe') 'Python'
 
-if ($IncludeLegacyX86) {
-    Write-Step 'Verifying the optional i686 oracle toolchain'
-    Assert-Tool (Join-Path $mingw32Bin 'gcc.exe') 'i686 GCC'
-    Assert-Tool (Join-Path $mingw32Bin 'g++.exe') 'i686 G++'
-    Assert-Tool (Join-Path $mingw32Bin 'widl.exe') 'i686 WIDL' @('-V')
-}
-
 Write-Host ''
-Write-Host 'Windows development dependencies are ready.' -ForegroundColor Green
-Write-Host 'Next x64 validation commands:'
+Write-Host 'Windows x64 Evolution development dependencies are ready.' -ForegroundColor Green
+Write-Host 'Validation commands:'
 Write-Host '  cmake --preset mingw64-tests'
 Write-Host '  cmake --build --preset mingw64-tests'
 Write-Host '  ctest --preset mingw64-tests --output-on-failure'
-Write-Host '  cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck'
-if ($IncludeLegacyX86) {
-    Write-Host ''
-    Write-Host 'Frozen i686 determinism oracle and Step 04D cross-architecture timeline:'
-    Write-Host '  cmake --preset mingw32-tests'
-    Write-Host '  cmake --build --preset mingw32-tests --target z_determinismcheck headless_determinism_step04d_test'
-    Write-Host '  .\build\mingw32-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-i686.txt'
-    Write-Host '  .\build\mingw64-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-x64.txt'
-    Write-Host '  python .\scripts\compare-determinism-timelines.py build\step04d-i686.txt build\step04d-x64.txt'
-}
+Write-Host '  cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck z_evolutionprotocolcheck z_evolutionruntimecheck z_evolutionsessioncheck z_evolutionfullsessioncheck z_step04fcheck'
