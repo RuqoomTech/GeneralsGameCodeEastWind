@@ -1,3 +1,5 @@
+#include "Utility/CppMacros.h"
+
 #include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/IRenderBackend.h"
 #include "WWMath/vector3.h"

@@ -44,6 +44,22 @@ rts_policy_require_contains(
     "Core/Tests/CMakeLists.txt"
     "d3d12_backend_smoke_test"
     "the production backend must retain a Windows smoke build")
+rts_policy_require_contains(
+    "Core/Tests/CMakeLists.txt"
+    "Core/Libraries/Include"
+    "the Windows smoke target must inherit the public RTS include root used by WW3D headers")
+rts_policy_require_contains(
+    "Core/Tests/CMakeLists.txt"
+    "target_include_directories(d3d12_backend_smoke_test SYSTEM PRIVATE"
+    "legacy WWVegas headers must not turn their pre-existing warnings into smoke-target errors")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "#include \"Utility/CppMacros.h\""
+    "the production backend must establish the WWVegas compatibility macros before legacy headers")
+rts_policy_require_contains(
+    "Core/Tests/D3D12BackendSmokeTest.cpp"
+    "#include \"Utility/CppMacros.h\""
+    "the smoke translation unit must establish the WWVegas compatibility macros before legacy headers")
 
 foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
     rts_policy_require_absent(

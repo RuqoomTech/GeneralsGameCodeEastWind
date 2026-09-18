@@ -8,6 +8,8 @@
 ** (at your option) any later version.
 */
 
+#include "Utility/CppMacros.h"
+
 #include "D3D12Backend.h"
 #include "RenderBackend.h"
 

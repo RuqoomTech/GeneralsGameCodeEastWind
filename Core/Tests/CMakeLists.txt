@@ -499,6 +499,9 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp
     )
     target_include_directories(d3d12_backend_smoke_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    )
+    target_include_directories(d3d12_backend_smoke_test SYSTEM PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
     )
     target_link_libraries(d3d12_backend_smoke_test PRIVATE
