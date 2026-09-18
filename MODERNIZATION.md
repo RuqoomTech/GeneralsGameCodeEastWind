@@ -18,9 +18,9 @@ This repository carries a staged modernization of the Generals / Zero Hour engin
 
 Steps 00-04 are complete. Step 04 established the x64 deterministic/network/replay foundation and retired the active i686 modernization lane after real Windows MinGW-w64 validation.
 
-**Step 05 is active: W3X parser/import foundation.**
+**Step 05 is active: Evolution runtime + W3X import foundation.**
 
-The first Step 05 slice is repository normalization: permanent test/build names, reduced policy-test duplication, removal of stale wrappers, and simpler developer documentation. After that, W3X work continues behind the existing shared `rts/w3x_document` seam.
+Step 05A normalized the repository and is Windows-signed-off. By project-owner priority, 05B establishes the first standalone x64 D3D12 `GeneralsEvolution.exe` process before parser growth. W3X parser/import work then continues behind the existing shared `rts/w3x_document` seam, with CPU-side renderer-neutral assets designed to feed the D3D12 backend later.
 
 ## Primary documents
 

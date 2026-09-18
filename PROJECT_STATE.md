@@ -8,7 +8,7 @@ Step 04 is complete and Windows-signed-off. The supported Evolution modernizatio
 
 Real Windows MinGW-w64 GCC/G++ 16.2 validation for the final Step 04F baseline passed the complete 25-test focused graph plus the explicit deterministic, protocol, runtime, session, full-session and x64-platform checks.
 
-Step 05 is active. Step 05A is implemented locally and awaiting its Windows seal; 05B is the next functional slice.
+Step 05 is active. Step 05A is Windows-signed-off. By project-owner priority, 05B brings up the first standalone Evolution Direct3D 12 runtime executable before W3X parser growth so new asset work can be exercised in a real x64/D3D12 process as it lands.
 
 ## Locked architecture
 
@@ -51,12 +51,13 @@ Existing W3X pre-work already provides:
 
 Step 05 proceeds in coherent slices:
 
-1. **05A — developer baseline cleanup (VERIFY):** permanent test/build naming, policy-helper consolidation, stale wrapper removal, historical-doc organization and documentation cleanup.
-2. **05B — XML parser component:** select/integrate a real XML parser behind a narrow project-owned interface with useful source diagnostics.
-3. **05C — neutral W3X import model + rigid mesh fixture:** decode the first supported W3X content without renderer/GPU types.
-4. **05D — format routing/validation:** route W3D to the existing chunk path and W3X to the importer while keeping W3D behavior unchanged.
+1. **05A — developer baseline cleanup (DONE / Windows signed off):** permanent test/build naming, policy-helper consolidation, stale wrapper removal, historical-doc organization and documentation cleanup.
+2. **05B — Evolution D3D12 runtime shell (VERIFY):** standalone x64 Win32/DXGI/D3D12 executable with hardware-adapter selection, command queue/list, flip-model swap chain, RTVs, fences, clear/present, clean shutdown and frame-limited smoke mode. It is isolated from D3D8/D3D9/D3D11 and the legacy input/audio/runtime graph.
+3. **05C — XML parser component:** integrate a real XML parser behind the shared W3X document seam with useful source diagnostics.
+4. **05D — neutral W3X import model + rigid mesh fixture:** decode the first supported W3X content without renderer/GPU types.
+5. **05E — format routing/validation:** route W3D to the existing chunk path and W3X to the importer while keeping W3D behavior unchanged.
 
-Runtime asset-manager integration remains deliberately deferred until these parser/import gates are stable.
+The D3D12 shell is the new Evolution process root. Game/runtime subsystems and renderer-neutral W3D/W3X assets will be attached to it incrementally; the old D3D8 game executable is not the x64 Evolution runtime. Runtime asset-manager integration remains deliberately deferred until the parser/import gates are stable.
 
 ## Current developer commands
 
@@ -69,7 +70,7 @@ cmake --build --preset mingw64-tests
 ctest --preset mingw64-tests --output-on-failure
 ```
 
-The current durable explicit checks are documented in `TESTING.md`.
+The current durable explicit checks and the separate `GeneralsEvolution.exe` D3D12 shell build/run commands are documented in `TESTING.md`.
 
 ## Known non-blockers
 

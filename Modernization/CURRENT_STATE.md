@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts through the locally validated Step 05A developer-baseline cleanup candidate on 2026-09-18. Windows Step 05A sign-off remains pending.
+This document records verified source facts through the Step 05B D3D12 runtime-shell candidate on 2026-09-18. Step 05A is Windows-signed-off; the new D3D12 shell is locally source/policy validated and awaits its real Windows build/smoke transcript.
 
 ## Build system
 
@@ -11,11 +11,11 @@ This document records verified source facts through the locally validated Step 0
 - C++-only `-Wsuggest-override` and MinGW compatibility/link settings are target-scoped through `core_config` rather than globally leaking into C/vendored targets.
 - Direct `FetchContent_Populate()` use in the ReactOS ATL, legacy zlib, and LZHL source-only paths has been removed.
 - The MinGW toolchain validates the `x86_64-w64-mingw32` triplet, supports `RTS_MINGW_ROOT`, and shares its resolved bin path with WIDL/debug-strip discovery. WIDL supports explicit root/include overrides and is not required for the focused test graph.
-- Full MinGW runtime configuration now requires WIDL before populating runtime FetchContent dependencies; native Windows also validates the `oaidl.idl` and `ocidl.idl` imports used by the EABrowser IDLs.
+- Legacy full-game MinGW runtime configuration requires WIDL before populating its runtime FetchContent dependencies; the standalone D3D12 Evolution shell deliberately bypasses that legacy browser/runtime dependency graph.
 - Generals and Zero Hour install rules use `rts_install_runtime_target()` instead of repeating MSVC-only PDB generator expressions. MSVC keeps optional PDB installation; MinGW Release installs the `.debug` sidecar emitted by the existing strip workflow.
-- MinGW toolchain discovery is now x86_64-only through `mingw-w64-common.cmake` plus the canonical x86_64 wrapper. `mingw64-tests` intentionally configures only the focused modernization graph.
-- Full MinGW x64 runtime configuration is still blocked by design until runtime/platform/renderer dependencies are migrated subsystem-by-subsystem.
-- Step 04 is fully Windows-signed-off. The user-supplied final 04F run passed 25/25 plus every explicit deterministic/Evolution/x64-platform gate. The focused graph remains 25 tests after repository normalization.
+- MinGW toolchain discovery is x86_64-only through `mingw-w64-common.cmake` plus the canonical x86_64 wrapper. `mingw64-tests` configures the focused regression graph; `mingw64-d3d12-shell` configures only the new standalone Evolution runtime shell.
+- The monolithic legacy game runtime remains blocked from the x64 MinGW lane until its subsystems are migrated explicitly; the new D3D12 shell is the supported process root for that convergence.
+- Step 04 is fully Windows-signed-off. Step 05A is also Windows-signed-off from the supplied GCC 16.2 run. Step 05B adds `d3d12_shell_policy`, so the focused graph is now 26 tests locally.
 
 ## Performance telemetry
 
@@ -37,14 +37,14 @@ This document records verified source facts through the locally validated Step 0
 - `architecture_abi` enforces fixed-width engine/wire primitives and IDs while permitting native pointers/`uintptr_t` to widen.
 - Step 04D centralized `setFPMode()` in Core and established the x64 round-to-nearest deterministic timeline; the historical i686 x87 result remains recorded as provenance, not as an active build lane.
 - Step 04D3 selectively aligns with the supplied upstream snapshot: Dozer/Worker Xfer/task fixes, production cancellation, neutron radius behavior, adapted GameMemory robustness, runtime Bink/Miles loading, and glyph-buffer safety. Material shared-file divergence fell from 93 to 63 without replacing EastWind x64/determinism infrastructure.
-- The full x64 Zero Hour executable is not enabled yet. 04E2 supplies staged Win64 EVN1/EVR1 runtime integration; 04E3 validates the deterministic two-endpoint session contract; 04E4 freezes the representative command/CRC transcript; 04F removes the frozen i686 modernization/oracle machinery. Representative full-client multiplayer/replay execution remains a later x64 stabilization gate.
+- The legacy monolithic x64 Zero Hour executable is not enabled. Instead, Step 05B introduces `GeneralsEvolution.exe`, a clean x64 Win32/DXGI/D3D12 process root. Game simulation, input, audio, networking and assets will move into that process subsystem-by-subsystem while the existing EVN1/EVR1 deterministic contracts remain protected.
 - The i686 modernization/oracle lane is retired. Retail x86 multiplayer interoperability is not required; supported Evolution development proceeds on x64.
 
 ## Renderer
 
-The renderer is still fundamentally the legacy Direct3D 8-era WW3D implementation.
+The shipping/reference game renderer is still fundamentally the legacy Direct3D 8-era WW3D implementation, but Step 05B now adds the first real Evolution D3D12 runtime process. The standalone `GeneralsEvolution.exe` shell owns a Win32 window, DXGI factory/hardware adapter selection, D3D12 device, direct queue, command allocators/list, flip-model swap chain, back-buffer RTVs, explicit transitions, clear/present, fences, optional debug layer and deterministic frame-limited smoke mode. It deliberately does not link D3D8/D3D9/D3D11, DirectInput or DirectSound.
 
-A partial abstraction has already started:
+The earlier partial abstraction remains:
 
 ```text
 WW3D callers
@@ -61,7 +61,7 @@ DX8Wrapper / D3D8
 
 Verified routed operations include scene begin/end, present/flip, clear, viewport, gamma, ambient/light environment, and cached-state invalidation.
 
-This is useful groundwork for Step 11 but does not yet abstract meshes, textures, buffers, pipelines, materials, descriptors, or command submission.
+This is useful legacy-side groundwork for Step 11. The new D3D12 shell is not implemented as a giant `DX8Wrapper` emulation; it establishes the modern process/device/frame boundary first. Meshes, textures, buffers, pipelines, materials and renderer-neutral submission still need to cross that boundary deliberately.
 
 ## Asset system
 

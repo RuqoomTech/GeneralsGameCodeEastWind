@@ -19,7 +19,7 @@ The active modernization direction is intentionally narrow:
 
 There is no planned Direct3D 9 or Direct3D 11 intermediate renderer.
 
-Step 04 completed the x64 migration foundation and retired the active i686 modernization lane. Step 05 is now the active milestone and starts with W3X parser/import work.
+Step 04 completed the x64 migration foundation and retired the active i686 modernization lane. Step 05 is active: the developer baseline is cleaned and Windows-signed-off, and the first standalone x64 Direct3D 12 Evolution runtime shell now precedes W3X parser/import growth so new assets can be tested in the real future process.
 
 ## Windows quick start
 
@@ -35,6 +35,18 @@ ctest --preset mingw64-tests --output-on-failure
 The preset uses MinGW-w64 GCC, Ninja, x64-only platform checks, deterministic/headless validation, the Evolution network/replay protocol gates, and the current W3X parser tests.
 
 For the detailed test inventory and optional explicit checks, see [`TESTING.md`](TESTING.md).
+
+### First Evolution D3D12 executable
+
+The new Evolution process is separate from the legacy D3D8 game executable. Build the current clear/present shell with:
+
+```powershell
+cmake --preset mingw64-d3d12-shell
+cmake --build --preset mingw64-d3d12-shell
+.\build\mingw64-d3d12-shell\Evolution\GeneralsEvolution.exe --frames 120
+```
+
+The shell currently proves Win32 windowing, DXGI hardware-adapter selection, D3D12 device/queue/list creation, flip-model swap chain, render-target views, explicit transitions, fences, clear/present and clean shutdown. Game simulation and asset rendering are attached in later slices; see `TESTING.md` and `Modernization/D3D12_RENDERER.md`.
 
 ## Legacy/reference builds
 

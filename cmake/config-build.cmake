@@ -13,6 +13,7 @@ option(RTS_BUILD_TESTS "Build modernization characterization/regression tests." 
 option(RTS_BUILD_TESTS_ONLY "Configure only the lightweight modernization test graph." OFF)
 option(RTS_BUILD_EVOLUTION_X64 "Configure the Evolution x64 modernization graph." OFF)
 option(RTS_BUILD_HEADLESS_CORE "Build the deterministic/headless x64 core lane." OFF)
+option(RTS_BUILD_D3D12_SHELL "Build the standalone Evolution Direct3D 12 runtime shell." OFF)
 
 if(RTS_BUILD_TESTS_ONLY)
     set(RTS_BUILD_TESTS ON CACHE BOOL "Build modernization characterization/regression tests." FORCE)
@@ -21,7 +22,7 @@ if(RTS_BUILD_TESTS_ONLY)
     set(RTS_BUILD_GENERALS OFF CACHE BOOL "Build Generals code." FORCE)
 endif()
 
-if(NOT RTS_BUILD_ZEROHOUR AND NOT RTS_BUILD_GENERALS AND NOT RTS_BUILD_TESTS_ONLY)
+if(NOT RTS_BUILD_ZEROHOUR AND NOT RTS_BUILD_GENERALS AND NOT RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_D3D12_SHELL)
     set(RTS_BUILD_ZEROHOUR TRUE)
     message("You must select one project to build, building Zero Hour by default.")
 endif()
@@ -39,6 +40,7 @@ add_feature_info(ModernizationTests RTS_BUILD_TESTS "Build modernization charact
 add_feature_info(TestsOnly RTS_BUILD_TESTS_ONLY "Configure only the lightweight modernization test graph")
 add_feature_info(EvolutionX64 RTS_BUILD_EVOLUTION_X64 "Configure the Evolution x64 modernization graph")
 add_feature_info(HeadlessCore RTS_BUILD_HEADLESS_CORE "Build the deterministic/headless x64 core lane")
+add_feature_info(D3D12Shell RTS_BUILD_D3D12_SHELL "Build the standalone Evolution Direct3D 12 runtime shell")
 add_feature_info(FFmpegSupport RTS_BUILD_OPTION_FFMPEG "Building with FFmpeg support")
 
 set(RTS_BUILD_OUTPUT_SUFFIX "" CACHE STRING "Suffix appended to output names of installable targets")

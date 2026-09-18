@@ -22,16 +22,16 @@ if(MINGW)
             "An x64 MinGW compiler was selected without the staged x64 readiness option. "
             "Use preset 'mingw64-tests' while the full runtime is enabled subsystem-by-subsystem.")
     endif()
-    if(NOT RTS_BUILD_HEADLESS_CORE)
+    if(RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_HEADLESS_CORE)
         message(FATAL_ERROR
-            "An x64 MinGW compiler was selected without the headless-core option. "
+            "The focused x64 test graph requires RTS_BUILD_HEADLESS_CORE. "
             "Use preset 'mingw64-tests'.")
     endif()
-    if(NOT RTS_BUILD_TESTS_ONLY)
+    if(NOT RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_D3D12_SHELL)
         message(FATAL_ERROR
-            "The current x64 MinGW lane supports the focused modernization test graph only. "
-            "Use preset 'mingw64-tests'. Full x64 runtime bring-up remains subsystem-gated; "
-            "the legacy D3D8 platform boundary remains outside this focused graph.")
+            "The supported x64 MinGW runtime surface is subsystem-gated. "
+            "Use preset 'mingw64-tests' for regression tests or 'mingw64-d3d12-shell' "
+            "for the standalone Evolution Direct3D 12 runtime shell.")
     endif()
 
     # Preserve the legacy code assumptions without applying them to downloaded
@@ -72,7 +72,7 @@ if(MINGW)
     # Renderer/input/audio compatibility libraries are not needed by the focused
     # modernization graph. Keeping them out is what allows the first x64 lane to
     # compile architecture/serialization guards before the D3D8 runtime is ported.
-    if(NOT RTS_BUILD_TESTS_ONLY)
+    if(NOT RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_D3D12_SHELL)
         target_link_libraries(core_config INTERFACE d3d8 dinput8 dsound)
     endif()
 
@@ -81,7 +81,7 @@ if(MINGW)
 
     # min-dx8-sdk exposes d3dx8d for MinGW. Retain the historical d3dx8 name
     # used by the game executable without creating a global linker rewrite.
-    if(NOT RTS_BUILD_TESTS_ONLY AND NOT TARGET d3dx8)
+    if(NOT RTS_BUILD_TESTS_ONLY AND NOT RTS_BUILD_D3D12_SHELL AND NOT TARGET d3dx8)
         add_library(d3dx8 INTERFACE IMPORTED GLOBAL)
         set_target_properties(d3dx8 PROPERTIES
             INTERFACE_LINK_LIBRARIES "d3dx8d"

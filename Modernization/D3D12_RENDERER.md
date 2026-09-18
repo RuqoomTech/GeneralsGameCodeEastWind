@@ -4,6 +4,27 @@
 
 Build a clean x64 Direct3D 12 renderer for the Evolution runtime without carrying the entire old DX8 state-machine architecture forward.
 
+
+## Current implementation status
+
+The first foundation slice is now implemented locally as the standalone `GeneralsEvolution.exe` runtime shell:
+
+- Win32 window/message loop;
+- DXGI factory and hardware-adapter selection (WARP optional for diagnostics);
+- D3D12 device and feature-level query;
+- direct command queue;
+- two frame command allocators and one graphics command list;
+- flip-discard HWND swap chain;
+- RTV descriptor heap and back-buffer views;
+- explicit PRESENT <-> RENDER_TARGET barriers;
+- clear/present;
+- per-frame fence synchronization and GPU-idle shutdown;
+- optional D3D12 debug layer;
+- `--frames N` automated smoke mode;
+- dedicated `mingw64-d3d12-shell` preset with static MinGW runtime linkage.
+
+This shell is intentionally isolated from D3D8/D3D9/D3D11, DirectInput, DirectSound, ATL, Bink, Miles and the monolithic legacy game graph. It is the process root that later Evolution runtime/game subsystems will join. Windows build/smoke sign-off is still required before this slice is considered complete.
+
 ## Current starting point
 
 The source already has a partial `IRenderBackend` seam and a `DX8Backend` adapter. This is migration groundwork, not the final D3D12 design.
@@ -84,7 +105,7 @@ resources PSOs   command submission
 
 ## Migration slices
 
-1. device + clear/present;
+1. device + clear/present — implemented locally in the standalone runtime shell;
 2. triangle;
 3. indexed textured mesh;
 4. representative W3D rigid mesh;

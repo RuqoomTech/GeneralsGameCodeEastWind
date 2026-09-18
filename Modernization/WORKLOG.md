@@ -438,3 +438,25 @@ Step 05 begins with a repository-maintenance slice before parser growth. The act
 Current developer documentation was simplified: top-level `README.md`, `PROJECT_STATE.md`, `TESTING.md`, and `MODERNIZATION.md` now describe the supported present-day workflow, while detailed chronology remains in this worklog and completed milestone specifications are grouped under `Modernization/History/`. Step 05 is split into 05A cleanup, 05B XML parser integration, 05C neutral rigid-mesh import, and 05D W3D/W3X routing/validation.
 
 No gameplay, renderer, EVN1/EVR1 format, deterministic algorithm, W3D behavior, or W3X parser semantics changed in 05A. Local GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer focused graphs all pass **25/25** after the cleanup. Windows Step 05A validation remains pending.
+
+## 2026-09-18 — Step 05A Windows sign-off and Step 05B D3D12 runtime shell
+
+The user supplied the real Windows Step 05A transcript using MinGW-w64 GCC/G++ 16.2.0. The normalized developer baseline passed **25/25** tests plus all seven durable deterministic/Evolution/x64 checks, so Step 05A is Windows-signed-off.
+
+By project-owner priority, the next functional slice was changed from immediate XML-parser integration to the first real Evolution D3D12 executable so upcoming W3D/W3X work can be exercised in the future x64 process rather than only through unit tests.
+
+Implemented Step 05B locally:
+
+- added standalone `Evolution/` runtime target producing `GeneralsEvolution.exe`;
+- added dedicated `mingw64-d3d12-shell` configure/build/workflow presets;
+- kept the target isolated from the legacy D3D8/D3D9/D3D11, DirectInput/DirectSound, ATL and monolithic game dependency graph;
+- added Win32 window/message-loop startup;
+- added DXGI factory plus D3D12-capable hardware-adapter selection, with optional WARP diagnostics;
+- added D3D12 device and feature-level query;
+- added direct command queue, per-frame command allocators, graphics command list, flip-discard swap chain, RTV heap/back buffers, explicit present/render-target barriers and clear/present;
+- added fence/event synchronization and GPU-idle shutdown;
+- added optional debug-layer request and `--frames N` automation mode;
+- added install staging for a self-contained MinGW executable apart from Windows system graphics DLLs;
+- added host-portable `d3d12_shell_policy`, bringing the focused graph to **26/26** locally.
+
+Local GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer and GCC UndefinedBehaviorSanitizer focused graphs all pass 26/26. The actual D3D12 target cannot be compiled/run in the Linux container because the Windows MinGW/D3D12 SDK environment is not present; real Windows configure/build plus `GeneralsEvolution.exe --frames 120` is required for Step 05B sign-off. No simulation, protocol, replay, W3D or W3X parsing semantics changed.

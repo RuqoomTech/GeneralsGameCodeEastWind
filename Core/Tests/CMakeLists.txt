@@ -481,3 +481,14 @@ add_custom_target(check_x64_platform
         -P ${CMAKE_SOURCE_DIR}/cmake/tests/X64PlatformPolicyTest.cmake
     USES_TERMINAL
 )
+
+# The first Evolution runtime executable is intentionally isolated from the
+# legacy D3D8 game runtime. This source-policy gate stays host-portable while
+# the actual D3D12 executable is built and smoke-tested on Windows.
+rts_add_source_policy_test(d3d12_shell_policy D3D12ShellPolicyTest.cmake)
+add_custom_target(check_d3d12_shell_policy
+    COMMAND ${CMAKE_COMMAND}
+        -DRTS_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/tests/D3D12ShellPolicyTest.cmake
+    USES_TERMINAL
+)

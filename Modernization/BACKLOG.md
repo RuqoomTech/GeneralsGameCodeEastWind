@@ -29,18 +29,19 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | W3X-A1 | W3X document-envelope probe | DONE | Root/namespace/SAGE envelope recognition |
 | W3X-A2 | W3X top-level child-element discovery | DONE | Direct-child classification without content decoding |
 | W3X-A2R | Consolidate W3X A1/A2 parser seam | DONE | One public API + one shared implementation; no duplicate parser headers |
-| 05 | W3X-A parser/import foundation | ACTIVE | 05A developer baseline cleanup, then real XML parser/import model/routing |
-| 05A | Developer baseline cleanup | VERIFY | Implemented locally; permanent names, policy consolidation, history organization and current-doc cleanup; Windows seal pending |
-| 05B | W3X XML parser component | NEXT | Real XML parser behind shared project-owned interface |
-| 05C | W3X neutral rigid-mesh import | PLANNED | Representative rigid mesh reaches renderer-neutral import model |
-| 05D | W3D/W3X routing and validation | PLANNED | Existing W3D path unchanged; W3X routed to validated importer |
+| 05 | Evolution runtime + W3X import foundation | ACTIVE | Clean x64/D3D12 process root plus parser/import/routing gates |
+| 05A | Developer baseline cleanup | DONE | Real Windows GCC 16.2 passed 25/25 cleaned-name graph plus all explicit deterministic/Evolution/x64 checks |
+| 05B | Evolution D3D12 runtime shell | VERIFY | `GeneralsEvolution.exe` clear/present shell implemented locally; Windows build + `--frames` smoke run pending |
+| 05C | W3X XML parser component | NEXT | Real XML parser behind shared project-owned interface |
+| 05D | W3X neutral rigid-mesh import | PLANNED | Representative rigid mesh reaches renderer-neutral import model |
+| 05E | W3D/W3X routing and validation | PLANNED | Existing W3D path unchanged; W3X routed to validated importer |
 | 06 | HD texture pipeline | PLANNED | Efficient/correct 2K/4K assets |
 | 07 | High-poly / 32-bit geometry | PLANNED | >65k-class geometry path where needed |
 | 08 | Instancing/batching expansion | PLANNED | Reduce repeated-object CPU/draw cost |
 | 09 | LOD/visibility modernization | PLANNED | Scalable dense scenes |
 | 10 | x64 runtime stabilization | PLANNED | Heavy-mod/replay/network soak after Step 04 bring-up |
 | 11 | Renderer architecture boundary completion | PLANNED | D3D12-ready renderer-neutral submission |
-| 12 | D3D12 foundation | PLANNED | Device/swapchain/commands/fences |
+| 12 | D3D12 foundation completion | PARTIAL | 05B establishes device/swapchain/commands/fences; Step 12 hardens/integrates the remaining foundation |
 | 13 | D3D12 resource system | PLANNED | Buffers/textures/descriptors/barriers |
 | 14 | DXC / shader / PSO system | PLANNED | Modern pipeline infrastructure |
 | 15 | D3D12 W3D + W3X mesh rendering | PLANNED | Representative model parity |

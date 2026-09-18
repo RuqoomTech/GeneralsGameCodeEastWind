@@ -101,3 +101,14 @@ The project owner elected to close the temporary cross-architecture oracle era o
 - Fixed-width game/wire/replay/Xfer/CRC/RNG fields do not widen merely because the process is x64-only.
 - Representative full-client multiplayer/replay validation remains important for x64 stabilization, but it no longer justifies retaining an i686 build lane.
 - Step 05 W3X importer work may begin after the final 04F Windows x64 policy run; no further i686 certification is required.
+
+## 2026-09-18 — Establish the D3D12 Evolution process before W3X parser growth
+
+The project owner prioritized an executable in-game/visual test path before continuing the W3X parser slice. The first D3D12 foundation slice is therefore pulled forward into Step 05B.
+
+- `GeneralsEvolution.exe` is the new x64 Evolution process root.
+- The first shell owns Win32 windowing, DXGI/D3D12 device/frame/present infrastructure only; it does not pretend the full game has already migrated.
+- The shell must not depend on D3D8/D3D9/D3D11, DirectInput, DirectSound, ATL, Bink, Miles or other legacy runtime subsystems merely to become executable.
+- Existing W3D behavior remains in the reference runtime until renderer-neutral W3D data is migrated into Evolution.
+- W3X parsing/import remains renderer-neutral and follows the shell bring-up; the parser must not expose D3D12 objects.
+- Future game subsystems attach to the Evolution process incrementally, preserving the deterministic/network/replay contracts already signed off in Step 04.

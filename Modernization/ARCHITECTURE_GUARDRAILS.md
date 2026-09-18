@@ -40,6 +40,8 @@ The existing DX8-era path is a reference/fallback during migration. New D3D12 ar
 
 The existing `IRenderBackend` seam is useful migration groundwork, but it is not automatically the final D3D12 API. Grow it only for real migrated callers and introduce higher-level renderer-neutral concepts where required.
 
+The standalone `GeneralsEvolution.exe` D3D12 shell is the new x64 process root. Do not make that target depend on D3D8/D3D9/D3D11 or legacy input/audio libraries merely to accelerate bring-up; subsystems cross the boundary only when their x64 ownership and interfaces are explicit.
+
 ## Asset compatibility
 
 - W3D remains supported.

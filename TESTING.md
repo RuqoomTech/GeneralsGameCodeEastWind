@@ -22,7 +22,7 @@ The preset is x64-only and does not require the Visual Studio IDE.
 
 ## Focused test inventory
 
-The focused graph currently contains 25 tests. Names describe permanent responsibilities rather than the milestone in which each test was introduced.
+The focused graph currently contains 26 tests. Names describe permanent responsibilities rather than the milestone in which each test was introduced.
 
 ### W3X
 
@@ -49,6 +49,7 @@ The focused graph currently contains 25 tests. Names describe permanent responsi
 - `coordinate_ops`
 - `runtime_compatibility_policy`
 - `x64_platform_policy`
+- `d3d12_shell_policy`
 
 ### Evolution network/replay
 
@@ -88,6 +89,41 @@ The active golden fixtures are:
 
 Protocol/replay golden bytes remain frozen unless an explicit versioned format change is introduced. The headless timeline is deterministic and must not be regenerated merely to make a failing test pass.
 
+
+## Evolution D3D12 runtime shell
+
+The first x64 Evolution executable is a standalone D3D12 clear/present shell. It deliberately does not configure the legacy D3D8 game runtime.
+
+Configure and build it on Windows with the canonical MinGW-w64 toolchain:
+
+```powershell
+cmake --preset mingw64-d3d12-shell
+cmake --build --preset mingw64-d3d12-shell
+```
+
+Interactive launch:
+
+```powershell
+.\build\mingw64-d3d12-shell\Evolution\GeneralsEvolution.exe
+```
+
+Automated smoke run (creates the real D3D12 device/swap chain, renders 120 frames, waits for GPU completion and exits):
+
+```powershell
+.\build\mingw64-d3d12-shell\Evolution\GeneralsEvolution.exe --frames 120
+```
+
+Useful diagnostic options are `--debug`, `--warp`, and `--no-vsync`. `--debug` requests the Windows D3D12 debug layer when the optional Graphics Tools component is installed.
+
+To stage a self-contained MinGW executable (apart from Windows system graphics DLLs):
+
+```powershell
+cmake --install build\mingw64-d3d12-shell
+.\build\mingw64-d3d12-shell\stage\GeneralsEvolution.exe --frames 120
+```
+
+Expected runtime output includes the selected adapter, negotiated D3D feature level, initialization success, and a successful frame-count exit. A real Windows build/run transcript is required before the D3D12 shell is marked Windows-signed-off.
+
 ## Local host validation
 
 The focused graph is also useful on host GCC/Clang for fast regression checks because it avoids renderer/tool/runtime dependencies that are irrelevant to these gates. Example:
@@ -112,7 +148,7 @@ For significant deterministic/network/replay changes, validate Release and Debug
 
 Do not claim a Windows gate passed from host/container testing. Windows sign-off requires actual Windows console output using the authoritative candidate tree.
 
-The final Step 04F baseline is Windows-signed-off with MinGW-w64 GCC/G++ 16.2: 25/25 focused tests plus every explicit deterministic/Evolution/x64-platform gate passed.
+The final Step 04F baseline is Windows-signed-off with MinGW-w64 GCC/G++ 16.2. Step 05A is also Windows-signed-off: 25/25 cleaned-name tests plus every explicit deterministic/Evolution/x64-platform gate passed. Step 05B adds one host-portable D3D12-shell policy test, taking the focused graph to 26 tests; the actual D3D12 executable still requires its own Windows build/smoke transcript.
 
 ## Known warnings
 

@@ -11,9 +11,9 @@ The repository already provides:
 - direct `AssetDeclaration` child discovery and classification;
 - one shared public seam in `rts/w3x_document.h`, implemented by `Core/Libraries/Source/rts/w3x_document.cpp`.
 
-New parser work must extend or deliberately replace that seam rather than introducing another XML scanner. The Step 05A repository cleanup is complete locally before parser growth begins.
+New parser work must extend or deliberately replace that seam rather than introducing another XML scanner. Step 05A cleanup is Windows-signed-off. Step 05B now establishes the D3D12 runtime shell first so parser/import work can gain an in-process visualization path as soon as renderer-neutral mesh upload lands.
 
-## Parser component — 05B
+## Parser component — 05C
 
 Integrate a real XML parser behind a narrow project-owned interface. The parser layer must:
 
@@ -25,7 +25,7 @@ Integrate a real XML parser behind a narrow project-owned interface. The parser 
 
 Fixtures should cover a valid document, include/reference handling, malformed XML, unsupported namespace/version, and missing required data. Tests must use synthetic or legally redistributable data rather than proprietary game assets.
 
-## Neutral import model — 05C
+## Neutral import model — 05D
 
 Decode the first supported rigid-mesh W3X content into renderer-neutral structures. The initial model should contain only what the first supported fixture requires, such as:
 
@@ -41,7 +41,7 @@ Do not put D3D8/D3D12 resources, handles or renderer ownership in the import mod
 
 Validation should reject or clearly diagnose broken references, invalid indices, empty/degenerate geometry, unsupported data types/versions, and unsupported required elements/attributes.
 
-## Format routing and validation — 05D
+## Format routing and validation — 05E
 
 Asset routing must preserve the existing W3D loader and add W3X beside it:
 

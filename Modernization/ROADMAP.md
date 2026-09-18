@@ -121,12 +121,13 @@ Runtime routing, includes/references, child-content decoding, neutral import str
 
 Current Step 05 slices:
 
-- **05A — developer baseline cleanup (implemented; Windows seal pending):** normalize permanent test/build names, consolidate policy-test boilerplate, remove stale wrappers, separate historical milestone documents, and simplify current documentation before adding parser functionality;
-- **05B — XML parser component:** integrate a real XML parser behind the existing shared W3X document seam;
-- **05C — neutral import model + rigid mesh:** decode the first representative mesh fixture into renderer-neutral data;
-- **05D — format routing/validation:** route W3D to the existing loader and W3X to the importer with useful diagnostics and no W3D behavior regression.
+- **05A — developer baseline cleanup (DONE / Windows signed off):** normalized permanent test/build names, consolidated policy-test boilerplate, removed stale wrappers, separated historical milestone documents, and simplified current documentation;
+- **05B — Evolution D3D12 runtime shell (implemented locally; Windows seal pending):** create the new x64 `GeneralsEvolution.exe` process with Win32 windowing, DXGI adapter selection, D3D12 device/queue/list, flip-model swap chain, RTVs, explicit barriers, clear/present, fences and automated frame-limited smoke mode, isolated from the legacy D3D8/input/audio graph;
+- **05C — XML parser component:** integrate a real XML parser behind the existing shared W3X document seam;
+- **05D — neutral import model + rigid mesh:** decode the first representative mesh fixture into renderer-neutral data;
+- **05E — format routing/validation:** route W3D to the existing loader and W3X to the importer with useful diagnostics and no W3D behavior regression.
 
-This step does not require D3D12 rendering yet.
+The first D3D12 foundation slice was intentionally pulled forward from Step 12 so W3D/W3X work can be exercised in the real future x64 process. This does not change the renderer-isolation rule: asset parsing/import remains CPU-side and renderer-neutral.
 
 ### Step 06 — HD Texture Pipeline
 
@@ -187,15 +188,22 @@ Do not expose D3D12 objects to gameplay systems.
 
 ### Step 12 — D3D12 Foundation
 
-- DXGI adapter/device;
-- swap chain;
-- direct queue;
-- command allocators/lists;
-- frame resources/fences;
-- resize/present/device-loss diagnostics;
-- debug layer in development builds.
+The device/clear/present runtime shell was pulled forward into Step 05B to establish the real Evolution executable early. Step 12 completes and hardens that foundation rather than creating a second renderer process.
 
-Proof: clear -> triangle -> indexed mesh.
+Already started in 05B:
+
+- DXGI hardware-adapter/device selection;
+- flip-model swap chain;
+- direct queue;
+- command allocators/list;
+- back-buffer RTVs;
+- basic frame fences;
+- clear/present;
+- optional debug layer.
+
+Step 12 remaining foundation work includes resize handling, stronger device-removed diagnostics, frame-resource ownership, presentation policy and integration with the renderer architecture boundary.
+
+Proof progression: clear (05B) -> triangle -> indexed mesh.
 
 ### Step 13 — D3D12 Resource System
 
