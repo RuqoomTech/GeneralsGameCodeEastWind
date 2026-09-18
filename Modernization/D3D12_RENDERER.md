@@ -6,7 +6,7 @@ Replace the DX8-era renderer in the existing game architecture with a clean x64 
 
 ## Current implementation status
 
-The initial D3D12 proof was Windows-verified in Step 05B on Intel UHD 770 and WARP. Step 05C folds that proven implementation into the pre-existing WW3D backend seam:
+The initial D3D12 proof was Windows-verified in Step 05B on Intel UHD 770 and WARP. Step 05C/C2 folded that proven implementation into the pre-existing WW3D backend seam and is Windows-signed-off:
 
 - `Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.*` owns the x64 device/frame lifecycle;
 - `Create_Render_Backend()` selects D3D12 on the x64 path;
@@ -14,6 +14,7 @@ The initial D3D12 proof was Windows-verified in Step 05B on Intel UHD 770 and WA
 - the normal Zero Hour executable selects `d3d12` + `dxgi` on x64 instead of `d3d8` + `d3dx8`;
 - color and depth/stencil clears, viewport/scissor, present and fence synchronization are implemented through D3D12;
 - a Windows smoke target exercises the production backend through the same factory used by WW3D;
+- Step 05D adds the first indexed position/color primitive contract, root signature, PSO, shader compilation and upload-buffer lifetime tracking without introducing a second renderer abstraction;
 - the temporary standalone `Evolution/` runtime tree and shell preset are removed.
 
 The full x64 game is not yet enabled because many legacy render callers still invoke `DX8Wrapper` directly. Those call sites are now the renderer migration backlog; they must move behind D3D12-capable interfaces rather than being hidden behind a permanent DX8 emulation layer.
@@ -59,9 +60,9 @@ resources PSOs   command submission
 
 ## Immediate migration slices
 
-1. **device/frame backend — active:** D3D12 device, swap chain, render/depth targets, viewport, clear, present, fences;
-2. **draw foundation:** root signature, shader compilation, PSO and triangle draw;
-3. **buffer foundation:** static vertex/index buffers and upload path;
+1. **device/frame backend — done / Windows signed off:** D3D12 device, swap chain, render/depth targets, viewport, clear, present, fences;
+2. **draw foundation — active:** root signature, shader compilation, PSO and indexed triangle draw through `IRenderBackend`;
+3. **buffer foundation:** replace per-draw transient upload geometry with persistent/static vertex/index resources where real WW3D callers require them;
 4. **WW3D primitive migration:** move the first direct `DX8Wrapper` draw/state callers;
 5. **representative W3D rigid mesh:** render existing W3D geometry through the D3D12 path;
 6. **W3X rigid mesh:** feed the same renderer-neutral mesh path from W3X;

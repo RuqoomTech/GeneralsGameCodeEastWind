@@ -72,11 +72,26 @@ int main()
     RenderBackendViewport viewport{0, 0, 640, 480, 0.0f, 1.0f};
     backend->Set_Viewport(viewport);
 
+    const RenderBackendColorVertex triangle_vertices[] = {
+        {-0.65f, -0.55f, 0.50f, 1.00f, 0.15f, 0.10f, 1.00f},
+        {0.00f, 0.65f, 0.50f, 0.10f, 1.00f, 0.20f, 1.00f},
+        {0.65f, -0.55f, 0.50f, 0.10f, 0.25f, 1.00f, 1.00f},
+    };
+    const unsigned short triangle_indices[] = {0, 1, 2};
+
     // Exercise WW3D's deferred-present contract first: End_Scene(false) may
     // be followed by another scene before Flip_To_Primary(). This is used by
     // existing multi-pass/off-screen callers and must not dead-end the frame.
     backend->Clear(true, true, Vector3(0.04f, 0.08f, 0.12f), 1.0f, 1.0f, 0);
     backend->Begin_Scene();
+    if (!backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3))
+    {
+        delete backend;
+        DestroyWindow(window);
+        UnregisterClassW(WindowClassName, instance);
+        std::cerr << "D3D12 backend smoke failed: indexed triangle submission failed.\n";
+        return 3;
+    }
     backend->End_Scene(false);
 
     backend->Clear(true, true, Vector3(0.06f, 0.08f, 0.12f), 1.0f, 1.0f, 0);
@@ -89,6 +104,14 @@ int main()
         const float phase = static_cast<float>(frame) / 5.0f;
         backend->Clear(true, true, Vector3(0.08f + phase * 0.08f, 0.08f, 0.12f), 1.0f, 1.0f, 0);
         backend->Begin_Scene();
+        if (!backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3))
+        {
+            delete backend;
+            DestroyWindow(window);
+            UnregisterClassW(WindowClassName, instance);
+            std::cerr << "D3D12 backend smoke failed: indexed triangle submission failed.\n";
+            return 4;
+        }
         backend->End_Scene(true);
     }
 
@@ -96,6 +119,6 @@ int main()
     DestroyWindow(window);
     UnregisterClassW(WindowClassName, instance);
 
-    std::cout << "D3D12 backend smoke passed: WW3D backend factory created, cleared, deferred-presented, depth-cleared, and presented frames.\n";
+    std::cout << "D3D12 backend smoke passed: WW3D created the D3D12 backend, submitted indexed color geometry, preserved deferred-present semantics, and presented frames.\n";
     return 0;
 }

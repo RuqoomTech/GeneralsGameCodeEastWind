@@ -33,6 +33,34 @@ rts_policy_require_contains(
     "CreateDepthStencilView"
     "the in-place backend must own depth/stencil state rather than delegating to DX8")
 rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "CreateGraphicsPipelineState"
+    "the in-place backend must own a real Direct3D 12 graphics pipeline")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "DrawIndexedInstanced"
+    "the in-place backend must issue indexed Direct3D 12 geometry draws")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "D3DCompile"
+    "the first primitive pipeline must compile its minimal shader contract")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "Draw_Indexed_Triangles"
+    "indexed geometry must enter D3D12 through the existing renderer-neutral backend seam")
+rts_policy_require_contains(
+    "Core/Tests/D3D12BackendSmokeTest.cpp"
+    "Draw_Indexed_Triangles"
+    "the Windows smoke test must submit real indexed geometry")
+rts_policy_require_contains(
+    "Core/Tests/CMakeLists.txt"
+    "d3dcompiler"
+    "the Windows backend smoke target must link the shader compiler used by the primitive pipeline")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/CMakeLists.txt"
+    "d3dcompiler"
+    "the production x64 WW3D backend must carry its shader compiler dependency")
+rts_policy_require_contains(
     "Core/Tests/D3D12BackendSmokeTest.cpp"
     "End_Scene(false)"
     "the Windows smoke test must cover WW3D deferred-present semantics")
@@ -68,4 +96,4 @@ foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
         "the D3D12 backend must not include ${_legacy_header}")
 endforeach()
 
-message(STATUS "D3D12 backend policy passed: the renderer is integrated in-place and the standalone shell remains removed")
+message(STATUS "D3D12 backend policy passed: the in-place renderer owns the frame lifecycle and first indexed D3D12 primitive path")

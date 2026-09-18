@@ -20,7 +20,7 @@ Steps 00-04 are complete. Step 04 established the x64 deterministic/network/repl
 
 **Step 05 is active: renderer-first modernization + W3X asset foundation.**
 
-Step 05A normalized the repository and is Windows-signed-off. Step 05B proved the required Win32/DXGI/D3D12 fundamentals on real Windows hardware. Step 05C removes that temporary standalone shell and integrates D3D12 behind the existing WW3D backend seam. W3X parser/import work resumes after the first indexed-mesh D3D12 path so W3D and W3X can converge on one renderer rather than two runtime architectures.
+Step 05A normalized the repository and is Windows-signed-off. Step 05B proved the required Win32/DXGI/D3D12 fundamentals on real Windows hardware. Step 05C2 is Windows-signed-off with D3D12 integrated behind the existing WW3D backend seam. Step 05D now adds the first indexed primitive path on that production backend. W3X parser/import work resumes after the D3D12 indexed-mesh foundation so W3D and W3X can converge on one renderer rather than two runtime architectures.
 
 ## Primary documents
 

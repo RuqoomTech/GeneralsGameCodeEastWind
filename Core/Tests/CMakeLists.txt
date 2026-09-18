@@ -508,6 +508,7 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
         core_config
         core_utility_no_pch
         d3d12
+        d3dcompiler
         dxgi
         dxguid
         user32

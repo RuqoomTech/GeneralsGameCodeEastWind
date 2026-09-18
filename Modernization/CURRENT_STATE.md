@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts through the Step 05C in-place D3D12 backend candidate on 2026-09-18. Step 05A and the temporary Step 05B D3D12 proof shell are Windows-signed-off. Step 05C removes that temporary shell architecture and moves the proven device/frame implementation behind the existing WW3D backend seam; its production-backend Windows smoke test is the remaining sign-off gate.
+This document records verified source facts through the Step 05D indexed-primitive candidate on 2026-09-18. Step 05C2 is Windows-signed-off: the production D3D12 backend passed 27/27 on Windows plus its explicit GPU smoke gate. Step 05D builds directly on that in-place backend and adds the first indexed geometry submission path through `IRenderBackend`.
 
 ## Build system
 
@@ -15,7 +15,7 @@ This document records verified source facts through the Step 05C in-place D3D12 
 - Generals and Zero Hour install rules use `rts_install_runtime_target()` instead of repeating MSVC-only PDB generator expressions. MSVC keeps optional PDB installation; MinGW Release installs the `.debug` sidecar emitted by the existing strip workflow.
 - MinGW toolchain discovery is x86_64-only through `mingw-w64-common.cmake` plus the canonical x86_64 wrapper. `mingw64-tests` configures the focused regression graph, including the Windows x64 D3D12 backend smoke test.
 - The monolithic game runtime remains blocked from the x64 MinGW lane until direct renderer/platform dependencies are migrated explicitly. There is no parallel Evolution application tree; the normal game executable remains the convergence target.
-- Step 04 and Step 05A are Windows-signed-off. The temporary Step 05B proof shell is also Windows-signed-off on hardware and WARP. Step 05C replaces its shell policy with `d3d12_backend_policy`; the host-portable graph remains 26 tests, while Windows x64 adds the real `d3d12_backend_smoke` test.
+- Step 04 and Step 05A are Windows-signed-off. The temporary Step 05B proof shell is also Windows-signed-off on hardware and WARP. Step 05C2 replaced the temporary shell with the production backend and is Windows-signed-off. The host-portable graph remains 26 tests; Windows x64 adds the real `d3d12_backend_smoke` GPU test, now extended by Step 05D to submit indexed geometry.
 
 ## Performance telemetry
 
@@ -42,7 +42,7 @@ This document records verified source facts through the Step 05C in-place D3D12 
 
 ## Renderer
 
-The x64 renderer is now migrating in-place behind WW3D `IRenderBackend`. The production D3D12 backend owns DXGI adapter/device creation, command submission, flip-model swap chain, render/depth targets, viewport/scissor, clears, present and fences. The DX8 backend is excluded from the x64 WW3D source selection; remaining direct `DX8Wrapper` callers are the explicit migration backlog before the full game target is enabled.
+The x64 renderer is now migrating in-place behind WW3D `IRenderBackend`. The production D3D12 backend owns DXGI adapter/device creation, command submission, flip-model swap chain, render/depth targets, viewport/scissor, clears, present and fences. Step 05D adds an immutable root signature/PSO, shader compilation, transient upload-buffer lifetime tracking, and `DrawIndexedInstanced` for the first renderer-neutral indexed position/color primitive. The DX8 backend is excluded from the x64 WW3D source selection; remaining direct `DX8Wrapper` callers are the explicit migration backlog before the full game target is enabled.
 
 The backend direction is now:
 

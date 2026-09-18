@@ -29,6 +29,17 @@
 class LightEnvironmentClass;
 class Vector3;
 
+struct RenderBackendColorVertex
+{
+    float x;
+    float y;
+    float z;
+    float r;
+    float g;
+    float b;
+    float a;
+};
+
 struct RenderBackendViewport
 {
     unsigned int x;
@@ -64,6 +75,22 @@ public:
                        float dest_alpha = 0.0f, float z = 1.0f, unsigned int stencil = 0) = 0;
     virtual void Set_Viewport(const RenderBackendViewport & viewport) = 0;
     virtual void Invalidate_Cached_Render_States() = 0;
+
+    // First renderer-neutral indexed primitive path. This deliberately uses a
+    // small position/color vertex contract; mesh/material formats stay above
+    // the backend and can add dedicated paths as they are migrated.
+    virtual bool Draw_Indexed_Triangles(
+        const RenderBackendColorVertex *vertices,
+        unsigned int vertex_count,
+        const unsigned short *indices,
+        unsigned int index_count)
+    {
+        (void)vertices;
+        (void)vertex_count;
+        (void)indices;
+        (void)index_count;
+        return false;
+    }
 
     virtual void Set_Ambient(const Vector3 & color) = 0;
     virtual void Set_Light_Environment(LightEnvironmentClass * light_env) = 0;

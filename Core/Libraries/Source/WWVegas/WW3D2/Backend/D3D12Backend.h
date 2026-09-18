@@ -13,6 +13,7 @@
 #include "WW3D2/IRenderBackend.h"
 
 #include <cstdint>
+#include <vector>
 
 struct IDXGIFactory4;
 struct IDXGISwapChain3;
@@ -22,7 +23,9 @@ struct ID3D12DescriptorHeap;
 struct ID3D12Device;
 struct ID3D12Fence;
 struct ID3D12GraphicsCommandList;
+struct ID3D12PipelineState;
 struct ID3D12Resource;
+struct ID3D12RootSignature;
 
 // Direct3D 12 implementation of the existing WW3D render-backend seam.
 // This is the only renderer backend supported by the x64 Evolution runtime.
@@ -45,6 +48,11 @@ public:
                float dest_alpha, float z, unsigned int stencil) override;
     void Set_Viewport(const RenderBackendViewport &viewport) override;
     void Invalidate_Cached_Render_States() override;
+    bool Draw_Indexed_Triangles(
+        const RenderBackendColorVertex *vertices,
+        unsigned int vertex_count,
+        const unsigned short *indices,
+        unsigned int index_count) override;
 
     void Set_Ambient(const Vector3 &color) override;
     void Set_Light_Environment(LightEnvironmentClass *light_env) override;
@@ -61,10 +69,12 @@ private:
     void createRenderTargets();
     void createDepthStencil();
     void createSynchronizationObjects();
+    void createPrimitivePipeline();
     void applyPendingClear();
     void submitScene(bool present);
     void presentPendingFrame();
     void waitForFrame(std::uint32_t frame_index);
+    void releaseFrameUploads(std::uint32_t frame_index) noexcept;
     void waitForGpu();
     void releaseObjects() noexcept;
 
@@ -82,6 +92,8 @@ private:
     ID3D12Resource *m_depth_stencil = nullptr;
     ID3D12CommandAllocator *m_command_allocators[FrameCount]{};
     ID3D12GraphicsCommandList *m_command_list = nullptr;
+    ID3D12RootSignature *m_primitive_root_signature = nullptr;
+    ID3D12PipelineState *m_primitive_pipeline = nullptr;
     ID3D12Fence *m_fence = nullptr;
     void *m_fence_event = nullptr;
 
@@ -98,4 +110,5 @@ private:
     std::uint32_t m_frame_index = 0;
     std::uint64_t m_next_fence_value = 1;
     std::uint64_t m_frame_fence_values[FrameCount]{};
+    std::vector<ID3D12Resource *> m_frame_uploads[FrameCount];
 };

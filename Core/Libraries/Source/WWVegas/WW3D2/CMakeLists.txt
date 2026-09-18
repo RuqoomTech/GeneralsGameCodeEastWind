@@ -271,5 +271,5 @@ target_link_libraries(corei_ww3d2 INTERFACE
 )
 
 if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-    target_link_libraries(corei_ww3d2 INTERFACE d3d12 dxgi dxguid)
+    target_link_libraries(corei_ww3d2 INTERFACE d3d12 d3dcompiler dxgi dxguid)
 endif()

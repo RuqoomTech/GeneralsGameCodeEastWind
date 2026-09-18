@@ -8,7 +8,7 @@ Step 04 is complete and Windows-signed-off. The supported Evolution path is x64-
 
 Step 05A is Windows-signed-off. Step 05B's temporary standalone D3D12 shell is also Windows-signed-off: MinGW-w64 GCC 16.2 built it successfully, Intel UHD 770 and WARP both presented frames, the staged executable ran, and the focused graph passed 26/26.
 
-Step 05C is implemented locally and supersedes the standalone-shell architecture. The proven D3D12 device/frame code now lives behind the existing WW3D renderer backend seam, the standalone `Evolution/` tree is removed, and the host-portable regression graph passes 26/26 across GCC/Clang/sanitizer configurations. Windows production-backend smoke validation remains pending.
+Step 05C2 is Windows-signed-off. The production D3D12 backend now lives behind the existing WW3D renderer seam; the standalone `Evolution/` tree is gone, the Windows graph passes 27/27, and the production backend smoke gate is green. Step 05D adds the first renderer-neutral indexed primitive path on top of that signed-off backend.
 
 ## Locked architecture
 
@@ -44,9 +44,10 @@ Current order:
 
 1. **05A — developer baseline cleanup — DONE / Windows signed off.**
 2. **05B — D3D12 proof shell — DONE / Windows signed off / architecture superseded.** It proved the Windows x64 D3D12 fundamentals and is now being removed rather than retained as a second runtime.
-3. **05C — in-place D3D12 backend integration — ACTIVE.** Move the proven D3D12 device/frame lifecycle into `WW3D2/Backend`, select it for x64, remove the standalone `Evolution/` tree, and stop linking D3D8/D3DX8 from the x64 game target.
-4. **Next renderer slices:** migrate the remaining direct `DX8Wrapper` state/resource/draw call sites into D3D12-capable renderer abstractions until the normal Zero Hour executable links and renders on D3D12.
-5. **W3X parser/import:** resume real XML parsing and renderer-neutral W3D/W3X mesh convergence once the D3D12 indexed-mesh path exists to exercise both formats through the same renderer.
+3. **05C — in-place D3D12 backend integration — DONE / Windows signed off.** The WW3D backend owns the x64 device/frame lifecycle and the temporary standalone shell is removed.
+4. **05D — indexed primitive foundation — ACTIVE.** Add the first renderer-neutral indexed position/color draw contract, D3D12 root signature/PSO/shader path, transient upload buffers, and a Windows GPU smoke proof through `IRenderBackend`.
+5. **Next renderer slices:** migrate the first real WW3D primitive/buffer callers away from `DX8Wrapper`, then move representative W3D rigid mesh data onto the same D3D12 path.
+6. **W3X parser/import:** resume real XML parsing and renderer-neutral W3D/W3X mesh convergence once the D3D12 indexed-mesh path exists to exercise both formats through the same renderer.
 
 The current full x64 game build remains deliberately gated while direct `DX8Wrapper` callers still exist. The gate is removed only when the normal runtime can compile/link without the DX8 renderer implementation; no parallel replacement executable will be maintained.
 

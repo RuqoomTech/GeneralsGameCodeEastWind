@@ -16,13 +16,17 @@
 #include "WWMath/vector3.h"
 
 #include <d3d12.h>
+#include <d3dcompiler.h>
 #include <dxgi1_6.h>
 #include <windows.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
+#include <limits>
 #include <new>
 #include <stdexcept>
+#include <string>
 
 namespace
 {
@@ -106,6 +110,101 @@ void selectHardwareAdapter(IDXGIFactory4 *factory, IDXGIAdapter1 **adapter_out)
     }
 }
 
+
+constexpr char BasicPrimitiveShader[] = R"HLSL(
+struct VSInput
+{
+    float3 position : POSITION;
+    float4 color : COLOR0;
+};
+
+struct PSInput
+{
+    float4 position : SV_POSITION;
+    float4 color : COLOR0;
+};
+
+PSInput VSMain(VSInput input)
+{
+    PSInput output;
+    output.position = float4(input.position, 1.0f);
+    output.color = input.color;
+    return output;
+}
+
+float4 PSMain(PSInput input) : SV_TARGET
+{
+    return input.color;
+}
+)HLSL";
+
+ID3DBlob *compileShader(const char *entry_point, const char *target)
+{
+    ID3DBlob *shader = nullptr;
+    ID3DBlob *errors = nullptr;
+    const HRESULT result = D3DCompile(
+        BasicPrimitiveShader,
+        sizeof(BasicPrimitiveShader) - 1,
+        "WW3D D3D12 basic primitive",
+        nullptr,
+        nullptr,
+        entry_point,
+        target,
+        D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3,
+        0,
+        &shader,
+        &errors);
+
+    if (FAILED(result))
+    {
+        std::string message = "D3DCompile failed";
+        if (errors != nullptr && errors->GetBufferPointer() != nullptr)
+        {
+            message.assign(
+                static_cast<const char *>(errors->GetBufferPointer()),
+                errors->GetBufferSize());
+        }
+        releaseCom(errors);
+        releaseCom(shader);
+        throw std::runtime_error(message);
+    }
+
+    releaseCom(errors);
+    return shader;
+}
+
+ID3D12Resource *createUploadBuffer(ID3D12Device *device, std::size_t byte_count)
+{
+    D3D12_HEAP_PROPERTIES heap_properties{};
+    heap_properties.Type = D3D12_HEAP_TYPE_UPLOAD;
+    heap_properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heap_properties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heap_properties.CreationNodeMask = 1;
+    heap_properties.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC resource_desc{};
+    resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    resource_desc.Width = static_cast<UINT64>(byte_count);
+    resource_desc.Height = 1;
+    resource_desc.DepthOrArraySize = 1;
+    resource_desc.MipLevels = 1;
+    resource_desc.Format = DXGI_FORMAT_UNKNOWN;
+    resource_desc.SampleDesc.Count = 1;
+    resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+    ID3D12Resource *resource = nullptr;
+    checkHresult(
+        "ID3D12Device::CreateCommittedResource(upload)",
+        device->CreateCommittedResource(
+            &heap_properties,
+            D3D12_HEAP_FLAG_NONE,
+            &resource_desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&resource)));
+    return resource;
+}
+
 D3D12_CPU_DESCRIPTOR_HANDLE offsetHandle(
     D3D12_CPU_DESCRIPTOR_HANDLE base,
     std::uint32_t index,
@@ -173,6 +272,7 @@ void D3D12Backend::initialize(void *window)
     m_viewport = {0, 0, m_width, m_height, 0.0f, 1.0f};
 
     createFactoryAndDevice();
+    createPrimitivePipeline();
     createCommandObjects();
     createSwapChain();
     createRenderTargets();
@@ -194,6 +294,122 @@ void D3D12Backend::createFactoryAndDevice()
     const HRESULT result = D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device));
     adapter->Release();
     checkHresult("D3D12CreateDevice", result);
+}
+
+void D3D12Backend::createPrimitivePipeline()
+{
+    D3D12_ROOT_SIGNATURE_DESC root_desc{};
+    root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+    ID3DBlob *serialized_root = nullptr;
+    ID3DBlob *root_errors = nullptr;
+    const HRESULT serialize_result = D3D12SerializeRootSignature(
+        &root_desc,
+        D3D_ROOT_SIGNATURE_VERSION_1,
+        &serialized_root,
+        &root_errors);
+    if (FAILED(serialize_result))
+    {
+        std::string message = "D3D12SerializeRootSignature failed";
+        if (root_errors != nullptr && root_errors->GetBufferPointer() != nullptr)
+        {
+            message.assign(
+                static_cast<const char *>(root_errors->GetBufferPointer()),
+                root_errors->GetBufferSize());
+        }
+        releaseCom(root_errors);
+        releaseCom(serialized_root);
+        throw std::runtime_error(message);
+    }
+    releaseCom(root_errors);
+
+    checkHresult(
+        "ID3D12Device::CreateRootSignature",
+        m_device->CreateRootSignature(
+            0,
+            serialized_root->GetBufferPointer(),
+            serialized_root->GetBufferSize(),
+            IID_PPV_ARGS(&m_primitive_root_signature)));
+    releaseCom(serialized_root);
+
+    ID3DBlob *vertex_shader = compileShader("VSMain", "vs_5_1");
+    ID3DBlob *pixel_shader = nullptr;
+    try
+    {
+        pixel_shader = compileShader("PSMain", "ps_5_1");
+
+        const D3D12_INPUT_ELEMENT_DESC input_elements[] = {
+            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,
+             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        };
+
+        D3D12_BLEND_DESC blend{};
+        blend.RenderTarget[0].BlendEnable = FALSE;
+        blend.RenderTarget[0].LogicOpEnable = FALSE;
+        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+        blend.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
+        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+        blend.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
+        blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+        D3D12_RASTERIZER_DESC rasterizer{};
+        rasterizer.FillMode = D3D12_FILL_MODE_SOLID;
+        rasterizer.CullMode = D3D12_CULL_MODE_NONE;
+        rasterizer.FrontCounterClockwise = FALSE;
+        rasterizer.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
+        rasterizer.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
+        rasterizer.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+        rasterizer.DepthClipEnable = TRUE;
+        rasterizer.MultisampleEnable = FALSE;
+        rasterizer.AntialiasedLineEnable = FALSE;
+        rasterizer.ForcedSampleCount = 0;
+        rasterizer.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+
+        D3D12_DEPTH_STENCIL_DESC depth_stencil{};
+        depth_stencil.DepthEnable = TRUE;
+        depth_stencil.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        depth_stencil.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+        depth_stencil.StencilEnable = FALSE;
+        depth_stencil.StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK;
+        depth_stencil.StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK;
+        depth_stencil.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+        depth_stencil.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+        depth_stencil.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+        depth_stencil.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+        depth_stencil.BackFace = depth_stencil.FrontFace;
+
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline{};
+        pipeline.pRootSignature = m_primitive_root_signature;
+        pipeline.VS = {vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize()};
+        pipeline.PS = {pixel_shader->GetBufferPointer(), pixel_shader->GetBufferSize()};
+        pipeline.BlendState = blend;
+        pipeline.SampleMask = std::numeric_limits<UINT>::max();
+        pipeline.RasterizerState = rasterizer;
+        pipeline.DepthStencilState = depth_stencil;
+        pipeline.InputLayout = {input_elements, 2};
+        pipeline.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        pipeline.NumRenderTargets = 1;
+        pipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+        pipeline.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        pipeline.SampleDesc.Count = 1;
+
+        checkHresult(
+            "ID3D12Device::CreateGraphicsPipelineState",
+            m_device->CreateGraphicsPipelineState(&pipeline, IID_PPV_ARGS(&m_primitive_pipeline)));
+    }
+    catch (...)
+    {
+        releaseCom(pixel_shader);
+        releaseCom(vertex_shader);
+        throw;
+    }
+    releaseCom(pixel_shader);
+    releaseCom(vertex_shader);
 }
 
 void D3D12Backend::createCommandObjects()
@@ -480,6 +696,83 @@ void D3D12Backend::Invalidate_Cached_Render_States()
     // shadow state cache to invalidate here.
 }
 
+bool D3D12Backend::Draw_Indexed_Triangles(
+    const RenderBackendColorVertex *vertices,
+    unsigned int vertex_count,
+    const unsigned short *indices,
+    unsigned int index_count)
+{
+    if (!m_scene_open || vertices == nullptr || indices == nullptr ||
+        vertex_count == 0 || index_count < 3 || (index_count % 3) != 0)
+    {
+        return false;
+    }
+
+    if (vertex_count > (std::numeric_limits<std::size_t>::max() / sizeof(RenderBackendColorVertex)) ||
+        index_count > (std::numeric_limits<std::size_t>::max() / sizeof(unsigned short)))
+    {
+        return false;
+    }
+
+    const std::size_t vertex_bytes = static_cast<std::size_t>(vertex_count) * sizeof(RenderBackendColorVertex);
+    const std::size_t index_bytes = static_cast<std::size_t>(index_count) * sizeof(unsigned short);
+    if (vertex_bytes > std::numeric_limits<UINT>::max() || index_bytes > std::numeric_limits<UINT>::max())
+    {
+        return false;
+    }
+
+    ID3D12Resource *vertex_upload = nullptr;
+    ID3D12Resource *index_upload = nullptr;
+    try
+    {
+        auto &frame_uploads = m_frame_uploads[m_frame_index];
+        frame_uploads.reserve(frame_uploads.size() + 2);
+
+        vertex_upload = createUploadBuffer(m_device, vertex_bytes);
+        index_upload = createUploadBuffer(m_device, index_bytes);
+
+        void *mapped = nullptr;
+        D3D12_RANGE no_read{0, 0};
+        checkHresult("ID3D12Resource::Map(vertex)", vertex_upload->Map(0, &no_read, &mapped));
+        std::memcpy(mapped, vertices, vertex_bytes);
+        vertex_upload->Unmap(0, nullptr);
+
+        mapped = nullptr;
+        checkHresult("ID3D12Resource::Map(index)", index_upload->Map(0, &no_read, &mapped));
+        std::memcpy(mapped, indices, index_bytes);
+        index_upload->Unmap(0, nullptr);
+
+        D3D12_VERTEX_BUFFER_VIEW vertex_view{};
+        vertex_view.BufferLocation = vertex_upload->GetGPUVirtualAddress();
+        vertex_view.SizeInBytes = static_cast<UINT>(vertex_bytes);
+        vertex_view.StrideInBytes = sizeof(RenderBackendColorVertex);
+
+        D3D12_INDEX_BUFFER_VIEW index_view{};
+        index_view.BufferLocation = index_upload->GetGPUVirtualAddress();
+        index_view.SizeInBytes = static_cast<UINT>(index_bytes);
+        index_view.Format = DXGI_FORMAT_R16_UINT;
+
+        frame_uploads.push_back(vertex_upload);
+        frame_uploads.push_back(index_upload);
+        vertex_upload = nullptr;
+        index_upload = nullptr;
+
+        m_command_list->SetGraphicsRootSignature(m_primitive_root_signature);
+        m_command_list->SetPipelineState(m_primitive_pipeline);
+        m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
+        m_command_list->IASetIndexBuffer(&index_view);
+        m_command_list->DrawIndexedInstanced(index_count, 1, 0, 0, 0);
+        return true;
+    }
+    catch (...)
+    {
+        releaseCom(index_upload);
+        releaseCom(vertex_upload);
+        return false;
+    }
+}
+
 void D3D12Backend::Set_Ambient(const Vector3 &color)
 {
     (void)color;
@@ -535,17 +828,28 @@ void D3D12Backend::presentPendingFrame()
 void D3D12Backend::waitForFrame(std::uint32_t frame_index)
 {
     const std::uint64_t fence_value = m_frame_fence_values[frame_index];
-    if (fence_value == 0 || m_fence->GetCompletedValue() >= fence_value)
+    if (fence_value != 0 && m_fence->GetCompletedValue() < fence_value)
     {
-        return;
+        checkHresult("ID3D12Fence::SetEventOnCompletion",
+                     m_fence->SetEventOnCompletion(fence_value, static_cast<HANDLE>(m_fence_event)));
+        if (WaitForSingleObject(static_cast<HANDLE>(m_fence_event), INFINITE) != WAIT_OBJECT_0)
+        {
+            throw std::runtime_error("WaitForSingleObject failed while waiting for a D3D12 frame");
+        }
     }
+    releaseFrameUploads(frame_index);
+}
 
-    checkHresult("ID3D12Fence::SetEventOnCompletion",
-                 m_fence->SetEventOnCompletion(fence_value, static_cast<HANDLE>(m_fence_event)));
-    if (WaitForSingleObject(static_cast<HANDLE>(m_fence_event), INFINITE) != WAIT_OBJECT_0)
+void D3D12Backend::releaseFrameUploads(std::uint32_t frame_index) noexcept
+{
+    for (ID3D12Resource *resource : m_frame_uploads[frame_index])
     {
-        throw std::runtime_error("WaitForSingleObject failed while waiting for a D3D12 frame");
+        if (resource != nullptr)
+        {
+            resource->Release();
+        }
     }
+    m_frame_uploads[frame_index].clear();
 }
 
 void D3D12Backend::waitForGpu()
@@ -575,6 +879,12 @@ void D3D12Backend::waitForGpu()
 
 void D3D12Backend::releaseObjects() noexcept
 {
+    for (std::uint32_t index = 0; index < FrameCount; ++index)
+    {
+        releaseFrameUploads(index);
+    }
+    releaseCom(m_primitive_pipeline);
+    releaseCom(m_primitive_root_signature);
     for (auto &render_target : m_render_targets)
     {
         releaseCom(render_target);
