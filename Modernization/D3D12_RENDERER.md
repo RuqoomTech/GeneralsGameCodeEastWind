@@ -16,6 +16,7 @@ The initial D3D12 proof was Windows-verified in Step 05B on Intel UHD 770 and WA
 - a Windows smoke target exercises the production backend through the same factory used by WW3D;
 - Step 05D adds the first indexed position/color primitive contract, root signature, PSO, shader compilation and upload-buffer lifetime tracking without introducing a second renderer abstraction;
 - Step 05E moves the bootstrap shader out of C++ into the first canonical HLSL asset (`Shaders/PrimitiveColor.hlsl`) and stages the same asset for the Windows smoke binary and normal x64 game target;
+- Step 05F adds the first persistent renderer-neutral geometry lifetime: create/draw/release handles backed by D3D12 default-heap vertex/index buffers, uploaded through explicit copy commands and state transitions;
 - the temporary standalone `Evolution/` runtime tree and shell preset are removed.
 
 The full x64 game is not yet enabled because many legacy render callers still invoke `DX8Wrapper` directly. Those call sites are now the renderer migration backlog; they must move behind D3D12-capable interfaces rather than being hidden behind a permanent DX8 emulation layer.
@@ -63,15 +64,16 @@ resources PSOs   command submission
 
 1. **device/frame backend — done / Windows signed off:** D3D12 device, swap chain, render/depth targets, viewport, clear, present, fences;
 2. **draw foundation — done / Windows signed off:** root signature, PSO and indexed triangle draw through `IRenderBackend`;
-3. **shader asset foundation — active:** canonical HLSL assets staged beside the x64 executable; translate the existing D3D8-era terrain/filter/tree/water assembly only when each real rendering path is migrated;
-4. **buffer foundation:** replace per-draw transient upload geometry with persistent/static vertex/index resources where real WW3D callers require them;
-5. **WW3D primitive migration:** move the first direct `DX8Wrapper` draw/state callers;
-5. **representative W3D rigid mesh:** render existing W3D geometry through the D3D12 path;
-6. **W3X rigid mesh:** feed the same renderer-neutral mesh path from W3X;
-7. materials/textures;
-8. camera/depth completeness;
-9. skinned mesh/animation;
-10. terrain, shadows, particles/effects and full scene coverage.
+3. **shader asset foundation — locally done / Windows verification pending:** canonical HLSL assets staged beside the x64 executable; translate the existing D3D8-era terrain/filter/tree/water assembly only when each real rendering path is migrated;
+4. **buffer foundation — active:** persistent/default-heap indexed position/color geometry is now available beside the transient path;
+5. **texture binding:** establish D3D12 texture upload, SRV descriptor and sampler ownership before translating the legacy texture shaders;
+6. **complete legacy shader-backed caller:** translate one real `.nvp/.nvv` behavior together with its texture/constants/state and route its WW3D caller off `DX8Wrapper`;
+7. **representative W3D rigid mesh:** render existing W3D geometry through the D3D12 path;
+8. **W3X rigid mesh:** feed the same renderer-neutral mesh path from W3X;
+9. materials/textures;
+10. camera/depth completeness;
+11. skinned mesh/animation;
+12. terrain, shadows, particles/effects and full scene coverage.
 
 ## Non-goals
 

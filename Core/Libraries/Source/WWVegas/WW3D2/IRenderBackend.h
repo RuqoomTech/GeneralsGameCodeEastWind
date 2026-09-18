@@ -50,6 +50,17 @@ struct RenderBackendViewport
     float max_z;
 };
 
+struct RenderBackendGeometryHandle
+{
+    unsigned int slot;
+    unsigned int generation;
+
+    RenderBackendGeometryHandle() : slot(0), generation(0) {}
+    RenderBackendGeometryHandle(unsigned int slot_value, unsigned int generation_value)
+        : slot(slot_value), generation(generation_value) {}
+    bool Is_Valid() const { return slot != 0 && generation != 0; }
+};
+
 // A method appears here once a caller routes through it, not in anticipation of
 // one. The set below is what current callers route through; the rest of the
 // legacy DX8Wrapper API remains reachable only in code that has not yet moved
@@ -90,6 +101,33 @@ public:
         (void)indices;
         (void)index_count;
         return false;
+    }
+
+    // Persistent geometry is the first resource-lifetime contract owned by the
+    // renderer-neutral seam. Backends that do not support it return an invalid
+    // handle; callers must remain functional without a D3D8 compatibility shim.
+    virtual RenderBackendGeometryHandle Create_Static_Indexed_Color_Geometry(
+        const RenderBackendColorVertex *vertices,
+        unsigned int vertex_count,
+        const unsigned short *indices,
+        unsigned int index_count)
+    {
+        (void)vertices;
+        (void)vertex_count;
+        (void)indices;
+        (void)index_count;
+        return RenderBackendGeometryHandle();
+    }
+
+    virtual bool Draw_Static_Indexed_Color_Geometry(RenderBackendGeometryHandle geometry)
+    {
+        (void)geometry;
+        return false;
+    }
+
+    virtual void Release_Static_Geometry(RenderBackendGeometryHandle geometry)
+    {
+        (void)geometry;
     }
 
     virtual void Set_Ambient(const Vector3 & color) = 0;

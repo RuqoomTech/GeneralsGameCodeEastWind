@@ -34,8 +34,10 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 05B | D3D12 proof shell | DONE | Windows-signed-off hardware/WARP clear-present proof; temporary architecture superseded by 05C |
 | 05C | In-place D3D12 backend | DONE | Real Windows x64 production backend passes 27/27 plus explicit GPU gate |
 | 05D | D3D12 indexed primitive foundation | DONE | Real Windows backend submits indexed geometry through `IRenderBackend` and passes 27/27 |
-| 05E | D3D12 shader asset foundation | ACTIVE | Canonical HLSL replaces embedded shader source and is staged for smoke/game executables |
-| 05F | D3D12 persistent buffers + first WW3D caller migration | NEXT | First real `DX8Wrapper` draw/buffer responsibility crosses the backend seam |
+| 05E | D3D12 shader asset foundation | DONE / VERIFY | Canonical HLSL replaces embedded shader source and is staged for smoke/game executables |
+| 05F | D3D12 persistent indexed geometry | ACTIVE | Default-heap vertex/index resources with renderer-neutral create/draw/release lifetime |
+| 05G | D3D12 texture/SRV/sampler foundation | NEXT | Required resource binding before real terrain/filter/tree shader translation |
+| 05H | First complete legacy shader-backed WW3D caller | PLANNED | Move one real caller and its matching shader/state/resource semantics off `DX8Wrapper` |
 | 05W1 | W3X XML parser component | PLANNED | Real XML parser behind shared project-owned interface |
 | 05W2 | W3X neutral rigid-mesh import | PLANNED | Representative rigid mesh reaches renderer-neutral import model |
 | 05W3 | W3D/W3X routing and validation | PLANNED | Existing W3D path unchanged; W3X routed to validated importer |

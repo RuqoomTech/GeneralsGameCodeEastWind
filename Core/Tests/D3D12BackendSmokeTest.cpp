@@ -78,19 +78,30 @@ int main()
         {0.65f, -0.55f, 0.50f, 0.10f, 0.25f, 1.00f, 1.00f},
     };
     const unsigned short triangle_indices[] = {0, 1, 2};
+    const RenderBackendGeometryHandle static_triangle =
+        backend->Create_Static_Indexed_Color_Geometry(triangle_vertices, 3, triangle_indices, 3);
+    if (!static_triangle.Is_Valid())
+    {
+        delete backend;
+        DestroyWindow(window);
+        UnregisterClassW(WindowClassName, instance);
+        std::cerr << "D3D12 backend smoke failed: persistent geometry creation failed.\n";
+        return 3;
+    }
 
     // Exercise WW3D's deferred-present contract first: End_Scene(false) may
     // be followed by another scene before Flip_To_Primary(). This is used by
     // existing multi-pass/off-screen callers and must not dead-end the frame.
     backend->Clear(true, true, Vector3(0.04f, 0.08f, 0.12f), 1.0f, 1.0f, 0);
     backend->Begin_Scene();
-    if (!backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3))
+    if (!backend->Draw_Static_Indexed_Color_Geometry(static_triangle))
     {
+        backend->Release_Static_Geometry(static_triangle);
         delete backend;
         DestroyWindow(window);
         UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: indexed triangle submission failed.\n";
-        return 3;
+        std::cerr << "D3D12 backend smoke failed: persistent indexed triangle submission failed.\n";
+        return 4;
     }
     backend->End_Scene(false);
 
@@ -104,21 +115,26 @@ int main()
         const float phase = static_cast<float>(frame) / 5.0f;
         backend->Clear(true, true, Vector3(0.08f + phase * 0.08f, 0.08f, 0.12f), 1.0f, 1.0f, 0);
         backend->Begin_Scene();
-        if (!backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3))
+        const bool draw_ok = frame == 0
+            ? backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3)
+            : backend->Draw_Static_Indexed_Color_Geometry(static_triangle);
+        if (!draw_ok)
         {
+            backend->Release_Static_Geometry(static_triangle);
             delete backend;
             DestroyWindow(window);
             UnregisterClassW(WindowClassName, instance);
             std::cerr << "D3D12 backend smoke failed: indexed triangle submission failed.\n";
-            return 4;
+            return 5;
         }
         backend->End_Scene(true);
     }
 
+    backend->Release_Static_Geometry(static_triangle);
     delete backend;
     DestroyWindow(window);
     UnregisterClassW(WindowClassName, instance);
 
-    std::cout << "D3D12 backend smoke passed: WW3D created the D3D12 backend, submitted indexed color geometry, preserved deferred-present semantics, and presented frames.\n";
+    std::cout << "D3D12 backend smoke passed: WW3D created persistent default-heap indexed geometry, reused it across frames, preserved transient/deferred-present drawing, and released it safely.\n";
     return 0;
 }

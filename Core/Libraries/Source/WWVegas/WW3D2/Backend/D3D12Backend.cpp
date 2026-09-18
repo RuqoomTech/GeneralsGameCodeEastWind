@@ -176,6 +176,38 @@ ID3DBlob *compileShaderFromFile(const wchar_t *path, const char *entry_point, co
     return shader;
 }
 
+ID3D12Resource *createDefaultBuffer(ID3D12Device *device, std::size_t byte_count)
+{
+    D3D12_HEAP_PROPERTIES heap_properties{};
+    heap_properties.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heap_properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heap_properties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heap_properties.CreationNodeMask = 1;
+    heap_properties.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC resource_desc{};
+    resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    resource_desc.Width = static_cast<UINT64>(byte_count);
+    resource_desc.Height = 1;
+    resource_desc.DepthOrArraySize = 1;
+    resource_desc.MipLevels = 1;
+    resource_desc.Format = DXGI_FORMAT_UNKNOWN;
+    resource_desc.SampleDesc.Count = 1;
+    resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+    ID3D12Resource *resource = nullptr;
+    checkHresult(
+        "ID3D12Device::CreateCommittedResource(default buffer)",
+        device->CreateCommittedResource(
+            &heap_properties,
+            D3D12_HEAP_FLAG_NONE,
+            &resource_desc,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            nullptr,
+            IID_PPV_ARGS(&resource)));
+    return resource;
+}
+
 ID3D12Resource *createUploadBuffer(ID3D12Device *device, std::size_t byte_count)
 {
     D3D12_HEAP_PROPERTIES heap_properties{};
@@ -777,6 +809,217 @@ bool D3D12Backend::Draw_Indexed_Triangles(
     }
 }
 
+RenderBackendGeometryHandle D3D12Backend::Create_Static_Indexed_Color_Geometry(
+    const RenderBackendColorVertex *vertices,
+    unsigned int vertex_count,
+    const unsigned short *indices,
+    unsigned int index_count)
+{
+    if (m_scene_open || vertices == nullptr || indices == nullptr ||
+        vertex_count == 0 || index_count < 3 || (index_count % 3) != 0)
+    {
+        return RenderBackendGeometryHandle();
+    }
+
+    if (vertex_count > (std::numeric_limits<std::size_t>::max() / sizeof(RenderBackendColorVertex)) ||
+        index_count > (std::numeric_limits<std::size_t>::max() / sizeof(unsigned short)))
+    {
+        return RenderBackendGeometryHandle();
+    }
+
+    const std::size_t vertex_bytes = static_cast<std::size_t>(vertex_count) * sizeof(RenderBackendColorVertex);
+    const std::size_t index_bytes = static_cast<std::size_t>(index_count) * sizeof(unsigned short);
+    if (vertex_bytes > std::numeric_limits<UINT>::max() || index_bytes > std::numeric_limits<UINT>::max())
+    {
+        return RenderBackendGeometryHandle();
+    }
+
+    ID3D12Resource *vertex_buffer = nullptr;
+    ID3D12Resource *index_buffer = nullptr;
+    ID3D12Resource *vertex_upload = nullptr;
+    ID3D12Resource *index_upload = nullptr;
+    ID3D12CommandAllocator *upload_allocator = nullptr;
+    ID3D12GraphicsCommandList *upload_list = nullptr;
+
+    try
+    {
+        vertex_buffer = createDefaultBuffer(m_device, vertex_bytes);
+        index_buffer = createDefaultBuffer(m_device, index_bytes);
+        vertex_upload = createUploadBuffer(m_device, vertex_bytes);
+        index_upload = createUploadBuffer(m_device, index_bytes);
+
+        D3D12_RANGE no_read{0, 0};
+        void *mapped = nullptr;
+        checkHresult("ID3D12Resource::Map(static vertex upload)", vertex_upload->Map(0, &no_read, &mapped));
+        std::memcpy(mapped, vertices, vertex_bytes);
+        vertex_upload->Unmap(0, nullptr);
+
+        mapped = nullptr;
+        checkHresult("ID3D12Resource::Map(static index upload)", index_upload->Map(0, &no_read, &mapped));
+        std::memcpy(mapped, indices, index_bytes);
+        index_upload->Unmap(0, nullptr);
+
+        checkHresult(
+            "ID3D12Device::CreateCommandAllocator(static geometry)",
+            m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&upload_allocator)));
+        checkHresult(
+            "ID3D12Device::CreateCommandList(static geometry)",
+            m_device->CreateCommandList(
+                0,
+                D3D12_COMMAND_LIST_TYPE_DIRECT,
+                upload_allocator,
+                nullptr,
+                IID_PPV_ARGS(&upload_list)));
+
+        upload_list->CopyBufferRegion(vertex_buffer, 0, vertex_upload, 0, vertex_bytes);
+        upload_list->CopyBufferRegion(index_buffer, 0, index_upload, 0, index_bytes);
+
+        D3D12_RESOURCE_BARRIER barriers[2]{};
+        barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barriers[0].Transition.pResource = vertex_buffer;
+        barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+        barriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barriers[1].Transition.pResource = index_buffer;
+        barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_INDEX_BUFFER;
+        barriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        upload_list->ResourceBarrier(2, barriers);
+
+        checkHresult("ID3D12GraphicsCommandList::Close(static geometry)", upload_list->Close());
+        ID3D12CommandList *lists[] = {upload_list};
+        m_command_queue->ExecuteCommandLists(1, lists);
+
+        const std::uint64_t signal_value = m_next_fence_value++;
+        checkHresult("ID3D12CommandQueue::Signal(static geometry)", m_command_queue->Signal(m_fence, signal_value));
+        if (m_fence->GetCompletedValue() < signal_value)
+        {
+            checkHresult(
+                "ID3D12Fence::SetEventOnCompletion(static geometry)",
+                m_fence->SetEventOnCompletion(signal_value, static_cast<HANDLE>(m_fence_event)));
+            if (WaitForSingleObject(static_cast<HANDLE>(m_fence_event), INFINITE) != WAIT_OBJECT_0)
+            {
+                throw std::runtime_error("WaitForSingleObject failed while uploading static D3D12 geometry");
+            }
+        }
+
+        releaseCom(upload_list);
+        releaseCom(upload_allocator);
+        releaseCom(index_upload);
+        releaseCom(vertex_upload);
+
+        std::size_t slot = 0;
+        while (slot < m_static_geometry.size() && m_static_geometry[slot].occupied)
+        {
+            ++slot;
+        }
+        if (slot >= std::numeric_limits<unsigned int>::max())
+        {
+            throw std::runtime_error("D3D12 static geometry handle space exhausted");
+        }
+        if (slot == m_static_geometry.size())
+        {
+            m_static_geometry.push_back(StaticGeometryResource{});
+        }
+
+        StaticGeometryResource &geometry = m_static_geometry[slot];
+        ++geometry.generation;
+        if (geometry.generation == 0)
+        {
+            ++geometry.generation;
+        }
+        geometry.vertex_buffer = vertex_buffer;
+        geometry.index_buffer = index_buffer;
+        geometry.vertex_bytes = static_cast<unsigned int>(vertex_bytes);
+        geometry.index_bytes = static_cast<unsigned int>(index_bytes);
+        geometry.index_count = index_count;
+        geometry.occupied = true;
+        vertex_buffer = nullptr;
+        index_buffer = nullptr;
+        return RenderBackendGeometryHandle(static_cast<unsigned int>(slot + 1), geometry.generation);
+    }
+    catch (...)
+    {
+        releaseCom(upload_list);
+        releaseCom(upload_allocator);
+        releaseCom(index_upload);
+        releaseCom(vertex_upload);
+        releaseCom(index_buffer);
+        releaseCom(vertex_buffer);
+        return RenderBackendGeometryHandle();
+    }
+}
+
+bool D3D12Backend::Draw_Static_Indexed_Color_Geometry(RenderBackendGeometryHandle geometry_handle)
+{
+    if (!m_scene_open || !geometry_handle.Is_Valid())
+    {
+        return false;
+    }
+
+    const std::size_t slot = static_cast<std::size_t>(geometry_handle.slot - 1);
+    if (slot >= m_static_geometry.size())
+    {
+        return false;
+    }
+
+    const StaticGeometryResource &geometry = m_static_geometry[slot];
+    if (!geometry.occupied || geometry.generation != geometry_handle.generation ||
+        geometry.vertex_buffer == nullptr || geometry.index_buffer == nullptr)
+    {
+        return false;
+    }
+
+    D3D12_VERTEX_BUFFER_VIEW vertex_view{};
+    vertex_view.BufferLocation = geometry.vertex_buffer->GetGPUVirtualAddress();
+    vertex_view.SizeInBytes = geometry.vertex_bytes;
+    vertex_view.StrideInBytes = sizeof(RenderBackendColorVertex);
+
+    D3D12_INDEX_BUFFER_VIEW index_view{};
+    index_view.BufferLocation = geometry.index_buffer->GetGPUVirtualAddress();
+    index_view.SizeInBytes = geometry.index_bytes;
+    index_view.Format = DXGI_FORMAT_R16_UINT;
+
+    m_command_list->SetGraphicsRootSignature(m_primitive_root_signature);
+    m_command_list->SetPipelineState(m_primitive_pipeline);
+    m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
+    m_command_list->IASetIndexBuffer(&index_view);
+    m_command_list->DrawIndexedInstanced(geometry.index_count, 1, 0, 0, 0);
+    return true;
+}
+
+void D3D12Backend::Release_Static_Geometry(RenderBackendGeometryHandle geometry_handle)
+{
+    if (!geometry_handle.Is_Valid())
+    {
+        return;
+    }
+
+    if (m_scene_open)
+    {
+        return;
+    }
+
+    const std::size_t slot = static_cast<std::size_t>(geometry_handle.slot - 1);
+    if (slot >= m_static_geometry.size() || !m_static_geometry[slot].occupied ||
+        m_static_geometry[slot].generation != geometry_handle.generation)
+    {
+        return;
+    }
+
+    try
+    {
+        waitForGpu();
+    }
+    catch (...)
+    {
+        return;
+    }
+    releaseStaticGeometry(m_static_geometry[slot]);
+}
+
 void D3D12Backend::Set_Ambient(const Vector3 &color)
 {
     (void)color;
@@ -856,6 +1099,16 @@ void D3D12Backend::releaseFrameUploads(std::uint32_t frame_index) noexcept
     m_frame_uploads[frame_index].clear();
 }
 
+void D3D12Backend::releaseStaticGeometry(StaticGeometryResource &geometry) noexcept
+{
+    releaseCom(geometry.index_buffer);
+    releaseCom(geometry.vertex_buffer);
+    geometry.vertex_bytes = 0;
+    geometry.index_bytes = 0;
+    geometry.index_count = 0;
+    geometry.occupied = false;
+}
+
 void D3D12Backend::waitForGpu()
 {
     if (m_command_queue == nullptr || m_fence == nullptr || m_fence_event == nullptr)
@@ -887,6 +1140,11 @@ void D3D12Backend::releaseObjects() noexcept
     {
         releaseFrameUploads(index);
     }
+    for (StaticGeometryResource &geometry : m_static_geometry)
+    {
+        releaseStaticGeometry(geometry);
+    }
+    m_static_geometry.clear();
     releaseCom(m_primitive_pipeline);
     releaseCom(m_primitive_root_signature);
     for (auto &render_target : m_render_targets)

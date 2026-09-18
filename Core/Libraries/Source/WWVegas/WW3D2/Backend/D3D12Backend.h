@@ -53,12 +53,30 @@ public:
         unsigned int vertex_count,
         const unsigned short *indices,
         unsigned int index_count) override;
+    RenderBackendGeometryHandle Create_Static_Indexed_Color_Geometry(
+        const RenderBackendColorVertex *vertices,
+        unsigned int vertex_count,
+        const unsigned short *indices,
+        unsigned int index_count) override;
+    bool Draw_Static_Indexed_Color_Geometry(RenderBackendGeometryHandle geometry) override;
+    void Release_Static_Geometry(RenderBackendGeometryHandle geometry) override;
 
     void Set_Ambient(const Vector3 &color) override;
     void Set_Light_Environment(LightEnvironmentClass *light_env) override;
 
 private:
     static constexpr std::uint32_t FrameCount = 2;
+
+    struct StaticGeometryResource
+    {
+        ID3D12Resource *vertex_buffer = nullptr;
+        ID3D12Resource *index_buffer = nullptr;
+        unsigned int vertex_bytes = 0;
+        unsigned int index_bytes = 0;
+        unsigned int index_count = 0;
+        unsigned int generation = 0;
+        bool occupied = false;
+    };
 
     D3D12Backend() = default;
 
@@ -75,6 +93,7 @@ private:
     void presentPendingFrame();
     void waitForFrame(std::uint32_t frame_index);
     void releaseFrameUploads(std::uint32_t frame_index) noexcept;
+    void releaseStaticGeometry(StaticGeometryResource &geometry) noexcept;
     void waitForGpu();
     void releaseObjects() noexcept;
 
@@ -111,4 +130,5 @@ private:
     std::uint64_t m_next_fence_value = 1;
     std::uint64_t m_frame_fence_values[FrameCount]{};
     std::vector<ID3D12Resource *> m_frame_uploads[FrameCount];
+    std::vector<StaticGeometryResource> m_static_geometry;
 };

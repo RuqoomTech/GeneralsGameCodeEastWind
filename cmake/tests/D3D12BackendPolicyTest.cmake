@@ -42,6 +42,34 @@ rts_policy_require_contains(
     "the in-place backend must issue indexed Direct3D 12 geometry draws")
 rts_policy_require_contains(
     "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "D3D12_HEAP_TYPE_DEFAULT"
+    "persistent indexed geometry must live in Direct3D 12 default-heap resources")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
+    "CopyBufferRegion"
+    "persistent geometry must use an explicit upload-to-default copy path")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "Create_Static_Indexed_Color_Geometry"
+    "persistent geometry lifetime must cross the existing renderer-neutral backend seam")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "Release_Static_Geometry"
+    "persistent geometry lifetime must have an explicit renderer-neutral release operation")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "generation"
+    "persistent geometry handles must reject stale slot reuse rather than aliasing a new resource")
+rts_policy_require_contains(
+    "Core/Tests/D3D12BackendSmokeTest.cpp"
+    "Draw_Static_Indexed_Color_Geometry"
+    "the Windows smoke test must reuse persistent geometry across frames")
+rts_policy_require_contains(
+    "Core/Tests/D3D12BackendSmokeTest.cpp"
+    "Release_Static_Geometry"
+    "the Windows smoke test must exercise persistent geometry destruction")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
     "D3DCompileFromFile"
     "the D3D12 backend must compile canonical HLSL shader assets rather than embedding shader source in C++")
 rts_policy_require_absent(
@@ -129,4 +157,4 @@ foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
         "the D3D12 backend must not include ${_legacy_header}")
 endforeach()
 
-message(STATUS "D3D12 backend policy passed: the in-place renderer owns indexed drawing and its canonical HLSL shader asset path")
+message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL plus transient and persistent default-heap indexed geometry")

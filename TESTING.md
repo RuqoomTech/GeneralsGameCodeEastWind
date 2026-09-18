@@ -95,7 +95,7 @@ Protocol/replay golden bytes remain frozen unless an explicit versioned format c
 
 The D3D12 implementation now lives in the existing WW3D backend tree; there is no standalone Evolution shell preset or application folder.
 
-On Windows x64, the normal `mingw64-tests` build compiles a smoke executable from the production `D3D12Backend.cpp`. The build stages the canonical `Shaders/PrimitiveColor.hlsl` asset beside that executable. The test creates a hidden HWND, constructs the backend through `Create_Render_Backend()`, compiles the staged HLSL, performs color + depth/stencil clears, submits indexed position/color geometry, preserves deferred-present behavior, presents several frames, waits through normal backend destruction, and exits.
+On Windows x64, the normal `mingw64-tests` build compiles a smoke executable from the production `D3D12Backend.cpp`. The build stages the canonical `Shaders/PrimitiveColor.hlsl` asset beside that executable. The test creates a hidden HWND, constructs the backend through `Create_Render_Backend()`, compiles the staged HLSL, creates persistent default-heap indexed position/color geometry, reuses it across frames, also exercises the transient draw path, preserves deferred-present behavior, releases the persistent resource after GPU synchronization, presents several frames, and exits.
 
 Run only that GPU smoke test with:
 
@@ -112,7 +112,7 @@ cmake --build --preset mingw64-tests --target check_d3d12_backend
 Expected success message:
 
 ```text
-D3D12 backend smoke passed: WW3D created the D3D12 backend, submitted indexed color geometry, preserved deferred-present semantics, and presented frames.
+D3D12 backend smoke passed: WW3D created persistent default-heap indexed geometry, reused it across frames, preserved transient/deferred-present drawing, and released it safely.
 ```
 
 The source-policy half remains host-portable:
@@ -147,7 +147,7 @@ For significant deterministic/network/replay changes, validate Release and Debug
 
 Do not claim a Windows gate passed from host/container testing. Windows sign-off requires actual Windows console output using the authoritative candidate tree.
 
-The final Step 04F and Step 05A baselines are Windows-signed-off with MinGW-w64 GCC/G++ 16.2. Step 05B is also Windows-signed-off: the D3D12 proof executable built, presented successfully on Intel UHD 770 and WARP, installed/staged correctly, and the 26-test focused graph remained green. Step 05C2 is Windows-signed-off: the in-place production backend passed 27/27 plus `check_d3d12_backend` and all deterministic/network/replay/x64 gates. Step 05D extends that same smoke gate with a real indexed draw and remains Windows-pending until the updated 27-test graph and explicit backend check pass.
+The final Step 04F and Step 05A baselines are Windows-signed-off with MinGW-w64 GCC/G++ 16.2. Step 05B is also Windows-signed-off: the D3D12 proof executable built, presented successfully on Intel UHD 770 and WARP, installed/staged correctly, and the 26-test focused graph remained green. Step 05C2 is Windows-signed-off: the in-place production backend passed 27/27 plus `check_d3d12_backend` and all deterministic/network/replay/x64 gates. Step 05D is Windows-signed-off with the real indexed draw. Step 05E externalizes/stages canonical HLSL and Step 05F adds persistent default-heap indexed geometry; those latest resource/shader changes remain Windows-pending until the updated 27-test graph and explicit backend check pass.
 
 ## Known warnings
 
