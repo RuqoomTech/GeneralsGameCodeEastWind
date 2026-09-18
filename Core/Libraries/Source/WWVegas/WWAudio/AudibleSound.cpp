@@ -1654,8 +1654,8 @@ AudibleSoundClass::Save (ChunkSaveClass &csave)
 			WRITE_MICRO_CHUNK_STRING (csave, VARID_FILENAME, m_Buffer->Get_Filename ());
 		}
 
-		AudibleSoundClass *this_ptr = this;
-		WRITE_MICRO_CHUNK (csave, VARID_THIS_PTR, this_ptr);
+		const PersistPointerToken this_token = SaveLoadSystemClass::Get_Pointer_Token(csave, this);
+		WRITE_MICRO_CHUNK (csave, VARID_THIS_PTR, this_token);
 
 	csave.End_Chunk ();
 
@@ -1712,9 +1712,9 @@ AudibleSoundClass::Load (ChunkLoadClass &cload)
 
 						case VARID_THIS_PTR:
 						{
-							AudibleSoundClass *old_ptr = nullptr;
-							cload.Read(&old_ptr, sizeof (old_ptr));
-							SaveLoadSystemClass::Register_Pointer (old_ptr, this);
+							PersistPointerToken old_token = 0;
+							cload.Read(&old_token, sizeof(old_token));
+							SaveLoadSystemClass::Register_Pointer(old_token, this);
 						}
 						break;
 					}

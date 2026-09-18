@@ -67,4 +67,25 @@ rts_policy_require_text("${_runtime_native_width_test}" "std::uintptr_t marker" 
 rts_policy_require_text("${_runtime_native_width_test}" "alignof(PoolProbe) <= alignof(void *)" "native-width allocator probe must not impose stronger-than-pointer alignment")
 rts_policy_forbid_text("${_runtime_native_width_test}" "std::uint64_t marker" "allocator probe must use uintptr_t rather than a synthetic fixed-width marker")
 
+# WWSaveLoad persistence identity must remain fixed-width and must never serialize
+# native addresses.  The in-memory token map is allowed to key by native pointers,
+# but only PersistPointerToken values cross the ChunkSave/ChunkLoad boundary.
+rts_policy_read("Core/Libraries/Source/WWVegas/WWSaveLoad/pointerremap.h" _pointer_remap)
+rts_policy_require_text("${_pointer_remap}" "using PersistPointerToken = std::uint32_t;" "WWSaveLoad persistence identity must remain an explicit 32-bit token")
+rts_policy_require_text("${_pointer_remap}" "static_assert(sizeof(PersistPointerToken) == 4" "WWSaveLoad persistence token width must be compile-time guarded")
+rts_policy_require_text("${_pointer_remap}" "PersistPointerToken OldToken" "pointer-remap pairs must key on fixed-width persisted tokens")
+rts_policy_forbid_text("${_pointer_remap}" "void *\t\tOldPointer" "pointer-remap pairs regressed to serialized/native old-address identity")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWSaveLoad/persistfactory.h" _persist_factory)
+rts_policy_require_text("${_persist_factory}" "Get_Pointer_Token(csave, obj)" "SimplePersistFactory must serialize a save token instead of an address")
+rts_policy_require_text("${_persist_factory}" "cload.Read(&old_obj_token, sizeof(old_obj_token))" "SimplePersistFactory must load the fixed-width token size")
+rts_policy_forbid_text("${_persist_factory}" "(uint32)obj" "SimplePersistFactory regressed to truncating a native pointer")
+rts_policy_forbid_text("${_persist_factory}" "sizeof(T *)" "SimplePersistFactory regressed to native-width pointer serialization")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWAudio/SoundSceneObj.cpp" _sound_scene_obj)
+rts_policy_require_text("${_sound_scene_obj}" "Get_Pointer_Token(csave, m_AttachedObject)" "SoundSceneObj attachments must serialize a token")
+rts_policy_require_text("${_sound_scene_obj}" "const PersistPointerToken user_object_token = 0;" "SoundSceneObj runtime-only user objects must persist as null rather than as addresses")
+rts_policy_forbid_text("${_sound_scene_obj}" "WRITE_MICRO_CHUNK (csave, VARID_ATTACHED_OBJ, m_AttachedObject)" "SoundSceneObj regressed to serializing a native attachment pointer")
+rts_policy_forbid_text("${_sound_scene_obj}" "WRITE_MICRO_CHUNK (csave, VARID_USER_OBJ, m_UserObj)" "SoundSceneObj regressed to serializing a native user pointer")
+
 message(STATUS "Runtime pointer policy passed")

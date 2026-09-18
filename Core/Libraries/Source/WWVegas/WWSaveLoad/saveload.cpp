@@ -207,33 +207,38 @@ void SaveLoadSystemClass::Register_Post_Load_Callback(PostLoadableClass * obj)
 	}
 }
 
-void SaveLoadSystemClass::Register_Pointer (void *old_pointer, void *new_pointer)
+PersistPointerToken SaveLoadSystemClass::Get_Pointer_Token(ChunkSaveClass &csave, const void *pointer)
 {
-	PointerRemapper.Register_Pointer(old_pointer,new_pointer);
+	return PointerRemapper.Get_Save_Token(csave, pointer);
+}
+
+void SaveLoadSystemClass::Register_Pointer(PersistPointerToken old_token, void *new_pointer)
+{
+	PointerRemapper.Register_Pointer(old_token, new_pointer);
 }
 
 #ifdef WWDEBUG
 
-void SaveLoadSystemClass::Request_Pointer_Remap (void **pointer_to_convert,const char * file,int line)
+void SaveLoadSystemClass::Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert, const char *file, int line)
 {
-	PointerRemapper.Request_Pointer_Remap(pointer_to_convert,file,line);
+	PointerRemapper.Request_Pointer_Remap(old_token, pointer_to_convert, file, line);
 }
 
-void SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap (RefCountClass **pointer_to_convert,const char * file,int line)
+void SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap(PersistPointerToken old_token, RefCountClass **pointer_to_convert, const char *file, int line)
 {
-	PointerRemapper.Request_Ref_Counted_Pointer_Remap(pointer_to_convert,file,line);
+	PointerRemapper.Request_Ref_Counted_Pointer_Remap(old_token, pointer_to_convert, file, line);
 }
 
 #else
 
-void SaveLoadSystemClass::Request_Pointer_Remap (void **pointer_to_convert)
+void SaveLoadSystemClass::Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert)
 {
-	PointerRemapper.Request_Pointer_Remap(pointer_to_convert);
+	PointerRemapper.Request_Pointer_Remap(old_token, pointer_to_convert);
 }
 
-void SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap (RefCountClass **pointer_to_convert)
+void SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap(PersistPointerToken old_token, RefCountClass **pointer_to_convert)
 {
-	PointerRemapper.Request_Ref_Counted_Pointer_Remap(pointer_to_convert);
+	PointerRemapper.Request_Ref_Counted_Pointer_Remap(old_token, pointer_to_convert);
 }
 
 #endif

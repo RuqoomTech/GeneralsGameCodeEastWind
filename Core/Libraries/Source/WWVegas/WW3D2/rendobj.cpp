@@ -1214,7 +1214,7 @@ uint32 RenderObjPersistFactoryClass::Chunk_ID() const
 
 PersistClass *	RenderObjPersistFactoryClass::Load(ChunkLoadClass & cload) const
 {
-	RenderObjClass * old_obj = nullptr;
+	PersistPointerToken old_obj_token = 0;
 	Matrix3D tm(1);
 	char name[64];
 	name[0] = '\0';
@@ -1226,7 +1226,7 @@ PersistClass *	RenderObjPersistFactoryClass::Load(ChunkLoadClass & cload) const
 
 				while (cload.Open_Micro_Chunk()) {
 					switch(cload.Cur_Micro_Chunk_ID()) {
-						READ_MICRO_CHUNK(cload,RENDOBJFACTORY_VARIABLE_OBJPOINTER,old_obj);
+						READ_MICRO_CHUNK(cload,RENDOBJFACTORY_VARIABLE_OBJPOINTER,old_obj_token);
 						READ_MICRO_CHUNK(cload,RENDOBJFACTORY_VARIABLE_TRANSFORM,tm);
 						READ_MICRO_CHUNK_STRING(cload,RENDOBJFACTORY_VARIABLE_NAME,name,sizeof(name));
 					}
@@ -1269,18 +1269,19 @@ PersistClass *	RenderObjPersistFactoryClass::Load(ChunkLoadClass & cload) const
 		new_obj->Set_Transform(tm);
 	}
 
-	SaveLoadSystemClass::Register_Pointer(old_obj,new_obj);
+	SaveLoadSystemClass::Register_Pointer(old_obj_token, new_obj);
 	return new_obj;
 }
 
 void RenderObjPersistFactoryClass::Save(ChunkSaveClass & csave,PersistClass * obj)	const
 {
-	RenderObjClass * robj = (RenderObjClass *)obj;
+	RenderObjClass *robj = (RenderObjClass *)obj;
+	const PersistPointerToken obj_token = SaveLoadSystemClass::Get_Pointer_Token(csave, robj);
 	const char * name = robj->Get_Name();
 	const Matrix3D& tm = robj->Get_Transform();
 
 	csave.Begin_Chunk(RENDOBJFACTORY_CHUNKID_VARIABLES);
-	WRITE_MICRO_CHUNK(csave,RENDOBJFACTORY_VARIABLE_OBJPOINTER,robj);
+	WRITE_MICRO_CHUNK(csave,RENDOBJFACTORY_VARIABLE_OBJPOINTER,obj_token);
 	WRITE_MICRO_CHUNK_STRING(csave,RENDOBJFACTORY_VARIABLE_NAME,name);
 	WRITE_MICRO_CHUNK(csave,RENDOBJFACTORY_VARIABLE_TRANSFORM,tm);
 	csave.End_Chunk();

@@ -1447,7 +1447,7 @@ uint32 DazzlePersistFactoryClass::Chunk_ID() const
 
 PersistClass *	DazzlePersistFactoryClass::Load(ChunkLoadClass & cload) const
 {
-	DazzleRenderObjClass * old_obj = nullptr;
+	PersistPointerToken old_obj_token = 0;
 	Matrix3D tm(1);
 	char dazzle_type[256];
 	dazzle_type[0] = 0;
@@ -1462,7 +1462,7 @@ PersistClass *	DazzlePersistFactoryClass::Load(ChunkLoadClass & cload) const
 
 				while (cload.Open_Micro_Chunk()) {
 					switch(cload.Cur_Micro_Chunk_ID()) {
-						READ_MICRO_CHUNK(cload,DAZZLEFACTORY_VARIABLE_OBJPOINTER,old_obj);
+						READ_MICRO_CHUNK(cload,DAZZLEFACTORY_VARIABLE_OBJPOINTER,old_obj_token);
 						READ_MICRO_CHUNK(cload,DAZZLEFACTORY_VARIABLE_TRANSFORM,tm);
 						READ_MICRO_CHUNK_STRING(cload,DAZZLEFACTORY_VARIABLE_TYPENAME,dazzle_type,sizeof(dazzle_type));
 					}
@@ -1506,19 +1506,20 @@ PersistClass *	DazzlePersistFactoryClass::Load(ChunkLoadClass & cload) const
 	/*
 	** Register the old pointer for re-mapping to the new pointer
 	*/
-	SaveLoadSystemClass::Register_Pointer(old_obj,new_obj);
+	SaveLoadSystemClass::Register_Pointer(old_obj_token, new_obj);
 	return new_obj;
 }
 
 void DazzlePersistFactoryClass::Save(ChunkSaveClass & csave,PersistClass * obj)	const
 {
-	DazzleRenderObjClass * robj = (DazzleRenderObjClass *)obj;
+	DazzleRenderObjClass *robj = (DazzleRenderObjClass *)obj;
+	const PersistPointerToken obj_token = SaveLoadSystemClass::Get_Pointer_Token(csave, robj);
 	unsigned int dazzle_type = robj->Get_Dazzle_Type();
 	const char * dazzle_type_name = DazzleRenderObjClass::Get_Type_Name(dazzle_type);
 	const Matrix3D& tm = robj->Get_Transform();
 
 	csave.Begin_Chunk(DAZZLEFACTORY_CHUNKID_VARIABLES);
-	WRITE_MICRO_CHUNK(csave,DAZZLEFACTORY_VARIABLE_OBJPOINTER,robj);
+	WRITE_MICRO_CHUNK(csave,DAZZLEFACTORY_VARIABLE_OBJPOINTER,obj_token);
 	WRITE_MICRO_CHUNK(csave,DAZZLEFACTORY_VARIABLE_TRANSFORM,tm);
 	WRITE_MICRO_CHUNK_STRING(csave,DAZZLEFACTORY_VARIABLE_TYPENAME,dazzle_type_name);
 

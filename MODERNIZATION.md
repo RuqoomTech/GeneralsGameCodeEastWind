@@ -53,3 +53,7 @@ A modernization milestone is complete only when:
 - command-line tests are reproducible;
 - current documentation is updated without duplicating the full history everywhere;
 - no unrecorded architectural deviation is introduced.
+
+## Step 05H1A — x64 WWSaveLoad persistence-token hotfix
+
+The first real `mingw64-game` build reached `core_wwsaveload` and exposed a Win32-only pointer cast in `SimplePersistFactoryClass`. The hotfix keeps persisted identity fixed at 32 bits without serializing native addresses: WWSaveLoad assigns `PersistPointerToken` values per save context and performs token-to-native-pointer remapping only in memory. SimplePersistFactory, render-object/dazzle factories, audible-sound identity, and remapped SoundSceneObj attachments use that token contract; runtime-only SoundSceneObj user-object state persists as null. Legacy 4-byte identity fields remain loadable as opaque tokens. Windows full-game compilation must be rerun before sign-off.

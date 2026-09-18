@@ -96,16 +96,14 @@ class ChunkLoadClass;
 //   and am therefore completely safe from new object types being added to the system, it will just
 //   automatically work
 //
-// - Pointer re-mapping: A pointer remaping system is built into the save-load system.  There
-//   are several things that happen in this system.  Each object, as it is saved and loaded,
-//   registers with the system its old address and its new address.  (the old address is saved
-//   and the new address is available once the object is created).   This is automated by the
-//   SimplePersistFactory for all but classes that use multiple inheritance.  During the load
-//   process a table is built which contains all of these pointer pairs (old address, new address).
-//   Whenever an object loads a pointer, it gives a "pointer to that pointer" to the save load system.
-//   Then, after all of the objects have been loaded, the system goes through that list of pointers
-//   and finds them in the pointer pair table.  NOTE: use the macros for re-mapping your
-//   pointers to enable automatic debugging information when you build with WWDEBUG defined.
+// - Pointer re-mapping: A pointer remaping system is built into the save-load system.  Persisted
+//   identity is represented by a fixed-width 32-bit token; native pointer values and addresses are
+//   never written to the file.  During save, each referenced native pointer receives a token for
+//   the current ChunkSaveClass.  During load, factories register token -> new native pointer pairs.
+//   Objects that loaded a reference token then submit that token together with the address of their
+//   native pointer field.  After all objects have loaded, the remapper resolves those fields.
+//   NOTE: use the macros for re-mapping your pointers to enable automatic debugging information
+//   when you build with WWDEBUG defined.
 //
 // - Chunks: The file format will be chunk based since that gives us the flexibility to
 //   add new data and remove obsolete data without necessarily losing the ability
@@ -157,14 +155,15 @@ public:
 	** Pointer Remapping interface.  NOTE: use the macros defined below to
 	** get debug info with your pointers when doing a debug build.
 	*/
-	static void		Register_Pointer (void *old_pointer, void *new_pointer);
+	static PersistPointerToken Get_Pointer_Token(ChunkSaveClass &csave, const void *pointer);
+	static void		Register_Pointer(PersistPointerToken old_token, void *new_pointer);
 
 #ifdef WWDEBUG
-	static void		Request_Pointer_Remap (void **pointer_to_convert,const char * file = nullptr,int line = 0);
-	static void		Request_Ref_Counted_Pointer_Remap (RefCountClass **pointer_to_convert,const char * file = nullptr,int line = 0);
+	static void		Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert, const char *file = nullptr, int line = 0);
+	static void		Request_Ref_Counted_Pointer_Remap(PersistPointerToken old_token, RefCountClass **pointer_to_convert, const char *file = nullptr, int line = 0);
 #else
-	static void		Request_Pointer_Remap (void **pointer_to_convert);
-	static void		Request_Ref_Counted_Pointer_Remap (RefCountClass **pointer_to_convert);
+	static void		Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert);
+	static void		Request_Ref_Counted_Pointer_Remap(PersistPointerToken old_token, RefCountClass **pointer_to_convert);
 #endif
 
 protected:
@@ -204,9 +203,9 @@ protected:
 ** in all cases you submit a pointer to the pointer you want re-mapped.
 */
 #ifdef WWDEBUG
-#define REQUEST_POINTER_REMAP(pp)					SaveLoadSystemClass::Request_Pointer_Remap(pp,__FILE__,__LINE__)
-#define REQUEST_REF_COUNTED_POINTER_REMAP(pp)	SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap(pp,__FILE__,__LINE__)
+#define REQUEST_POINTER_REMAP(token,pp)					SaveLoadSystemClass::Request_Pointer_Remap(token,pp,__FILE__,__LINE__)
+#define REQUEST_REF_COUNTED_POINTER_REMAP(token,pp)	SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap(token,pp,__FILE__,__LINE__)
 #else
-#define REQUEST_POINTER_REMAP(pp)					SaveLoadSystemClass::Request_Pointer_Remap(pp)
-#define REQUEST_REF_COUNTED_POINTER_REMAP(pp)	SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap(pp)
+#define REQUEST_POINTER_REMAP(token,pp)					SaveLoadSystemClass::Request_Pointer_Remap(token,pp)
+#define REQUEST_REF_COUNTED_POINTER_REMAP(token,pp)	SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap(token,pp)
 #endif

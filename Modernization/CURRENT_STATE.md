@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts through the Step 05H1 normal-game Render2D bootstrap candidate on 2026-09-19. Steps 05D through 05G are Windows-signed-off: the production D3D12 backend passed the real Windows regression/GPU gates through sampled RGBA8 texture upload, shader-visible SRVs, static sampler binding and textured indexed drawing while every deterministic/Evolution/x64 gate remained green. Step 05H1 is locally sealed only; Windows full-game compilation is pending.
+This document records verified source facts through the Step 05H1A WWSaveLoad x64 hotfix candidate on 2026-09-19. Steps 05D through 05G are Windows-signed-off: the production D3D12 backend passed the real Windows regression/GPU gates through sampled RGBA8 texture upload, shader-visible SRVs, static sampler binding and textured indexed drawing while every deterministic/Evolution/x64 gate remained green. Step 05H1A is locally sealed only; the Windows full-game build must continue past the WWSaveLoad blocker before any 05H sign-off.
 
 ## Build system
 
@@ -38,6 +38,7 @@ This document records verified source facts through the Step 05H1 normal-game Re
 - Step 04D centralized `setFPMode()` in Core and established the x64 round-to-nearest deterministic timeline; the historical i686 x87 result remains recorded as provenance, not as an active build lane.
 - Step 04D3 selectively aligns with the supplied upstream snapshot: Dozer/Worker Xfer/task fixes, production cancellation, neutron radius behavior, adapted GameMemory robustness, runtime Bink/Miles loading, and glyph-buffer safety. Material shared-file divergence fell from 93 to 63 without replacing EastWind x64/determinism infrastructure.
 - The full x64 Zero Hour executable is no longer configuration-gated. Step 05H1 adds the `mingw64-game` preset specifically to let the normal target reveal the remaining direct `DX8Wrapper` compile/link blockers. The existing WW3D backend seam remains the only D3D12 migration path.
+- The first `mingw64-game` compile reached WWSaveLoad before renderer blockers and exposed raw 32-bit pointer identity persistence. Step 05H1A replaces serialized addresses/native pointer sizes with explicit 32-bit `PersistPointerToken` values and keeps native pointers only in the in-memory remap table; this does not alter simulation/network/replay formats.
 - The i686 modernization/oracle lane is retired. Retail x86 multiplayer interoperability is not required; supported Evolution development proceeds on x64.
 
 ## Renderer

@@ -42,8 +42,11 @@
 const int POINTER_TABLES_GROWTH_STEP = 4096;
 
 
-PointerRemapClass::PointerRemapClass()
+PointerRemapClass::PointerRemapClass() :
+	SaveContext(nullptr),
+	NextSaveToken(1)
 {
+	SaveTokenTable.Set_Growth_Step(POINTER_TABLES_GROWTH_STEP);
 	PointerPairTable.Set_Growth_Step(POINTER_TABLES_GROWTH_STEP);
 	PointerRequestTable.Set_Growth_Step(POINTER_TABLES_GROWTH_STEP);
 	RefCountRequestTable.Set_Growth_Step(POINTER_TABLES_GROWTH_STEP);
@@ -80,101 +83,117 @@ void PointerRemapClass::Process()
 	}
 }
 
-void PointerRemapClass::Process_Request_Table(DynamicVectorClass<PtrRemapStruct> & request_table,bool refcount)
+void PointerRemapClass::Process_Request_Table(DynamicVectorClass<PtrRemapStruct> &request_table, bool refcount)
 {
-	// Remap the pointers
-	int pointer_index = 0;
 	int pair_index = 0;
 
-	for (pointer_index = 0; pointer_index < request_table.Count(); pointer_index++) {
+	for (int pointer_index = 0; pointer_index < request_table.Count(); pointer_index++) {
+		const PersistPointerToken token_to_remap = request_table[pointer_index].OldToken;
+		const int pre_search_index = pair_index;
 
-		void * pointer_to_remap = *(request_table[pointer_index].PointerToRemap);
-		int pre_search_index = pair_index;
-
-		// Find the pair which contains the pointer we are looking for as its "old" pointer
-		while (	(pair_index < PointerPairTable.Count()) &&
-					(PointerPairTable[pair_index].OldPointer < pointer_to_remap)  )
-		{
+		while ((pair_index < PointerPairTable.Count()) &&
+			(PointerPairTable[pair_index].OldToken < token_to_remap)) {
 			pair_index++;
 		}
 
-		if ((pair_index < PointerPairTable.Count()) && (PointerPairTable[pair_index].OldPointer == pointer_to_remap)) {
-
-			// we found the match, plug in the new pointer and add a ref if needed.
+		if ((pair_index < PointerPairTable.Count()) && (PointerPairTable[pair_index].OldToken == token_to_remap)) {
 			*request_table[pointer_index].PointerToRemap = PointerPairTable[pair_index].NewPointer;
 
 			if (refcount) {
-				RefCountClass * refptr = (RefCountClass *)(*request_table[pointer_index].PointerToRemap);
+				RefCountClass *refptr = (RefCountClass *)(*request_table[pointer_index].PointerToRemap);
 				refptr->Add_Ref();
 			}
-
 		} else {
-
-			// Failed to re-map the pointer.
-			// warn the user, set pointer to null, reset index to the pre_search_index.
-			// If this happens, things could be going very wrong.  (find out why its happening!)
 			pair_index = pre_search_index;
 			*request_table[pointer_index].PointerToRemap = nullptr;
 #ifdef WWDEBUG
-			const char * file = request_table[pointer_index].File;
+			const char *file = request_table[pointer_index].File;
 			int line = request_table[pointer_index].Line;
-			WWDEBUG_SAY(("Warning! Failed to re-map pointer! old_ptr = 0x%X  file = %s  line = %d",(unsigned int)pointer_to_remap,file,line));
-			WWASSERT( 0 );
+			WWDEBUG_SAY(("Warning! Failed to re-map persistence token 0x%08lX  file = %s  line = %d",
+				(unsigned long)token_to_remap, file, line));
+			WWASSERT(0);
 #endif
 		}
 	}
 }
 
-void PointerRemapClass::Register_Pointer (void *old_pointer, void *new_pointer)
+PersistPointerToken PointerRemapClass::Get_Save_Token(ChunkSaveClass &csave, const void *pointer)
 {
-	PointerPairTable.Add(PtrPairStruct(old_pointer,new_pointer));
+	if (pointer == nullptr) {
+		return 0;
+	}
+
+	if (SaveContext != &csave) {
+		SaveContext = &csave;
+		SaveTokenTable.Delete_All();
+		NextSaveToken = 1;
+	}
+
+	for (int index = 0; index < SaveTokenTable.Count(); ++index) {
+		if (SaveTokenTable[index].Pointer == pointer) {
+			return SaveTokenTable[index].Token;
+		}
+	}
+
+	WWASSERT(NextSaveToken != 0);
+	const PersistPointerToken token = NextSaveToken++;
+	SaveTokenTable.Add(PtrSaveTokenStruct(pointer, token));
+	return token;
+}
+
+void PointerRemapClass::Register_Pointer(PersistPointerToken old_token, void *new_pointer)
+{
+	if (old_token != 0) {
+		PointerPairTable.Add(PtrPairStruct(old_token, new_pointer));
+	}
 }
 
 #ifdef WWDEBUG
-void PointerRemapClass::Request_Pointer_Remap(void **pointer_to_convert,const char * file,int line)
+void PointerRemapClass::Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert, const char *file, int line)
 {
 	PtrRemapStruct remap;
+	remap.OldToken = old_token;
 	remap.PointerToRemap = pointer_to_convert;
 	remap.File = file;
 	remap.Line = line;
 	PointerRequestTable.Add(remap);
 }
 
-void PointerRemapClass::Request_Ref_Counted_Pointer_Remap (RefCountClass **pointer_to_convert,const char * file, int line)
+void PointerRemapClass::Request_Ref_Counted_Pointer_Remap(PersistPointerToken old_token, RefCountClass **pointer_to_convert, const char *file, int line)
 {
 	PtrRemapStruct remap;
-	remap.PointerToRemap = (void**)pointer_to_convert;
+	remap.OldToken = old_token;
+	remap.PointerToRemap = (void **)pointer_to_convert;
 	remap.File = file;
 	remap.Line = line;
 	RefCountRequestTable.Add(remap);
 }
-
 #else
-
-void PointerRemapClass::Request_Pointer_Remap (void **pointer_to_convert)
+void PointerRemapClass::Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert)
 {
 	PtrRemapStruct remap;
+	remap.OldToken = old_token;
 	remap.PointerToRemap = pointer_to_convert;
 	PointerRequestTable.Add(remap);
 }
 
-void PointerRemapClass::Request_Ref_Counted_Pointer_Remap (RefCountClass **pointer_to_convert)
+void PointerRemapClass::Request_Ref_Counted_Pointer_Remap(PersistPointerToken old_token, RefCountClass **pointer_to_convert)
 {
 	PtrRemapStruct remap;
-	remap.PointerToRemap = (void**)pointer_to_convert;
+	remap.OldToken = old_token;
+	remap.PointerToRemap = (void **)pointer_to_convert;
 	RefCountRequestTable.Add(remap);
 }
-
 #endif
 
 /*
 ** sort compare function for pointer pair structures
-** sorts by the old pointer value
+** sorts by the persisted token value
 */
 int __cdecl PointerRemapClass::ptr_pair_compare_function(void const * ptr1, void const * ptr2)
 {
-	void * old1 = ((PointerRemapClass::PtrPairStruct const *)ptr1)->OldPointer;
-	void * old2 = ((PointerRemapClass::PtrPairStruct const *)ptr2)->OldPointer;
+	PersistPointerToken old1 = ((PointerRemapClass::PtrPairStruct const *)ptr1)->OldToken;
+	PersistPointerToken old2 = ((PointerRemapClass::PtrPairStruct const *)ptr2)->OldToken;
 
 	if (old1 == old2) {
 		return(0);
@@ -187,15 +206,15 @@ int __cdecl PointerRemapClass::ptr_pair_compare_function(void const * ptr1, void
 
 /*
 ** sort compare function for pointer remap structures
-** sorts by the old pointer value
+** sorts by the persisted token value
 */
 int __cdecl PointerRemapClass::ptr_request_compare_function(void const * ptr1, void const * ptr2)
 {
 	PtrRemapStruct * remap1 = (PtrRemapStruct *)ptr1;
 	PtrRemapStruct * remap2 = (PtrRemapStruct *)ptr2;
 
-	void * old1 = *(remap1->PointerToRemap);
-	void * old2 = *(remap2->PointerToRemap);
+	PersistPointerToken old1 = remap1->OldToken;
+	PersistPointerToken old2 = remap2->OldToken;
 
 	if (old1 == old2) {
 		return(0);

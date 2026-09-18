@@ -43,7 +43,13 @@
 #include "WWLib/always.h"
 #include "WWLib/Vector.h"
 
+#include <cstdint>
+
+class ChunkSaveClass;
 class RefCountClass;
+
+using PersistPointerToken = std::uint32_t;
+static_assert(sizeof(PersistPointerToken) == 4, "Persistence remap tokens must remain 32-bit");
 
 
 class PointerRemapClass
@@ -56,36 +62,49 @@ class PointerRemapClass
 		void		Reset();
 		void		Process();
 
-		void		Register_Pointer (void *old_pointer, void *new_pointer);
+		PersistPointerToken Get_Save_Token(ChunkSaveClass &csave, const void *pointer);
+		void		Register_Pointer(PersistPointerToken old_token, void *new_pointer);
 
 #ifdef WWDEBUG
-		void		Request_Pointer_Remap (void **pointer_to_convert,const char * file,int line);
-		void		Request_Ref_Counted_Pointer_Remap (RefCountClass **pointer_to_convert,const char * file, int line);
+		void		Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert, const char *file, int line);
+		void		Request_Ref_Counted_Pointer_Remap(PersistPointerToken old_token, RefCountClass **pointer_to_convert, const char *file, int line);
 #else
-		void		Request_Pointer_Remap (void **pointer_to_convert);
-		void		Request_Ref_Counted_Pointer_Remap (RefCountClass **pointer_to_convert);
+		void		Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert);
+		void		Request_Ref_Counted_Pointer_Remap(PersistPointerToken old_token, RefCountClass **pointer_to_convert);
 #endif
 
 	private:
 
+		struct PtrSaveTokenStruct
+		{
+			PtrSaveTokenStruct() : Pointer(nullptr), Token(0) {}
+			PtrSaveTokenStruct(const void *pointer, PersistPointerToken token) : Pointer(pointer), Token(token) {}
+			bool operator == (const PtrSaveTokenStruct &that) { return ((Pointer == that.Pointer) && (Token == that.Token)); }
+			bool operator != (const PtrSaveTokenStruct &that) { return !(*this == that); }
+
+			const void *Pointer;
+			PersistPointerToken Token;
+		};
+
 		struct PtrPairStruct
 		{
-			PtrPairStruct() {}
-			PtrPairStruct(void * oldptr,void * newptr) : OldPointer(oldptr),NewPointer(newptr) {}
-			bool operator == (const PtrPairStruct & that) { return ((OldPointer == that.OldPointer) && (NewPointer == that.NewPointer)); }
-			bool operator != (const PtrPairStruct & that) { return !(*this == that); }
+			PtrPairStruct() : OldToken(0), NewPointer(nullptr) {}
+			PtrPairStruct(PersistPointerToken old_token, void *new_pointer) : OldToken(old_token), NewPointer(new_pointer) {}
+			bool operator == (const PtrPairStruct &that) { return ((OldToken == that.OldToken) && (NewPointer == that.NewPointer)); }
+			bool operator != (const PtrPairStruct &that) { return !(*this == that); }
 
-			void *		OldPointer;
-			void *		NewPointer;
+			PersistPointerToken OldToken;
+			void *NewPointer;
 		};
 
 		struct PtrRemapStruct
 		{
-			PtrRemapStruct() {}
-			bool operator == (const PtrRemapStruct & that) { return (PointerToRemap == that.PointerToRemap); }
-			bool operator != (const PtrRemapStruct & that) { return !(*this == that); }
+			PtrRemapStruct() : OldToken(0), PointerToRemap(nullptr) {}
+			bool operator == (const PtrRemapStruct &that) { return ((OldToken == that.OldToken) && (PointerToRemap == that.PointerToRemap)); }
+			bool operator != (const PtrRemapStruct &that) { return !(*this == that); }
 
-			void **			PointerToRemap;
+			PersistPointerToken OldToken;
+			void **PointerToRemap;
 #ifdef WWDEBUG
 			const char *	File;
 			int				Line;
@@ -99,7 +118,10 @@ class PointerRemapClass
 		/*
 		**	Array of pointers associated with ID values to assist in swizzling.
 		*/
-		DynamicVectorClass<PtrPairStruct>	PointerPairTable;
-		DynamicVectorClass<PtrRemapStruct>	PointerRequestTable;
-		DynamicVectorClass<PtrRemapStruct>	RefCountRequestTable;
+		ChunkSaveClass *SaveContext;
+		PersistPointerToken NextSaveToken;
+		DynamicVectorClass<PtrSaveTokenStruct> SaveTokenTable;
+		DynamicVectorClass<PtrPairStruct> PointerPairTable;
+		DynamicVectorClass<PtrRemapStruct> PointerRequestTable;
+		DynamicVectorClass<PtrRemapStruct> RefCountRequestTable;
 };

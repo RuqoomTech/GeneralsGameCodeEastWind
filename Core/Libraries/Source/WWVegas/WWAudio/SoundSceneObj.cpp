@@ -258,11 +258,16 @@ SoundSceneObjClass::Save (ChunkSaveClass &csave)
 		PersistClass::Save (csave);
 	csave.End_Chunk ();
 
+	const PersistPointerToken attached_object_token = SaveLoadSystemClass::Get_Pointer_Token(csave, m_AttachedObject);
+	// m_UserObj is runtime callback/context state. It was historically written as a
+	// raw address and was never part of the remap graph, so x64 persistence stores null.
+	const PersistPointerToken user_object_token = 0;
+
 	csave.Begin_Chunk (CHUNKID_VARIABLES);
-		WRITE_MICRO_CHUNK (csave, VARID_ATTACHED_OBJ, m_AttachedObject);
+		WRITE_MICRO_CHUNK (csave, VARID_ATTACHED_OBJ, attached_object_token);
 		WRITE_MICRO_CHUNK (csave, VARID_ATTACHED_BONE, m_AttachedBone);
 		WRITE_MICRO_CHUNK (csave, VARID_USER_DATA, m_UserData);
-		WRITE_MICRO_CHUNK (csave, VARID_USER_OBJ, m_UserObj);
+		WRITE_MICRO_CHUNK (csave, VARID_USER_OBJ, user_object_token);
 		WRITE_MICRO_CHUNK (csave, VARID_ID, m_ID);
 	csave.End_Chunk ();
 	return true;
@@ -278,6 +283,8 @@ bool
 SoundSceneObjClass::Load (ChunkLoadClass &cload)
 {
 	uint32 id = SOUND_OBJ_DEFAULT_ID;
+	PersistPointerToken attached_object_token = 0;
+	PersistPointerToken user_object_token = 0;
 
 	while (cload.Open_Chunk ()) {
 		switch (cload.Cur_Chunk_ID ()) {
@@ -294,10 +301,10 @@ SoundSceneObjClass::Load (ChunkLoadClass &cload)
 				while (cload.Open_Micro_Chunk ()) {
 					switch (cload.Cur_Micro_Chunk_ID ()) {
 
-						READ_MICRO_CHUNK (cload, VARID_ATTACHED_OBJ, m_AttachedObject);
+						READ_MICRO_CHUNK (cload, VARID_ATTACHED_OBJ, attached_object_token);
 						READ_MICRO_CHUNK (cload, VARID_ATTACHED_BONE, m_AttachedBone);
 						READ_MICRO_CHUNK (cload, VARID_USER_DATA, m_UserData);
-						READ_MICRO_CHUNK (cload, VARID_USER_OBJ, m_UserObj);
+						READ_MICRO_CHUNK (cload, VARID_USER_OBJ, user_object_token);
 						READ_MICRO_CHUNK (cload, VARID_ID, id);
 					}
 
@@ -324,12 +331,16 @@ SoundSceneObjClass::Load (ChunkLoadClass &cload)
 	m_NextAvailableID = max (m_NextAvailableID, m_ID + 1);
 
 	//
-	//	We need to 'swizzle' the attached object pointer.  We saved the pointer's
-	// value, and need to map it (hopefully) to the new value.
+	//	Resolve the fixed-width persistence tokens into native pointers after all
+	// referenced objects have been reconstructed.
 	//
-	if (m_AttachedObject != nullptr) {
-		SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap ((RefCountClass **)&m_AttachedObject);
+	REF_PTR_RELEASE(m_AttachedObject);
+	if (attached_object_token != 0) {
+		SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap(attached_object_token, (RefCountClass **)&m_AttachedObject);
 	}
+
+	REF_PTR_RELEASE(m_UserObj);
+	(void)user_object_token;
 
 	return true;
 }
