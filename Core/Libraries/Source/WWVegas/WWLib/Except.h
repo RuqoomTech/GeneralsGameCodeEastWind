@@ -39,6 +39,7 @@
 #if defined(_WIN32)
 
 #include "win.h"
+#include <cstdint>
 /*
 ** Forward Declarations
 */
@@ -46,8 +47,8 @@ typedef struct _EXCEPTION_POINTERS EXCEPTION_POINTERS;
 typedef struct _CONTEXT CONTEXT;
 
 int Exception_Handler(int exception_code, EXCEPTION_POINTERS *e_info);
-int Stack_Walk(unsigned long *return_addresses, int num_addresses, CONTEXT *context = nullptr);
-bool Lookup_Symbol(void *code_ptr, char *symbol, int &displacement);
+int Stack_Walk(std::uintptr_t *return_addresses, int num_addresses, CONTEXT *context = nullptr);
+bool Lookup_Symbol(void *code_ptr, char *symbol, std::uintptr_t &displacement);
 void Load_Image_Helper();
 void Register_Thread_ID(unsigned long thread_id, char *thread_name, bool main = false);
 void Unregister_Thread_ID(unsigned long thread_id, char *thread_name);
@@ -66,9 +67,9 @@ HANDLE Get_Thread_Handle(int thread_index);
 ** Register dump variables. These are used to allow the game to restart from an arbitrary
 ** position after an exception occurs.
 */
-extern unsigned long ExceptionReturnStack;
-extern unsigned long ExceptionReturnAddress;
-extern unsigned long ExceptionReturnFrame;
+extern std::uintptr_t ExceptionReturnStack;
+extern std::uintptr_t ExceptionReturnAddress;
+extern std::uintptr_t ExceptionReturnFrame;
 
 
 typedef struct tThreadInfoType {

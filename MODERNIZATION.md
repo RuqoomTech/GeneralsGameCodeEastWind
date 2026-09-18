@@ -57,3 +57,7 @@ A modernization milestone is complete only when:
 ## Step 05H1A — x64 WWSaveLoad persistence-token hotfix
 
 The first real `mingw64-game` build reached `core_wwsaveload` and exposed a Win32-only pointer cast in `SimplePersistFactoryClass`. The hotfix keeps persisted identity fixed at 32 bits without serializing native addresses: WWSaveLoad assigns `PersistPointerToken` values per save context and performs token-to-native-pointer remapping only in memory. SimplePersistFactory, render-object/dazzle factories, audible-sound identity, and remapped SoundSceneObj attachments use that token contract; runtime-only SoundSceneObj user-object state persists as null. Legacy 4-byte identity fields remain loadable as opaque tokens. Windows full-game compilation must be rerun before sign-off.
+
+## Step 05H1B — native-width x64 crash diagnostics
+
+The second real `mingw64-game` blocker was the old WWLib exception reporter, which still assumed 32-bit registers and DbgHelp addresses. The Evolution Win64 path now uses `uintptr_t`/`DWORD64`, `Rip/Rsp/Rbp`, `STACKFRAME64`, `IMAGE_FILE_MACHINE_AMD64`, `SymFromAddr`, and `StackWalk64`. The required 64-bit DbgHelp entry points live in the existing `DbgHelpLoader`, preserving one loader/resource responsibility rather than adding another helper. The legacy x86 implementation is preprocessor-isolated and does not compile into the active x64 game path. Windows full-game compilation must be rerun before sign-off.

@@ -54,6 +54,7 @@
 #include	"assert.h"
 #include "cpudetect.h"
 #include	"Except.h"
+#include "DbgHelpLoader.h"
 //#include "debug.h"
 #include "MPU.h"
 //#include "commando\nat.h"
@@ -62,7 +63,7 @@
 #include "WWDebug/wwmemlog.h"
 
 #include	<conio.h>
-#include	<imagehlp.h>
+#include	<dbghelp.h>
 #include <crtdbg.h>
 
 #ifdef WWDEBUG
@@ -98,9 +99,9 @@ bool TryingToExit = false;
 ** Register dump variables. These are used to allow the game to restart from an arbitrary
 ** position after an exception occurs.
 */
-unsigned long ExceptionReturnStack = 0;
-unsigned long ExceptionReturnAddress = 0;
-unsigned long ExceptionReturnFrame = 0;
+std::uintptr_t ExceptionReturnStack = 0;
+std::uintptr_t ExceptionReturnAddress = 0;
+std::uintptr_t ExceptionReturnFrame = 0;
 
 /*
 ** Number of times the exception handler has recursed. Recursions are bad.
@@ -280,6 +281,157 @@ static void Add_Txt (char const *txt)
  *=============================================================================================*/
 void Dump_Exception_Info(EXCEPTION_POINTERS *e_info)
 {
+
+#if defined(_WIN64)
+	DebugString("Dump exception info (x64)\n");
+	memset(ExceptionText, 0, sizeof(ExceptionText));
+
+	if (e_info == nullptr || e_info->ExceptionRecord == nullptr || e_info->ContextRecord == nullptr) {
+		Add_Txt("Exception context unavailable.\r\n");
+		return;
+	}
+
+	Load_Image_Helper();
+
+	char scrap[512];
+	CONTEXT *context = e_info->ContextRecord;
+	const DWORD exception_code = e_info->ExceptionRecord->ExceptionCode;
+	const std::uintptr_t instruction_address = static_cast<std::uintptr_t>(context->Rip);
+
+	snprintf(scrap, ARRAY_SIZE(scrap), "Exception code: 0x%08lX\r\n", static_cast<unsigned long>(exception_code));
+	Add_Txt(scrap);
+
+	if (exception_code == EXCEPTION_ACCESS_VIOLATION && e_info->ExceptionRecord->NumberParameters >= 2) {
+		const ULONG_PTR operation = e_info->ExceptionRecord->ExceptionInformation[0];
+		const ULONG_PTR address = e_info->ExceptionRecord->ExceptionInformation[1];
+		const char *operation_name = operation == 1 ? "write" : (operation == 8 ? "execute" : "read");
+		snprintf(scrap, ARRAY_SIZE(scrap), "Access violation: %s at %p\r\n",
+			operation_name, reinterpret_cast<void *>(address));
+		Add_Txt(scrap);
+	}
+
+	char symbol[512];
+	std::uintptr_t displacement = 0;
+	if (Lookup_Symbol(reinterpret_cast<void *>(instruction_address), symbol, displacement)) {
+		snprintf(scrap, ARRAY_SIZE(scrap), "Exception occurred at %016llX - %s + %llX\r\n",
+			static_cast<unsigned long long>(instruction_address), symbol,
+			static_cast<unsigned long long>(displacement));
+	} else {
+		snprintf(scrap, ARRAY_SIZE(scrap), "Exception occurred at %016llX\r\n",
+			static_cast<unsigned long long>(instruction_address));
+	}
+	Add_Txt(scrap);
+
+	Add_Txt("\r\n  Stack walk...\r\n");
+	std::uintptr_t return_addresses[256] = {};
+	const int num_addresses = Stack_Walk(return_addresses, ARRAY_SIZE(return_addresses), context);
+	if (num_addresses > 0) {
+		for (int frame_index = 0; frame_index < num_addresses; ++frame_index) {
+			for (int space = 0; space <= frame_index; ++space) {
+				Add_Txt("  ");
+			}
+
+			displacement = 0;
+			if (Lookup_Symbol(reinterpret_cast<void *>(return_addresses[frame_index]), symbol, displacement)) {
+				snprintf(scrap, ARRAY_SIZE(scrap), "%s + %llX\r\n", symbol,
+					static_cast<unsigned long long>(displacement));
+			} else {
+				snprintf(scrap, ARRAY_SIZE(scrap), "%016llX\r\n",
+					static_cast<unsigned long long>(return_addresses[frame_index]));
+			}
+			Add_Txt(scrap);
+		}
+		Add_Txt("\r\n");
+	} else {
+		Add_Txt("Stack walk failed!\r\n");
+	}
+
+	if (AppVersionCallback) {
+		snprintf(scrap, ARRAY_SIZE(scrap), "%s\r\n\r\n", AppVersionCallback());
+		Add_Txt(scrap);
+	}
+
+	Add_Txt("Thread list\r\n");
+	for (int thread = 0; thread < ThreadList.Count(); ++thread) {
+		snprintf(scrap, ARRAY_SIZE(scrap), "  ID: %08lX - %s",
+			ThreadList[thread]->ThreadID, ThreadList[thread]->ThreadName);
+		Add_Txt(scrap);
+		if (GetCurrentThreadId() == ThreadList[thread]->ThreadID) {
+			Add_Txt("   ***CURRENT THREAD***");
+		}
+		Add_Txt("\r\n");
+	}
+
+	snprintf(scrap, ARRAY_SIZE(scrap), "\r\nCPU %s, %d Mhz, Vendor: %s\r\n",
+		(char*)CPUDetectClass::Get_Processor_String(), Get_RDTSC_CPU_Speed(),
+		(char*)CPUDetectClass::Get_Processor_Manufacturer_Name());
+	Add_Txt(scrap);
+
+	Add_Txt("\r\nDetails:\r\n");
+	snprintf(scrap, ARRAY_SIZE(scrap), "Rip:%016llX\tRsp:%016llX\tRbp:%016llX\r\n",
+		static_cast<unsigned long long>(context->Rip), static_cast<unsigned long long>(context->Rsp),
+		static_cast<unsigned long long>(context->Rbp));
+	Add_Txt(scrap);
+	snprintf(scrap, ARRAY_SIZE(scrap), "Rax:%016llX\tRbx:%016llX\tRcx:%016llX\tRdx:%016llX\r\n",
+		static_cast<unsigned long long>(context->Rax), static_cast<unsigned long long>(context->Rbx),
+		static_cast<unsigned long long>(context->Rcx), static_cast<unsigned long long>(context->Rdx));
+	Add_Txt(scrap);
+	snprintf(scrap, ARRAY_SIZE(scrap), "Rsi:%016llX\tRdi:%016llX\tR8 :%016llX\tR9 :%016llX\r\n",
+		static_cast<unsigned long long>(context->Rsi), static_cast<unsigned long long>(context->Rdi),
+		static_cast<unsigned long long>(context->R8), static_cast<unsigned long long>(context->R9));
+	Add_Txt(scrap);
+	snprintf(scrap, ARRAY_SIZE(scrap), "R10:%016llX\tR11:%016llX\tR12:%016llX\tR13:%016llX\r\n",
+		static_cast<unsigned long long>(context->R10), static_cast<unsigned long long>(context->R11),
+		static_cast<unsigned long long>(context->R12), static_cast<unsigned long long>(context->R13));
+	Add_Txt(scrap);
+	snprintf(scrap, ARRAY_SIZE(scrap), "R14:%016llX\tR15:%016llX\tEFlags:%08lX\tMxCsr:%08lX\r\n",
+		static_cast<unsigned long long>(context->R14), static_cast<unsigned long long>(context->R15),
+		static_cast<unsigned long>(context->EFlags), static_cast<unsigned long>(context->MxCsr));
+	Add_Txt(scrap);
+
+	DebugString("RIP bytes dump...\n");
+	snprintf(scrap, ARRAY_SIZE(scrap), "\r\nBytes at RIP (%016llX): ",
+		static_cast<unsigned long long>(instruction_address));
+	unsigned char *instruction_ptr = reinterpret_cast<unsigned char *>(instruction_address);
+	for (int byte_index = 0; byte_index < 32; ++byte_index, ++instruction_ptr) {
+		char byte_text[8];
+		if (IsBadReadPtr(instruction_ptr, 1)) {
+			strlcat(scrap, "?? ", ARRAY_SIZE(scrap));
+		} else {
+			snprintf(byte_text, ARRAY_SIZE(byte_text), "%02X ", *instruction_ptr);
+			strlcat(scrap, byte_text, ARRAY_SIZE(scrap));
+		}
+	}
+	strlcat(scrap, "\r\n\r\n", ARRAY_SIZE(scrap));
+	Add_Txt(scrap);
+
+	DebugString("Stack dump...\n");
+	Add_Txt("Stack dump (* indicates a symbolized code address):\r\n");
+	std::uintptr_t *stack_ptr = reinterpret_cast<std::uintptr_t *>(static_cast<std::uintptr_t>(context->Rsp));
+	for (int stack_index = 0; stack_index < 512; ++stack_index, ++stack_ptr) {
+		if (IsBadReadPtr(stack_ptr, sizeof(*stack_ptr))) {
+			snprintf(scrap, ARRAY_SIZE(scrap), "%p: <unreadable>\r\n", static_cast<void *>(stack_ptr));
+			Add_Txt(scrap);
+			break;
+		}
+
+		const std::uintptr_t value = *stack_ptr;
+		displacement = 0;
+		const bool has_symbol = value != 0 && Lookup_Symbol(reinterpret_cast<void *>(value), symbol, displacement);
+		snprintf(scrap, ARRAY_SIZE(scrap), "%p: %016llX", static_cast<void *>(stack_ptr),
+			static_cast<unsigned long long>(value));
+		if (has_symbol) {
+			char symbol_text[320];
+			snprintf(symbol_text, ARRAY_SIZE(symbol_text), " - %s + %llX *", symbol,
+				static_cast<unsigned long long>(displacement));
+			strlcat(scrap, symbol_text, ARRAY_SIZE(scrap));
+		}
+		strlcat(scrap, "\r\n", ARRAY_SIZE(scrap));
+		Add_Txt(scrap);
+	}
+
+	Add_Txt("\r\n\r\n");
+#else
 	/*
 	** List of possible exceptions
 	*/
@@ -728,6 +880,7 @@ void Dump_Exception_Info(EXCEPTION_POINTERS *e_info)
 	}
 
 	Add_Txt ("\r\n\r\n");
+#endif
 }
 
 
@@ -1056,6 +1209,22 @@ unsigned long Get_Main_Thread_ID()
  *=============================================================================================*/
 void Load_Image_Helper()
 {
+
+#if defined(_WIN64)
+	static bool load_attempted = false;
+	if (load_attempted) {
+		return;
+	}
+	load_attempted = true;
+
+	if (!DbgHelpLoader::load()) {
+		SymbolsAvailable = false;
+		return;
+	}
+
+	DbgHelpLoader::symSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
+	SymbolsAvailable = DbgHelpLoader::symInitialize(GetCurrentProcess(), nullptr, TRUE) != FALSE;
+#else
 	/*
 	** If this is the first time through then fix up the imagehelp function pointers since imagehlp.dll
 	** can't be statically linked.
@@ -1109,6 +1278,7 @@ void Load_Image_Helper()
 			}
 		}
 	}
+#endif
 }
 
 
@@ -1124,7 +1294,7 @@ void Load_Image_Helper()
  *                                                                                             *
  * INPUT:    Address of code to get symbol for                                                 *
  *           Ptr to buffer to return symbol in                                                 *
- *           Reference to int to return displacement                                           *
+ *           Reference to native-width integer to return displacement                                           *
  *                                                                                             *
  * OUTPUT:   True if symbol found                                                              *
  *                                                                                             *
@@ -1133,56 +1303,51 @@ void Load_Image_Helper()
  * HISTORY:                                                                                    *
  *   6/12/2001 4:47PM ST : Created                                                             *
  *=============================================================================================*/
-bool Lookup_Symbol(void *code_ptr, char *symbol, int &displacement)
+bool Lookup_Symbol(void *code_ptr, char *symbol, std::uintptr_t &displacement)
 {
-	/*
-	** Locals.
-	*/
-	char symbol_struct_buf[1024];
-	IMAGEHLP_SYMBOL *symbol_struct_ptr = (IMAGEHLP_SYMBOL *)symbol_struct_buf;
-
-	/*
-	** Set default values in case of early exit.
-	*/
 	displacement = 0;
 	*symbol = '\0';
 
-	/*
-	** Make sure symbols are available.
-	*/
-	if (!SymbolsAvailable || _SymGetSymFromAddr == nullptr) {
-		return(false);
+	if (!SymbolsAvailable) {
+		return false;
 	}
 
-	/*
-	** If it's a bad code pointer then there is no point in trying to match it with a symbol.
-	*/
+#if defined(_WIN64)
+	char symbol_buffer[sizeof(SYMBOL_INFO) + 256] = {};
+	SYMBOL_INFO *symbol_info = reinterpret_cast<SYMBOL_INFO *>(symbol_buffer);
+	symbol_info->SizeOfStruct = sizeof(SYMBOL_INFO);
+	symbol_info->MaxNameLen = 255;
+
+	DWORD64 native_displacement = 0;
+	const DWORD64 address = static_cast<DWORD64>(reinterpret_cast<std::uintptr_t>(code_ptr));
+	if (DbgHelpLoader::symFromAddr(GetCurrentProcess(), address, &native_displacement, symbol_info)) {
+		strcpy(symbol, symbol_info->Name);
+		displacement = static_cast<std::uintptr_t>(native_displacement);
+		return true;
+	}
+#else
+	char symbol_struct_buf[1024];
+	IMAGEHLP_SYMBOL *symbol_struct_ptr = (IMAGEHLP_SYMBOL *)symbol_struct_buf;
+
 	if (IsBadCodePtr((FARPROC)code_ptr)) {
 		strcpy(symbol, "Bad code pointer");
-		return(false);
+		return false;
 	}
 
-	/*
-	** Set up the parameters for the call to SymGetSymFromAddr
-	*/
-	memset (symbol_struct_ptr, 0, sizeof (symbol_struct_buf));
-	symbol_struct_ptr->SizeOfStruct = sizeof (symbol_struct_buf);
-	symbol_struct_ptr->MaxNameLength = sizeof(symbol_struct_buf)-sizeof (IMAGEHLP_SYMBOL);
+	memset(symbol_struct_ptr, 0, sizeof(symbol_struct_buf));
+	symbol_struct_ptr->SizeOfStruct = sizeof(symbol_struct_buf);
+	symbol_struct_ptr->MaxNameLength = sizeof(symbol_struct_buf)-sizeof(IMAGEHLP_SYMBOL);
 	symbol_struct_ptr->Size = 0;
-	symbol_struct_ptr->Address = (unsigned long)code_ptr;
+	symbol_struct_ptr->Address = reinterpret_cast<std::uintptr_t>(code_ptr);
 
-	/*
-	** See if we have the symbol for that address.
-	*/
-	if (_SymGetSymFromAddr(GetCurrentProcess(), (unsigned long)code_ptr, (unsigned long *)&displacement, symbol_struct_ptr)) {
-
-		/*
-		** Copy it back into the buffer provided.
-		*/
+	DWORD legacy_displacement = 0;
+	if (_SymGetSymFromAddr(GetCurrentProcess(), static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(code_ptr)), &legacy_displacement, symbol_struct_ptr)) {
 		strcpy(symbol, symbol_struct_ptr->Name);
-		return(true);
+		displacement = legacy_displacement;
+		return true;
 	}
-	return(false);
+#endif
+	return false;
 }
 
 
@@ -1204,40 +1369,73 @@ bool Lookup_Symbol(void *code_ptr, char *symbol, int &displacement)
  * HISTORY:                                                                                    *
  *   6/12/2001 11:57AM ST : Created                                                            *
  *=============================================================================================*/
-int Stack_Walk(unsigned long *return_addresses, int num_addresses, CONTEXT *context)
+int Stack_Walk(std::uintptr_t *return_addresses, int num_addresses, CONTEXT *context)
 {
-	static HINSTANCE _imagehelp = (HINSTANCE) -1;
-
-	/*
-	** If this is the first time through then fix up the imagehelp function pointers since imagehlp.dll
-	** can't be statically linked.
-	*/
-	if (ImageHelp == (HINSTANCE)-1) {
-		Load_Image_Helper();
+	if (return_addresses == nullptr || num_addresses <= 0) {
+		return 0;
 	}
 
-	/*
-	** If there is no debug support .dll available then we can't walk the stack.
-	*/
-	if (ImageHelp == nullptr) {
-		return(0);
+	Load_Image_Helper();
+	if (!SymbolsAvailable) {
+		return 0;
 	}
 
-	/*
-	** Set up the stack frame structure for the start point of the stack walk (i.e. here).
-	*/
+#if defined(_WIN64)
+	CONTEXT walk_context = {};
+	if (context != nullptr) {
+		walk_context = *context;
+	} else {
+		RtlCaptureContext(&walk_context);
+	}
+
+	STACKFRAME64 stack_frame = {};
+	stack_frame.AddrPC.Mode = AddrModeFlat;
+	stack_frame.AddrPC.Offset = walk_context.Rip;
+	stack_frame.AddrStack.Mode = AddrModeFlat;
+	stack_frame.AddrStack.Offset = walk_context.Rsp;
+	stack_frame.AddrFrame.Mode = AddrModeFlat;
+	stack_frame.AddrFrame.Offset = walk_context.Rbp;
+
+	int pointer_index = 0;
+	for (int frame_index = 0; frame_index < num_addresses + 1; ++frame_index) {
+		if (!DbgHelpLoader::stackWalk64(
+				IMAGE_FILE_MACHINE_AMD64,
+				GetCurrentProcess(),
+				GetCurrentThread(),
+				&stack_frame,
+				&walk_context,
+				nullptr,
+				DbgHelpLoader::symFunctionTableAccess64,
+				DbgHelpLoader::symGetModuleBase64,
+				nullptr)) {
+			break;
+		}
+
+		if (frame_index == 0 && context == nullptr) {
+			continue;
+		}
+		if (stack_frame.AddrPC.Offset == 0) {
+			break;
+		}
+
+		return_addresses[pointer_index++] = static_cast<std::uintptr_t>(stack_frame.AddrPC.Offset);
+		if (pointer_index >= num_addresses) {
+			break;
+		}
+	}
+	return pointer_index;
+#else
 	STACKFRAME stack_frame;
 	memset(&stack_frame, 0, sizeof(stack_frame));
 
 	unsigned long reg_eip, reg_ebp, reg_esp;
-
 #if defined(_MSC_VER)
 	__asm {
 here:
-		lea	eax,here
-		mov	reg_eip,eax
-		mov	reg_ebp,ebp
-		mov	reg_esp,esp
+		lea eax,here
+		mov reg_eip,eax
+		mov reg_ebp,ebp
+		mov reg_esp,esp
 	}
 #elif (defined(__GNUC__) || defined(__clang__)) && (defined(__i386__) || defined(_M_IX86))
 	__asm__ __volatile__ (
@@ -1258,9 +1456,6 @@ here:
 	stack_frame.AddrFrame.Mode = AddrModeFlat;
 	stack_frame.AddrFrame.Offset = reg_ebp;
 
-	/*
-	** Use the context struct if it was provided.
-	*/
 	if (context) {
 		stack_frame.AddrPC.Offset = context->Eip;
 		stack_frame.AddrStack.Offset = context->Esp;
@@ -1268,27 +1463,21 @@ here:
 	}
 
 	int pointer_index = 0;
-
-	/*
-	** Walk the stack by the requested number of return address iterations.
-	*/
 	for (int i = 0; i < num_addresses + 1; i++) {
 		if (_StackWalk(IMAGE_FILE_MACHINE_I386, GetCurrentProcess(), GetCurrentThread(), &stack_frame, nullptr, nullptr, _SymFunctionTableAccess, _SymGetModuleBase, nullptr)) {
-
-			/*
-			** First result will always be the return address we were called from.
-			*/
-			if (i==0 && context == nullptr) {
+			if (i == 0 && context == nullptr) {
 				continue;
 			}
-			unsigned long return_address = stack_frame.AddrReturn.Offset;
-			return_addresses[pointer_index++] = return_address;
+			return_addresses[pointer_index++] = stack_frame.AddrReturn.Offset;
+			if (pointer_index >= num_addresses) {
+				break;
+			}
 		} else {
 			break;
 		}
 	}
-
-	return(pointer_index);
+	return pointer_index;
+#endif
 }
 
 

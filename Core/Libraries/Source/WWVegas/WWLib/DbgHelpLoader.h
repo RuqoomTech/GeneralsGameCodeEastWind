@@ -21,7 +21,7 @@
 #include "always.h"
 
 #include "win.h"
-#include <imagehlp.h> // Must be included after Windows.h
+#include <dbghelp.h> // Must be included after Windows.h
 #include <set>
 #ifdef RTS_ENABLE_CRASHDUMP
 #include "DbgHelpLoader_minidump.h"
@@ -112,6 +112,33 @@ public:
 		PGET_MODULE_BASE_ROUTINE GetModuleBaseRoutine,
 		PTRANSLATE_ADDRESS_ROUTINE TranslateAddress);
 
+	// Native-width DbgHelp entry points used by the Evolution x64 crash path.
+	// Keep these here so WWLib has one coherent dynamic dbghelp loader.
+	static BOOL WINAPI symFromAddr(
+		HANDLE hProcess,
+		DWORD64 Address,
+		PDWORD64 Displacement,
+		PSYMBOL_INFO Symbol);
+
+	static LPVOID WINAPI symFunctionTableAccess64(
+		HANDLE hProcess,
+		DWORD64 AddrBase);
+
+	static DWORD64 WINAPI symGetModuleBase64(
+		HANDLE hProcess,
+		DWORD64 Address);
+
+	static BOOL WINAPI stackWalk64(
+		DWORD MachineType,
+		HANDLE hProcess,
+		HANDLE hThread,
+		LPSTACKFRAME64 StackFrame,
+		LPVOID ContextRecord,
+		PREAD_PROCESS_MEMORY_ROUTINE64 ReadMemoryRoutine,
+		PFUNCTION_TABLE_ACCESS_ROUTINE64 FunctionTableAccessRoutine,
+		PGET_MODULE_BASE_ROUTINE64 GetModuleBaseRoutine,
+		PTRANSLATE_ADDRESS_ROUTINE64 TranslateAddress);
+
 #ifdef RTS_ENABLE_CRASHDUMP
 	static BOOL WINAPI miniDumpWriteDump(
 		HANDLE hProcess,
@@ -181,6 +208,31 @@ private:
 		PGET_MODULE_BASE_ROUTINE GetModuleBaseRoutine,
 		PTRANSLATE_ADDRESS_ROUTINE TranslateAddress);
 
+	typedef BOOL (WINAPI *SymFromAddr_t) (
+		HANDLE hProcess,
+		DWORD64 Address,
+		PDWORD64 Displacement,
+		PSYMBOL_INFO Symbol);
+
+	typedef LPVOID (WINAPI *SymFunctionTableAccess64_t) (
+		HANDLE hProcess,
+		DWORD64 AddrBase);
+
+	typedef DWORD64 (WINAPI *SymGetModuleBase64_t) (
+		HANDLE hProcess,
+		DWORD64 Address);
+
+	typedef BOOL (WINAPI *StackWalk64_t) (
+		DWORD MachineType,
+		HANDLE hProcess,
+		HANDLE hThread,
+		LPSTACKFRAME64 StackFrame,
+		LPVOID ContextRecord,
+		PREAD_PROCESS_MEMORY_ROUTINE64 ReadMemoryRoutine,
+		PFUNCTION_TABLE_ACCESS_ROUTINE64 FunctionTableAccessRoutine,
+		PGET_MODULE_BASE_ROUTINE64 GetModuleBaseRoutine,
+		PTRANSLATE_ADDRESS_ROUTINE64 TranslateAddress);
+
 #ifdef RTS_ENABLE_CRASHDUMP
 	typedef BOOL(WINAPI* MiniDumpWriteDump_t)(
 		HANDLE hProcess,
@@ -202,6 +254,10 @@ private:
 	SymSetOptions_t m_symSetOptions;
 	SymFunctionTableAccess_t m_symFunctionTableAccess;
 	StackWalk_t m_stackWalk;
+	SymFromAddr_t m_symFromAddr;
+	SymFunctionTableAccess64_t m_symFunctionTableAccess64;
+	SymGetModuleBase64_t m_symGetModuleBase64;
+	StackWalk64_t m_stackWalk64;
 #ifdef RTS_ENABLE_CRASHDUMP
 	MiniDumpWriteDump_t m_miniDumpWriteDump;
 #endif

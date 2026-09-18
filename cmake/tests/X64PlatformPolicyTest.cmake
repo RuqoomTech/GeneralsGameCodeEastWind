@@ -61,4 +61,23 @@ endforeach()
 rts_policy_read("Core/Tests/DeterminismPrimitivesTest.cpp" _determinism)
 rts_policy_require_text("${_determinism}" "Expect_Int(\"logic CRC message enum\", 1095" "MSG_LOGIC_CRC must remain fixed at 1095")
 
-message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent and fixed-width ABI guards remain intact")
+# Crash diagnostics are native-only state. The Evolution x64 path must never
+# truncate RIP/RSP/stack addresses into Win32 unsigned-long values.
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/Except.h" _except_header)
+rts_policy_require_text("${_except_header}" "int Stack_Walk(std::uintptr_t *return_addresses" "exception stack addresses must use native uintptr_t")
+rts_policy_require_text("${_except_header}" "extern std::uintptr_t ExceptionReturnAddress" "exception return addresses must remain native-width")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/Except.cpp" _except_source)
+rts_policy_require_text("${_except_source}" "#if defined(_WIN64)" "exception diagnostics must retain an explicit Win64 path")
+rts_policy_require_text("${_except_source}" "context->Rip" "Win64 exception diagnostics must use RIP rather than EIP")
+rts_policy_require_text("${_except_source}" "IMAGE_FILE_MACHINE_AMD64" "Win64 stack walking must select the AMD64 machine type")
+rts_policy_require_text("${_except_source}" "STACKFRAME64 stack_frame" "Win64 stack walking must use STACKFRAME64")
+rts_policy_require_text("${_except_source}" "DbgHelpLoader::stackWalk64" "Win64 stack walking must use the consolidated DbgHelpLoader")
+rts_policy_require_text("${_except_source}" "DbgHelpLoader::symFromAddr" "Win64 symbol lookup must use a DWORD64-capable DbgHelp API")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/DbgHelpLoader.cpp" _dbghelp_loader)
+foreach(_entry IN ITEMS "SymFromAddr" "SymFunctionTableAccess64" "SymGetModuleBase64" "StackWalk64")
+    rts_policy_require_text("${_dbghelp_loader}" "GetProcAddress(Inst->m_dllModule, \"${_entry}\")" "DbgHelpLoader must resolve native x64 entry point ${_entry}")
+endforeach()
+
+message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, and crash diagnostics stay native-width")
