@@ -121,7 +121,14 @@ The source-policy half remains host-portable:
 cmake --build --preset mingw64-tests --target check_d3d12_backend_policy
 ```
 
-The full Zero Hour x64 executable is intentionally still gated while direct `DX8Wrapper` callers are migrated. Do not restore the removed standalone shell as a workaround.
+The full Zero Hour x64 executable migration graph is enabled separately through `mingw64-game`. Use it to expose the next real compile/link blocker without forcing the full legacy renderer tree into the focused test graph:
+
+```powershell
+cmake --preset mingw64-game
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Keep `-j1` while 05H is using the first actual compiler/linker failure as the migration queue. Do not restore the removed standalone shell as a workaround.
 
 ## Local host validation
 
@@ -147,7 +154,7 @@ For significant deterministic/network/replay changes, validate Release and Debug
 
 Do not claim a Windows gate passed from host/container testing. Windows sign-off requires actual Windows console output using the authoritative candidate tree.
 
-The final Step 04F and Step 05A baselines are Windows-signed-off with MinGW-w64 GCC/G++ 16.2. Step 05B is also Windows-signed-off: the D3D12 proof executable built, presented successfully on Intel UHD 770 and WARP, installed/staged correctly, and the 26-test focused graph remained green. Step 05C2 is Windows-signed-off: the in-place production backend passed 27/27 plus `check_d3d12_backend` and all deterministic/network/replay/x64 gates. Steps 05D, 05E and 05F are Windows-signed-off through the same production GPU smoke path, covering indexed drawing, staged canonical HLSL, and persistent default-heap geometry. Step 05G adds sampled RGBA8 texture/SRV/static-sampler binding and remains Windows-pending until the updated 27-test graph and explicit backend check pass.
+The final Step 04F and Step 05A baselines are Windows-signed-off with MinGW-w64 GCC/G++ 16.2. Step 05B is also Windows-signed-off: the D3D12 proof executable built, presented successfully on Intel UHD 770 and WARP, installed/staged correctly, and the 26-test focused graph remained green. Step 05C2 is Windows-signed-off: the in-place production backend passed 27/27 plus `check_d3d12_backend` and all deterministic/network/replay/x64 gates. Steps 05D through 05G are Windows-signed-off through the production GPU smoke path, covering indexed drawing, staged canonical HLSL, persistent default-heap geometry, and sampled RGBA8 texture/SRV/static-sampler binding. Step 05H is active and is validated iteratively through the real `mingw64-game` `z_generals` build; each H1 hotfix remains Windows-pending until that build advances past its intended blocker.
 
 ## Known warnings
 

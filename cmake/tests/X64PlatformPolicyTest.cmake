@@ -80,4 +80,15 @@ foreach(_entry IN ITEMS "SymFromAddr" "SymFunctionTableAccess64" "SymGetModuleBa
     rts_policy_require_text("${_dbghelp_loader}" "GetProcAddress(Inst->m_dllModule, \"${_entry}\")" "DbgHelpLoader must resolve native x64 entry point ${_entry}")
 endforeach()
 
-message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, and crash diagnostics stay native-width")
+# Win32 registry keys are opaque native handles, not deterministic/wire integers.
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/registry.h" _registry_header)
+rts_policy_require_text("${_registry_header}" "HKEY\tKey;" "RegistryClass must retain HKEY at native handle width")
+rts_policy_forbid_text("${_registry_header}" "int\tKey;" "RegistryClass regressed to 32-bit HKEY storage")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/registry.cpp" _registry_source)
+rts_policy_require_text("${_registry_source}" "Key = key;" "RegistryClass must assign the native HKEY without integer truncation")
+rts_policy_forbid_text("${_registry_source}" "Key = (int)key;" "RegistryClass regressed to HKEY-to-int truncation")
+rts_policy_forbid_text("${_registry_source}" "(HKEY)Key" "RegistryClass should not reconstruct HKEY from integer storage")
+rts_policy_forbid_text("${_registry_source}" "sizeof(HKEY) == sizeof(int)" "RegistryClass must not assume Win32-sized registry handles")
+
+message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, and crash diagnostics and registry handles stay native-width")

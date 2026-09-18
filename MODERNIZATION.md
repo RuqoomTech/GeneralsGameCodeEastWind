@@ -61,3 +61,7 @@ The first real `mingw64-game` build reached `core_wwsaveload` and exposed a Win3
 ## Step 05H1B — native-width x64 crash diagnostics
 
 The second real `mingw64-game` blocker was the old WWLib exception reporter, which still assumed 32-bit registers and DbgHelp addresses. The Evolution Win64 path now uses `uintptr_t`/`DWORD64`, `Rip/Rsp/Rbp`, `STACKFRAME64`, `IMAGE_FILE_MACHINE_AMD64`, `SymFromAddr`, and `StackWalk64`. The required 64-bit DbgHelp entry points live in the existing `DbgHelpLoader`, preserving one loader/resource responsibility rather than adding another helper. The legacy x86 implementation is preprocessor-isolated and does not compile into the active x64 game path. Windows full-game compilation must be rerun before sign-off.
+
+## Step 05H1C — native-width Win32 registry handles
+
+The next real `mingw64-game` build advanced beyond the x64 crash-diagnostics blocker and failed in `WWLib/registry.cpp` because `RegistryClass` still stored an opaque `HKEY` in a 32-bit `int`. The Evolution path now keeps the registry key as `HKEY` for its full native lifetime: construction initializes it to `nullptr`, successful open/create assigns the handle directly, registry APIs receive the native handle directly, and destruction clears it after `RegCloseKey`. The x64 platform policy forbids reintroducing the old `HKEY`-to-`int` truncation or reconstructing a handle from integer storage. This is runtime/native-handle correctness only; registry values and deterministic/wire contracts are unchanged. Windows full-game compilation must be rerun before sign-off.
