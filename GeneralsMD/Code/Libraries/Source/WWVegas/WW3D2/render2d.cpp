@@ -47,6 +47,8 @@
 #include "texture.h"
 #include "WWMath/matrix4.h"
 #include "WWMath/matrix3d.h"
+#include "IRenderBackend.h"
+#if !defined(RTS_EVOLUTION_X64)
 #include "dx8wrapper.h"
 #include "dx8indexbuffer.h"
 #include "dx8vertexbuffer.h"
@@ -54,6 +56,7 @@
 #include "vertmaterial.h"
 #include "dx8fvf.h"
 #include "dx8caps.h"
+#endif
 #include "WWDebug/wwprofile.h"
 #include "WWDebug/wwmemlog.h"
 #include "assetmgr.h"
@@ -602,6 +605,65 @@ void Render2DClass::Render()
 		return;
 	}
 
+#if defined(RTS_EVOLUTION_X64)
+	// Step 05H first real game caller: untextured W3DDisplay lines/rectangles
+	// now cross the renderer-neutral seam directly. Textured Render2D remains
+	// a separate migration responsibility because it must carry TextureClass
+	// lifetime/data into the backend rather than recreate DX8 texture semantics.
+	if (!IsGrayScale && Shader.Get_Texturing() == ShaderClass::TEXTURING_DISABLE) {
+		IRenderBackend *backend = WW3D::Get_Render_Backend();
+		if (backend == nullptr) {
+			return;
+		}
+
+		RenderBackend2DBlendMode blend_mode = RenderBackend2DBlendMode::Opaque;
+		const ShaderClass::SrcBlendFuncType src_blend = Shader.Get_Src_Blend_Func();
+		const ShaderClass::DstBlendFuncType dst_blend = Shader.Get_Dst_Blend_Func();
+		if (src_blend == ShaderClass::SRCBLEND_SRC_ALPHA &&
+			dst_blend == ShaderClass::DSTBLEND_ONE_MINUS_SRC_ALPHA) {
+			blend_mode = RenderBackend2DBlendMode::Alpha;
+		} else if (src_blend == ShaderClass::SRCBLEND_ONE && dst_blend == ShaderClass::DSTBLEND_ONE) {
+			blend_mode = RenderBackend2DBlendMode::Additive;
+		} else if (!(src_blend == ShaderClass::SRCBLEND_ONE && dst_blend == ShaderClass::DSTBLEND_ZERO)) {
+			return;
+		}
+
+		DynamicVectorClass<RenderBackendColorVertex> backend_vertices(Vertices.Count());
+		for (int i = 0; i < Vertices.Count(); ++i) {
+			const unsigned long color = Colors[i];
+			RenderBackendColorVertex vertex;
+			vertex.x = Vertices[i].X;
+			vertex.y = Vertices[i].Y;
+			vertex.z = ZValue;
+			vertex.r = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
+			vertex.g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
+			vertex.b = static_cast<float>(color & 0xFF) / 255.0f;
+			vertex.a = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
+			backend_vertices.Add(vertex);
+		}
+
+		int width, height, bits;
+		bool windowed;
+		WW3D::Get_Device_Resolution(width, height, bits, windowed);
+		(void)bits;
+		(void)windowed;
+		RenderBackendViewport viewport;
+		viewport.x = 0;
+		viewport.y = 0;
+		viewport.width = static_cast<unsigned int>(width);
+		viewport.height = static_cast<unsigned int>(height);
+		viewport.min_z = 0.0f;
+		viewport.max_z = 1.0f;
+		backend->Set_Viewport(viewport);
+		backend->Draw_2D_Indexed_Triangles(
+			&backend_vertices[0],
+			static_cast<unsigned int>(backend_vertices.Count()),
+			&Indices[0],
+			static_cast<unsigned int>(Indices.Count()),
+			blend_mode);
+	}
+	return;
+#else
 	// save the view and projection matrices since we're nuking them
 	Matrix4x4 view,proj;
 	Matrix4x4 identity(true);
@@ -696,8 +758,10 @@ void Render2DClass::Render()
 	DX8Wrapper::Set_Transform(D3DTS_PROJECTION,proj);
 	if (IsGrayScale)
 		ShaderClass::Invalidate();	//force both stages to be reset.
+#endif
 
 }
+
 
 
 /*

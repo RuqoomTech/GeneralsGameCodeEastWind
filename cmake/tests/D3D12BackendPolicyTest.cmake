@@ -152,6 +152,35 @@ rts_policy_require_contains(
 
 
 rts_policy_require_contains(
+    "CMakePresets.json"
+    "mingw64-game"
+    "Step 05H must expose a normal x64 z_generals migration preset instead of remaining tests-only")
+rts_policy_require_absent(
+    "cmake/mingw.cmake"
+    "The x64 full-game runtime remains gated"
+    "the Step 05H normal game build must no longer be blocked before compilation")
+rts_policy_require_contains(
+    "cmake/config-build.cmake"
+    "RTS_EVOLUTION_X64=1"
+    "real WW3D callers need an explicit source-level guard for the x64 Evolution migration path")
+rts_policy_require_contains(
+    "GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/render2d.cpp"
+    "Draw_2D_Indexed_Triangles"
+    "the first real W3DDisplay/Render2D screen-space primitive caller must cross IRenderBackend")
+rts_policy_require_contains(
+    "GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/render2d.cpp"
+    "#if !defined(RTS_EVOLUTION_X64)"
+    "the x64 Render2D slice must not compile its migrated untextured path through DX8 buffer/wrapper headers")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "RenderBackend2DBlendMode"
+    "screen-space blend responsibility must be explicit and renderer-neutral rather than a DX8 state facade")
+rts_policy_require_contains(
+    "Core/Tests/D3D12BackendSmokeTest.cpp"
+    "Draw_2D_Indexed_Triangles"
+    "the Windows production-backend smoke must compile and execute the first real 2D PSO path")
+
+rts_policy_require_contains(
     "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
     "Create_Static_RGBA8_Texture"
     "D3D12 texture lifetime must cross the existing renderer-neutral backend seam")
@@ -207,4 +236,4 @@ foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
         "the D3D12 backend must not include ${_legacy_header}")
 endforeach()
 
-message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, and sampled RGBA8 SRV/static-sampler texture binding")
+message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, sampled textures, and the Step05H real Render2D screen-space path")

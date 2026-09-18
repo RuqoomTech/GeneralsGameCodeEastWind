@@ -41,6 +41,10 @@ add_feature_info(EvolutionX64 RTS_BUILD_EVOLUTION_X64 "Configure the Evolution x
 add_feature_info(HeadlessCore RTS_BUILD_HEADLESS_CORE "Build the deterministic/headless x64 core lane")
 add_feature_info(FFmpegSupport RTS_BUILD_OPTION_FFMPEG "Building with FFmpeg support")
 
+if(RTS_BUILD_EVOLUTION_X64)
+    target_compile_definitions(core_config INTERFACE RTS_EVOLUTION_X64=1)
+endif()
+
 set(RTS_BUILD_OUTPUT_SUFFIX "" CACHE STRING "Suffix appended to output names of installable targets")
 
 if(RTS_BUILD_ZEROHOUR)

@@ -179,6 +179,26 @@
         "RTS_BUILD_EVOLUTION_X64": "ON",
         "RTS_BUILD_HEADLESS_CORE": "ON"
       }
+    },
+    {
+      "name": "mingw64-game",
+      "displayName": "Evolution x64 Zero Hour game migration",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "RTS_BUILD_TESTS": "ON",
+        "RTS_BUILD_TESTS_ONLY": "OFF",
+        "RTS_BUILD_ZEROHOUR": "ON",
+        "RTS_BUILD_GENERALS": "OFF",
+        "RTS_BUILD_CORE_TOOLS": "OFF",
+        "RTS_BUILD_ZEROHOUR_TOOLS": "OFF",
+        "RTS_BUILD_ZEROHOUR_EXTRAS": "OFF",
+        "RTS_BUILD_EVOLUTION_X64": "ON",
+        "RTS_BUILD_HEADLESS_CORE": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -266,6 +286,12 @@
       "configurePreset": "mingw64-tests",
       "displayName": "Build Evolution x64 focused tests",
       "description": "Build the focused MinGW-w64 x86_64 Evolution test graph"
+    },
+    {
+      "name": "mingw64-game",
+      "configurePreset": "mingw64-game",
+      "displayName": "Build Evolution x64 Zero Hour game migration",
+      "description": "Build the normal z_generals executable plus modernization regressions"
     }
   ],
   "workflowPresets": [

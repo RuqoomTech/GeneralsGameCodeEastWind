@@ -53,6 +53,12 @@ public:
         unsigned int vertex_count,
         const unsigned short *indices,
         unsigned int index_count) override;
+    bool Draw_2D_Indexed_Triangles(
+        const RenderBackendColorVertex *vertices,
+        unsigned int vertex_count,
+        const unsigned short *indices,
+        unsigned int index_count,
+        RenderBackend2DBlendMode blend_mode) override;
     RenderBackendGeometryHandle Create_Static_Indexed_Color_Geometry(
         const RenderBackendColorVertex *vertices,
         unsigned int vertex_count,
@@ -114,6 +120,12 @@ private:
     void createSynchronizationObjects();
     void createPrimitivePipeline();
     void ensureTextureDescriptorCapacity(std::size_t required_capacity);
+    bool drawDynamicColorGeometry(
+        const RenderBackendColorVertex *vertices,
+        unsigned int vertex_count,
+        const unsigned short *indices,
+        unsigned int index_count,
+        ID3D12PipelineState *pipeline);
     RenderBackendGeometryHandle createStaticGeometry(
         const void *vertices,
         unsigned int vertex_count,
@@ -149,6 +161,9 @@ private:
     ID3D12GraphicsCommandList *m_command_list = nullptr;
     ID3D12RootSignature *m_primitive_root_signature = nullptr;
     ID3D12PipelineState *m_primitive_pipeline = nullptr;
+    ID3D12PipelineState *m_2d_opaque_pipeline = nullptr;
+    ID3D12PipelineState *m_2d_alpha_pipeline = nullptr;
+    ID3D12PipelineState *m_2d_additive_pipeline = nullptr;
     ID3D12PipelineState *m_textured_pipeline = nullptr;
     ID3D12Fence *m_fence = nullptr;
     void *m_fence_event = nullptr;

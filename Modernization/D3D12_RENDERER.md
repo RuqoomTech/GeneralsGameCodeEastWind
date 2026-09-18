@@ -17,9 +17,17 @@ The initial D3D12 proof was Windows-verified in Step 05B on Intel UHD 770 and WA
 - Step 05D adds the first indexed position/color primitive contract, root signature, PSO, shader compilation and upload-buffer lifetime tracking without introducing a second renderer abstraction;
 - Step 05E moves the bootstrap shader out of C++ into the first canonical HLSL asset (`Shaders/PrimitiveColor.hlsl`) and stages the same asset for the Windows smoke binary and normal x64 game target;
 - Step 05F adds the first persistent renderer-neutral geometry lifetime: create/draw/release handles backed by D3D12 default-heap vertex/index buffers, uploaded through explicit copy commands and state transitions;
+- Step 05G adds renderer-neutral RGBA8 texture handles, default-heap texture upload, shader-visible SRVs, a static sampler and textured indexed drawing;
+- Step 05H1 adds the first real normal-game screen-space caller: untextured `Render2DClass` geometry routes through D3D12 depth-disabled opaque/alpha/additive PSOs;
 - the temporary standalone `Evolution/` runtime tree and shell preset are removed.
 
-The full x64 game is not yet enabled because many legacy render callers still invoke `DX8Wrapper` directly. Those call sites are now the renderer migration backlog; they must move behind D3D12-capable interfaces rather than being hidden behind a permanent DX8 emulation layer.
+Step 05H1 enables configuration of the normal x64 Zero Hour game target through `mingw64-game`. Many legacy render callers still invoke `DX8Wrapper` directly, so the executable is expected to expose additional compile/link blockers until those responsibilities migrate. Those call sites are the renderer migration backlog; they must move behind D3D12-capable interfaces rather than being hidden behind a permanent DX8 emulation layer.
+
+### Step 05H1 real-caller bootstrap
+
+The first normal-game draw responsibility has crossed the seam: untextured `Render2DClass` geometry used by `W3DDisplay` for lines, outlines, filled rectangles and rectangle clocks now converts its existing screen-space vertices/colors into `RenderBackendColorVertex` data and submits through `IRenderBackend::Draw_2D_Indexed_Triangles()`. D3D12 owns dedicated depth-disabled opaque, source-alpha and additive PSOs for this path. The old DX8 dynamic VB/IB implementation remains compiled only outside `RTS_EVOLUTION_X64`.
+
+This intentionally does **not** treat `TextureClass` as a D3D8 texture on x64. Textured and grayscale `Render2D` batches remain the next coherent resource-lifetime migration, where real texture data must map to `RenderBackendTextureHandle` rather than a DX8 compatibility facade.
 
 ## Migration rule
 
@@ -66,14 +74,15 @@ resources PSOs   command submission
 2. **draw foundation — done / Windows signed off:** root signature, PSO and indexed triangle draw through `IRenderBackend`;
 3. **shader asset foundation — done / Windows signed off:** canonical HLSL assets staged beside the x64 executable; translate the existing D3D8-era terrain/filter/tree/water assembly only when each real rendering path is migrated;
 4. **buffer foundation — done / Windows signed off:** persistent/default-heap indexed position/color geometry is available beside the transient path;
-5. **texture binding — active:** establish default-heap RGBA8 upload, shader-visible SRV descriptors, static sampler ownership and persistent textured indexed drawing before translating the legacy texture shaders;
-6. **complete legacy shader-backed caller / first visible game effect:** translate one real `.nvp/.nvv` behavior together with its texture/constants/state and route its normal-game WW3D caller off `DX8Wrapper`;
-7. **representative W3D rigid mesh:** render existing W3D geometry through the D3D12 path;
-8. **W3X rigid mesh:** feed the same renderer-neutral mesh path from W3X;
-9. materials/textures;
-10. camera/depth completeness;
-11. skinned mesh/animation;
-12. terrain, shadows, particles/effects and full scene coverage.
+5. **texture binding — done / Windows signed off:** default-heap RGBA8 upload, shader-visible SRV descriptors, static sampler ownership and persistent textured indexed drawing;
+6. **first normal-game caller — active:** untextured `W3DDisplay`/`Render2D` primitives now cross `IRenderBackend`; next connect real `TextureClass` lifetime/data to renderer-neutral texture handles, then continue from actual `z_generals` blockers;
+7. **complete legacy shader-backed caller / first shader translation:** translate one real `.nvp/.nvv` behavior together with its texture/constants/state and route its normal-game WW3D caller off `DX8Wrapper`;
+8. **representative W3D rigid mesh:** render existing W3D geometry through the D3D12 path;
+9. **W3X rigid mesh:** feed the same renderer-neutral mesh path from W3X;
+10. materials/textures;
+11. camera/depth completeness;
+12. skinned mesh/animation;
+13. terrain, shadows, particles/effects and full scene coverage.
 
 ## Non-goals
 

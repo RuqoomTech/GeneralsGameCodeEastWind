@@ -63,6 +63,13 @@ struct RenderBackendViewport
     float max_z;
 };
 
+enum class RenderBackend2DBlendMode
+{
+    Opaque,
+    Alpha,
+    Additive,
+};
+
 struct RenderBackendGeometryHandle
 {
     unsigned int slot;
@@ -124,6 +131,23 @@ public:
         (void)vertex_count;
         (void)indices;
         (void)index_count;
+        return false;
+    }
+
+    // Real WW3D screen-space primitive path. Render2D owns coordinate and
+    // color generation; the backend owns the explicit depth/blend PSO.
+    virtual bool Draw_2D_Indexed_Triangles(
+        const RenderBackendColorVertex *vertices,
+        unsigned int vertex_count,
+        const unsigned short *indices,
+        unsigned int index_count,
+        RenderBackend2DBlendMode blend_mode)
+    {
+        (void)vertices;
+        (void)vertex_count;
+        (void)indices;
+        (void)index_count;
+        (void)blend_mode;
         return false;
     }
 

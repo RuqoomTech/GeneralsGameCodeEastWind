@@ -28,9 +28,13 @@ if(MINGW)
             "Use preset 'mingw64-tests'.")
     endif()
     if(NOT RTS_BUILD_TESTS_ONLY)
-        message(FATAL_ERROR
-            "The x64 full-game runtime remains gated while direct DX8Wrapper call sites are migrated "
-            "onto the in-place Direct3D 12 backend. Use preset 'mingw64-tests' during this renderer migration.")
+        if(NOT RTS_BUILD_ZEROHOUR)
+            message(FATAL_ERROR
+                "The Evolution x64 full-runtime migration currently targets the normal Zero Hour z_generals executable. "
+                "Enable RTS_BUILD_ZEROHOUR or use preset 'mingw64-game'.")
+        endif()
+        message(STATUS
+            "Evolution x64 full-game migration graph enabled: z_generals will expose the remaining direct DX8Wrapper blockers.")
     endif()
 
     # Preserve the legacy code assumptions without applying them to downloaded

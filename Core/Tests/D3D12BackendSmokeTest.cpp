@@ -129,7 +129,7 @@ int main()
         delete backend;
         DestroyWindow(window);
         UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: textured indexed geometry submission failed.\n";
+        std::cerr << "D3D12 backend smoke failed: textured indexed geometry/2D submission failed.\n";
         return 5;
     }
     backend->End_Scene(false);
@@ -148,7 +148,9 @@ int main()
             ? backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3)
             : backend->Draw_Static_Indexed_Color_Geometry(static_triangle);
         const bool textured_draw_ok = backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, checker_texture);
-        if (!color_draw_ok || !textured_draw_ok)
+        const bool screen_draw_ok = backend->Draw_2D_Indexed_Triangles(
+            triangle_vertices, 3, triangle_indices, 3, RenderBackend2DBlendMode::Alpha);
+        if (!color_draw_ok || !textured_draw_ok || !screen_draw_ok)
         {
             backend->Release_Static_Texture(checker_texture);
             backend->Release_Static_Geometry(textured_quad);
@@ -169,6 +171,6 @@ int main()
     DestroyWindow(window);
     UnregisterClassW(WindowClassName, instance);
 
-    std::cout << "D3D12 backend smoke passed: WW3D uploaded RGBA8 texture data, bound shader-visible SRV/static-sampler state, reused textured/default-heap geometry across frames, and released resources safely.\n";
+    std::cout << "D3D12 backend smoke passed: WW3D uploaded RGBA8 texture data, bound shader-visible SRV/static-sampler state, exercised the real 2D blend PSO path, reused textured/default-heap geometry across frames, and released resources safely.\n";
     return 0;
 }

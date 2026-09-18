@@ -473,6 +473,31 @@ void D3D12Backend::createPrimitivePipeline()
             "ID3D12Device::CreateGraphicsPipelineState(color)",
             m_device->CreateGraphicsPipelineState(&pipeline, IID_PPV_ARGS(&m_primitive_pipeline)));
 
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC screen_pipeline = pipeline;
+        screen_pipeline.DepthStencilState.DepthEnable = FALSE;
+        screen_pipeline.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+        screen_pipeline.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+        checkHresult(
+            "ID3D12Device::CreateGraphicsPipelineState(2D opaque)",
+            m_device->CreateGraphicsPipelineState(&screen_pipeline, IID_PPV_ARGS(&m_2d_opaque_pipeline)));
+
+        screen_pipeline.BlendState.RenderTarget[0].BlendEnable = TRUE;
+        screen_pipeline.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+        screen_pipeline.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+        screen_pipeline.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_SRC_ALPHA;
+        screen_pipeline.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+        checkHresult(
+            "ID3D12Device::CreateGraphicsPipelineState(2D alpha)",
+            m_device->CreateGraphicsPipelineState(&screen_pipeline, IID_PPV_ARGS(&m_2d_alpha_pipeline)));
+
+        screen_pipeline.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+        screen_pipeline.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+        screen_pipeline.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+        screen_pipeline.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+        checkHresult(
+            "ID3D12Device::CreateGraphicsPipelineState(2D additive)",
+            m_device->CreateGraphicsPipelineState(&screen_pipeline, IID_PPV_ARGS(&m_2d_additive_pipeline)));
+
         const D3D12_INPUT_ELEMENT_DESC textured_elements[] = {
             {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
              D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
@@ -861,7 +886,41 @@ bool D3D12Backend::Draw_Indexed_Triangles(
     const unsigned short *indices,
     unsigned int index_count)
 {
-    if (!m_scene_open || vertices == nullptr || indices == nullptr ||
+    return drawDynamicColorGeometry(vertices, vertex_count, indices, index_count, m_primitive_pipeline);
+}
+
+bool D3D12Backend::Draw_2D_Indexed_Triangles(
+    const RenderBackendColorVertex *vertices,
+    unsigned int vertex_count,
+    const unsigned short *indices,
+    unsigned int index_count,
+    RenderBackend2DBlendMode blend_mode)
+{
+    ID3D12PipelineState *pipeline = m_2d_opaque_pipeline;
+    switch (blend_mode)
+    {
+        case RenderBackend2DBlendMode::Alpha:
+            pipeline = m_2d_alpha_pipeline;
+            break;
+        case RenderBackend2DBlendMode::Additive:
+            pipeline = m_2d_additive_pipeline;
+            break;
+        case RenderBackend2DBlendMode::Opaque:
+        default:
+            break;
+    }
+
+    return drawDynamicColorGeometry(vertices, vertex_count, indices, index_count, pipeline);
+}
+
+bool D3D12Backend::drawDynamicColorGeometry(
+    const RenderBackendColorVertex *vertices,
+    unsigned int vertex_count,
+    const unsigned short *indices,
+    unsigned int index_count,
+    ID3D12PipelineState *pipeline)
+{
+    if (!m_scene_open || pipeline == nullptr || vertices == nullptr || indices == nullptr ||
         vertex_count == 0 || index_count < 3 || (index_count % 3) != 0)
     {
         return false;
@@ -892,12 +951,12 @@ bool D3D12Backend::Draw_Indexed_Triangles(
 
         void *mapped = nullptr;
         D3D12_RANGE no_read{0, 0};
-        checkHresult("ID3D12Resource::Map(vertex)", vertex_upload->Map(0, &no_read, &mapped));
+        checkHresult("ID3D12Resource::Map(dynamic color vertex)", vertex_upload->Map(0, &no_read, &mapped));
         std::memcpy(mapped, vertices, vertex_bytes);
         vertex_upload->Unmap(0, nullptr);
 
         mapped = nullptr;
-        checkHresult("ID3D12Resource::Map(index)", index_upload->Map(0, &no_read, &mapped));
+        checkHresult("ID3D12Resource::Map(dynamic color index)", index_upload->Map(0, &no_read, &mapped));
         std::memcpy(mapped, indices, index_bytes);
         index_upload->Unmap(0, nullptr);
 
@@ -917,7 +976,7 @@ bool D3D12Backend::Draw_Indexed_Triangles(
         index_upload = nullptr;
 
         m_command_list->SetGraphicsRootSignature(m_primitive_root_signature);
-        m_command_list->SetPipelineState(m_primitive_pipeline);
+        m_command_list->SetPipelineState(pipeline);
         m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
         m_command_list->IASetIndexBuffer(&index_view);
@@ -1580,6 +1639,9 @@ void D3D12Backend::releaseObjects() noexcept
     }
     m_static_textures.clear();
     releaseCom(m_textured_pipeline);
+    releaseCom(m_2d_additive_pipeline);
+    releaseCom(m_2d_alpha_pipeline);
+    releaseCom(m_2d_opaque_pipeline);
     releaseCom(m_primitive_pipeline);
     releaseCom(m_primitive_root_signature);
     for (auto &render_target : m_render_targets)
