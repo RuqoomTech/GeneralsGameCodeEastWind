@@ -1,284 +1,78 @@
-# Project State — Authoritative Modernization Working State
+# Project state
 
-This file is the authoritative state marker for modernization work. Read it before applying patches or beginning a new milestone.
+Updated: 2026-09-18
 
-## Baseline identity
-
-- **Step 04E1 authoritative input:** `GeneralsGameCode-Step04D6-i686-Oracle-TestHarness-Hotfix-full.zip`, SHA-256 `61f5f4ba146c6d15154b983b1e5e8eadca7d963bb2b2c715e701b0532243d7c3`.
-- Step 04D6 is fully Windows cross-architecture verified: x64 17/17 + fixture, i686 17/17 + Step 01 determinism gate, and identical eight-checkpoint timelines through frame 12000.
-- **Step 04D3 authoritative local input:** `GeneralsGameCodeEastWind.zip`, SHA-256 `e290c9bb51c4fc271ed89428b531d33298e498336f61fa4a8db6abcab5ad8502`.
-- **Step 04D3 upstream comparison snapshot:** `GeneralsGameCode-main (1).zip`, SHA-256 `c5c561ca47ffe874c31732c3cb86bcc0016f246f5ee36cc3435bae50e26427d1`.
-- EastWind remains the architecture baseline; upstream is used selectively for correctness/gameplay/runtime fixes.
-- **Step 04D2 authoritative input:** `GeneralsGameCode-Step04D1-Windows-WIDL-Bootstrap-Hotfix-full.zip`.
-- SHA-256 of the exact Step 04D1 archive used for this hotfix: `e88521da197d004012672076e71a11e63e0e4c19c6596760425f080cde81dae5`.
-- Step 04D2 was produced strictly from those bytes after the first successful Windows `mingw64-tests` configure exposed GCC 16.2 runtime-ABI compile blockers.
-- **Step 04D authoritative input:** `GeneralsGameCode-Step04C-Native-Width-Runtime-Dependencies-full.zip`.
-- SHA-256 of the exact Step 04C archive used for this work: `e49b157c93e9fced03c61bb76519f4262bddc4b0682d08a35499700e1c47e1d9`.
-- Step 04D was produced strictly from those bytes; no GitHub state, remembered repository, older patch, or alternate ZIP was substituted.
-- Historical Step 04C authoritative input: `GeneralsGameCode-Step04B-Wire-Pointer-Audit-full.zip`, SHA-256 `b6e983715e74c32ececcbe820964697496a9df25dd5e36cb86d88e6c981a09f9`.
-- Step 04B itself was produced from `GeneralsGameCode-Step03-Complete-Step04A-x64-Readiness-full.zip`, SHA-256 `e87de5e1d2f6bd2e916030b5beb487fb4a71eb2beb4e57b14ccca3d22e1d7eba`.
+## Current baseline
 
-- Step 02A was based on the sealed Step 01G Windows-signoff repository supplied on 2026-09-10.
-- Step 01G user-declared archive/hash: `GeneralsGameCode-Step01G-Windows-Signoff-Baseline-Seal-full.zip` / `bb179526f5a093397375220025e265ffc66ad223e8569a30b4d933562ac8718a`.
-- SHA-256 of the Step 01G archive bytes actually received for Step 02A: `796c7e5642d655bebdf0ca079d7a099a5af46d82cb11a9b27282021f800fce07`; that mismatch remains recorded rather than silently substituting another tree.
-- Historical Step 03 completion + Step 04A implementation base: `GeneralsGameCode-Step03A-Performance-Telemetry-Foundation-full.zip`.
-- SHA-256 of the exact Step 03A archive bytes used here: `e1166a1d1834530eea4fc740b00802f27a85269e8831d25c8ff9e61c81c0c5c3`.
-- Step 03 completion/04A were produced strictly from those received Step 03A bytes; later steps use the chained authoritative ZIPs recorded above.
-- Historical Step 03A base: Step 02B SHA-256 `c0bac9981f10ec82bdeb391fa7e33811be7a611d3368c31c1f5e73ef15ba1ab5`.
-- Historical upstream provenance remains recorded in `Modernization/BASELINE_MANIFEST.md`.
+Step 04 is complete and Windows-signed-off. The supported Evolution modernization path is x64-only.
 
-## What was changed when establishing this baseline
+Real Windows MinGW-w64 GCC/G++ 16.2 validation for the final Step 04F baseline passed the complete 25-test focused graph plus the explicit deterministic, protocol, runtime, session, full-session and x64-platform checks.
 
-The original Step 00 baseline pass changed documentation only. Subsequent signed-off modernization steps now include C/C++, CMake, tests, scripts, telemetry, network ABI guards, and x64-readiness/runtime work; the historical baseline statement must not be read as describing the current tree.
+Step 05 is active. Step 05A is implemented locally and awaiting its Windows seal; 05B is the next functional slice.
 
-## Verified implementation already present in the uploaded source
+## Locked architecture
 
-### Modern C++ / build groundwork
+- Evolution runtime is x64-only.
+- New renderer work targets Direct3D 12 only; no D3D9/D3D11 intermediate.
+- The D3D8-era renderer remains a temporary compatibility/reference implementation.
+- CMake + Ninja + MinGW-w64 GCC is the primary Windows modernization toolchain; Clang is secondary.
+- Simulation, replay, networking, CRC, RNG, Xfer and snapshot behavior remain deterministic.
+- `Int`, `UnsignedInt`, `ObjectID`, `DrawableID` remain 32-bit; `Short` remains 16-bit; `Real` remains float32.
+- Pointers, `uintptr_t`, `intptr_t`, `size_t` and `ptrdiff_t` use native width and are never serialized as protocol state.
+- Evolution network/replay formats use explicit fixed-width fields and versioning.
+- W3D remains intact. W3X is additive EA SAGE XML support and is not connected to the runtime asset manager until the staged importer is ready.
+- Future multiplayer compatibility is Evolution-to-Evolution only; retail x86 interoperability is not required.
+- Prefer consolidation over duplicate helpers/files.
 
-- CMake 3.25 minimum.
-- Modern non-VC6 builds request C++20.
-- Visual Studio 6 remains a historical build path.
-- Modern Windows presets already use Ninja Multi-Config for the standard configuration family.
-- The sealed Step 01G MinGW-w64 i686 path uses Ninja and passed the focused Windows determinism gate.
-- Step 02A adds canonical `mingw32-*` Ninja presets, a focused CTest graph, target-scoped MinGW compatibility flags, and improved ATL/WIDL/binutils discovery.
+## Completed foundation
 
-### Renderer separation groundwork
+- Determinism characterization and fixed replay/CRC anchors.
+- Command-line CMake/Ninja build foundation.
+- Performance telemetry schema and summary tooling.
+- x64 native-width runtime substrate.
+- Renderer-free deterministic 12,000-frame timeline.
+- Fixed-width Evolution command codec, EVN1 network framing and EVR1 replay framing.
+- Staged Win64 EVN1 gameplay routing while legacy ACK/control/session traffic remains in place.
+- EVR1 replay sidecar recording/playback with legacy replay compatibility behavior.
+- Deterministic two-endpoint session validation including loss/retry, duplicates, delay/order and CRC checkpoints.
+- Full-session network/replay golden transcript and corruption/version validation.
+- Retirement of the active i686 MinGW modernization/oracle lane.
 
-A partial renderer backend seam already exists in `Core/Libraries/Source/WWVegas/WW3D2`:
+Historical milestone detail is kept in `Modernization/WORKLOG.md` and `Modernization/History/`.
 
-- `IRenderBackend.h`;
-- `Backend/RenderBackend.h`;
-- `Backend/DX8Backend.h/.cpp`;
-- `WW3D::Get_Render_Backend()` routing for a small but real set of operations.
+## Step 05 — W3X parser/import foundation
 
-The current concrete backend remains the legacy Direct3D 8 / `DX8Wrapper` path. The abstraction is **partial**, not a complete renderer-neutral API.
+Existing W3X pre-work already provides:
 
-### W3D asset path
+- W3D/W3X format recognition;
+- XML document-envelope probing;
+- direct `AssetDeclaration` child discovery/classification;
+- one shared public API in `rts/w3x_document.h` with implementation in `Core/Libraries/Source/rts/w3x_document.cpp`.
 
-- Legacy W3D loading is implemented through `WW3DAssetManager::Load_3D_Assets` and the chunk/prototype-loader system.
-- The Zero Hour copy currently lives under `GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/assetmgr.*`, with a corresponding Generals copy.
-- There are currently no W3X loader references in this baseline.
+Step 05 proceeds in coherent slices:
 
-## Locked direction
+1. **05A — developer baseline cleanup (VERIFY):** permanent test/build naming, policy-helper consolidation, stale wrapper removal, historical-doc organization and documentation cleanup.
+2. **05B — XML parser component:** select/integrate a real XML parser behind a narrow project-owned interface with useful source diagnostics.
+3. **05C — neutral W3X import model + rigid mesh fixture:** decode the first supported W3X content without renderer/GPU types.
+4. **05D — format routing/validation:** route W3D to the existing chunk path and W3X to the importer while keeping W3D behavior unchanged.
 
-1. Preserve deterministic simulation, CRC, Xfer, replay, and network behavior unless a change is explicit and tested.
-2. Make command-line CMake + Ninja builds the primary development workflow; Visual Studio IDE must not be required.
-3. Use MinGW-w64 GCC as the primary Windows compiler path, with Clang as a secondary path.
-4. Optimize for a large high-poly / HD-texture Zero Hour mod.
-5. Keep the existing DX8-era renderer only as the temporary compatibility/reference path.
-6. Build the new Evolution renderer directly on **Direct3D 12**.
-7. Do **not** build D3D9 or D3D11 intermediate backends.
-8. The long-term Evolution runtime is **x64 + D3D12**.
-9. Add native support for the EA SAGE **W3X** asset format alongside W3D.
-10. Rendering must remain downstream of simulation; renderer/GPU timing must never influence deterministic game state.
-11. Evolution multiplayer compatibility is required only between our own Evolution/game editions; retail 32-bit multiplayer interoperability is not a target.
-12. The i686 build receives no new features and remains only until x64 deterministic/replay/network golden gates replace it as the oracle.
+Runtime asset-manager integration remains deliberately deferred until these parser/import gates are stable.
 
+## Current developer commands
 
-## Step 04B implementation state — 2026-09-11
-
-The authoritative input for Step 04B is `GeneralsGameCode-Step03-Complete-Step04A-x64-Readiness-full.zip`, SHA-256 `e87de5e1d2f6bd2e916030b5beb487fb4a71eb2beb4e57b14ccca3d22e1d7eba`. Step 04B was implemented directly from those bytes.
+Windows focused graph:
 
-Key invariants now encoded in source/tests:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests
+ctest --preset mingw64-tests --output-on-failure
+```
 
-- future Evolution runtime is x64-only, while i686 remains a frozen temporary determinism oracle;
-- `GameMessage::Type` has explicit 32-bit `Int` underlying width;
-- legacy command-packet payload capacity is a frozen 1008-byte protocol constant and is no longer derived from `sizeof(GameMessage)`;
-- native GUI callback payload `WindowMsgData` follows `uintptr_t`;
-- wave-output userdata/callback and IME candidate pointer arithmetic no longer truncate through 32-bit integers;
-- focused test graph includes `wire_replay_abi_step04b` and `pointer_wire_source_audit_step04b`;
-- no Windows/Win64 result is claimed until supplied by a Windows console run.
+The current durable explicit checks are documented in `TESTING.md`.
 
-## Step 04C implementation state — 2026-09-11
+## Known non-blockers
 
-Authoritative input: `GeneralsGameCode-Step04B-Wire-Pointer-Audit-full.zip`, SHA-256 `b6e983715e74c32ececcbe820964697496a9df25dd5e36cb86d88e6c981a09f9`.
+Legacy `GameMemory` warnings such as custom `operator new` returning null remain known technical debt unless they become errors or affect the active work.
 
-Implemented in this slice:
-
-- repaired `WWLib/ObjectPoolClass` backing-block metadata so its chain is a native pointer rather than a `uint32*` surrogate;
-- moved `GameMemory` raw size/stride calculations to `size_t`, native pointer alignment, checked blob multiplication, and `uintptr_t` address checks;
-- made `FastFixedAllocator` stride/chunk storage pointer-aligned while preserving four-byte behavior on x86 and widening naturally on x64;
-- replaced `FastAllocatorGeneral`'s hard-coded four-byte prefix with a pointer-aligned header and corrected realloc copy bounds;
-- converted native pointer hashing and keyboard-layout handle extraction away from direct 32-bit truncation;
-- fixed list-box multi-selection pointer return to use an explicit `Int**` native pointer contract;
-- added `scripts/setup-windows-dev.ps1` as the x64-default Windows dependency bootstrap, with optional `-IncludeLegacyX86`;
-- expanded the focused graph to 12 tests with allocator runtime, pointer source-audit, and dependency-bootstrap policy regressions.
-
-Local validation is green with GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`, plus GCC ASan and UBSan: 12/12 tests in every configuration. No Windows/Win64/bootstrap pass is claimed because this environment has neither PowerShell nor an x86_64 MinGW-w64 compiler.
-
-## Step 04D implementation state — 2026-09-12
-
-Authoritative input: `GeneralsGameCode-Step04C-Native-Width-Runtime-Dependencies-full.zip`, SHA-256 `e49b157c93e9fced03c61bb76519f4262bddc4b0682d08a35499700e1c47e1d9`.
-
-Implemented in this slice:
-
-- centralized the duplicated Generals/Zero Hour `setFPMode()` implementation in shared Core GameEngine code;
-- preserved the signed-off i686 x87 round-to-nearest / 24-bit precision oracle behavior while defining the x64 contract as round-to-nearest with no legacy x87 precision-width dependency;
-- added the `RTS_BUILD_X64_HEADLESS_CORE` lane to `mingw64-tests`;
-- added a renderer-free 12,000-frame deterministic/headless executable using the production GameLogic RNG, production CRC primitive, and shared production FPU policy;
-- the timeline hashes only explicit fixed-width simulation fields plus RNG state and never raw object layout, pointers, padding, `size_t`, or allocator state;
-- checked-in checkpoints are frame 0, 1, 10, 100, 1000, 5000, 10000, and 12000/end;
-- added `scripts/compare-determinism-timelines.py` so the frozen i686 executable and x64 executable can emit and compare the same timeline;
-- deterministic focused compile policy explicitly disables fast-math and FP contraction (`-fno-fast-math`, `-ffp-contract=off`; `/fp:strict` on MSVC);
-- expanded the focused graph from 12 to 15 tests.
-
-Local GCC 14.2 and Clang 17 O0/O2/O3 builds, GCC ASan, and GCC UBSan all pass 15/15 tests and reproduce the same eight timeline checkpoints. This is a locally stable candidate golden fixture, not yet a signed-off x86-vs-Win64 oracle: no Windows/MinGW x64 result is claimed until the user supplies console output.
-
-Windows bootstrap follow-up (2026-09-12): a user-supplied run successfully updated/installed the MSYS2 x64 dependencies and discovered GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2, and WIDL. The run then exposed a repository bootstrap bug: WIDL was queried with unsupported `--version`. The script now uses WIDL's supported `-V` option for both x64 and optional i686 verification, with a source-policy regression guard. The interrupted run is not counted as a passing Windows test gate; rerun/sign-off remains pending.
-
-Windows x64 sign-off follow-up (2026-09-12): after Step 04D2, the user rebuilt `mingw64-tests` with MSYS2 MinGW-w64 GCC 16.2.0. The build completed, `ctest --preset mingw64-tests --output-on-failure` passed **15/15**, and `z_headlessdeterminismcheck` matched the checked-in Step 04D fixture. This is a real Windows x64 focused-lane pass for the pre-04D3 baseline. The explicit i686-vs-x64 timeline comparison remains pending.
-
-## Step 04D3 implementation state — 2026-09-12
-
-Authoritative local input: `GeneralsGameCodeEastWind.zip`, SHA-256 `e290c9bb51c4fc271ed89428b531d33298e498336f61fa4a8db6abcab5ad8502`. Upstream comparison snapshot: `GeneralsGameCode-main (1).zip`, SHA-256 `c5c561ca47ffe874c31732c3cb86bcc0016f246f5ee36cc3435bae50e26427d1`.
-
-Implemented selectively rather than by wholesale merge:
-
-- imported Dozer/Worker disabled-task resumption in both editions and corrected Xfer version gating from `currentVersion` to the serialized/read `version`;
-- imported the newer production cancellation/refund flow for both editions, including the non-refundable started-batch guard;
-- imported the neutron outer-radius search/damage corrections behind explicit compatibility switches and added only the required coordinate unary operators;
-- retained EastWind's strict-aliasing-safe float helpers, native-width GameMemory sizing/alignment and Step 04D2 `noexcept` delete contract;
-- adapted upstream GameMemory robustness: portable `NOINLINE`, noinline pre-main init, debug-only link-tester accounting, null-safe delete/free paths and sized global delete overloads;
-- replaced Bink/Miles import-stub linkage with the source-built runtime loaders, which fail neutrally on x64 when the legacy 32-bit DLLs cannot load;
-- imported the 512-point font clamp and dynamically sized glyph buffers for compatibility-renderer safety;
-- added `upstream_coordinate_ops_step04d3` and `upstream_alignment_source_policy_step04d3`, increasing the focused graph from 15 to 17 tests;
-- fixed Step 04D fixture-header reading to accept LF or CRLF without changing any checkpoint value.
-
-Shared-tree material divergence against the supplied upstream snapshot fell from **93 files to 63**. Full details and intentional non-imports are recorded in `Modernization/STEP_04D3_UPSTREAM_ALIGNMENT.md`.
-
-Local validation: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan all pass **17/17** and verify the unchanged Step 04D timeline. No Windows Step 04D3 pass is claimed yet; rerun `mingw64-tests` on Windows after this sync.
-
-## Current modernization status
-
-| Area | State |
-|---|---|
-| Baseline documentation and roadmap | **Done** |
-| Existing upstream renderer backend seam | **Partial / already present** |
-| Determinism/CRC/Xfer characterization | **DONE — Step 01 signed off on MinGW-w64 i686 / GCC 16.2 + Ninja** |
-| MinGW-w64 GCC + Ninja canonical build | **Implementation complete / user accepted; Windows transcript not archived** |
-| HD performance telemetry | **DONE — Step 03 schema v2 + phase/visibility/resource capture + summary tool** |
-| x64 engine migration | **FINAL VERIFY — Step 04E4 is real-Windows x64 signed off at 25/25 + all explicit 04D-04E4 gates; Step 04F retires the active i686 modernization/oracle lane locally and awaits one x64 Windows policy run** |
-| W3X format-recognition pre-step | **Done — A0** |
-| W3X document-envelope probe | **Done — A1** |
-| W3X top-level child-element discovery | **Done — A2** |
-| W3X parser seam consolidation | **Done — A2R** |
-| W3X XML parser/import foundation | Planned — Step 05 |
-| HD texture pipeline | Planned — Step 06 |
-| 32-bit/high-poly geometry path | Planned — Step 07 |
-| Expanded instancing/batching | Planned — Step 08 |
-| Modern LOD/visibility | Planned — Step 09 |
-| x64 runtime stabilization | Planned — Step 10 after Step 04 bring-up |
-| Renderer boundary completion | Planned — Step 11 |
-| D3D12 renderer | Planned — Steps 12+ |
-
-## Small W3X pre-steps completed after baseline adoption
-
-- **W3X-A0** adds only a dependency-free W3D/W3X format-recognition primitive and standalone test.
-- **W3X-A1** adds a dependency-free document-envelope probe that recognizes the XML root name/namespace, XML declaration presence, and the canonical SAGE `AssetDeclaration` envelope. It deliberately stops before child-element parsing.
-- **W3X-A2** adds dependency-free discovery of direct child elements under a validated SAGE `AssetDeclaration`. It classifies `W3DMesh`, `W3DHierarchy`, `W3DContainer`, `W3DAnimation`, and `W3DCollisionBox`, preserves other direct children as `Unknown`, resolves direct-child namespace prefixes/default namespaces, and validates nesting without decoding asset contents.
-- **W3X-A2R** consolidates the A1/A2 parser seam into one public `rts/w3x_document.h` API and one shared `Core/Libraries/Source/rts/w3x_document.cpp` implementation. The previous implementation-heavy `w3x_document_probe.h` and `w3x_child_discovery.h` headers were removed before runtime integration, eliminating duplicated XML/name/namespace scanning and reducing public-header surface.
-
-None of these pre-steps is wired into the runtime asset manager. They do not change the main milestone order.
-
-## Next implementation milestone
-
-**Step 03 is complete. Step 04 — x64 Engine Migration — is at the final 04F x64-only retirement verification gate. Step 05 becomes active immediately after that Windows check.**
-
-Step 01 remains the historical deterministic behavior contract. The temporary i686 MinGW/Ninja oracle has now been retired by the Step 04F candidate; retail x86 multiplayer interoperability is not required. Step 02 remains user-accepted on Windows, while the supported modernization lane is x64-only.
-
-### Step 03 completion
-
-Step 03 extends the Step 03A renderer sample into stable CSV schema v2: one row per `GameEngine::update()` containing complete update CPU time, client/message/network/logic phase timing, primary WW3D render timing, drawable total/visible/shrouded visibility proxies, and the existing draw/geometry/texture/resource counters. `scripts/perf-summary.py` reports p50/p95/p99/max phase timings plus mean/max resource counters. The path is compile-time limited to telemetry/profile builds and remains observational only. Legacy D3D8 GPU timestamp work is intentionally deferred to D3D12 rather than creating instrumentation that would be discarded with the compatibility renderer.
-
-### Step 04A — x64 readiness lane
-
-Step 04A began the engine migration without pretending the full runtime was already 64-bit. Step 04F now seals its final architecture boundary:
-
-- MinGW-w64 discovery is consolidated into one x86_64-only common toolchain implementation and wrapper;
-- `mingw64-tests` is the canonical x86_64 focused preset and enables `RTS_BUILD_X64_READINESS`;
-- a full x64 runtime configure is intentionally rejected until runtime boundaries are ported;
-- the x64 focused graph does not depend on legacy D3D8/DirectInput/DirectSound libraries or an unused ATL population;
-- `architecture_width_step04a` locks fixed 32-bit wire/game IDs while validating pointer-sized `uintptr_t` round trips.
-
-Local host-native GCC 14.2 and Clang 17 focused configure/build/CTest runs pass 7/7 tests, including `-O0`/`-O2`/`-O3` coverage; GCC ASan and UBSan are also green. The validation container has no MinGW-w64 x86_64 compiler, so no Windows `mingw64-tests` pass is claimed until actual output is provided.
-
-Step 04D is fully Windows cross-architecture verified. Step 04E2B has real Windows x64 sign-off with MinGW-w64 GCC 16.2: 21/21 focused tests plus the unchanged Step04D fixture, 04E1 protocol gate, and 04E2 runtime bridge gate. Step 04E3 now also has real Windows x64 sign-off: the user supplied a clean GCC 16.2 configure/build with **23/23** focused tests and successful Step04D, 04E1, 04E2 and `z_evolutionsessioncheck` gates. Step 04E4 is now Windows-signed-off: the user supplied GCC 16.2 output showing **25/25** focused tests plus all Step04D/04E1/04E2/04E3/04E4 explicit gates passing. The 04F candidate therefore retires the active i686 presets/toolchain/bootstrap/comparator surface. Representative full-client multiplayer/replay execution remains a later x64 stabilization task and no longer blocks i686 retirement.
-
-### Step 04D4 Windows bootstrap follow-up — 2026-09-12
-
-The first `-IncludeLegacyX86` bootstrap run after Step 04D3 successfully updated/discovered the x64 toolchain and installed/discovered the frozen i686 package set, but stopped during x64 CMake verification with a spurious `exit code -1` after CMake had already printed valid version output. The verifier was piping native processes directly through `Select-Object -First 2`; it now captures output and snapshots the native exit code before formatting output. The source-policy regression test locks this behavior. Legacy i686 package installation is therefore complete, while i686 executable verification and the cross-architecture Step 04D timeline comparison remain pending.
-
-## Step 04D5 frozen-i686 explicit dependency hotfix — 2026-09-12
-
-Real Windows validation after Step 04D4/04D3 passed the x64 focused graph **17/17** with MinGW-w64 GCC 16.2.0 and `z_headlessdeterminismcheck` matched the checked-in Step 04D timeline. The subsequent frozen i686 oracle build exposed a test-only dependency regression: `DeterminismPrimitivesTest.cpp` still characterizes `GameMessage` replay/ABI fields, but Step 04B intentionally removed `MessageStream.h` from `NetworkDefs.h`. The test now includes `Common/MessageStream.h` explicitly, preserving the network-header decoupling while restoring the frozen i686 ABI/replay characterization. The Step 04D policy guard locks this direct include so the transitive dependency cannot return.
-
-No i686 determinism pass is claimed until the user reruns `mingw32-tests`, `z_determinismcheck`, and the i686-vs-x64 timeline comparison.
-
-## Step 04D6 frozen-i686 allocator-probe + PowerShell timeline hotfix — 2026-09-12
-
-The real Windows Step 04D3/04D4 x64 lane passed **17/17** and matched the checked-in Step 04D fixture. The following frozen i686 CTest run reached **16/17**: only `runtime_native_width_step04c` failed because its modernization probe embedded a `uint64_t`, imposing 8-byte object alignment on a historical Win32 pool whose compatibility contract is pointer/natural 4-byte alignment. The probe now uses `uintptr_t` for its native-width marker, so it requires pointer alignment on both i686 and x64 without altering the frozen allocator implementation.
-
-The user also successfully emitted both i686 and x64 Step 04D timelines, but Windows PowerShell redirected them as UTF-16LE and the Python comparator assumed UTF-8. `compare-determinism-timelines.py` now accepts BOM-marked UTF-16 plus UTF-8/UTF-8-BOM, and its self-test covers the PowerShell-style encoding. No checkpoint value, CRC algorithm, RNG state, allocator layout, or protocol field changed.
-
-No i686-vs-x64 match is claimed until the user reruns the 17-test i686 graph, the correctly separated `z_determinismcheck` command, and the timeline comparator.
-
-
-## Step 04E1 Evolution protocol foundation — 2026-09-12
-
-- Added an explicit little-endian command codec with fixed protocol widths; native pointer width, `size_t`, object padding and compiler enum layout are not serialized.
-- Added `EVN1` network v1 framing and explicit command-batch records carrying player ID, command ID and length-delimited command bytes.
-- Added additive `EVR1` replay v1 framing carrying frame/player metadata and the same command codec payload.
-- Migrated live `NetPacketGameCommandData` payload serialization to the shared codec; legacy transport outer framing remains until 04E2.
-- Kept the legacy Recorder path unchanged so old `.rep` reading/writing is not silently broken; new Evolution replay runtime wiring is 04E2.
-- Added exact byte fixtures, round-trip tests, malformed/truncated/version rejection, and a source-policy guard. The focused graph is now 19 tests locally.
-- Local validation for 04E1 passes **19/19** under GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan, and GCC UBSan; the Step 04D deterministic fixture and Step 04E golden-byte fixture both remain identical in every configuration. No real Windows 19-test result or x64-to-x64 multiplayer session is claimed yet for 04E1.
-
-
-## Step 04E2 implementation state — 2026-09-13
-
-Authoritative input: sealed Step04E1 full repository, SHA-256 `8f87a75d2e7429b572a597abb0669618f9c58397783fb17bc8dd4045c3ecac58`.
-
-The production 04E2 runtime bridge is Win64-only; the frozen i686 runtime keeps legacy networking/replay behavior and only the portable codec/framing fixtures remain architecture-independent. Gameplay commands now have a staged raw-EVN1 UDP path using `RoutedCommandBatch`; legacy ACK/retry/session-control traffic remains on the historical transport. The receive bridge reconstructs the existing command/ref objects so current ACK/relay semantics stay authoritative. Both Recorder implementations now write EVR1 command sidecars alongside the legacy replay and prefer a valid sidecar for command playback while retaining the legacy stream as the open-time fallback. Partial/stale sidecars are actively invalidated.
-
-The focused graph is 21 tests. The portable 04E2 implementation passed the GCC O0/O2/O3, Clang O0/O2/O3, GCC ASan and GCC UBSan matrix plus all three explicit gates before the final Win64-only runtime guard; the exact final sealed tree was then rebuilt from Step04E1 and revalidated at 21/21 with the Step04D, 04E1 protocol and 04E2 runtime-bridge gates. The release patch applies cleanly to the exact sealed Step04E1 baseline and reproduces the final repository byte-for-byte. Real Windows 04E2 runtime/session validation is still pending and must not be inferred from these host results.
-
-## Step 04E2A Windows GameMessage-adapter compatibility hotfix — 2026-09-13
-
-Real Windows x64 `mingw64-tests` configure completed under MinGW-w64 GCC 16.2.0, but the focused build stopped while compiling the standalone `evolution_game_message_adapter_step04e` object target. The adapter translation unit included `MessageStream.h` without first including `Utility/CppMacros.h`; unlike normal engine targets, this focused object target deliberately has no legacy precompiled header, so `CPP_11`, `FUNCTION_DELETE`, and related compatibility macros were undefined while parsing legacy headers.
-
-`EvolutionGameMessageAdapter.cpp` now owns that dependency explicitly by including `Utility/CppMacros.h` before any engine header. The existing Step 04E protocol source-policy test now enforces that ordering. No EVN1/EVR1 bytes, protocol version, deterministic state, runtime layout, or gameplay behavior changed. Local focused validation remains 21/21; real Windows post-hotfix build/CTest is pending rerun.
-
-## Step 04E2B Windows MinGW runtime-family hotfix — 2026-09-13
-
-A clean real-Windows x64 rebuild after Step04E2A compiled all 38 focused build actions successfully, but `evolution_protocol_v1_step04e` still crashed with access violation `0xC0000005`. GDB localized the crash to `std::getline` while loading the golden fixture and showed the executable, compiled with `C:\msys64\mingw64\bin\g++.exe`, had resolved `libstdc++-6.dll` from `C:\msys64\ucrt64\bin`. This is an ABI-incompatible MSYS2 runtime-family mix, not an EVN1/EVR1 codec failure.
-
-The focused `Core/Tests` directory now statically links `libgcc` and `libstdc++` for MinGW executables, mirroring the existing `core_config` self-contained runtime policy without linking portable tests to legacy engine libraries or definitions. The Step04E source-policy regression locks this directory-level MinGW runtime rule. No command bytes, EVN1/EVR1 framing, deterministic state, runtime layout, or gameplay behavior changed. Local focused validation remains 21/21; real Windows post-hotfix validation is pending.
-
-## Step 04E3 deterministic x64 two-endpoint session validation — 2026-09-17
-
-Starting from the sole authoritative Step04E2B Windows-signed-off baseline, the routed gameplay packet composition was consolidated inside the existing `GameNetwork/EvolutionProtocol` module as `encodeRoutedCommandPacketV1` / `decodeRoutedCommandPacketV1`. `Connection` and `ConnectionManager` now use that same production seam, so the session gate cannot drift from runtime outer-header/batch validation. The frozen direct 04E1 `CommandBatch` format and golden bytes are unchanged.
-
-The new x64-only `evolution_session_step04e3_test` creates two deterministic in-process endpoints using the production Evolution command codec and routed EVN1 packet helpers. It covers command ID/sequence, frame, player and relay preservation; deterministic packet loss followed by retry and legacy-ACK removal semantics; duplicate delivery without duplicate gameplay execution; delayed/out-of-order arrival with frame stalls until the complete synchronized command set is present; deterministic command ordering; production `CRC` agreement over the canonical command stream; transport of `GameMessage::MSG_LOGIC_CRC` value **1095** checkpoints; malformed EVN1 rejection; and an intentionally oversized command that cannot emit EVN1, preserving the runtime's explicit legacy fallback seam.
-
-A Step04E3 source-policy gate additionally pins the real Win64 runtime integration: gameplay-only EVN1 activation, successful-EVN1 `continue` before the legacy packetizer (no silent double-send), legacy fallback when EVN1 emission fails, EVN1-before-legacy-decrypt receive ordering, existing `ackCommand` / `processNetCommand` / `sendRemoteCommand` routing, and production `NetCommandList` duplicate/order responsibilities. Legacy ACK/control/session/disconnect traffic is deliberately not migrated in 04E3.
-
-Local host validation passes **23/23** under GCC 14.2 Release, GCC 14.2 Debug, Clang 17 Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer, including the unchanged Step04D fixture, frozen 04E1 protocol fixture, 04E2 runtime bridge, and both new 04E3 gates. Real Windows MinGW-w64 GCC 16.2 validation supplied on 2026-09-17 then passed **23/23** plus `z_headlessdeterminismcheck`, `z_evolutionprotocolcheck`, `z_evolutionruntimecheck`, and `z_evolutionsessioncheck`. A representative two-full-client Evolution run is still separate from this focused sign-off.
-
-## Step 04E4 replay/network full-session golden gate — 2026-09-17
-
-Starting from the Windows-signed-off Step04E3 full repository, 04E4 adds an x64-only representative session fixture without changing frozen EVN1/EVR1 v1 bytes. The session contains 136 commands over 68 frames, with four dedicated logic-CRC checkpoint frames. Exact routed-EVN1 datagram transcript bytes and the matching EVR1 stream are frozen in `Step04E4EvolutionFullSessionV1.txt`.
-
-The executable reconstructs the network side under deterministic first-attempt loss, retries, duplicates and delayed delivery, then sorts through the same fixed player/command identity contract and compares the resulting command/CRC timeline to EVR1 replay decoding. Both paths must reach the same final production `CRC`, and every `MSG_LOGIC_CRC = 1095` checkpoint must match the accumulated deterministic state. Unsupported EVN1/EVR1/command-codec versions, corrupted command payloads, truncated replay tails and backward replay-frame ordering are rejected.
-
-To keep runtime and test behavior aligned, replay frame-order validation is centralized in `EvolutionReplayFormat::advanceReplaySequenceV1` and consumed by `EvolutionReplayStream` for both reads and writes. This changes no serialized byte. The 04E4 source-policy gate also freezes the transitional compatibility rule: a valid EVR1 sidecar is preferred at playback open, an unavailable/invalid sidecar falls back to legacy `.rep`, but corruption after EVR1 has already been selected fails closed rather than silently switching command sources mid-session.
-
-Local validation for 04E4 passed **25/25** under GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer. Real Windows MinGW-w64 GCC 16.2 then passed **25/25** plus all explicit 04D-04E4 gates. Representative full game-client multiplayer/replay execution remains a later x64 stabilization task.
-
-
-## Step 04F x64-only retirement candidate — 2026-09-17
-
-Authoritative input: Windows-signed-off Step04E4 full repository, SHA-256 `b21a9a42e8ec00c6305ea100efec1f1c976e79ef35b5056a6fd4771fe2f416d4`. The user-supplied Windows transcript records MinGW-w64 GCC/G++ 16.2, **25/25** focused tests, and successful Step04D, 04E1, 04E2, 04E3 and 04E4 explicit gates.
-
-Step 04F removes the active i686 MinGW modernization/oracle surface: `mingw32-*` and `mingw-w64-i686*` presets, the i686 toolchain wrapper, `-IncludeLegacyX86`, MINGW32 bootstrap/package checks, and the cross-architecture timeline comparator. The shared MinGW toolchain is x86_64-only, `cmake/mingw.cmake` rejects non-64-bit pointers, WIDL generation uses `--win64`, and `architecture_width_step04a` requires an 8-byte Evolution native pointer while preserving the fixed-width game/wire/replay assertions. Historical VC6/MSVC Win32 presets remain archival compatibility/reference paths outside Evolution.
-
-`x64_retirement_policy_step04f` / `z_step04fcheck` locks the retirement boundary and preserves `MSG_LOGIC_CRC = 1095`. The obsolete comparator CTest is replaced by this policy gate, so the focused graph remains **25 tests**. Local GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer focused graphs all pass **25/25**. `z_determinismcheck`, Step04D, 04E1, 04E2, 04E3, 04E4 and 04F explicit checks also pass. The patch applies cleanly to a fresh extraction of the exact Step04E4 ZIP and reproduces all 4,579 candidate source files byte-for-byte. That reconstructed tree also passes **25/25** plus `z_determinismcheck` and every explicit Step04D-04F gate. Real Windows Step04F sign-off must still be supplied separately.
+Representative full-client multiplayer/replay execution remains an x64 stabilization task. It is not a reason to restore the retired i686 modernization lane.

@@ -1,5 +1,5 @@
 /*
-** Step 03 performance telemetry characterization test.
+** Performance telemetry characterization test.
 */
 
 #include "rts/profile.h"
@@ -118,6 +118,6 @@ int main()
 	}
 
 	std::remove(path);
-	std::puts("Step 03 performance telemetry capture test passed.");
+	std::puts("Performance telemetry capture test passed.");
 	return 0;
 }

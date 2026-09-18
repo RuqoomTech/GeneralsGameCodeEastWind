@@ -95,7 +95,7 @@ public:
             return false;
         }
 
-        Expect(records.size() == 1U, "runtime Step04E2 sender must emit one routed record per gameplay datagram");
+        Expect(records.size() == 1U, "production Evolution sender must emit one routed record per gameplay datagram");
         const evolution::NetworkCommandRecord &record = records.front();
         Expect(header.sequence == commandKey(record), "EVN1 sequence no longer preserves player/command identity");
         Expect((record.relayMask & static_cast<std::uint8_t>(1U << m_slot)) != 0,
@@ -342,8 +342,8 @@ void testNonGameplayPacketRejectedByRoutedBoundary()
 
 int main()
 {
-    static_assert(sizeof(void *) == 8, "Step 04E3 session validation is Evolution x64-only");
-    static_assert(sizeof(std::uint32_t) == 4, "Step 04E3 requires fixed-width uint32_t");
+    static_assert(sizeof(void *) == 8, "Evolution session validation is x64-only");
+    static_assert(sizeof(std::uint32_t) == 4, "Evolution session validation requires fixed-width uint32_t");
 
     testPacketMetadata();
     testRetryAckAndDuplicate();
@@ -352,6 +352,6 @@ int main()
     testIntentionalEvN1EmissionFailure();
     testNonGameplayPacketRejectedByRoutedBoundary();
 
-    std::cout << "Step 04E3 Evolution session validation passed: two-peer routed EVN1 flow, retry/ACK, duplicates, delayed ordering, frame sync, CRC checkpoints, malformed rejection, and fallback boundary are stable.\n";
+    std::cout << "Evolution session validation passed: two-peer routed EVN1 flow, retry/ACK, duplicates, delayed ordering, frame sync, CRC checkpoints, malformed rejection, and fallback boundary are stable.\n";
     return 0;
 }

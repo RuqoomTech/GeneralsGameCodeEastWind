@@ -1,31 +1,24 @@
-# Step 04E4 source-policy regression. The golden full-session gate must remain
+# Evolution full-session source policy. The golden full-session gate must remain
 # additive: EVN1/EVR1 v1 bytes are frozen, legacy .rep metadata/fallback remains
 # available, and a sidecar selected successfully at playback start must fail
 # closed on later corruption rather than silently changing command sources.
 
-if(NOT DEFINED RTS_SOURCE_DIR)
-    message(FATAL_ERROR "RTS_SOURCE_DIR is required")
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/PolicyTestHelpers.cmake")
 
-function(rts_read relative out_var)
-    file(READ "${RTS_SOURCE_DIR}/${relative}" _content)
-    set(${out_var} "${_content}" PARENT_SCOPE)
-endfunction()
-
-rts_read("Core/GameEngine/Include/Common/EvolutionReplayFormat.h" replay_h)
-rts_read("Core/GameEngine/Source/Common/EvolutionReplayStream.cpp" replay_stream_cpp)
-rts_read("Core/GameEngine/Include/GameNetwork/EvolutionProtocol.h" protocol_h)
-rts_read("Generals/Code/GameEngine/Source/Common/Recorder.cpp" generals_recorder)
-rts_read("GeneralsMD/Code/GameEngine/Source/Common/Recorder.cpp" zh_recorder)
-rts_read("Core/Tests/EvolutionFullSessionStep04E4Test.cpp" full_session_test)
-rts_read("Core/Tests/CMakeLists.txt" tests_cmake)
+rts_policy_read("Core/GameEngine/Include/Common/EvolutionReplayFormat.h" replay_h)
+rts_policy_read("Core/GameEngine/Source/Common/EvolutionReplayStream.cpp" replay_stream_cpp)
+rts_policy_read("Core/GameEngine/Include/GameNetwork/EvolutionProtocol.h" protocol_h)
+rts_policy_read("Generals/Code/GameEngine/Source/Common/Recorder.cpp" generals_recorder)
+rts_policy_read("GeneralsMD/Code/GameEngine/Source/Common/Recorder.cpp" zh_recorder)
+rts_policy_read("Core/Tests/EvolutionFullSessionTest.cpp" full_session_test)
+rts_policy_read("Core/Tests/CMakeLists.txt" tests_cmake)
 
 if(NOT replay_h MATCHES "REPLAY_MAGIC_V1" OR
    NOT replay_h MATCHES "REPLAY_FORMAT_VERSION_V1 = 1" OR
    NOT replay_h MATCHES "REPLAY_HEADER_BYTES_V1 = 16" OR
    NOT protocol_h MATCHES "NETWORK_PROTOCOL_VERSION_V1 = 1" OR
    NOT protocol_h MATCHES "NETWORK_HEADER_BYTES_V1 = 20")
-    message(FATAL_ERROR "Step 04E4 must not mutate the frozen EVN1/EVR1 v1 framing contract")
+    message(FATAL_ERROR "The full-session gate must not mutate the frozen EVN1/EVR1 v1 framing contract")
 endif()
 
 if(NOT replay_stream_cpp MATCHES "decodeReplayHeaderV1" OR
@@ -50,9 +43,9 @@ foreach(_rec IN ITEMS generals_recorder zh_recorder)
 endforeach()
 
 string(FIND "${tests_cmake}" "if(CMAKE_SIZEOF_VOID_P EQUAL 8)" _x64_guard)
-string(FIND "${tests_cmake}" "evolution_full_session_x64_step04e4" _e4_target)
+string(FIND "${tests_cmake}" "evolution_full_session" _e4_target)
 if(_x64_guard EQUAL -1 OR _e4_target EQUAL -1 OR NOT _x64_guard LESS _e4_target)
-    message(FATAL_ERROR "Step 04E4 full-session gate must remain x64-only")
+    message(FATAL_ERROR "Evolution full-session gate must remain x64-only")
 endif()
 
 foreach(_required IN ITEMS
@@ -68,8 +61,8 @@ foreach(_required IN ITEMS
     "backward EVR1 frame ordering")
     string(FIND "${full_session_test}" "${_required}" _found)
     if(_found EQUAL -1)
-        message(FATAL_ERROR "Step 04E4 golden session harness lost required coverage: ${_required}")
+        message(FATAL_ERROR "Evolution full-session harness lost required coverage: ${_required}")
     endif()
 endforeach()
 
-message(STATUS "Step 04E4 Evolution full-session/compatibility source policy passed")
+message(STATUS "Evolution full-session policy passed")

@@ -1,31 +1,24 @@
-# Step 04E3 source-policy regression. The deterministic two-endpoint harness
+# Evolution session source policy. The deterministic two-endpoint harness
 # must stay attached to the production EVN1 codec/framing seam while runtime
 # reliability, relay, duplicate/order, disconnect and ACK behavior remains in
 # the existing legacy networking machinery during this staged migration.
 
-if(NOT DEFINED RTS_SOURCE_DIR)
-    message(FATAL_ERROR "RTS_SOURCE_DIR is required")
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/PolicyTestHelpers.cmake")
 
-function(rts_read relative out_var)
-    file(READ "${RTS_SOURCE_DIR}/${relative}" _content)
-    set(${out_var} "${_content}" PARENT_SCOPE)
-endfunction()
-
-rts_read("Core/GameEngine/Include/GameNetwork/EvolutionProtocol.h" protocol_h)
-rts_read("Core/GameEngine/Source/GameNetwork/EvolutionProtocol.cpp" protocol_cpp)
-rts_read("Core/GameEngine/Source/GameNetwork/Transport.cpp" transport_cpp)
-rts_read("Core/GameEngine/Source/GameNetwork/Connection.cpp" connection_cpp)
-rts_read("Core/GameEngine/Source/GameNetwork/ConnectionManager.cpp" manager_cpp)
-rts_read("Core/GameEngine/Source/GameNetwork/NetCommandList.cpp" command_list_cpp)
-rts_read("Core/Tests/EvolutionSessionStep04E3Test.cpp" session_test)
-rts_read("Core/Tests/CMakeLists.txt" tests_cmake)
+rts_policy_read("Core/GameEngine/Include/GameNetwork/EvolutionProtocol.h" protocol_h)
+rts_policy_read("Core/GameEngine/Source/GameNetwork/EvolutionProtocol.cpp" protocol_cpp)
+rts_policy_read("Core/GameEngine/Source/GameNetwork/Transport.cpp" transport_cpp)
+rts_policy_read("Core/GameEngine/Source/GameNetwork/Connection.cpp" connection_cpp)
+rts_policy_read("Core/GameEngine/Source/GameNetwork/ConnectionManager.cpp" manager_cpp)
+rts_policy_read("Core/GameEngine/Source/GameNetwork/NetCommandList.cpp" command_list_cpp)
+rts_policy_read("Core/Tests/EvolutionSessionTest.cpp" session_test)
+rts_policy_read("Core/Tests/CMakeLists.txt" tests_cmake)
 
 if(NOT protocol_h MATCHES "encodeRoutedCommandPacketV1" OR
    NOT protocol_h MATCHES "decodeRoutedCommandPacketV1" OR
    NOT protocol_cpp MATCHES "encodeRoutedCommandBatchV1" OR
    NOT protocol_cpp MATCHES "decodeRoutedCommandBatchV1")
-    message(FATAL_ERROR "Step 04E3 lost the consolidated production routed-packet composition seam")
+    message(FATAL_ERROR "Evolution session policy lost the consolidated production routed-packet composition seam")
 endif()
 
 if(NOT connection_cpp MATCHES "#if defined\\(_WIN64\\)" OR
@@ -54,7 +47,7 @@ if(NOT manager_cpp MATCHES "decodeRoutedCommandPacketV1" OR
 endif()
 
 # EVN1 must still be recognized before legacy decrypt; the legacy transport is
-# still authoritative for ACK/control/session/disconnect traffic in Step 04E3.
+# still authoritative for ACK/control/session/disconnect traffic.
 string(FIND "${transport_cpp}" "decodeNetworkPacketV1" _evn_decode)
 string(FIND "${transport_cpp}" "decryptBuf(buf, len)" _legacy_decrypt)
 if(_evn_decode EQUAL -1 OR _legacy_decrypt EQUAL -1 OR NOT _evn_decode LESS _legacy_decrypt)
@@ -69,12 +62,12 @@ if(NOT command_list_cpp MATCHES "isEqualCommandMsg" OR
    NOT command_list_cpp MATCHES "getID\\(\\)" OR
    NOT command_list_cpp MATCHES "isCommandIdNewer" OR
    NOT command_list_cpp MATCHES "diff < 0x8000")
-    message(FATAL_ERROR "Production command duplicate/order semantics needed by Step 04E3 are missing")
+    message(FATAL_ERROR "Production command duplicate/order semantics required by the Evolution session policy are missing")
 endif()
 
 if(NOT tests_cmake MATCHES "if\\(CMAKE_SIZEOF_VOID_P EQUAL 8\\)" OR
-   NOT tests_cmake MATCHES "evolution_session_x64_step04e3")
-    message(FATAL_ERROR "Step 04E3 session gate must remain x64-only")
+   NOT tests_cmake MATCHES "evolution_session")
+    message(FATAL_ERROR "Evolution session gate must remain x64-only")
 endif()
 
 foreach(_required IN ITEMS
@@ -87,8 +80,8 @@ foreach(_required IN ITEMS
     "testIntentionalEvN1EmissionFailure")
     string(FIND "${session_test}" "${_required}" _found)
     if(_found EQUAL -1)
-        message(FATAL_ERROR "Step 04E3 deterministic session harness lost required coverage: ${_required}")
+        message(FATAL_ERROR "Evolution session harness lost required coverage: ${_required}")
     endif()
 endforeach()
 
-message(STATUS "Step 04E3 Evolution session integration source policy passed")
+message(STATUS "Evolution session policy passed")

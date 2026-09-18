@@ -93,7 +93,7 @@ The baseline already contains a partial renderer abstraction (`IRenderBackend` +
 - Added `z_determinismtest` directly to the existing Zero Hour extras CMake path instead of creating another CMake subdirectory/module.
 - The target is opt-in through the existing `RTS_BUILD_ZEROHOUR_EXTRAS` switch; normal game/build behavior is unchanged when extras are off.
 - The lightweight Linux CRC/RNG characterization remains green. The engine-linked Xfer test requires Windows because the production Xfer/GameEngine header graph is tied to legacy Win32/ATL infrastructure.
-- Windows MinGW-w64 i686 and MSVC reference execution commands are documented in `STEP_01_DETERMINISM_GUARD.md`; reference execution remains pending user validation.
+- Windows MinGW-w64 i686 and MSVC reference execution commands are documented in `History/STEP_01_DETERMINISM_GUARD.md`; reference execution remains pending user validation.
 - No Xfer serialization implementation, snapshot behavior, replay format, gameplay, renderer, asset manager, or W3D/W3X runtime behavior changed.
 
 ## 2026-09-10 — Step 01D: representative snapshot field-order characterization
@@ -428,3 +428,13 @@ Implemented the final Step 04 retirement boundary: removed i686 MinGW presets/to
 Project-owner decision: representative full-client multiplayer/replay validation remains a later x64 stabilization task and no longer blocks i686 retirement. Historical x86 verification records remain documentation provenance only.
 
 Local GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer focused graphs all pass **25/25**. The unchanged Step04D/04E1/04E2/04E3/04E4 gates, `z_determinismcheck`, and the new Step04F policy target all pass. The final patch applies to a fresh extraction of the exact Step04E4 ZIP, reproduces all 4,579 source files byte-for-byte, and that reconstructed tree also passes 25/25 plus every explicit gate. Windows Step04F validation is pending and must not be claimed until its console output is supplied.
+
+## 2026-09-18 — Step 04F Windows sign-off and Step 05A developer-baseline cleanup
+
+The user supplied the final real-Windows Step 04F validation transcript from MinGW-w64 GCC/G++ 16.2.0. The clean `mingw64-tests` build passed **25/25** CTest cases and the explicit determinism, headless timeline, Evolution protocol/runtime/session/full-session, and x64-platform gates. Step 04 is therefore closed and the supported Evolution modernization path is x64-only.
+
+Step 05 begins with a repository-maintenance slice before parser growth. The active test/build surface was normalized so names describe permanent responsibilities instead of migration milestones: test source files, golden fixtures, CTest names, policy scripts, custom check targets, and x64 build options were renamed accordingly. Repeated CMake source-policy helper code was consolidated into `cmake/tests/PolicyTestHelpers.cmake`. The superseded `scripts/dockerbuild.sh` wrapper was removed in favor of the maintained `scripts/docker-build.sh` implementation.
+
+Current developer documentation was simplified: top-level `README.md`, `PROJECT_STATE.md`, `TESTING.md`, and `MODERNIZATION.md` now describe the supported present-day workflow, while detailed chronology remains in this worklog and completed milestone specifications are grouped under `Modernization/History/`. Step 05 is split into 05A cleanup, 05B XML parser integration, 05C neutral rigid-mesh import, and 05D W3D/W3X routing/validation.
+
+No gameplay, renderer, EVN1/EVR1 format, deterministic algorithm, W3D behavior, or W3X parser semantics changed in 05A. Local GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer focused graphs all pass **25/25** after the cleanup. Windows Step 05A validation remains pending.

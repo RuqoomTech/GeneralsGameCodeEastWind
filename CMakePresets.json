@@ -164,7 +164,7 @@
     },
     {
       "name": "mingw64-tests",
-      "displayName": "MinGW-w64 x86_64 / Ninja — x64 Headless Determinism Tests",
+      "displayName": "Evolution x64 focused tests",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake",
@@ -176,8 +176,8 @@
         "RTS_BUILD_ZEROHOUR": "OFF",
         "RTS_BUILD_GENERALS": "OFF",
         "RTS_BUILD_CORE_TOOLS": "OFF",
-        "RTS_BUILD_X64_READINESS": "ON",
-        "RTS_BUILD_X64_HEADLESS_CORE": "ON"
+        "RTS_BUILD_EVOLUTION_X64": "ON",
+        "RTS_BUILD_HEADLESS_CORE": "ON"
       }
     }
   ],
@@ -264,8 +264,8 @@
     {
       "name": "mingw64-tests",
       "configurePreset": "mingw64-tests",
-      "displayName": "Build x64 readiness tests",
-      "description": "Build focused MinGW-w64 x86_64 modernization readiness tests"
+      "displayName": "Build Evolution x64 focused tests",
+      "description": "Build the focused MinGW-w64 x86_64 Evolution test graph"
     }
   ],
   "workflowPresets": [
@@ -447,7 +447,7 @@
     {
       "name": "mingw64-tests",
       "configurePreset": "mingw64-tests",
-      "displayName": "Run x64 readiness tests",
+      "displayName": "Run Evolution x64 focused tests",
       "output": {
         "outputOnFailure": true
       }

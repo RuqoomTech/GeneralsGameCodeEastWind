@@ -6,14 +6,14 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 |---|---|---|---|
 | 00 | Repository modernization baseline/docs | DONE | Docs/state stored in authoritative tree |
 | F0 | Existing `IRenderBackend` / `DX8Backend` seam | PARTIAL | Already present upstream; incomplete abstraction |
-| 01 | Determinism / CRC / Xfer characterization | DONE | Windows MinGW-w64 i686 / GCC 16.2 + Ninja `z_determinismcheck` passed on 2026-09-10 |
+| 01 | Determinism / CRC / Xfer characterization | DONE | Windows MinGW-w64 i686 / GCC 16.2 + Ninja `check_determinism` passed on 2026-09-10 |
 | 02 | MinGW-w64 GCC + Ninja canonical build | DONE* | User reports Step 02B Windows build path working; formal console transcript not archived in this tree |
 | 02A | Canonical presets / focused tests / dependency scoping | DONE* | Accepted with Step 02; formal Step 02 Windows transcript not archived |
 | 02B | Runtime configure/install hardening | DONE* | User reports real Windows path working; output transcript not archived |
 | 03 | HD-mod performance telemetry | DONE | Schema v2 update/render phases + visibility/resource counters + summary tool |
 | 03A | Render-frame telemetry / CSV schema v1 | DONE | Folded into completed Step 03 schema v2 |
 | 03B | Update-phase / visibility telemetry + capture summary | DONE | Local GCC/Clang focused regression; observational only |
-| 04 | x64 engine migration | VERIFY | 04E4 Windows-signed-off; 04F x64-only retirement implemented locally, final Windows policy run pending |
+| 04 | x64 engine migration | DONE | Final Step 04F Windows MinGW x64 run passed 25/25 plus all explicit deterministic/Evolution/x64-platform checks |
 | 04A | x64 readiness build lane | DONE | `mingw64-tests` verified on real Windows x64 as part of the Step 04D/04D3 17-test gate |
 | 04B | Wire/replay ABI freeze + pointer/handle audit | DONE | Explicit fixed-width wire contract; first native pointer/handle truncations removed |
 | 04C | Native-width runtime substrate + dependency bootstrap | DONE | Native allocator/pointer tests verified in the real Windows x64 and frozen i686 focused graphs |
@@ -24,12 +24,16 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 04E2 | Staged EVN1 transport + EVR1 Recorder integration | DONE | Win64-only gameplay datagrams + dual-format replay runtime bridge; real Windows MinGW x64 21/21 + explicit gates passed |
 | 04E3 | Evolution x64-to-x64 multiplayer session validation | DONE | Real Windows MinGW-w64 GCC 16.2 passed 23/23 plus all Step04D/04E1/04E2/04E3 explicit gates |
 | 04E4 | Replay/network golden session gates | DONE | Real Windows GCC 16.2 passed 25/25 + explicit full-session gate; representative full-client run moved to x64 stabilization |
-| 04F | Retire x86 modernization/oracle lane | VERIFY | i686 MinGW presets/toolchain/bootstrap/comparator removed; x64-only policy gate passes locally; Windows run pending |
+| 04F | Retire x86 modernization/oracle lane | DONE | i686 MinGW modernization surface removed; real Windows GCC 16.2 focused graph and x64 platform policy passed |
 | W3X-A0 | W3D/W3X format recognition | DONE | Safe extension/content classification |
 | W3X-A1 | W3X document-envelope probe | DONE | Root/namespace/SAGE envelope recognition |
 | W3X-A2 | W3X top-level child-element discovery | DONE | Direct-child classification without content decoding |
 | W3X-A2R | Consolidate W3X A1/A2 parser seam | DONE | One public API + one shared implementation; no duplicate parser headers |
-| 05 | W3X-A parser/import foundation | NEXT | Begin immediately after Step 04F Windows x64 retirement check |
+| 05 | W3X-A parser/import foundation | ACTIVE | 05A developer baseline cleanup, then real XML parser/import model/routing |
+| 05A | Developer baseline cleanup | VERIFY | Implemented locally; permanent names, policy consolidation, history organization and current-doc cleanup; Windows seal pending |
+| 05B | W3X XML parser component | NEXT | Real XML parser behind shared project-owned interface |
+| 05C | W3X neutral rigid-mesh import | PLANNED | Representative rigid mesh reaches renderer-neutral import model |
+| 05D | W3D/W3X routing and validation | PLANNED | Existing W3D path unchanged; W3X routed to validated importer |
 | 06 | HD texture pipeline | PLANNED | Efficient/correct 2K/4K assets |
 | 07 | High-poly / 32-bit geometry | PLANNED | >65k-class geometry path where needed |
 | 08 | Instancing/batching expansion | PLANNED | Reduce repeated-object CPU/draw cost |
@@ -50,7 +54,7 @@ Status values: `DONE`, `ACTIVE`, `VERIFY`, `NEXT`, `PLANNED`, `PARTIAL`, `BLOCKE
 | 23 | W3X completeness/tooling | PLANNED | Documented support matrix/toolchain |
 | 24 | Advanced GPU optimization | PLANNED | Only measured bottlenecks |
 
-`DONE*` records implementation where a relevant Windows gate remains outstanding. Steps 04D and 04E1-04E4 are Windows-signed-off. Step 04F is the only remaining Step 04 verification item; representative full-client session/replay execution is tracked as later x64 stabilization rather than as an i686-retention gate.
+`DONE*` records implementation where a relevant Windows gate remains outstanding. Step 04 is fully Windows-signed-off. Representative full-client session/replay execution is tracked as later x64 stabilization, not as an i686-retention gate.
 
 ## Cross-cutting backlog
 

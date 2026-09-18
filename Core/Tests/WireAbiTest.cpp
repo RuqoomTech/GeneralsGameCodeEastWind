@@ -1,5 +1,5 @@
 /*
-** Step 04B wire/replay ABI guard.
+** Wire/replay ABI guard.
 **
 ** Runtime C++ object layout is allowed to change with the native architecture.
 ** Network/replay capacities and scalar fields are not.
@@ -51,10 +51,10 @@ int main()
     Expect_Size("TransportMessageHeader byte layout", 6U, sizeof(TransportMessageHeader));
 
     if (g_failures != 0) {
-        std::fprintf(stderr, "%d Step 04B wire/replay ABI guard(s) failed.\n", g_failures);
+        std::fprintf(stderr, "%d wire/replay ABI guard(s) failed.\n", g_failures);
         return 1;
     }
 
-    std::printf("Step 04B wire/replay ABI guard passed: fixed protocol widths and frozen command-packet byte capacity are architecture-independent.\n");
+    std::printf("Wire/replay ABI guard passed: fixed protocol widths and frozen command-packet byte capacity are architecture-independent.\n");
     return 0;
 }

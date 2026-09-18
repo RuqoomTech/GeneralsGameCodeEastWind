@@ -57,7 +57,7 @@ std::map<std::string, Bytes> LoadFixtures(const char *path)
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty() || line[0] == '#') continue;
         const std::size_t split = line.find('=');
-        if (split == std::string::npos) Fail("Malformed Step04E fixture line");
+        if (split == std::string::npos) Fail("Malformed protocol fixture line");
         fixtures.emplace(line.substr(0, split), ParseHex(line.substr(split + 1U)));
     }
     return fixtures;
@@ -144,7 +144,7 @@ void CheckCommandRoundTrip(const std::map<std::string, Bytes> &fixtures)
     const evolution::Command command = BuildGoldenCommand();
     Bytes encoded;
     Expect(evolution::encodeCommandV1(command, encoded), "Command encode failed");
-    Expect(encoded == Fixture(fixtures, "command"), "Command bytes changed from the Step04E fixture");
+    Expect(encoded == Fixture(fixtures, "command"), "Command bytes changed from the protocol v1 golden fixture");
     Expect(evolution::encodedCommandSizeV1(command) == encoded.size(), "Command size calculation disagrees with encode");
 
     evolution::Command decoded;
@@ -221,7 +221,7 @@ void CheckNetworkFraming(const std::map<std::string, Bytes> &fixtures)
 
     Bytes batch;
     Expect(evolution::encodeCommandBatchV1(records, batch), "Network command-batch encode failed");
-    Expect(batch == Fixture(fixtures, "network_batch"), "Network command-batch bytes changed from the Step04E fixture");
+    Expect(batch == Fixture(fixtures, "network_batch"), "Network command-batch bytes changed from the protocol v1 golden fixture");
 
     std::vector<evolution::NetworkCommandRecord> decodedRecords;
     Expect(evolution::decodeCommandBatchV1(batch.data(), batch.size(), decodedRecords).ok(), "Network command-batch decode failed");
@@ -235,7 +235,7 @@ void CheckNetworkFraming(const std::map<std::string, Bytes> &fixtures)
 
     Bytes encoded;
     Expect(evolution::encodeNetworkPacketV1(header, batch.data(), batch.size(), encoded), "Network packet encode failed");
-    Expect(encoded == Fixture(fixtures, "network"), "Network bytes changed from the Step04E fixture");
+    Expect(encoded == Fixture(fixtures, "network"), "Network bytes changed from the protocol v1 golden fixture");
 
     evolution::NetworkPacketHeader decodedHeader;
     const std::uint8_t *payload = nullptr;
@@ -245,8 +245,8 @@ void CheckNetworkFraming(const std::map<std::string, Bytes> &fixtures)
         "Network header changed");
     Expect(payloadSize == batch.size() && Bytes(payload, payload + payloadSize) == batch, "Network payload changed");
 
-    // 04E2 adds routed gameplay batches without changing the already-frozen
-    // direct CommandBatch bytes from 04E1. The formerly-reserved record byte
+    // Routed gameplay batches extend the protocol without changing the frozen
+    // direct CommandBatch bytes. The formerly-reserved record byte
     // is the relay mask only for RoutedCommandBatch.
     record.relayMask = 0xA4U;
     records = {record};
@@ -254,7 +254,7 @@ void CheckNetworkFraming(const std::map<std::string, Bytes> &fixtures)
     Expect(!evolution::encodeCommandBatchV1(records, routedBatch),
         "Direct command-batch encoder accepted routed metadata");
     Expect(evolution::encodeRoutedCommandBatchV1(records, routedBatch), "Routed command-batch encode failed");
-    Expect(routedBatch == Fixture(fixtures, "network_routed_batch"), "Routed command-batch bytes changed from the Step04E2 fixture");
+    Expect(routedBatch == Fixture(fixtures, "network_routed_batch"), "Routed command-batch bytes changed from the routed protocol golden fixture");
 
     decodedRecords.clear();
     Expect(evolution::decodeRoutedCommandBatchV1(routedBatch.data(), routedBatch.size(), decodedRecords).ok(),
@@ -267,7 +267,7 @@ void CheckNetworkFraming(const std::map<std::string, Bytes> &fixtures)
     Bytes routedPacket;
     Expect(evolution::encodeNetworkPacketV1(header, routedBatch.data(), routedBatch.size(), routedPacket),
         "Routed network packet encode failed");
-    Expect(routedPacket == Fixture(fixtures, "network_routed"), "Routed network packet bytes changed from the Step04E2 fixture");
+    Expect(routedPacket == Fixture(fixtures, "network_routed"), "Routed network packet bytes changed from the routed protocol golden fixture");
     Expect(evolution::decodeNetworkPacketV1(routedPacket.data(), routedPacket.size(), decodedHeader, payload, payloadSize).ok(),
         "Routed network packet decode failed");
     Expect(decodedHeader.packetType == evolution::NetworkPacketType::RoutedCommandBatch &&
@@ -314,7 +314,7 @@ void CheckReplayFraming(const std::map<std::string, Bytes> &fixtures)
     header.flags = 0x5A5AA5A5U;
     Bytes encodedHeader;
     evolution::encodeReplayHeaderV1(header, encodedHeader);
-    Expect(encodedHeader == Fixture(fixtures, "replay_header"), "Replay header changed from the Step04E fixture");
+    Expect(encodedHeader == Fixture(fixtures, "replay_header"), "Replay header changed from the protocol v1 golden fixture");
 
     evolution::ReplayHeader decodedHeader;
     Expect(evolution::decodeReplayHeaderV1(encodedHeader.data(), encodedHeader.size(), decodedHeader).ok(), "Replay header decode failed");
@@ -326,7 +326,7 @@ void CheckReplayFraming(const std::map<std::string, Bytes> &fixtures)
     record.command = BuildGoldenCommand();
     Bytes encodedRecord;
     Expect(evolution::encodeReplayCommandRecordV1(record, encodedRecord), "Replay command encode failed");
-    Expect(encodedRecord == Fixture(fixtures, "replay_record"), "Replay command record changed from the Step04E fixture");
+    Expect(encodedRecord == Fixture(fixtures, "replay_record"), "Replay command record changed from the protocol v1 golden fixture");
 
     evolution::ReplayCommandRecord decodedRecord;
     const evolution::ReplayDecodeResult recordResult = evolution::decodeReplayCommandRecordV1(encodedRecord.data(), encodedRecord.size(), decodedRecord);
@@ -363,7 +363,7 @@ void CheckReplayFraming(const std::map<std::string, Bytes> &fixtures)
 
 int main(int argc, char **argv)
 {
-    if (argc != 2) Fail("Usage: evolution_protocol_step04e_test <fixture-file>");
+    if (argc != 2) Fail("Usage: evolution_protocol_test <fixture-file>");
     const auto fixtures = LoadFixtures(argv[1]);
 
     static_assert(sizeof(std::int32_t) == 4, "Evolution protocol requires int32_t");
@@ -378,6 +378,6 @@ int main(int argc, char **argv)
     CheckNetworkFraming(fixtures);
     CheckReplayFraming(fixtures);
 
-    std::cout << "Step 04E Evolution protocol v1 guard passed: command codec, network framing, replay framing, golden bytes, and malformed-input rejection.\n";
+    std::cout << "Evolution protocol v1 guard passed: command codec, network framing, replay framing, golden bytes, and malformed-input rejection.\n";
     return 0;
 }

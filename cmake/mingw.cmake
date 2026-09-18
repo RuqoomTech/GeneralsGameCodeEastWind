@@ -11,27 +11,27 @@ if(MINGW)
 
     if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
         message(FATAL_ERROR
-            "Step 04F retired the MinGW-w64 i686 modernization/oracle lane. "
+            "The 32-bit MinGW modernization lane is retired. "
             "Generals Evolution requires an x86_64 MinGW compiler and 64-bit native pointers.")
     endif()
 
     set(IS_MINGW64 TRUE)
     message(STATUS "MinGW-w64 64-bit (x86_64) Evolution lane detected")
-    if(NOT RTS_BUILD_X64_READINESS)
+    if(NOT RTS_BUILD_EVOLUTION_X64)
         message(FATAL_ERROR
             "An x64 MinGW compiler was selected without the staged x64 readiness option. "
             "Use preset 'mingw64-tests' while the full runtime is enabled subsystem-by-subsystem.")
     endif()
-    if(NOT RTS_BUILD_X64_HEADLESS_CORE)
+    if(NOT RTS_BUILD_HEADLESS_CORE)
         message(FATAL_ERROR
-            "An x64 MinGW compiler was selected without the Step 04D headless-core option. "
+            "An x64 MinGW compiler was selected without the headless-core option. "
             "Use preset 'mingw64-tests'.")
     endif()
     if(NOT RTS_BUILD_TESTS_ONLY)
         message(FATAL_ERROR
             "The current x64 MinGW lane supports the focused modernization test graph only. "
             "Use preset 'mingw64-tests'. Full x64 runtime bring-up remains subsystem-gated; "
-            "the legacy D3D8 platform boundary is not reopened by Step 04F.")
+            "the legacy D3D8 platform boundary remains outside this focused graph.")
     endif()
 
     # Preserve the legacy code assumptions without applying them to downloaded

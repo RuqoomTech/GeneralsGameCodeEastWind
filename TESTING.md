@@ -1,150 +1,16 @@
-# Test Replays
+# Testing
 
-The GeneralsReplays folder contains replays and the required maps that are tested in CI to ensure that the game is retail compatible.
+This file is the current command reference for the Evolution modernization work. Historical milestone documents may contain older target names or retired x86 commands; use this file for the supported workflow.
 
-You can also test with these replays locally:
-- Copy the replays into a subfolder in your `%USERPROFILE%/Documents/Command and Conquer Generals Zero Hour Data/Replays` folder.
-- Copy the maps into `%USERPROFILE%/Documents/Command and Conquer Generals Zero Hour Data/Maps`
-- Start the test with this: (copy into a .bat file next to your executable)
-```
-START /B /W generalszh.exe -jobs 4 -headless -replay subfolder/*.rep > replay_check.log
-echo %errorlevel%
-PAUSE
-```
-It will run the game in the background and check that each replay is compatible. You need to use a VC6 build with optimizations and RTS_BUILD_OPTION_DEBUG = OFF, otherwise the game won't be compatible.
-## Modernization characterization tests
+## Windows focused graph
 
-> **Step 04F x64-only policy:** the supported MinGW modernization lane is now `mingw64-tests` only. Historical sections below still record the former `mingw32-*`, `-IncludeLegacyX86`, and i686-vs-x64 comparator commands as provenance for earlier sign-offs; those commands are retired and are not current validation instructions.
-
-Step 02A/02B keep the W3X A0/A1/A2 tests and Step 01 determinism characterization integrated with CTest through `Core/Tests/CMakeLists.txt`. The focused graph avoids configuring the full runtime/dependency tree.
-
-Host-native GCC/Clang smoke path:
-
-```sh
-cmake -S . -B build/local-modernization-tests -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release -DRTS_BUILD_TESTS_ONLY=ON
-cmake --build build/local-modernization-tests
-ctest --test-dir build/local-modernization-tests --output-on-failure
-```
-
-This runs:
-
-- `w3x_asset_format_test` — W3X A0;
-- `w3x_document_probe_test` — W3X A1;
-- `w3x_child_discovery_test` — W3X A2;
-- `determinism_step01` — lightweight CRC/RNG/float characterization on non-Windows hosts;
-- `performance_telemetry_step03a` — completed Step 03 CSV schema-v2/phase/resource characterization (historical test name retained);
-- `buildsystem_runtime_install_policy` — nested CMake/Ninja runtime-install policy regression, including the MinGW `.debug` sidecar expectation on MinGW;
-- `architecture_width_step04a` — native pointer-width/fixed wire-width migration guard;
-- `wire_replay_abi_step04b` — explicit fixed-width command/replay/network ABI guard;
-- `pointer_wire_source_audit_step04b` — Step 04B source-level pointer/wire regression audit;
-- `runtime_native_width_step04c` — production WWLib allocator/pool native-width and realloc stress guard;
-- `windows_dependency_bootstrap_step04c` — x64-default Windows setup policy guard;
-- `runtime_pointer_source_audit_step04c` — Step 04C allocator/GUI/handle pointer-width source audit.
-
-The W3X targets remain C++98-compatible and still use the consolidated `rts/w3x_document.h` / `w3x_document.cpp` seam. No runtime W3X importer is exercised.
-
-## Step 01 determinism guard
-
-Step 01 remains the historical deterministic behavior contract. Its complete Win32/i686 production-unit gate was signed off on 2026-09-10 and is retained as provenance, but Step 04F removes that compiler/runtime lane. The supported x64 graph keeps the portable float-helper/CRC/game-logic-RNG characterization in `z_determinismtest`, while Steps 04A-04E4 now own the active x64 fixed-width, Xfer/replay/network, deterministic-timeline, protocol, session, and CRC guarantees.
-
-Current x64 command:
-
-```powershell
-cmake --preset mingw64-tests
-cmake --build --preset mingw64-tests --target z_determinismcheck
-```
-
-Expected x64 line:
-
-```text
-Determinism float-helper, CRC, and game-logic RNG characterization tests passed.
-```
-
-**Historical Step 01G sign-off:** the retired MinGW-w64 i686 / GCC 16.2 + Ninja gate passed with the full `float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints` message. Do not recreate an i686 lane to rerun it; the later x64 04D-04E4 golden gates supersede it as the active regression authority.
-
-## Step 02B build-system regression probes
-
-Step 02B additionally locks down two CMake/runtime-foundation behaviors:
-
-- GNU/MinGW generation must not evaluate `$<TARGET_PDB_FILE:...>`; runtime installation is routed through `rts_install_runtime_target()`.
-- a full MinGW runtime configure must require WIDL before runtime FetchContent population; native Windows also requires the `oaidl.idl`/`ocidl.idl` headers used by the EABrowser IDLs.
-
-Local validation performed for this step:
-
-- GCC 14.2 focused CMake/Ninja/CTest: 5/5 passed;
-- Clang 17 focused CMake/Ninja/CTest: 5/5 passed;
-- lightweight determinism matrix: GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3` passed;
-- GCC AddressSanitizer and UBSan determinism runs passed;
-- host-GNU runtime helper configure/build/install probe: passed;
-- synthetic GNU execution of the MinGW Release debug-sidecar branch: executable and `.debug` file both built and installed;
-- direct reproduction of the old unconditional GNU `TARGET_PDB_FILE` rule: fails at CMake generation as expected, proving the removed pattern was a real blocker.
-
-The helper probes are build-system tests only. They are **not** substitutes for the Win32 ABI/determinism gate or a real MinGW `z_generals` build.
-
-The old Step 02B `mingw32-release` runtime-install probe is historical evidence only; Step 04F removes that preset. Current changes to the runtime-install helper are covered by `buildsystem_runtime_install_policy` in the x64 focused graph. A full x64 game/runtime install probe will return when the Win64 runtime graph is enabled subsystem-by-subsystem; Step 04F does not reopen the legacy D3D8 runtime just to preserve an obsolete 32-bit probe.
-
-## Step 03 performance telemetry gate
-
-The focused graph retains the historical CTest name `performance_telemetry_step03a`, but the test now protects completed Step 03 CSV schema v2: update/render/logic state markers, engine phase fields, drawable visibility fields, derived geometry totals, and resource counters.
-
-Host-native regression:
-
-```sh
-cmake -S . -B build/step03-tests -G Ninja -DRTS_BUILD_TESTS_ONLY=ON -DRTS_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build/step03-tests
-ctest --test-dir build/step03-tests --output-on-failure
-```
-
-The historical `mingw32-profile` capture command is retired by Step 04F. The telemetry code and `performance_telemetry_step03a` schema guard remain in-tree, but a new real Windows gameplay capture should wait for the full Win64 runtime/profile target rather than reviving the i686 modernization preset.
-
-Schema v2 begins with:
-
-```text
-schema_version,capture_index,render_frame,logic_frame,sync_time_ms,rendered,logic_updated,update_cpu_us,client_cpu_us,logic_cpu_us,network_cpu_us,message_cpu_us,render_cpu_us,...
-```
-
-The capture intentionally adds profile overhead. Compare only equivalent capture configurations. GPU timestamp validation is deferred to the D3D12 renderer.
-
-
-### Step 03 completion / Step 04A local validation (2026-09-11)
-
-Performed against the exact Step 03A baseline used for this implementation:
-
-- GCC 14.2 focused CMake/Ninja/CTest at `-O0`, `-O2`, and `-O3`: 7/7 passed in each configuration;
-- Clang 17 focused CMake/Ninja/CTest at `-O0`, `-O2`, and `-O3`: 7/7 passed in each configuration;
-- GCC ASan focused suite: 7/7 passed;
-- GCC UBSan focused suite: 7/7 passed;
-- `z_determinismcheck` passed in the host GCC and Clang focused graphs;
-- `scripts/perf-summary.py` parsed a synthetic schema-v2 capture successfully in text and JSON modes;
-- compile-command inspection confirmed `RTS_PERF_TELEMETRY` is present only when the telemetry option is enabled;
-- host-native 64-bit `architecture_width_step04a` reported a 64-bit native pointer with 32-bit fixed wire IDs.
-
-No MinGW-w64 x86_64 compiler is installed in the validation container, so no Windows/Win64 Step 04A pass is claimed here. The `mingw64-tests` workflow below remains the authoritative Windows x64 readiness gate.
-
-## Step 04C Windows dependency bootstrap
-
-For a new Windows development machine, the x64 Evolution toolchain is the default:
+Prerequisites can be installed or verified with:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1
 ```
 
-That command installs/verifies MSYS2 MINGW64 GCC/G++, WIDL/tools, CMake, Ninja, Python and Git, then prints the canonical `mingw64-tests` commands. Step 04F removed the old `-IncludeLegacyX86` mode; the bootstrap is x64-only.
-
-To check an existing machine without installing/updating packages:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -VerifyOnly
-```
-
-The repository's `windows_dependency_bootstrap_step04c` CTest verifies the script policy/source contract. It does not substitute for actually executing the script on Windows.
-
-## Step 04A x64 readiness gate
-
-The first x64 migration gate is intentionally focused and does not build the full legacy runtime. It checks that project/toolchain configuration can target Windows x86_64 while fixed wire/game widths remain explicit.
-
-Canonical Windows commands:
+Configure, build and run the complete focused graph:
 
 ```powershell
 cmake --preset mingw64-tests
@@ -152,281 +18,106 @@ cmake --build --preset mingw64-tests
 ctest --preset mingw64-tests --output-on-failure
 ```
 
-Expected architecture-test line:
+The preset is x64-only and does not require the Visual Studio IDE.
 
-```text
-Step 04A architecture guard passed: native pointer width=64, fixed wire IDs remain 32-bit.
-```
+## Focused test inventory
 
-`mingw64-tests` uses the MSYS2 MINGW64 toolchain root (`C:/msys64/mingw64`) unless `RTS_MINGW_ROOT` selects another matching x86_64 MinGW-w64 installation. A full renderer/game x64 configure remains deliberately gated; Step 04D now adds a real deterministic/headless production RNG/CRC/FPU lane without opening the legacy D3D8 graph.
+The focused graph currently contains 25 tests. Names describe permanent responsibilities rather than the milestone in which each test was introduced.
 
-The former i686 oracle commands are retired by Step 04F. Their successful 17/17 and eight-checkpoint cross-architecture results remain historical certification evidence; all current modernization validation uses `mingw64-tests`.
+### W3X
 
-Do not delete the frozen x86 oracle until Step 04D/04E golden deterministic and Evolution network gates replace it. Retail x86 multiplayer interoperability is not required.
+- `w3x_asset_format_test`
+- `w3x_document_probe_test`
+- `w3x_child_discovery_test`
 
+### Determinism and telemetry
 
-## Step 04C local validation — 2026-09-11
+- `determinism_primitives`
+- `performance_telemetry`
+- `headless_determinism`
+- `determinism_policy`
 
-Against the authoritative Step 04B full ZIP, the 12-test focused graph passed:
+### Build / ABI / native-width policies
 
-- GCC 14.2 at `-O0`, `-O2`, and `-O3`;
-- Clang 17 at `-O0`, `-O2`, and `-O3`;
-- GCC AddressSanitizer;
-- GCC UndefinedBehaviorSanitizer.
+- `buildsystem_runtime_install_policy`
+- `architecture_abi`
+- `wire_abi`
+- `wire_pointer_policy`
+- `runtime_native_width`
+- `windows_bootstrap_policy`
+- `runtime_pointer_policy`
+- `coordinate_ops`
+- `runtime_compatibility_policy`
+- `x64_platform_policy`
 
-No Windows/Win64 result is claimed from those host-native runs. The authoritative Windows command remains `ctest --preset mingw64-tests --output-on-failure` after the dependency bootstrap.
+### Evolution network/replay
 
+- `evolution_protocol_v1`
+- `evolution_protocol_policy`
+- `evolution_runtime_bridge`
+- `evolution_runtime_policy`
+- `evolution_session`
+- `evolution_session_policy`
+- `evolution_full_session`
+- `evolution_full_session_policy`
 
-## Step 04D deterministic/headless timeline gate
+## Explicit checks
 
-The focused graph now contains 15 tests. The new `headless_determinism_step04d` target executes 12,000 deterministic frames with production GameLogic RNG, production CRC, and shared production floating-point reset policy. It verifies the checked-in candidate fixture at frames 0, 1, 10, 100, 1000, 5000, 10000 and 12000/end.
-
-Canonical x64 Windows gate:
-
-```powershell
-cmake --preset mingw64-tests
-cmake --build --preset mingw64-tests
-ctest --preset mingw64-tests --output-on-failure
-```
-
-To emit the x64 timeline explicitly:
-
-```powershell
-.\build\mingw64-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-x64.txt
-```
-
-Historical Step 04D certification used the now-retired i686 oracle and comparator:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86
-cmake --preset mingw32-tests
-cmake --build --preset mingw32-tests --target z_determinismcheck headless_determinism_step04d_test
-.\build\mingw32-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-i686.txt
-python .\scripts\compare-determinism-timelines.py build\step04d-i686.txt build\step04d-x64.txt
-```
-
-Success must report eight identical checkpoints through frame 12000. Do not promote the fixture to a signed-off cross-architecture oracle until the real Windows i686 and Windows x64 outputs match.
-
-Local Step 04D validation on 2026-09-12: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan, and GCC UBSan all passed 15/15 tests and emitted the identical checked-in timeline. No Windows/Win64 result is claimed from those runs.
-
-## Step 04D Windows bootstrap hotfix — 2026-09-12
-
-A real Windows bootstrap run reached tool verification after successfully updating/installing the MSYS2 x64 toolchain. The transcript reported x64 GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2, and located `C:\msys64\mingw64\bin\widl.exe`. Verification then stopped because the script queried WIDL with unsupported `--version`; this WIDL implementation documents `-V` as its version option.
-
-The bootstrap now verifies both x64 and optional i686 WIDL with `-V`. `windows_dependency_bootstrap_step04c` locks that contract and rejects the unsupported long option. No Windows build/test pass is claimed from the interrupted run. After applying this hotfix, rerun:
+These targets are useful when validating one subsystem or collecting a concise sign-off transcript:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -VerifyOnly
-cmake --preset mingw64-tests
-cmake --build --preset mingw64-tests
-ctest --preset mingw64-tests --output-on-failure
-cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck
-```
-
-`-IncludeLegacyX86` was used only by the historical i686 oracle comparison and is removed by Step 04F.
-
-
-## Step 04D2 Windows GCC 16 runtime-ABI hotfix — 2026-09-12
-
-A user-supplied Windows run configured `mingw64-tests` successfully with MSYS2 MinGW-w64 GCC/G++ 16.2.0, confirming the x64 toolchain/preset path is active. The first build then failed in `runtime_native_width_step04c_test` for two modern-C++/release-warning reasons:
-
-- legacy global `operator delete(void*)` and `operator delete[](void*)` declarations in WWLib did not match `<new>`'s non-throwing exception specification; equivalent GameMemory declarations/definitions were updated at the same time so the mismatch is not merely moved to a later target;
-- `ObjectPoolClass::~ObjectPoolClass()` maintained `block_count` only for `WWASSERT`, but release builds compile `WWASSERT` away, causing GCC 16 `-Werror=unused-but-set-variable`. The counter now exists only under `DEBUG_CRASHING`.
-
-The existing `runtime_pointer_source_audit_step04c` policy test now locks the `noexcept` global-delete contract and the debug-only pool counter. Focused local GCC/Clang builds of the exact allocator test target pass after the repair. This does **not** claim a Windows build pass; rerun `cmake --build --preset mingw64-tests` and CTest on Windows for sign-off.
-
-## Step 04D3 upstream-alignment validation
-
-The focused graph grows to 17 tests with:
-
-- `upstream_coordinate_ops_step04d3` — compiles/runs the coordinate unary operators required by the corrected neutron-radius implementation;
-- `upstream_alignment_source_policy_step04d3` — locks the imported Dozer/Worker Xfer-version behavior, production cancellation guards, neutron compatibility switches, EastWind-safe GameMemory adaptation, runtime Bink/Miles loader wiring, strict-aliasing-safe float helpers, and dynamic glyph-buffer behavior.
-
-Local validation on the Step 04D3 tree passed GCC 14.2 and Clang 17 at `-O0`, `-O2`, and `-O3`, plus GCC ASan and UBSan: **17/17** in every configuration. The Step 04D headless timeline is unchanged in all runs.
-
-The user's real Windows x64 pass on the immediately preceding Step 04D2 baseline remains recorded separately (15/15 plus the headless fixture). Do not treat it as a Step 04D3 Windows pass; rerun the canonical `mingw64-tests` commands after applying this sync.
-
-## Step 04D4 Windows dependency-bootstrap exit-code hotfix
-
-A later real Windows run used `scripts/setup-windows-dev.ps1 -IncludeLegacyX86`. Package installation completed for both the x64 Evolution toolchain and the frozen i686 oracle toolchain. During x64 verification, GCC/G++ and CMake printed valid version output, but CMake was reported as exit `-1`. The failure was in the PowerShell verifier: the native process was piped directly to `Select-Object -First 2`, allowing the consumer to close stdout before the process status was sampled.
-
-The bootstrap now captures the complete native output, snapshots `$LASTEXITCODE`, then displays the first two lines. `windows_dependency_bootstrap_step04c` locks this order and rejects the old direct-pipeline pattern. Rerun the already-installed toolchains without another package update:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -IncludeLegacyX86 -VerifyOnly
-```
-
-If verification succeeds, continue directly with the frozen i686 oracle build/timeline commands. The interrupted bootstrap is not an i686 determinism pass.
-
-## Step 04D5 frozen-i686 explicit GameMessage dependency hotfix
-
-A real Windows Step 04D3/04D4 x64 run passed **17/17** tests and matched the checked-in headless deterministic fixture. The following `mingw32-tests` build then failed while compiling `DeterminismPrimitivesTest.cpp` because the frozen Step 01 ABI/replay assertions use `GameMessage`, `GameMessageArgumentDataType`, and `GameMessageArgumentType` without directly including their defining header. Step 04B had correctly removed the old `NetworkDefs.h` -> `MessageStream.h` transitive dependency.
-
-The test now includes `Common/MessageStream.h` explicitly under `RTS_ENGINE_DETERMINISM_TEST`; the Step 04D source-policy test requires that direct dependency. This is a focused test-boundary repair and does not restore protocol/runtime coupling.
-
-Rerun on Windows:
-
-```powershell
-cmake --preset mingw32-tests
-cmake --build --preset mingw32-tests
-ctest --preset mingw32-tests --output-on-failure
-cmake --build --preset mingw32-tests --target z_determinismcheck
-```
-
-Then emit and compare the i686 and x64 Step 04D timelines.
-
-## Step 04D6 frozen-i686 oracle follow-up
-
-A real Windows i686 run after Step 04D5 passed 16/17 tests. `runtime_native_width_step04c` alone failed because the test probe itself contained a `uint64_t`, which can require 8-byte alignment on MinGW i686 even though the frozen WWLib pool contract is pointer/natural alignment. The production x64 fix is still correct; the probe now uses `uintptr_t`, preserving the intended native-width coverage without changing Win32 allocator behavior.
-
-The same run emitted both architecture timelines successfully. Windows PowerShell `>` produced UTF-16LE files, so the comparator now detects UTF-16 BOMs in addition to UTF-8/UTF-8-BOM. The comparator self-test exercises UTF-8 versus UTF-16 equivalence.
-
-Rerun on Windows:
-
-```powershell
-cmake --preset mingw32-tests
-cmake --build --preset mingw32-tests
-ctest --preset mingw32-tests --output-on-failure
-cmake --build --preset mingw32-tests --target z_determinismcheck
-
-.\build\mingw32-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-i686.txt
-.\build\mingw64-tests\Core\Tests\headless_determinism_step04d_test.exe --emit > build\step04d-x64.txt
-python .\scripts\compare-determinism-timelines.py build\step04d-i686.txt build\step04d-x64.txt
-```
-
-Do not concatenate the `cmake --build ... --target z_determinismcheck` command with another command on the same PowerShell line.
-
-
-## Step 04E1 Evolution protocol v1
-
-The focused graph grows from 17 to 19 tests with `evolution_protocol_v1_step04e` and `evolution_protocol_source_policy_step04e`. Both i686 and x64 Windows focused lanes also compile the production `EvolutionGameMessageAdapter` object.
-
-Canonical Windows x64 validation:
-
-```powershell
-cmake --preset mingw64-tests
-cmake --build --preset mingw64-tests
-ctest --preset mingw64-tests --output-on-failure
-cmake --build --preset mingw64-tests --target z_evolutionprotocolcheck z_headlessdeterminismcheck
-```
-
-The protocol test freezes exact v1 command, command-batch, network-packet, replay-header and replay-record bytes. It rejects unsupported versions/types, invalid argument widths/tags, non-canonical booleans, non-zero reserved bytes, truncation and length mismatches.
-
-Local 04E1 validation on 2026-09-12: GCC 14.2 O0/O2/O3, Clang 17 O0/O2/O3, GCC ASan and GCC UBSan all pass **19/19**. `z_headlessdeterminismcheck` matches the unchanged Step 04D fixture and `z_evolutionprotocolcheck` matches the Step 04E v1 golden-byte fixture in every configuration. Real Windows 04E1 validation remains pending.
-
-The frozen i686 lane may be rerun to prove the same byte fixture is architecture-independent, but it is no longer a future multiplayer peer.
-
-
-## Step 04E2 staged runtime integration
-
-The production 04E2 runtime hooks are Win64-only; the i686 oracle retains legacy networking/replay behavior while still exercising the portable wire-format tests. The focused graph grows from 19 to **21 tests** with `evolution_runtime_bridge_step04e2` and `evolution_runtime_integration_policy_step04e2`. The former exercises routed EVN1 -> decode -> EVR1 -> decode and checks byte-identical command payload plus frame/player/relay identity. The latter pins the production Transport/Connection/ConnectionManager/Recorder/PopupReplay bridge and the transitional legacy fallback policy.
-
-Canonical focused Windows gate:
-
-```powershell
-cmake --preset mingw64-tests
-cmake --build --preset mingw64-tests
-ctest --preset mingw64-tests --output-on-failure
-cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck z_evolutionprotocolcheck z_evolutionruntimecheck
-```
-
-Expected graph: **21/21**. `z_evolutionruntimecheck` must report `Step 04E2 runtime bridge passed: routed EVN1 metadata and EVR1 command payloads remain stable.`
-
-Local 04E2 validation on 2026-09-13: GCC O0/O2/O3, Clang O0/O2/O3, GCC ASan and GCC UBSan all pass **21/21** and all three explicit gates. The focused tests do not constitute a real two-peer Windows multiplayer session; that remains Step04E3.
-
-## Step 04E2A Windows adapter compile hotfix — 2026-09-13
-
-Observed Windows failure: `evolution_game_message_adapter_step04e` could not parse legacy headers because `CPP_11` / `FUNCTION_DELETE` were not defined in the standalone no-PCH object target. The production adapter now includes `Utility/CppMacros.h` first, and `EvolutionProtocolPolicyStep04ETest.cmake` locks that include ordering.
-
-Local host focused graph after the hotfix: **21/21 passed**, including the Step 04D determinism, Step 04E1 protocol, and Step 04E2 runtime-bridge tests. This does not claim a post-hotfix MinGW-w64 Windows pass; rerun `cmake --build --preset mingw64-tests`, `ctest --preset mingw64-tests --output-on-failure`, and the three explicit 04D/04E gates on Windows.
-
-## Step 04E2B — Windows MinGW C++ runtime-family guard
-
-A clean `mingw64-tests` rebuild compiled the Step04E2A adapter successfully, then `evolution_protocol_step04e_test.exe` crashed before protocol assertions while reading `Step04EEvolutionProtocolV1.txt`. GDB showed `std::getline` executing from `C:\msys64\ucrt64\bin\libstdc++-6.dll` even though the executable was compiled by `C:\msys64\mingw64\bin\g++.exe`. The protocol/runtime-bridge source was not at fault; Windows had loaded a different MSYS2 C++ runtime family through the ambient PATH.
-
-All focused MinGW test executables are therefore linked with `-static-libgcc -static-libstdc++` at the `Core/Tests` directory level. This matches the existing `core_config` deployment policy while preserving the portable tests' independence from legacy engine compile definitions/libraries. Validate on Windows from a clean `build/mingw64-tests` directory with `cmake --preset mingw64-tests`, `cmake --build --preset mingw64-tests`, `ctest --preset mingw64-tests --output-on-failure`, then the Step04D/04E1/04E2 explicit check targets.
-
-## Step 04E3 — deterministic Evolution x64 two-endpoint session gate
-
-04E3 adds two tests only when `CMAKE_SIZEOF_VOID_P == 8`. Step 04F subsequently retired the frozen i686 graph; these remain x64-only runtime/session gates. The x64 focused graph grows from **21 to 23 tests**:
-
-- `evolution_session_x64_step04e3` uses the production Evolution command codec and the same consolidated routed-EVN1 packet composition helpers used by `Connection`/`ConnectionManager`. Its deterministic link schedule covers one-packet loss/retry, legacy ACK identity/removal semantics, duplicate datagrams, delayed/out-of-order delivery, relay masks, frame stalls/recovery, deterministic command order, peer CRC agreement, `MSG_LOGIC_CRC = 1095` checkpoint transport, malformed packet rejection, and an unrepresentable command that forces EVN1 emission failure.
-- `evolution_session_integration_policy_step04e3` pins the Win64 staged-runtime seam: EVN1 gameplay-only activation, no legacy double-send after successful EVN1 emission, intentional legacy fallback on emission failure, existing ACK/process/relay machinery, EVN1-before-legacy-decrypt ordering, and production `NetCommandList` duplicate/order ownership.
-
-Canonical Windows x64 validation from a clean build directory:
-
-```powershell
-Remove-Item -Recurse -Force build\mingw64-tests -ErrorAction SilentlyContinue
-cmake --preset mingw64-tests
-cmake --build --preset mingw64-tests
-ctest --preset mingw64-tests --output-on-failure
-cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck z_evolutionprotocolcheck z_evolutionruntimecheck z_evolutionsessioncheck
-```
-
-Expected focused graph: **23/23**. The new explicit gate must print:
-
-```text
-Step 04E3 Evolution session validation passed: two-peer routed EVN1 flow, retry/ACK, duplicates, delayed ordering, frame sync, CRC checkpoints, malformed rejection, and fallback boundary are stable.
-```
-
-Also confirm the unchanged existing gates still print their Step04D, Step04E1 and Step04E2 success messages. Local 04E3 validation on 2026-09-17 passes **23/23** under GCC 14.2 Release, GCC 14.2 Debug, Clang 17 Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer. The user then supplied real Windows MinGW-w64 GCC 16.2 output showing **23/23** plus all four explicit gates passing, so the focused 04E3 Windows sign-off is complete. A successful in-process session still does **not** replace a representative two-full-client Evolution multiplayer run.
-
-
-## Step 04E4 — full-session EVN1/EVR1 golden and compatibility gate
-
-04E4 adds two x64-only focused tests, growing the x64 graph from **23 to 25 tests**. Step 04F later removes the frozen i686 graph entirely:
-
-- `evolution_full_session_x64_step04e4` generates a representative 136-command / 68-frame session using the production command codec, routed EVN1 packet helper, EVR1 record format, and production `CRC`. Exact network and replay transcript bytes are compared with `Core/Tests/Fixtures/Step04E4EvolutionFullSessionV1.txt`. Deterministic loss/retry, duplicate and delayed delivery must reconstruct the same canonical command order and final CRC as replay playback.
-- `evolution_full_session_integration_policy_step04e4` pins v1 framing constants, runtime replay sequence validation, open-time EVR1 preference with legacy `.rep` fallback, and fail-closed handling if a selected EVR1 stream later becomes corrupt.
-
-The EVR1 runtime stream now shares `advanceReplaySequenceV1` with the portable full-session validator. Multiple commands on one frame are valid; a later record whose frame moves backwards is rejected. This is a corruption/order hardening rule only and changes no EVR1 bytes.
-
-Canonical Windows x64 validation from a clean build directory:
-
-```powershell
-Remove-Item -Recurse -Force build\mingw64-tests -ErrorAction SilentlyContinue
-cmake --preset mingw64-tests
-cmake --build --preset mingw64-tests
-ctest --preset mingw64-tests --output-on-failure
-cmake --build --preset mingw64-tests --target z_headlessdeterminismcheck z_evolutionprotocolcheck z_evolutionruntimecheck z_evolutionsessioncheck z_evolutionfullsessioncheck
-```
-
-Expected focused graph: **25/25**. The new explicit gate must print:
-
-```text
-Step 04E4 full-session golden passed: EVN1 delivery and EVR1 replay preserve one deterministic command/CRC timeline; version, corruption, truncation, and compatibility boundaries are stable.
-```
-
-The Step04D, 04E1, 04E2 and 04E3 explicit gate messages must remain unchanged. This focused gate does not by itself constitute a two-full-client gameplay/replay run.
-
-## Step 04F — x64-only retirement seal
-
-Step 04F removes the active i686 modernization/oracle surface after the Step 04E4 Windows gate passed 25/25 with all explicit 04D-04E4 checks. Historical VC6/MSVC Win32 presets remain archival compatibility/reference paths; they are not Evolution targets.
-
-The supported MinGW modernization surface now has one architecture: x86_64. The retirement gate removes `mingw32-*` / `mingw-w64-i686*` presets, deletes `cmake/toolchains/mingw-w64-i686.cmake`, removes the optional i686 bootstrap mode and cross-architecture comparator, requires 64-bit native pointers, uses Win64 WIDL generation, and keeps every fixed-width wire/replay assertion intact.
-
-Canonical Windows seal from a clean build directory:
-
-```powershell
-Remove-Item -Recurse -Force build\mingw64-tests -ErrorAction SilentlyContinue
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-dev.ps1 -VerifyOnly
-cmake --preset mingw64-tests
-cmake --build --preset mingw64-tests
-ctest --preset mingw64-tests --output-on-failure
 cmake --build --preset mingw64-tests --target `
-    z_determinismcheck `
-    z_headlessdeterminismcheck `
-    z_evolutionprotocolcheck `
-    z_evolutionruntimecheck `
-    z_evolutionsessioncheck `
-    z_evolutionfullsessioncheck `
-    z_step04fcheck
+    check_determinism `
+    check_headless_determinism `
+    check_evolution_protocol `
+    check_evolution_runtime `
+    check_evolution_session `
+    check_evolution_full_session `
+    check_x64_platform
 ```
 
-Expected focused graph: **25/25**. `z_step04fcheck` must print:
+Expected success messages use subsystem names rather than historical step numbers.
 
-```text
--- Step 04F x64 retirement policy passed: i686 modernization/oracle surfaces are gone and fixed-width ABI guards remain intact
+## Golden fixtures
+
+The active golden fixtures are:
+
+- `Core/Tests/Fixtures/HeadlessDeterminismTimeline.txt`
+- `Core/Tests/Fixtures/EvolutionProtocolV1.txt`
+- `Core/Tests/Fixtures/EvolutionFullSessionV1.txt`
+
+Protocol/replay golden bytes remain frozen unless an explicit versioned format change is introduced. The headless timeline is deterministic and must not be regenerated merely to make a failing test pass.
+
+## Local host validation
+
+The focused graph is also useful on host GCC/Clang for fast regression checks because it avoids renderer/tool/runtime dependencies that are irrelevant to these gates. Example:
+
+```bash
+cmake -S . -B build/tests -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DRTS_BUILD_TESTS_ONLY=ON \
+  -DRTS_BUILD_TESTS=ON \
+  -DRTS_BUILD_ZEROHOUR=OFF \
+  -DRTS_BUILD_GENERALS=OFF \
+  -DRTS_BUILD_CORE_TOOLS=OFF \
+  -DRTS_BUILD_EVOLUTION_X64=ON \
+  -DRTS_BUILD_HEADLESS_CORE=ON
+cmake --build build/tests
+ctest --test-dir build/tests --output-on-failure
 ```
 
-Local Step04F validation passes **25/25** under GCC Release, GCC Debug, Clang Release, GCC AddressSanitizer, and GCC UndefinedBehaviorSanitizer. The Step04D, 04E1, 04E2, 04E3 and 04E4 explicit success messages and their checked-in fixtures remain unchanged, and `z_step04fcheck` passes. No Windows Step 04F sign-off is claimed until the console output from this exact x64-only candidate is supplied. Once it passes, Step 04 closes and Step 05 becomes the active milestone.
+For significant deterministic/network/replay changes, validate Release and Debug plus Clang and available sanitizers before packaging.
+
+## Windows sign-off rule
+
+Do not claim a Windows gate passed from host/container testing. Windows sign-off requires actual Windows console output using the authoritative candidate tree.
+
+The final Step 04F baseline is Windows-signed-off with MinGW-w64 GCC/G++ 16.2: 25/25 focused tests plus every explicit deterministic/Evolution/x64-platform gate passed.
+
+## Known warnings
+
+Legacy `GameMemory` warnings around custom allocation operators are known. They are not current blockers unless a warning becomes an error or directly affects the active subsystem.
+
+## Retired workflow
+
+The active modernization graph no longer supports an i686 MinGW oracle, `mingw32-*` modernization presets, the old cross-architecture timeline comparator, or `-IncludeLegacyX86`. Historical records are retained in `Modernization/WORKLOG.md` and `Modernization/History/`.

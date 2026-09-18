@@ -1,7 +1,7 @@
 /*
-** Step 04A architecture-width migration guard.
+** Architecture and fixed-width ABI guard.
 **
-** Step 04F retires the x86 modernization/oracle lane. Evolution native
+** Evolution native
 ** pointers are now required to be 64-bit while serialization/network widths
 ** remain explicitly fixed and architecture-independent.
 */
@@ -58,7 +58,7 @@ int main()
 		return 1;
 	}
 
-	std::printf("Step 04A architecture guard passed: native pointer width=%lu, fixed wire IDs remain 32-bit.\n",
+	std::printf("Architecture ABI guard passed: native pointer width=%lu, fixed wire IDs remain 32-bit.\n",
 		static_cast<unsigned long>(sizeof(void *) * 8U));
 	return 0;
 }

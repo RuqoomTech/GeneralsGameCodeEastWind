@@ -128,7 +128,7 @@ The XML parser must:
 
 Parser-library selection is an implementation decision for W3X Phase A and should consider portability, maintenance, size, and licensing.
 
-Implementation specification for the first parser milestone: [`STEP_05_W3X_IMPORT_FOUNDATION.md`](STEP_05_W3X_IMPORT_FOUNDATION.md).
+Implementation specification for the first parser milestone: [`W3X_IMPORT.md`](W3X_IMPORT.md).
 
 ## Support phases
 

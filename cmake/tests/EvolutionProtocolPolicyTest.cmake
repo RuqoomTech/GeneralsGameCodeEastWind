@@ -1,27 +1,20 @@
-# Step 04E source-policy regression. Keep the Evolution wire/replay contract
+# Evolution protocol source policy. Keep the Evolution wire/replay contract
 # explicit and fixed-width while allowing the legacy replay reader to remain as
 # an old-format compatibility path until the full x64 runtime is switched over.
 
-if(NOT DEFINED RTS_SOURCE_DIR)
-    message(FATAL_ERROR "RTS_SOURCE_DIR is required")
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/PolicyTestHelpers.cmake")
 
-function(rts_read relative out_var)
-    file(READ "${RTS_SOURCE_DIR}/${relative}" _content)
-    set(${out_var} "${_content}" PARENT_SCOPE)
-endfunction()
-
-rts_read("Core/GameEngine/Source/Common/EvolutionCommandCodec.cpp" codec_cpp)
-rts_read("Core/GameEngine/Source/Common/EvolutionGameMessageAdapter.cpp" adapter_cpp)
-rts_read("Core/GameEngine/Source/Common/EvolutionReplayFormat.cpp" replay_cpp)
-rts_read("Core/GameEngine/Source/GameNetwork/EvolutionProtocol.cpp" protocol_cpp)
-rts_read("Core/GameEngine/Source/GameNetwork/NetPacketStructs.cpp" netpacket_cpp)
-rts_read("Core/GameEngine/Include/GameNetwork/NetworkDefs.h" network_defs)
-rts_read("Core/Tests/Fixtures/Step04EEvolutionProtocolV1.txt" fixture)
-rts_read("Core/Tests/CMakeLists.txt" tests_cmake)
+rts_policy_read("Core/GameEngine/Source/Common/EvolutionCommandCodec.cpp" codec_cpp)
+rts_policy_read("Core/GameEngine/Source/Common/EvolutionGameMessageAdapter.cpp" adapter_cpp)
+rts_policy_read("Core/GameEngine/Source/Common/EvolutionReplayFormat.cpp" replay_cpp)
+rts_policy_read("Core/GameEngine/Source/GameNetwork/EvolutionProtocol.cpp" protocol_cpp)
+rts_policy_read("Core/GameEngine/Source/GameNetwork/NetPacketStructs.cpp" netpacket_cpp)
+rts_policy_read("Core/GameEngine/Include/GameNetwork/NetworkDefs.h" network_defs)
+rts_policy_read("Core/Tests/Fixtures/EvolutionProtocolV1.txt" fixture)
+rts_policy_read("Core/Tests/CMakeLists.txt" tests_cmake)
 
 
-# Portable Step 04E tests intentionally do not link core_config. On MinGW they still
+# Portable Evolution protocol tests intentionally do not link core_config. On MinGW they still
 # need a deterministic matching GCC runtime, otherwise Windows may resolve libstdc++
 # from another MSYS2 environment (for example ucrt64) through PATH and crash in STL IO.
 string(FIND "${tests_cmake}" "if(MINGW)" _tests_mingw_guard)
@@ -45,7 +38,7 @@ foreach(_content IN ITEMS codec_cpp replay_cpp protocol_cpp)
        "${${_content}}" MATCHES "writeObject" OR
        "${${_content}}" MATCHES "sizeof\\(GameMessage\\)" OR
        "${${_content}}" MATCHES "size_t[ \t]+(frame|messageType|playerIndex|sequence)")
-        message(FATAL_ERROR "Step 04E Evolution wire code regressed to native-layout serialization in ${_content}")
+        message(FATAL_ERROR "Evolution wire code regressed to native-layout serialization in ${_content}")
     endif()
 endforeach()
 
@@ -70,7 +63,7 @@ if(NOT netpacket_cpp MATCHES "NetGameCommandToEvolutionBytes" OR
     message(FATAL_ERROR "Live game-command packet data is no longer routed through the Evolution command codec")
 endif()
 
-# Step 04B invariant must stay in place: the frozen legacy packet container is
+# The wire ABI invariant must stay in place: the frozen legacy packet container is
 # explicit bytes, never runtime GameMessage layout.
 if(network_defs MATCHES "sizeof\\(GameMessage\\)")
     message(FATAL_ERROR "NetworkDefs regressed to sizeof(GameMessage) wire sizing")
@@ -78,7 +71,7 @@ endif()
 
 if(NOT fixture MATCHES "command=" OR NOT fixture MATCHES "network_batch=" OR NOT fixture MATCHES "network=" OR
    NOT fixture MATCHES "replay_header=" OR NOT fixture MATCHES "replay_record=")
-    message(FATAL_ERROR "Step 04E golden fixture is incomplete")
+    message(FATAL_ERROR "Evolution protocol golden fixture is incomplete")
 endif()
 
-message(STATUS "Step 04E Evolution protocol source policy passed")
+message(STATUS "Evolution protocol policy passed")

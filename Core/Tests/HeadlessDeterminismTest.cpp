@@ -129,7 +129,7 @@ std::vector<Checkpoint> RunTimeline()
 
 void EmitTimeline(FILE *out, const std::vector<Checkpoint> &timeline)
 {
-    fprintf(out, "step04d-headless-v1 seed=0x%08x end=%u\n",
+    fprintf(out, "headless-determinism-v1 seed=0x%08x end=%u\n",
         static_cast<unsigned int>(kSeed), static_cast<unsigned int>(kEndFrame));
     for (size_t i = 0; i < timeline.size(); ++i) {
         fprintf(out, "%u 0x%08x 0x%08x\n",
@@ -153,7 +153,7 @@ bool VerifyFixture(const char *path, const std::vector<Checkpoint> &actual)
 {
     std::ifstream in(path);
     if (!in) {
-        fprintf(stderr, "Cannot open Step 04D timeline fixture: %s\n", path);
+        fprintf(stderr, "Cannot open headless determinism timeline fixture: %s\n", path);
         return false;
     }
 
@@ -162,8 +162,8 @@ bool VerifyFixture(const char *path, const std::vector<Checkpoint> &actual)
     if (!header.empty() && header.back() == '\r') {
         header.pop_back();
     }
-    if (header != "step04d-headless-v1 seed=0x12345678 end=12000") {
-        fprintf(stderr, "Unexpected Step 04D timeline fixture header: %s\n", header.c_str());
+    if (header != "headless-determinism-v1 seed=0x12345678 end=12000") {
+        fprintf(stderr, "Unexpected headless determinism fixture header: %s\n", header.c_str());
         return false;
     }
 
@@ -176,14 +176,14 @@ bool VerifyFixture(const char *path, const std::vector<Checkpoint> &actual)
         if (!ParseUnsigned(frameToken, &cp.frame)
             || !ParseUnsigned(crcToken, &cp.logicalCRC)
             || !ParseUnsigned(rngToken, &cp.rngCRC)) {
-            fprintf(stderr, "Invalid Step 04D fixture row near frame token '%s'.\n", frameToken.c_str());
+            fprintf(stderr, "Invalid headless determinism fixture row near frame token '%s'.\n", frameToken.c_str());
             return false;
         }
         expected.push_back(cp);
     }
 
     if (expected.size() != actual.size()) {
-        fprintf(stderr, "Step 04D timeline count mismatch: expected %lu, got %lu.\n",
+        fprintf(stderr, "Headless determinism timeline count mismatch: expected %lu, got %lu.\n",
             static_cast<unsigned long>(expected.size()), static_cast<unsigned long>(actual.size()));
         return false;
     }
@@ -193,7 +193,7 @@ bool VerifyFixture(const char *path, const std::vector<Checkpoint> &actual)
             || expected[i].logicalCRC != actual[i].logicalCRC
             || expected[i].rngCRC != actual[i].rngCRC) {
             fprintf(stderr,
-                "Step 04D timeline mismatch at frame %u: expected crc=0x%08x rng=0x%08x, got crc=0x%08x rng=0x%08x.\n",
+                "Headless determinism timeline mismatch at frame %u: expected crc=0x%08x rng=0x%08x, got crc=0x%08x rng=0x%08x.\n",
                 static_cast<unsigned int>(expected[i].frame),
                 static_cast<unsigned int>(expected[i].logicalCRC),
                 static_cast<unsigned int>(expected[i].rngCRC),
@@ -211,7 +211,7 @@ int main(int argc, char **argv)
 {
     // Prove the production FP reset repairs a deliberately perturbed host rounding mode.
     if (fesetround(FE_DOWNWARD) != 0) {
-        fprintf(stderr, "Unable to perturb floating-point rounding mode for Step 04D guard.\n");
+        fprintf(stderr, "Unable to perturb floating-point rounding mode for determinism guard.\n");
         return 1;
     }
     setFPMode();
@@ -229,7 +229,7 @@ int main(int argc, char **argv)
     if (argc == 3 && strcmp(argv[1], "--verify") == 0) {
         if (!VerifyFixture(argv[2], timeline))
             return 1;
-        puts("Step 04D headless deterministic timeline matched the checked-in fixture.");
+        puts("Headless deterministic timeline matched the checked-in fixture.");
         return 0;
     }
 

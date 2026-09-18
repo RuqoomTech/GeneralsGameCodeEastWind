@@ -103,6 +103,6 @@ int main()
     Expect(replayCommandBytes == originalCommandBytes,
         "Command payload changed between routed EVN1 and EVR1");
 
-    std::cout << "Step 04E2 runtime bridge passed: routed EVN1 metadata and EVR1 command payloads remain stable.\n";
+    std::cout << "Evolution runtime bridge passed: routed EVN1 metadata and EVR1 command payloads remain stable.\n";
     return 0;
 }

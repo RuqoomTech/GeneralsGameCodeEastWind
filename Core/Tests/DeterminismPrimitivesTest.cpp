@@ -514,7 +514,7 @@ int main()
     }
 
 #if defined(RTS_ENGINE_DETERMINISM_TEST)
-    puts("Step 01 determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.");
+    puts("Determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.");
 #else
     puts("Determinism float-helper, CRC, and game-logic RNG characterization tests passed.");
 #endif

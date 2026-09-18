@@ -1,29 +1,22 @@
-# Step 04E2 source-policy regression. Gameplay commands may use the staged EVN1
+# Evolution runtime source policy. Gameplay commands may use the staged EVN1
 # raw UDP path while legacy ACK/control traffic remains on the historical
 # transport. Replay recording/playback must exercise EVR1 without removing the
 # practical legacy .rep fallback.
 
-if(NOT DEFINED RTS_SOURCE_DIR)
-    message(FATAL_ERROR "RTS_SOURCE_DIR is required")
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/PolicyTestHelpers.cmake")
 
-function(rts_read relative out_var)
-    file(READ "${RTS_SOURCE_DIR}/${relative}" _content)
-    set(${out_var} "${_content}" PARENT_SCOPE)
-endfunction()
-
-rts_read("Core/GameEngine/Include/GameNetwork/EvolutionProtocol.h" protocol_h)
-rts_read("Core/GameEngine/Include/GameNetwork/Transport.h" transport_h)
-rts_read("Core/GameEngine/Source/GameNetwork/Transport.cpp" transport_cpp)
-rts_read("Core/GameEngine/Source/GameNetwork/Connection.cpp" connection_cpp)
-rts_read("Core/GameEngine/Source/GameNetwork/ConnectionManager.cpp" manager_cpp)
-rts_read("Core/GameEngine/Source/Common/EvolutionReplayStream.cpp" replay_stream_cpp)
-rts_read("Generals/Code/GameEngine/Include/Common/Recorder.h" generals_recorder_h)
-rts_read("Generals/Code/GameEngine/Source/Common/Recorder.cpp" generals_recorder)
-rts_read("GeneralsMD/Code/GameEngine/Include/Common/Recorder.h" zh_recorder_h)
-rts_read("GeneralsMD/Code/GameEngine/Source/Common/Recorder.cpp" zh_recorder)
-rts_read("Generals/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/PopupReplay.cpp" generals_popup)
-rts_read("GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/PopupReplay.cpp" zh_popup)
+rts_policy_read("Core/GameEngine/Include/GameNetwork/EvolutionProtocol.h" protocol_h)
+rts_policy_read("Core/GameEngine/Include/GameNetwork/Transport.h" transport_h)
+rts_policy_read("Core/GameEngine/Source/GameNetwork/Transport.cpp" transport_cpp)
+rts_policy_read("Core/GameEngine/Source/GameNetwork/Connection.cpp" connection_cpp)
+rts_policy_read("Core/GameEngine/Source/GameNetwork/ConnectionManager.cpp" manager_cpp)
+rts_policy_read("Core/GameEngine/Source/Common/EvolutionReplayStream.cpp" replay_stream_cpp)
+rts_policy_read("Generals/Code/GameEngine/Include/Common/Recorder.h" generals_recorder_h)
+rts_policy_read("Generals/Code/GameEngine/Source/Common/Recorder.cpp" generals_recorder)
+rts_policy_read("GeneralsMD/Code/GameEngine/Include/Common/Recorder.h" zh_recorder_h)
+rts_policy_read("GeneralsMD/Code/GameEngine/Source/Common/Recorder.cpp" zh_recorder)
+rts_policy_read("Generals/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/PopupReplay.cpp" generals_popup)
+rts_policy_read("GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/PopupReplay.cpp" zh_popup)
 
 
 # The staged runtime bridge is an Evolution x64 feature. The retired i686 lane
@@ -32,14 +25,14 @@ rts_read("GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/Po
 foreach(_guarded IN ITEMS transport_h transport_cpp connection_cpp manager_cpp generals_recorder_h generals_recorder zh_recorder_h zh_recorder generals_popup zh_popup)
     string(FIND "${${_guarded}}" "#if defined(_WIN64)" _win64_guard)
     if(_win64_guard EQUAL -1)
-        message(FATAL_ERROR "${_guarded} lost the Win64-only Step 04E2 runtime guard")
+        message(FATAL_ERROR "${_guarded} lost the Win64-only Evolution runtime guard")
     endif()
 endforeach()
 
 if(NOT protocol_h MATCHES "RoutedCommandBatch" OR
    NOT protocol_h MATCHES "relayMask" OR
    NOT protocol_h MATCHES "encodeRoutedCommandBatchV1")
-    message(FATAL_ERROR "Step 04E2 routed EVN1 command framing is missing")
+    message(FATAL_ERROR "Routed EVN1 command framing is missing")
 endif()
 
 string(FIND "${transport_cpp}" "decodeNetworkPacketV1" _evn_decode)
@@ -98,4 +91,4 @@ foreach(_popup IN ITEMS generals_popup zh_popup)
     endif()
 endforeach()
 
-message(STATUS "Step 04E2 Evolution runtime integration source policy passed")
+message(STATUS "Evolution runtime policy passed")

@@ -29,7 +29,7 @@ The consolidated determinism guard now protects:
 
 The prior GCC strict-aliasing suppression is no longer required. No new determinism test module was added; coverage remains in `Core/Tests/DeterminismPrimitivesTest.cpp`.
 
-Exit/sign-off gate: **PASSED on Windows MinGW-w64 i686 / GCC 16.2 + Ninja on 2026-09-10.** The focused `z_determinismcheck` target compiled and ran successfully and emitted the expected Step 01 success line. The target compiles only the production determinism/Xfer units it characterizes and no longer links the monolithic game archive. Any future compiler/ABI disagreement must be resolved explicitly rather than hidden by relaxing the test.
+Exit/sign-off gate: **PASSED on Windows MinGW-w64 i686 / GCC 16.2 + Ninja on 2026-09-10.** The focused `check_determinism` target compiled and ran successfully and emitted the expected Step 01 success line. The target compiles only the production determinism/Xfer units it characterizes and no longer links the monolithic game archive. Any future compiler/ABI disagreement must be resolved explicitly rather than hidden by relaxing the test.
 
 ### Step 02 — Command-Line Build System Foundation — IMPLEMENTATION COMPLETE / USER ACCEPTED
 
@@ -74,15 +74,15 @@ Completed measurement foundation:
 
 Legacy D3D8 GPU timestamp work is intentionally deferred; native GPU timing belongs to the D3D12 command-queue implementation rather than a temporary renderer path. Memory/resident accounting moves with the x64 migration.
 
-### Step 04 — x64 Engine Migration — FINAL VERIFICATION
+### Step 04 — x64 Engine Migration — DONE
 
 The earlier standalone “x86 memory survival” milestone is folded into the migration: x86 remains the compatibility/reference executable, but new effort now removes the x86 ceiling directly.
 
-**Steps 04A–04E4 Windows verified; 04F implemented as the final x64-only retirement slice:**
+**Steps 04A–04F are complete and Windows verified. The supported Evolution modernization lane is x64-only:**
 
 - x64-only MinGW-w64 toolchain discovery after 04F retirement of the former i686 oracle lane;
 - `mingw64-tests` x64 readiness preset;
-- explicit `RTS_BUILD_X64_READINESS` guard;
+- explicit `RTS_BUILD_EVOLUTION_X64` guard;
 - 64-bit focused graph decoupled from legacy D3D8/input/audio link requirements;
 - architecture-width test proving pointer widening does not widen fixed wire IDs;
 - **04B:** explicit command-packet byte capacity independent of `GameMessage` runtime layout, fixed command enum width, first pointer/userdata truncation fixes, and focused wire/pointer regression guards;
@@ -102,13 +102,13 @@ Current/remaining staged slices:
 - **04E2 done / Windows signed off:** staged Win64 routed EVN1 gameplay datagrams plus EVR1 Recorder sidecars, retaining legacy ACK/control/session traffic and legacy replay fallback;
 - **04E3 done / Windows signed off:** deterministic in-process x64 two-endpoint session harness using production routed EVN1 helpers; real Windows MinGW-w64 GCC 16.2 passed 23/23 plus Step04D/04E1/04E2/04E3 explicit gates;
 - **04E4 done / Windows signed off:** exact representative EVN1/EVR1 full-session transcript, deterministic network fault reconstruction, CRC checkpoint equality, version/corruption/truncation rejection, monotonic replay-frame validation, and legacy replay fallback/fail-closed compatibility policy;
-- **04F implemented / Windows verification pending:** remove the active i686 MinGW presets/toolchain/bootstrap/oracle comparator, require x64 native pointers on the modernization lane, switch WIDL generation to Win64, and lock retirement with a source-policy gate. Once its Windows x64 run passes, Step 04 closes and Step 05 becomes active.
+- **04F done / Windows signed off:** the active i686 MinGW presets/toolchain/bootstrap/oracle comparator are removed, x64 native pointers are required on the modernization lane, WIDL targets Win64, and the x64 platform policy gate is green. Step 04 is closed.
 
-See `STEP_04_X64_MIGRATION.md`.
+See `History/STEP_04_X64_MIGRATION.md`.
 
 ## Phase 2 — Modern asset foundation
 
-### Step 05 — W3X Phase A: Parser / Import Foundation
+### Step 05 — W3X Phase A: Parser / Import Foundation — ACTIVE
 
 **Pre-steps already complete:**
 
@@ -119,12 +119,12 @@ See `STEP_04_X64_MIGRATION.md`.
 
 Runtime routing, includes/references, child-content decoding, neutral import structures, and actual W3X asset creation remain Step 05 work.
 
-- EA SAGE W3X format discovery and fixtures;
-- XML parser component;
-- format routing;
-- neutral import structures;
-- parser/validation tests;
-- W3D remains untouched.
+Current Step 05 slices:
+
+- **05A — developer baseline cleanup (implemented; Windows seal pending):** normalize permanent test/build names, consolidate policy-test boilerplate, remove stale wrappers, separate historical milestone documents, and simplify current documentation before adding parser functionality;
+- **05B — XML parser component:** integrate a real XML parser behind the existing shared W3X document seam;
+- **05C — neutral import model + rigid mesh:** decode the first representative mesh fixture into renderer-neutral data;
+- **05D — format routing/validation:** route W3D to the existing loader and W3X to the importer with useful diagnostics and no W3D behavior regression.
 
 This step does not require D3D12 rendering yet.
 
@@ -166,7 +166,7 @@ Step 10 no longer begins the x64 port; that work moved forward into Step 04 by p
 - removal of temporary x64 migration guards;
 - readiness gate before the renderer boundary becomes the primary runtime path.
 
-The compatibility/reference x86 build remains available until this gate is passed.
+Step 10 is an x64-only stabilization gate. Historical Win32 project material may remain for provenance, but no supported i686 Evolution runtime/oracle lane is restored.
 
 ## Phase 4 — Complete renderer separation
 

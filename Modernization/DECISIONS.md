@@ -54,7 +54,7 @@ The prior roadmap deferred the main x64 port until Step 10 and placed a standalo
 
 - Step 03 performance telemetry is completed first so migration work remains measurable.
 - Step 04 now owns the staged x64 engine migration.
-- x86 remains the deterministic compatibility/reference runtime throughout the migration.
+- x86 remained the deterministic compatibility/reference runtime during the migration; this temporary rule was completed and superseded by the 2026-09-17 i686 retirement decision below.
 - short-term x86 memory diagnostics may still be added when useful, but they are not a gate that delays x64 bring-up.
 - old Step 10 becomes an x64 stabilization/soak gate rather than the start of the port.
 - fixed replay/network/Xfer/on-disk widths must be separated from native pointer width; widening the process must not silently widen wire formats.
@@ -66,7 +66,7 @@ Future multiplayer compatibility is required between our own Evolution/game edit
 
 - Evolution may define a clean, explicit, versioned fixed-width wire protocol.
 - Native x64 pointers/handles/`size_t` must never leak into that protocol or CRC/replay state.
-- The frozen i686 build remains only as a temporary deterministic/replay behavior oracle until golden x64 gates replace it.
+- The frozen i686 build was retained only as a temporary deterministic/replay behavior oracle until golden x64 gates replaced it; that condition was met and the lane was retired by the 2026-09-17 decision below.
 - Retail packet-layout quirks must not block x64 runtime cleanup or the future D3D12 architecture.
 
 ## 2026-09-12 — EastWind owns architecture; upstream is a recurring correctness source

@@ -65,12 +65,12 @@ std::uint8_t hexNibble(char value)
     if (value >= '0' && value <= '9') return static_cast<std::uint8_t>(value - '0');
     if (value >= 'a' && value <= 'f') return static_cast<std::uint8_t>(value - 'a' + 10);
     if (value >= 'A' && value <= 'F') return static_cast<std::uint8_t>(value - 'A' + 10);
-    Fail("invalid Step04E4 fixture hex digit");
+    Fail("invalid full-session fixture hex digit");
 }
 
 Bytes parseHex(const std::string &hex)
 {
-    if ((hex.size() % 2U) != 0U) Fail("odd-length Step04E4 fixture hex");
+    if ((hex.size() % 2U) != 0U) Fail("odd-length full-session fixture hex");
     Bytes bytes;
     bytes.reserve(hex.size() / 2U);
     for (std::size_t i = 0; i < hex.size(); i += 2U)
@@ -81,7 +81,7 @@ Bytes parseHex(const std::string &hex)
 std::map<std::string, Bytes> loadFixtures(const char *path)
 {
     std::ifstream input(path);
-    if (!input) Fail(std::string("unable to open Step04E4 fixture: ") + path);
+    if (!input) Fail(std::string("unable to open full-session fixture: ") + path);
     std::map<std::string, Bytes> fixtures;
     std::string line;
     while (std::getline(input, line))
@@ -89,7 +89,7 @@ std::map<std::string, Bytes> loadFixtures(const char *path)
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty() || line[0] == '#') continue;
         const std::size_t split = line.find('=');
-        if (split == std::string::npos) Fail("malformed Step04E4 fixture line");
+        if (split == std::string::npos) Fail("malformed full-session fixture line");
         fixtures.emplace(line.substr(0, split), parseHex(line.substr(split + 1U)));
     }
     return fixtures;
@@ -98,7 +98,7 @@ std::map<std::string, Bytes> loadFixtures(const char *path)
 const Bytes &fixture(const std::map<std::string, Bytes> &fixtures, const char *name)
 {
     const auto it = fixtures.find(name);
-    if (it == fixtures.end()) Fail(std::string("missing Step04E4 fixture: ") + name);
+    if (it == fixtures.end()) Fail(std::string("missing full-session fixture: ") + name);
     return it->second;
 }
 
@@ -272,13 +272,13 @@ std::vector<SessionEntry> decodeNetworkTranscript(const Bytes &transcript)
     {
         const std::uint32_t packetSize = readU32(transcript, pos);
         pos += 4U;
-        if (packetSize > transcript.size() - pos) Fail("truncated Step04E4 network transcript packet");
+        if (packetSize > transcript.size() - pos) Fail("truncated full-session network transcript packet");
 
         evolution::NetworkPacketHeader header;
         std::vector<evolution::NetworkCommandRecord> records;
         const auto result = evolution::decodeRoutedCommandPacketV1(transcript.data() + pos, packetSize, header, records);
-        Expect(result.ok(), "golden Step04E4 EVN1 packet failed to decode");
-        Expect(records.size() == 1U, "Step04E4 expected one production routed record per datagram");
+        Expect(result.ok(), "golden full-session EVN1 packet failed to decode");
+        Expect(records.size() == 1U, "full-session expected one production routed record per datagram");
 
         SessionEntry entry;
         entry.frame = header.frame;
@@ -286,7 +286,7 @@ std::vector<SessionEntry> decodeNetworkTranscript(const Bytes &transcript)
         entry.relayMask = records[0].relayMask;
         entry.commandId = records[0].commandId;
         entry.command = records[0].command;
-        Expect(header.sequence == commandKey(entry), "Step04E4 EVN1 sequence lost player/command identity");
+        Expect(header.sequence == commandKey(entry), "full-session EVN1 sequence lost player/command identity");
         entries.push_back(entry);
         pos += packetSize;
     }
@@ -434,12 +434,12 @@ void checkGoldenFullSession(const std::map<std::string, Bytes> &fixtures, bool e
         return;
     }
 
-    Expect(network == fixture(fixtures, "network_stream"), "full-session EVN1 transcript changed from Step04E4 golden bytes");
-    Expect(replay == fixture(fixtures, "replay_stream"), "full-session EVR1 transcript changed from Step04E4 golden bytes");
-    Expect(fixture(fixtures, "final_logic_crc").size() == 4U, "Step04E4 final CRC fixture size changed");
-    Expect(fixture(fixtures, "command_count").size() == 4U, "Step04E4 command-count fixture size changed");
-    Expect(readU32(fixture(fixtures, "final_logic_crc"), 0) == expectedFinalCrc, "Step04E4 final logic CRC changed");
-    Expect(readU32(fixture(fixtures, "command_count"), 0) == canonical.size(), "Step04E4 command count changed");
+    Expect(network == fixture(fixtures, "network_stream"), "full-session EVN1 transcript changed from full-session golden bytes");
+    Expect(replay == fixture(fixtures, "replay_stream"), "full-session EVR1 transcript changed from full-session golden bytes");
+    Expect(fixture(fixtures, "final_logic_crc").size() == 4U, "full-session final CRC fixture size changed");
+    Expect(fixture(fixtures, "command_count").size() == 4U, "full-session command-count fixture size changed");
+    Expect(readU32(fixture(fixtures, "final_logic_crc"), 0) == expectedFinalCrc, "full-session final logic CRC changed");
+    Expect(readU32(fixture(fixtures, "command_count"), 0) == canonical.size(), "full-session command count changed");
 
     std::vector<SessionEntry> replayDecoded;
     Expect(decodeReplayTranscript(replay, replayDecoded), "golden EVR1 full session failed to decode");
@@ -531,8 +531,8 @@ void checkVersionAndCorruptionRejection(const std::map<std::string, Bytes> &fixt
 
 int main(int argc, char **argv)
 {
-    static_assert(sizeof(void *) == 8, "Step 04E4 full-session validation is Evolution x64-only");
-    static_assert(sizeof(float) == 4, "Step 04E4 requires IEEE float32 width");
+    static_assert(sizeof(void *) == 8, "Full-session validation is Evolution x64-only");
+    static_assert(sizeof(float) == 4, "Full-session validation requires IEEE float32 width");
 
     if (argc == 2 && std::string(argv[1]) == "--emit-fixture")
     {
@@ -540,12 +540,12 @@ int main(int argc, char **argv)
         checkGoldenFullSession(empty, true);
         return 0;
     }
-    if (argc != 2) Fail("Usage: evolution_full_session_step04e4_test <fixture-file>");
+    if (argc != 2) Fail("Usage: evolution_full_session_test <fixture-file>");
 
     const auto fixtures = loadFixtures(argv[1]);
     checkGoldenFullSession(fixtures, false);
     checkVersionAndCorruptionRejection(fixtures);
 
-    std::cout << "Step 04E4 full-session golden passed: EVN1 delivery and EVR1 replay preserve one deterministic command/CRC timeline; version, corruption, truncation, and compatibility boundaries are stable.\n";
+    std::cout << "Evolution full-session golden passed: EVN1 delivery and EVR1 replay preserve one deterministic command/CRC timeline; version, corruption, truncation, and compatibility boundaries are stable.\n";
     return 0;
 }

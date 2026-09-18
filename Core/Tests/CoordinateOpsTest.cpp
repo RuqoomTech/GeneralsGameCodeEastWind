@@ -1,9 +1,9 @@
 /*
-** Step 04D3 upstream-alignment runtime guard.
+** Coordinate operator regression test.
 **
 ** The neutron outer-radius correction uses unary coordinate operators imported
 ** from upstream. Exercise those operators directly without changing the
-** Step 01 floating-point characterization path.
+** deterministic floating-point characterization path.
 */
 
 #include "Utility/CppMacros.h"
@@ -59,10 +59,10 @@ int main()
     expect_int("ICoord2D -y", -11, ni2.y);
 
     if (g_failures != 0) {
-        std::fprintf(stderr, "%d Step 04D3 coordinate guard(s) failed.\n", g_failures);
+        std::fprintf(stderr, "%d coordinate guard(s) failed.\n", g_failures);
         return 1;
     }
 
-    std::printf("Step 04D3 upstream coordinate guard passed.\n");
+    std::printf("Coordinate operator guard passed.\n");
     return 0;
 }

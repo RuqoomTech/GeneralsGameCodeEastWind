@@ -4,7 +4,7 @@ endif()
 
 set(_script "${RTS_SOURCE_DIR}/scripts/setup-windows-dev.ps1")
 if(NOT EXISTS "${_script}")
-    message(FATAL_ERROR "Step 04C Windows dependency bootstrap is missing: ${_script}")
+    message(FATAL_ERROR "Windows dependency bootstrap is missing: ${_script}")
 endif()
 
 file(READ "${_script}" _contents)
@@ -16,9 +16,9 @@ foreach(_required
     "mingw-w64-x86_64-ninja"
     "mingw-w64-x86_64-python"
     "mingw64-tests"
-    "z_headlessdeterminismcheck"
-    "z_evolutionfullsessioncheck"
-    "z_step04fcheck"
+    "check_headless_determinism"
+    "check_evolution_full_session"
+    "check_x64_platform"
 )
     string(FIND "${_contents}" "${_required}" _pos)
     if(_pos EQUAL -1)
@@ -34,7 +34,7 @@ foreach(_retired
 )
     string(FIND "${_contents}" "${_retired}" _pos)
     if(NOT _pos EQUAL -1)
-        message(FATAL_ERROR "Step 04F regression: Windows bootstrap still exposes retired x86 token '${_retired}'")
+        message(FATAL_ERROR "Windows bootstrap still exposes retired x86 token '${_retired}'")
     endif()
 endforeach()
 
@@ -67,4 +67,4 @@ if(NOT _bad_direct_probe_pipe EQUAL -1)
     message(FATAL_ERROR "Dependency bootstrap must not pipe native version probes directly into Select-Object -First")
 endif()
 
-message(STATUS "Step 04C/04F Windows x64 dependency bootstrap policy passed")
+message(STATUS "Windows bootstrap policy passed")

@@ -1,98 +1,55 @@
-# Generals / Zero Hour Modernization Program
+# Evolution modernization
 
-This repository is the authoritative baseline for the modernization work described below. The roadmap, implementation state, architectural decisions, and milestone history must be maintained in this tree so that future work does not depend on chat history or an external planning document.
+This repository carries a staged modernization of the Generals / Zero Hour engine. The goal is to preserve proven simulation and content behavior while removing the major runtime limits that block large modern mods.
 
-## Product goal
+## Locked direction
 
-Turn the existing Generals / Zero Hour runtime into a modern, high-performance RTS platform capable of supporting a very large mod with:
+- Evolution runtime: x64 only.
+- Primary Windows toolchain: CMake + Ninja + MinGW-w64 GCC.
+- Renderer: Direct3D 12 only for new Evolution rendering work.
+- Legacy Direct3D 8 code: compatibility/reference only during migration.
+- Determinism: simulation, CRC, replay, RNG, Xfer and snapshots remain stable.
+- Wire/replay data: explicit fixed-width serialization; never native object layout or pointer state.
+- Assets: W3D remains supported; W3X is additive EA SAGE XML support.
+- Multiplayer: future compatibility is required between Evolution builds, not retail 32-bit clients.
+- Code organization: consolidate shared/Core functionality before adding another helper/module.
 
-- high-poly models and substantially larger geometry budgets;
-- HD/2K/4K textures and modern compressed texture formats;
-- dense battles with large unit counts, effects, and repeated assets;
-- substantially lower CPU rendering overhead;
-- much larger memory headroom through an x64 Evolution runtime;
-- a native Direct3D 12 renderer;
-- modern shadows, materials, lighting, HDR, and post-processing;
-- native support for legacy W3D assets;
-- first-class support for EA SAGE W3X assets;
-- continued deterministic simulation, CRC, replay, and Evolution-to-Evolution multiplayer behavior; retail 32-bit multiplayer interoperability is not a future compatibility target.
+## Current phase
 
-This is **not a rewrite of the game simulation**. The strategy is to preserve proven game logic and content behavior while progressively replacing client/runtime limitations.
+Steps 00-04 are complete. Step 04 established the x64 deterministic/network/replay foundation and retired the active i686 modernization lane after real Windows MinGW-w64 validation.
 
-## Read first
+**Step 05 is active: W3X parser/import foundation.**
 
-1. [`PROJECT_STATE.md`](PROJECT_STATE.md) — authoritative implementation state and baseline identity.
-2. [`Modernization/ROADMAP.md`](Modernization/ROADMAP.md) — ordered implementation roadmap.
-3. [`Modernization/DECISIONS.md`](Modernization/DECISIONS.md) — locked architectural decisions.
-4. [`Modernization/ARCHITECTURE_GUARDRAILS.md`](Modernization/ARCHITECTURE_GUARDRAILS.md) — rules every implementation step must obey.
-5. [`Modernization/CURRENT_STATE.md`](Modernization/CURRENT_STATE.md) — verified facts about the source tree.
-6. [`Modernization/BUILD_SYSTEM.md`](Modernization/BUILD_SYSTEM.md) — command-line build target.
-7. [`Modernization/ASSET_PIPELINE.md`](Modernization/ASSET_PIPELINE.md) — asset modernization architecture.
-8. [`Modernization/W3X_SUPPORT.md`](Modernization/W3X_SUPPORT.md) — EA SAGE W3X support plan.
-9. [`Modernization/D3D12_RENDERER.md`](Modernization/D3D12_RENDERER.md) — target renderer architecture.
-10. [`Modernization/PERFORMANCE_TARGETS.md`](Modernization/PERFORMANCE_TARGETS.md) — measurement and performance gates.
-11. [`Modernization/BACKLOG.md`](Modernization/BACKLOG.md) — milestone inventory and status.
-12. [`Modernization/WORKLOG.md`](Modernization/WORKLOG.md) — chronological record of completed modernization work.
-13. [`Modernization/REFERENCES.md`](Modernization/REFERENCES.md) — external format/API references used for validation.
-14. [`Modernization/STEP_01_DETERMINISM_GUARD.md`](Modernization/STEP_01_DETERMINISM_GUARD.md) — deterministic compatibility contract and Windows sign-off gate.
-15. [`Modernization/STEP_02_BUILD_SYSTEM_FOUNDATION.md`](Modernization/STEP_02_BUILD_SYSTEM_FOUNDATION.md) — MinGW/Ninja command-line build foundation.
-16. [`Modernization/STEP_03_PERFORMANCE_TELEMETRY.md`](Modernization/STEP_03_PERFORMANCE_TELEMETRY.md) — completed HD-mod measurement/telemetry milestone.
-17. [`Modernization/STEP_04_X64_MIGRATION.md`](Modernization/STEP_04_X64_MIGRATION.md) — active staged x64 engine migration.
-18. [`Modernization/STEP_04D3_UPSTREAM_ALIGNMENT.md`](Modernization/STEP_04D3_UPSTREAM_ALIGNMENT.md) — selective upstream correctness/runtime sync policy and results.
-19. [`Modernization/STEP_04E_EVOLUTION_PROTOCOL.md`](Modernization/STEP_04E_EVOLUTION_PROTOCOL.md) — versioned fixed-width Evolution command/network/replay protocol.
-20. [`Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md`](Modernization/STEP_05_W3X_IMPORT_FOUNDATION.md) — first W3X implementation specification.
-21. [`Modernization/BASELINE_MANIFEST.md`](Modernization/BASELINE_MANIFEST.md) — accepted source hash and anchor-file hashes.
+The first Step 05 slice is repository normalization: permanent test/build names, reduced policy-test duplication, removal of stale wrappers, and simpler developer documentation. After that, W3X work continues behind the existing shared `rts/w3x_document` seam.
 
-## Priority order
+## Primary documents
 
-When goals conflict, use this order:
+Day-to-day development should normally need only these files:
 
-1. deterministic simulation / replay / CRC safety;
-2. reproducible command-line builds;
-3. measurement and profiling;
-4. x64 engine/runtime correctness and memory headroom;
-5. asset compatibility and W3D/W3X loading correctness;
-6. high-poly geometry scalability;
-7. HD texture efficiency;
-8. draw-call, batching, LOD, and visibility efficiency;
-9. renderer separation;
-10. D3D12 correctness and performance;
-11. advanced visual features.
+1. [`PROJECT_STATE.md`](PROJECT_STATE.md) — current state, baseline and next work.
+2. [`Modernization/ROADMAP.md`](Modernization/ROADMAP.md) — milestone order.
+3. [`Modernization/DECISIONS.md`](Modernization/DECISIONS.md) — locked decisions.
+4. [`Modernization/ARCHITECTURE_GUARDRAILS.md`](Modernization/ARCHITECTURE_GUARDRAILS.md) — invariants.
+5. [`TESTING.md`](TESTING.md) — current validation commands and test inventory.
+6. [`Modernization/WORKLOG.md`](Modernization/WORKLOG.md) — chronological history.
 
-## Runtime tracks
+Subsystem references remain available when needed:
 
-### Compatibility/reference track
+- `Modernization/W3X_IMPORT.md`
+- `Modernization/W3X_SUPPORT.md`
+- `Modernization/ASSET_PIPELINE.md`
+- `Modernization/D3D12_RENDERER.md`
+- `Modernization/PERFORMANCE_TARGETS.md`
+- `Modernization/BUILD_SYSTEM.md`
 
-- x86;
-- existing Direct3D 8-era renderer and wrapper path;
-- legacy W3D behavior;
-- deterministic/replay reference;
-- retained while the Evolution runtime is incomplete.
+Completed milestone specifications are retained under `Modernization/History/` as historical design/sign-off records. They should not be treated as the current command reference when `TESTING.md` or `PROJECT_STATE.md` says otherwise.
 
-### Evolution track
+## Definition of done
 
-- x64;
-- Direct3D 12 only;
-- W3D plus W3X asset support;
-- explicit 16-bit and 32-bit geometry paths;
-- modern GPU resource management;
-- modern shader/material pipeline;
-- high-end asset budgets;
-- controlled breaking changes only where explicitly documented.
+A modernization milestone is complete only when:
 
-There is **no D3D9 or D3D11 intermediate renderer milestone** in this program.
-
-## Definition of done for a milestone
-
-A roadmap step is not complete merely because code compiles. A completed step must have:
-
-- implementation merged into this source tree;
-- tests or reproducible validation appropriate to the subsystem;
-- relevant documentation updated;
-- `PROJECT_STATE.md`, `BACKLOG.md`, and `WORKLOG.md` updated;
-- no unexplained deterministic/replay regression;
-- no unrecorded architectural deviation.
-
-## Step 04 — x64 migration
-
-Steps 04A-04D are Windows cross-architecture verified; Step 04D3 is Windows x64 verified, 04E1 adds the versioned Evolution command/network/replay protocol foundation, 04E2 is real-Windows x64 signed off with staged **Win64 Evolution runtime** gameplay traffic on raw EVN1 datagrams plus EVR1 Recorder sidecars, 04E3 is real-Windows x64 signed off at 23/23 with its explicit session gate, and 04E4 is real-Windows x64 signed off at 25/25 with the exact-byte EVN1/EVR1 full-session golden plus corruption/version/compatibility validation. Step 04F retires the active MinGW i686 modernization/oracle lane and makes the supported modernization path x64-only while preserving every fixed-width 32-bit simulation/wire/replay contract; local 04F validation is complete and its Windows sign-off is pending. Archival VC6/MSVC Win32 reference presets are not Evolution targets. Representative full-client multiplayer/replay validation remains an x64 stabilization task and no longer blocks i686 retirement. Step 05 is next after the 04F Windows gate. See `Modernization/STEP_04_X64_MIGRATION.md`.
+- implementation is present in the authoritative tree;
+- deterministic/network/replay invariants relevant to the change still pass;
+- command-line tests are reproducible;
+- current documentation is updated without duplicating the full history everywhere;
+- no unrecorded architectural deviation is introduced.

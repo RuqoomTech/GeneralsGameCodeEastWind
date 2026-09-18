@@ -1,5 +1,5 @@
 /*
-** Step 04C native-width runtime regression.
+** Native-width runtime regression test.
 **
 ** Exercises the production WWLib object-pool template with enough allocations
 ** to force multiple backing blocks. The historical implementation stored the
@@ -145,7 +145,7 @@ int main()
         pool.Free_Object_Memory(items[i]);
     }
 
-    std::cout << "Step 04C native-width runtime allocator guard passed on "
+    std::cout << "Native-width runtime allocator guard passed on "
               << (sizeof(void *) * 8) << "-bit pointers.\n";
     return 0;
 }

@@ -1,4 +1,4 @@
-step04d-headless-v1 seed=0x12345678 end=12000
+headless-determinism-v1 seed=0x12345678 end=12000
 0 0x7407b829 0x933b34ac
 1 0x777a5dbc 0x76b75e0c
 10 0xd144d0b9 0xbf133980

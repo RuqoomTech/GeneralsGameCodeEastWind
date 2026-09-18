@@ -27,7 +27,7 @@ Track at least:
 
 ## Step 03 capture baseline
 
-The repository-owned capture is CSV schema v2 from `PerformanceTelemetry`. Use a `mingw32-profile` build and set `RTS_PERF_CAPTURE=<file.csv>`. Each engine-update sample carries update/client/message/network/logic CPU timing, the WW3D render CPU bracket when a render occurred, render/sync/logic frame identity, drawable total/visible/shrouded visibility-proxy counts, draw/geometry totals, texture/resource counters, and WW3D allocation/free operation counts.
+The repository-owned capture is CSV schema v2 from `PerformanceTelemetry`. The historical `mingw32-profile` preset was retired with the i686 modernization lane; do not revive it. When the full x64 gameplay/profile target is enabled, set `RTS_PERF_CAPTURE=<file.csv>` there. Each engine-update sample carries update/client/message/network/logic CPU timing, the WW3D render CPU bracket when a render occurred, render/sync/logic frame identity, drawable total/visible/shrouded visibility-proxy counts, draw/geometry totals, texture/resource counters, and WW3D allocation/free operation counts.
 
 Use `scripts/perf-summary.py <capture.csv>` for dependency-free mean/p50/p95/p99/max summaries, or add `--json` for machine-readable output. This schema is the completed Step 03 CPU/render baseline. Native GPU timestamps are intentionally deferred to the D3D12 renderer rather than expanded inside the temporary D3D8 path; resident/process memory accounting belongs with the x64 migration where address-space pressure is being removed.
 
