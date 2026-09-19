@@ -158,7 +158,7 @@ The final Step 04F and Step 05A baselines are Windows-signed-off with MinGW-w64 
 
 ## Known warnings
 
-Legacy `GameMemory` warnings around custom allocation operators are known. They are not current blockers unless a warning becomes an error or directly affects the active subsystem.
+Step 05H1F removes the x64/UB warnings already exposed in the active `mingw64-game` transcript for `ThreadClass`, `Buffer`, `CriticalSectionClass`, and `Compare_EXE_Version`; these are fixed at the owning types rather than suppressed. `#pragma message` output is informational rather than a compiler warning. Legacy `GameMemory` warnings around custom allocation operators may still appear later in the full graph and remain technical debt unless they become errors or affect active work.
 
 ## Retired workflow
 

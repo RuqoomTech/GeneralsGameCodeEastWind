@@ -107,4 +107,35 @@ rts_policy_read("Core/Libraries/Source/profile/profile_funclevel.cpp" _profile_f
 rts_policy_require_text("${_profile_funclevel_source}" "threadId=nextThreadId;" "profile tracer must assign its logical ID under the existing profiler lock")
 rts_policy_require_text("${_profile_funclevel_source}" "return m_threadID ? m_threadID->GetThreadId() : 0;" "ProfileFuncLevel::Thread::GetId must return logical identity")
 
+
+# Native Windows/runtime handles and diagnostic addresses must remain pointer-width
+# clean in the Evolution x64 graph. These are runtime-only values, never wire data.
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/thread.h" _thread_header)
+rts_policy_require_text("${_thread_header}" "volatile std::uintptr_t handle;" "ThreadClass must retain the _beginthread handle at native width")
+rts_policy_forbid_text("${_thread_header}" "volatile unsigned long handle;" "ThreadClass regressed to Win32-width thread handle storage")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/thread.cpp" _thread_source)
+rts_policy_forbid_text("${_thread_source}" "(HANDLE)handle" "ThreadClass must not reconstruct HANDLE from a truncated integer")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/buff.cpp" _buffer_source)
+rts_policy_forbid_text("${_buffer_source}" "delete [] BufferPtr;" "Buffer must delete owned char[] storage through its allocated type, not void*")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/mutex.cpp" _mutex_source)
+rts_policy_forbid_text("${_mutex_source}" "delete[] handle;" "CriticalSectionClass must not delete char[] storage through void*")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/verchk.h" _verchk_header)
+rts_policy_require_text("${_verchk_header}" "Compare_EXE_Version (HINSTANCE app_instance" "executable-version checks must carry the module handle as native HINSTANCE")
+rts_policy_forbid_text("${_verchk_header}" "Compare_EXE_Version (int app_instance" "executable-version checks regressed to 32-bit module-handle storage")
+
+rts_policy_read("Core/Libraries/Source/debug/debug_debug.h" _debug_header)
+rts_policy_require_text("${_debug_header}" "static std::uintptr_t curStackFrame;" "debug stack-frame identity must be native-width")
+rts_policy_require_text("${_debug_header}" "std::uintptr_t frameAddr;" "debug frame hash keys must be native-width")
+rts_policy_forbid_text("${_debug_header}" "static unsigned curStackFrame;" "debug stack-frame identity regressed to 32-bit")
+rts_policy_forbid_text("${_debug_header}" "unsigned frameAddr;" "debug frame hash keys regressed to 32-bit")
+
+rts_policy_read("Core/Libraries/Source/debug/debug_debug.cpp" _debug_source)
+rts_policy_require_text("${_debug_source}" "__builtin_return_address(0)" "MinGW x64 debug frame capture must use a compiler return-address primitive")
+rts_policy_forbid_text("${_debug_source}" "(unsigned)fileOrGroup" "debug log-group identity must not truncate pointer addresses")
+rts_policy_forbid_text("${_debug_source}" "_ultoa((unsigned long)ptr" "debug pointer formatting must not truncate native pointers")
+
 message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, native handles stay native-width, and profiler identities are pointer-independent")
