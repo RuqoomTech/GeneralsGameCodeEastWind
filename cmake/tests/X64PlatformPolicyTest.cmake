@@ -143,6 +143,8 @@ rts_policy_forbid_text("${_debug_source}" "_ultoa((unsigned long)ptr" "debug poi
 rts_policy_read("Core/Libraries/Source/debug/debug_stack.h" _debug_stack_header)
 rts_policy_require_text("${_debug_stack_header}" "std::uintptr_t m_addr[MAX_ADDR];" "debug stack signatures must store native-width addresses")
 rts_policy_require_text("${_debug_stack_header}" "std::uintptr_t GetAddress(int n) const;" "debug stack accessors must expose native-width addresses")
+rts_policy_require_text("${_debug_stack_header}" "static int Capture(Signature &sig" "debug stack capture API must avoid the Win32 StackWalk macro name")
+rts_policy_forbid_text("${_debug_stack_header}" "static int StackWalk(Signature &sig" "debug stack capture API regressed to the Win32 StackWalk macro-collision name")
 rts_policy_forbid_text("${_debug_stack_header}" "unsigned m_addr[MAX_ADDR];" "debug stack signatures regressed to 32-bit addresses")
 
 rts_policy_read("Core/Libraries/Source/debug/debug_stack.cpp" _debug_stack_source)
@@ -150,6 +152,8 @@ rts_policy_require_text("${_debug_stack_source}" "IMAGE_FILE_MACHINE_AMD64" "Win
 rts_policy_require_text("${_debug_stack_source}" "_StackWalk64" "Win64 debug stack walking must use StackWalk64")
 rts_policy_require_text("${_debug_stack_source}" "_SymFromAddr" "Win64 symbol lookup must use the 64-bit DbgHelp address API")
 rts_policy_require_text("${_debug_stack_source}" "RtlCaptureContext(&localContext)" "Win64 debug stack walking must capture a native CONTEXT when none is supplied")
+rts_policy_require_text("${_debug_stack_source}" "int DebugStackwalk::Capture(Signature &sig" "debug stack implementation must use the macro-safe Capture API")
+rts_policy_require_text("${_debug_stack_source}" "#include <cstdio>" "debug stack formatting must own its stdio declarations")
 
 rts_policy_read("Core/Libraries/Source/debug/debug_except.cpp" _debug_except_source)
 rts_policy_require_text("${_debug_except_source}" "ctx.Rip" "Win64 exception logging must read RIP")

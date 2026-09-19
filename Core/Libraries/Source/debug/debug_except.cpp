@@ -428,7 +428,7 @@ LONG __stdcall DebugExceptionhandler::ExceptionFilter(struct _EXCEPTION_POINTERS
   regInfo[len]=0;
 
   // now finally add stack & instruction-pointer dump
-  dbg.m_stackWalk.StackWalk(sig,pExPtrs->ContextRecord);
+  dbg.m_stackWalk.Capture(sig,pExPtrs->ContextRecord);
   dbg << sig << "\n";
 
 #if defined(_WIN64)

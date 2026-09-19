@@ -34,6 +34,8 @@
 #include <imagehlp.h>
 #include <cinttypes>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 
 // Definitions to allow run-time linking to the dbghelp.dll functions.
 
@@ -351,7 +353,7 @@ bool DebugStackwalk::IsOldDbghelp()
   return g_oldDbghelp;
 }
 
-int DebugStackwalk::StackWalk(Signature &sig, struct _CONTEXT *ctx)
+int DebugStackwalk::Capture(Signature &sig, struct _CONTEXT *ctx)
 {
   InitDbghelp();
   sig.m_numAddr=0;

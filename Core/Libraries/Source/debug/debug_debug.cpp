@@ -402,7 +402,7 @@ bool Debug::AssertDone()
     if (curFrameEntry->hits==1)
     {
       DebugStackwalk::Signature sig;
-      if (m_stackWalk.StackWalk(sig))
+      if (m_stackWalk.Capture(sig))
         (*this) << sig;
     }
 
@@ -528,7 +528,7 @@ bool Debug::CheckDone()
     if (curFrameEntry->hits==1)
     {
       DebugStackwalk::Signature sig;
-      if (m_stackWalk.StackWalk(sig))
+      if (m_stackWalk.Capture(sig))
         (*this) << sig;
     }
 
@@ -672,7 +672,7 @@ bool Debug::CrashDone(bool die)
     if (curFrameEntry->hits==1)
     {
       DebugStackwalk::Signature sig;
-      if (m_stackWalk.StackWalk(sig))
+      if (m_stackWalk.Capture(sig))
         (*this) << sig;
     }
 

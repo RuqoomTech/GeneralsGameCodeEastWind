@@ -156,7 +156,7 @@ public:
     \param ctx processor context, if nullptr then use current address
     \return number of addresses found
   */
-  static int StackWalk(Signature &sig, struct _CONTEXT *ctx=0);
+  static int Capture(Signature &sig, struct _CONTEXT *ctx=0);
 };
 
 /**

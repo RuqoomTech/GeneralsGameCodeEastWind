@@ -163,3 +163,13 @@ Step 05H1F removes the x64/UB warnings already exposed in the active `mingw64-ga
 ## Retired workflow
 
 The active modernization graph no longer supports an i686 MinGW oracle, `mingw32-*` modernization presets, the old cross-architecture timeline comparator, or `-IncludeLegacyX86`. Historical records are retained in `Modernization/WORKLOG.md` and `Modernization/History/`.
+
+### Step 05H1I Windows continuation
+
+H1I addresses the `core_debug/debug_stack.cpp` blocker found at 112/1077 by making its C-library declarations explicit and avoiding the Win32 `StackWalk` macro name in the engine-owned API. Continue the real-game migration with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+The informational `#pragma message` lines are not compiler warnings. Report the first hard failure and any newly exposed warnings.
