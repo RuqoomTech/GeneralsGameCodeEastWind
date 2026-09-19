@@ -528,3 +528,9 @@ The runtime pointer policy now guards the 32-bit token width and forbids the ori
 - Left shader/water/terrain/tree D3DX behavior in place for coherent renderer migration instead of replacing it mechanically.
 - Extended D3D12 policy coverage so the migrated active sources cannot silently regain D3DX8 dependencies.
 - Host focused graph: 26/26 passed. Windows sign-off pending the next real `z_generals -j1` build.
+
+### 2026-09-19 — Step 05H1L active WW3D name-offset/warning sweep
+- H1K Windows validation advanced the real `z_generals` graph to `GeneralsMD/.../WW3D2/assetmgr.cpp` at 125/940.
+- Replaced the asset-manager pointer-to-`int` subtraction blocker plus the same active copies in `W3DAssetManager.cpp` and `meshmdlio.cpp` with pointer-difference arithmetic.
+- Corrected `PrimitiveAnimationChannelClass::KeyClass::Set_Time` from `float` to `void`; the only caller ignores a result and the old implementation returned none.
+- Extended the x64 platform policy, rebuilt the focused host graph, and passed 26/26 tests. Windows sign-off remains pending the next `z_generals -j1` build.

@@ -194,3 +194,13 @@ cmake --build --preset mingw64-game --target z_generals -- -j1
 ```
 
 Report the first hard failure plus any actual compiler warnings. `#pragma message` output remains informational. Do not restore D3DX8 headers or add a D3DX-on-D3D12 compatibility layer to bypass the next blocker.
+
+### Step 05H1L Windows continuation
+
+H1L addresses the active WW3D asset-name pointer-to-`int` arithmetic blocker found at 125/940 and removes the exposed `prim_anim.h` non-void/no-return warning. Continue with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus any actual compiler warnings. The `#pragma message` output remains informational.

@@ -114,3 +114,10 @@ The H1I Windows build cleared `core_debug` and reached the EAC Huffman encoder a
 ## Step 05H1K — active D3DX8 dependency isolation
 
 The H1J Windows build cleared the native-address sweep and advanced to Zero Hour WW3D `assetmgr.cpp` at 132/947, where the active x64 graph still directly included `d3dx8core.h`. H1K performs a bounded active-graph D3DX8 sweep rather than fixing only that include. Unused D3DX8 includes are removed from `assetmgr.cpp`, texture loading, height-map/view/client files and the Zero Hour shadow/web-browser callers; point orientation and sorting transforms now preserve the old D3D transform convention through WWMath; shared Bezier math now uses `Matrix4x4`/`Vector4`; missing-texture mip generation reuses `BitmapHandlerClass::Create_Mipmap_B8G8R8A8`; and Evolution `SurfaceClass` copy/scale uses the existing CPU bitmap conversion path while the archival non-Evolution branch retains its historical D3DX behavior. No D3DX compatibility layer is introduced, no serialized asset/game/network format changes, and genuine shader/water/terrain/tree renderer responsibilities remain for coherent D3D12 migration instead of mechanical substitution. Continue the Windows `z_generals -j1` build to expose the next real renderer/resource responsibility blocker.
+
+## Step 05H1L candidate — active WW3D pointer-difference/warning cleanup
+- Windows H1K validation advanced to `GeneralsMD/.../WW3D2/assetmgr.cpp` at 125/940.
+- Replaced four active Zero Hour asset-name pointer-to-`int` subtraction sites with pointer-difference arithmetic before the required bounded `int` length conversion.
+- Corrected `PrimitiveAnimationChannelClass::KeyClass::Set_Time` from `float` to `void`; its only caller ignores a result and the old body returned nothing.
+- Extended the x64 platform policy to forbid those address-truncating forms and the non-void/no-return setter regression.
+- No deterministic/wire/W3D serialized widths changed. Windows sign-off remains pending the next `z_generals -j1` build.

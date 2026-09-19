@@ -1,6 +1,6 @@
 # Current Source State
 
-This document records verified source facts through the Step 05H1K active-D3DX8 isolation candidate on 2026-09-19. Steps 05D through 05G are Windows-signed-off. Step 05H is the active normal-game x64 migration: successive real `mingw64-game` builds have cleared WWSaveLoad pointer identity, crash/debug diagnostics, registry/native-handle width, WWMath D3D8 leakage, profiler/debug pointer identities, compression pointer arithmetic, and now the first active D3DX8 dependency cluster. H1K is locally sealed only; Windows sign-off requires the real `z_generals` build to advance past the updated WW3D sources.
+This document records verified source facts through the Step 05H1L active WW3D name-offset/warning-sweep candidate on 2026-09-19. Steps 05D through 05G are Windows-signed-off. Step 05H is the active normal-game x64 migration: successive real `mingw64-game` builds have cleared WWSaveLoad pointer identity, crash/debug diagnostics, registry/native-handle width, WWMath D3D8 leakage, profiler/debug pointer identities, compression pointer arithmetic, and now the first active D3DX8 dependency cluster. H1L is locally sealed only; Windows sign-off requires the real `z_generals` build to advance past the updated WW3D asset/name paths.
 
 ## Build system
 
@@ -101,3 +101,5 @@ The Step 01G Windows gate remains signed-off historical provenance: on 2026-09-1
 - duplicate Generals / Zero Hour implementation areas;
 - high-poly/high-resolution asset pressure;
 - legacy tools that may require old Microsoft/MFC components.
+
+- Step 05H1L follows the H1K Windows build to `assetmgr.cpp` at 125/940 and removes four active Zero Hour asset-name address-to-`int` subtraction sites. String positions are now computed as pointer differences before the small Win32/API length conversion, and `PrimitiveAnimationChannelClass::KeyClass::Set_Time` is corrected to its side-effect-only `void` contract to remove the exposed non-void/no-return warning.

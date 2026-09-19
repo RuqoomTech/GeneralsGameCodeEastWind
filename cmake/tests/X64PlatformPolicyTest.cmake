@@ -192,4 +192,26 @@ foreach(_alignment_source IN ITEMS
     rts_policy_forbid_text("${_alignment_text}" "((unsigned)&nFlag" "alignment checks regressed to pointer-to-unsigned truncation in ${_alignment_source}")
 endforeach()
 
+
+
+# Step 05H1L removes another Win32 address-arithmetic class from the active
+# Zero Hour asset graph. String positions are pointer differences, never
+# addresses serialized through 32-bit int, and the primitive-animation setter
+# has the void contract its callers actually use.
+rts_policy_read("GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/assetmgr.cpp" _zh_assetmgr_source)
+rts_policy_require_text("${_zh_assetmgr_source}" "static_cast<int>(mesh_name - name) + 1" "Zero Hour WW3D asset loading must derive filename lengths from pointer differences")
+rts_policy_forbid_text("${_zh_assetmgr_source}" "((int)mesh_name) - ((int)name)" "Zero Hour WW3D asset loading regressed to pointer-to-int address arithmetic")
+
+rts_policy_read("GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DAssetManager.cpp" _zh_w3d_assetmgr_source)
+rts_policy_require_text("${_zh_w3d_assetmgr_source}" "static_cast<int>(mesh_name - name) + 1" "W3DAssetManager must derive filename lengths from pointer differences")
+rts_policy_forbid_text("${_zh_w3d_assetmgr_source}" "((int)mesh_name) - ((int)name)" "W3DAssetManager regressed to pointer-to-int address arithmetic")
+
+rts_policy_read("GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/meshmdlio.cpp" _zh_meshmdlio_source)
+rts_policy_require_text("${_zh_meshmdlio_source}" "hierarchy_name_len = static_cast<int>(mesh_name - name);" "mesh hierarchy name lengths must be computed from pointer differences")
+rts_policy_forbid_text("${_zh_meshmdlio_source}" "hierarchy_name_len = (int)mesh_name - (int)name;" "mesh model I/O regressed to pointer-to-int address arithmetic")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/prim_anim.h" _prim_anim_header)
+rts_policy_require_text("${_prim_anim_header}" "void\t\t\tSet_Time (float time)" "primitive animation Set_Time must match its side-effect-only contract")
+rts_policy_forbid_text("${_prim_anim_header}" "float\t\t\tSet_Time (float time)" "primitive animation Set_Time regressed to a non-void function without a return value")
+
 message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, native handles stay native-width, and profiler identities are pointer-independent")
