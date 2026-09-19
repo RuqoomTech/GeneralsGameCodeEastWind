@@ -95,3 +95,8 @@ resources PSOs   command submission
 ## Later decisions
 
 Ray tracing, mesh shaders, VRS, DirectStorage, GPU-driven rendering and broad bindless designs remain optional future evaluations after the real game is stable on the basic D3D12 renderer.
+
+
+## Step 05H1K — D3DX8 utility isolation in the active game graph
+
+The normal x64 game build reached an unavailable `d3dx8core.h` include in the Zero Hour asset manager. H1K removes D3DX8 from the active Evolution utility/math surface without adding emulation: WWMath now covers point/sorting and shared Bezier transforms, existing CPU `BitmapHandler` routines cover missing-texture mip generation plus Evolution surface copy/scale conversion, and unused D3DX headers are removed from active game-device/client callers. Archival DX8-only implementation files may still reference D3DX8, while genuine shader/water/terrain/tree D3DX responsibilities remain queued for coherent D3D12 migration. This is compile-graph isolation, not a substitute for migrating real texture/material/draw ownership through `IRenderBackend`.

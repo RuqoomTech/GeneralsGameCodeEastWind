@@ -236,6 +236,68 @@ foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
         "the D3D12 backend must not include ${_legacy_header}")
 endforeach()
 
+# Step 05H1K: active Evolution WW3D sources must not require the retired
+# D3DX8 utility library. Pure math moves to WWMath; CPU image conversion and
+# mip generation reuse BitmapHandler. Archival DX8-only source may retain D3DX.
+foreach(_d3dx_free_source IN ITEMS
+    "GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/assetmgr.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/texture.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/textureloader.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/sortingrenderer.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/missingtexture.cpp")
+    rts_policy_require_absent(
+        "${_d3dx_free_source}"
+        "d3dx8"
+        "active Evolution WW3D source ${_d3dx_free_source} must not include D3DX8")
+    rts_policy_require_absent(
+        "${_d3dx_free_source}"
+        "D3DX"
+        "active Evolution WW3D source ${_d3dx_free_source} must not call D3DX8")
+endforeach()
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp"
+    "#if !defined(RTS_EVOLUTION_X64)"
+    "legacy SurfaceClass may include D3DX8 only outside the Evolution x64 graph")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp"
+    "Copy_Surface_Region_CPU"
+    "Evolution SurfaceClass copy/scale must use the existing CPU bitmap path instead of D3DX8")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/missingtexture.cpp"
+    "BitmapHandlerClass::Create_Mipmap_B8G8R8A8"
+    "Evolution missing-texture mip generation must use the existing CPU bitmap helper")
+
+# Pure game/client math and files with unused D3DX includes must also stay
+# independent of the retired utility library so the normal x64 graph does not
+# stop before reaching genuine renderer migration work.
+foreach(_d3dx_free_game_source IN ITEMS
+    "Core/GameEngine/Include/Common/BezierSegment.h"
+    "Core/GameEngine/Source/Common/Bezier/BezierSegment.cpp"
+    "Core/GameEngine/Source/Common/Bezier/BezFwdIterator.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/BaseHeightMap.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/CameraShakeSystem.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/FlatHeightMap.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DView.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/HeightMap.cpp"
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DProjectedShadow.cpp"
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DVolumetricShadow.cpp"
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DShadow.cpp"
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DWebBrowser.cpp")
+    rts_policy_require_absent(
+        "${_d3dx_free_game_source}"
+        "d3dx8"
+        "active x64 source ${_d3dx_free_game_source} must not include D3DX8")
+    rts_policy_require_absent(
+        "${_d3dx_free_game_source}"
+        "D3DX"
+        "active x64 source ${_d3dx_free_game_source} must not call D3DX8")
+endforeach()
+rts_policy_require_contains(
+    "Core/GameEngine/Include/Common/BezierSegment.h"
+    "static const Matrix4x4 s_bezBasisMatrix"
+    "Bezier basis math must use renderer-neutral WWMath")
+
 # WWMath is renderer-neutral. Legacy D3D8 matrix conversion remains only with
 # the archival DX8 backend until those callers cross the renderer seam.
 foreach(_wwmath_matrix IN ITEMS

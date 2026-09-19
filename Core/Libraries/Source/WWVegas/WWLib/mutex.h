@@ -20,6 +20,7 @@
 
 #include "always.h"
 #include "thread.h"
+#include <stddef.h>
 
 #if !(defined(_MSC_VER) && _MSC_VER < 1300)
 #include <atomic>
@@ -151,7 +152,7 @@ public:
 		  volatile unsigned& nFlag=cs.Flag;
 
 		  #define ts_lock _emit 0xF0
-		  assert(((unsigned)&nFlag % 4) == 0);
+		  assert((reinterpret_cast<size_t>(&nFlag) % 4) == 0);
 
       // I'm terribly sorry for these emits in here but
       // VC won't inline any functions that have labels in them...

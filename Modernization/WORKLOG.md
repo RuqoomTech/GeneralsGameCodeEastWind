@@ -513,3 +513,18 @@ The first real Windows `cmake --build --preset mingw64-game --target z_generals 
 05H1A treats that field as identity rather than an address. `PersistPointerToken` is explicitly `std::uint32_t`; save-time native pointers receive per-`ChunkSaveClass` tokens in memory, load-time factories register token-to-native-pointer pairs, and remap requests carry the token separately from the native pointer field being repaired. The SimplePersistFactory, render-object/dazzle factories, AudibleSound identity and SoundSceneObj attachment path are migrated to the same contract. SoundSceneObj `m_UserObj`, which historically wrote a raw address but was never part of the remap graph, now persists as null runtime-only state. Existing four-byte legacy identity values remain usable as opaque load tokens.
 
 The runtime pointer policy now guards the 32-bit token width and forbids the original pointer cast, native `sizeof(T *)` persistence and raw SoundSceneObj pointer microchunks. Local source-policy regressions pass, and a host syntax probe compiles the changed `pointerremap.cpp`; the container still cannot perform the Windows MinGW full-game build. The next action is to rerun the same `z_generals -j1` build on Windows and use its new first failure as the 05H migration queue.
+
+
+## 2026-09-19 — Step 05H1K active D3DX8 dependency isolation
+
+- Real Windows `mingw64-game` progressed through H1J to 132/947 and stopped on `assetmgr.cpp` including unavailable `d3dx8core.h`.
+- Swept the active x64 graph for D3DX8 dependencies instead of fixing one include at a time.
+- Removed unused D3DX8 includes from the Zero Hour asset manager, texture core/loader, height-map/view/client sources, and Zero Hour shadow/web-browser callers.
+- Replaced point-orientation and sorting D3DX math with existing WWMath while preserving the old D3D row-vector transform convention.
+- Converted shared Bezier basis/evaluation/forward-difference math from D3DX vectors/matrices to renderer-neutral `Matrix4x4`/`Vector4`.
+- Replaced missing-texture mip generation with the existing `BitmapHandler` CPU mip helper.
+- Added an Evolution-only CPU `SurfaceClass` copy/scale path using `BitmapHandler`; historical D3DX surface operations remain only in the non-Evolution branch.
+- Removed two `D3DXGetFVFVertexSize` utility calls in the legacy height-map path by using the fixed FVF stride.
+- Left shader/water/terrain/tree D3DX behavior in place for coherent renderer migration instead of replacing it mechanically.
+- Extended D3D12 policy coverage so the migrated active sources cannot silently regain D3DX8 dependencies.
+- Host focused graph: 26/26 passed. Windows sign-off pending the next real `z_generals -j1` build.

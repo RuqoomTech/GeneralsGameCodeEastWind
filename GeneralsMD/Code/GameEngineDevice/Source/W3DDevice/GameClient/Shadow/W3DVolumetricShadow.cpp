@@ -48,7 +48,6 @@
 #include "WW3D2/meshmdl.h"
 #include "Lib/BaseType.h"
 #include "W3DDevice/GameClient/HeightMap.h"
-#include "d3dx8math.h"
 #include "Common/GlobalData.h"
 #include "Common/DrawModule.h"
 #include "W3DDevice/GameClient/W3DVolumetricShadow.h"
@@ -3338,7 +3337,10 @@ void W3DVolumetricShadowManager::renderStencilShadows()
 		return;	//need device to render anything.
 
 	struct _TRANSLITVERTEX {
-	    D3DXVECTOR4 p;
+		float x;
+		float y;
+		float z;
+		float rhw;
 		DWORD color;   // diffuse color
 	} v[4];
 
@@ -3348,10 +3350,10 @@ void W3DVolumetricShadowManager::renderStencilShadows()
 	width=TheTacticalView->getWidth();
 	height=TheTacticalView->getHeight();
 
-    v[0].p = D3DXVECTOR4( xpos+width, ypos+height, 0.0f, 1.0f );
-    v[1].p = D3DXVECTOR4( xpos+width, 0, 0.0f, 1.0f );
-    v[2].p = D3DXVECTOR4(  xpos, ypos+height, 0.0f, 1.0f );
-    v[3].p = D3DXVECTOR4(  xpos,  0, 0.0f, 1.0f );
+	v[0].x = static_cast<float>(xpos + width); v[0].y = static_cast<float>(ypos + height); v[0].z = 0.0f; v[0].rhw = 1.0f;
+	v[1].x = static_cast<float>(xpos + width); v[1].y = 0.0f; v[1].z = 0.0f; v[1].rhw = 1.0f;
+	v[2].x = static_cast<float>(xpos); v[2].y = static_cast<float>(ypos + height); v[2].z = 0.0f; v[2].rhw = 1.0f;
+	v[3].x = static_cast<float>(xpos); v[3].y = 0.0f; v[3].z = 0.0f; v[3].rhw = 1.0f;
     v[0].color = TheW3DShadowManager->getShadowColor();
     v[1].color = TheW3DShadowManager->getShadowColor();
     v[2].color = TheW3DShadowManager->getShadowColor();

@@ -173,3 +173,24 @@ cmake --build --preset mingw64-game --target z_generals -- -j1
 ```
 
 The informational `#pragma message` lines are not compiler warnings. Report the first hard failure and any newly exposed warnings.
+
+### Step 05H1J Windows continuation
+
+H1J addresses the `core_compression/EAC/huffencode.cpp` pointer-to-`long` blocker found at 4/826 and sweeps the same unambiguous native-address truncation pattern from active WW3D/debug code. Continue with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus any actual compiler warnings. Fixed-width compressed/game/network/replay fields must not be widened as part of warning cleanup.
+
+
+### Step 05H1K Windows continuation
+
+H1K removes D3DX8 utility/math dependencies from the active Evolution WW3D source set after the H1J build reached `GeneralsMD/.../WW3D2/assetmgr.cpp` at 132/947. Continue with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus any actual compiler warnings. `#pragma message` output remains informational. Do not restore D3DX8 headers or add a D3DX-on-D3D12 compatibility layer to bypass the next blocker.

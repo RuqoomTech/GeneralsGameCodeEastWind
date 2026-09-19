@@ -43,6 +43,7 @@
 #include "wwdebug.h"
 #include "WWLib/Vector.h"
 #include "WWLib/FastAllocator.h"
+#include <stddef.h>
 
 #define USE_FAST_ALLOCATOR
 
@@ -318,7 +319,7 @@ WWINLINE void Lock_Mem_Log_Mutex()
 	volatile unsigned& nFlag=_MemLogSemaphore;
 
 	#define ts_lock _emit 0xF0
-	assert(((unsigned)&nFlag % 4) == 0);
+	assert((reinterpret_cast<size_t>(&nFlag) % 4) == 0);
 
 	__asm mov ebx, [nFlag]
 	__asm ts_lock

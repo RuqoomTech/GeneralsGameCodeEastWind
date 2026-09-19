@@ -161,4 +161,35 @@ rts_policy_require_text("${_debug_except_source}" "const XMM_SAVE_AREA32 &flt=ct
 rts_policy_require_text("${_debug_except_source}" "static INT_PTR CALLBACK ExceptionDlgProc" "exception dialog callback must use the native DLGPROC return type")
 rts_policy_forbid_text("${_debug_except_source}" "static BOOL CALLBACK ExceptionDlgProc" "exception dialog callback regressed to the 32-bit BOOL signature")
 
+
+# Step 05H1J sweeps the same native-address truncation class beyond the first
+# Huffman blocker. Pointer differences stay native-width, D3D lock pointers are
+# addressed as pointers, and pointer equality stays pointer equality. Fixed
+# compressed/game data fields remain their existing widths.
+rts_policy_read("Core/Libraries/Source/Compression/EAC/huffencode.cpp" _huffencode_source)
+rts_policy_require_text("${_huffencode_source}" "const std::ptrdiff_t buffer_offset = bptr1 - EC->buffer;" "Huffman progress tracking must use native pointer-difference arithmetic")
+rts_policy_forbid_text("${_huffencode_source}" "(long) bptr1" "Huffman encoding regressed to pointer-to-long truncation")
+rts_policy_forbid_text("${_huffencode_source}" "(long) EC->buffer" "Huffman encoding regressed to pointer-to-long truncation")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp" _surface_source)
+rts_policy_require_text("${_surface_source}" "static_cast<unsigned char *>(lock_rect.pBits)" "surface pixel addressing must operate on the native pointer")
+rts_policy_forbid_text("${_surface_source}" "(unsigned int)lock_rect.pBits" "surface pixel addressing regressed to 32-bit pointer truncation")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/sphereobj.cpp" _sphere_source)
+rts_policy_require_text("${_sphere_source}" "WWASSERT(out == tri_poly + face_ct);" "sphere temporary-buffer validation must compare pointers directly")
+rts_policy_forbid_text("${_sphere_source}" "((int)out)" "sphere temporary-buffer validation regressed to pointer-to-int truncation")
+
+rts_policy_read("Core/Libraries/Source/debug/debug_stack.cpp" _debug_stack_native_source)
+rts_policy_require_text("${_debug_stack_native_source}" "static_cast<std::size_t>(bufEnd-buf)" "debug buffer capacity checks must retain native pointer-difference width")
+rts_policy_forbid_text("${_debug_stack_native_source}" "static_cast<unsigned>(bufEnd-buf)" "debug buffer capacity checks regressed to 32-bit pointer-difference narrowing")
+
+foreach(_alignment_source IN ITEMS
+    "Core/Libraries/Source/profile/internal.h"
+    "Core/Libraries/Source/WWVegas/WWDebug/wwmemlog.cpp"
+    "Core/Libraries/Source/WWVegas/WWLib/mutex.h")
+    rts_policy_read("${_alignment_source}" _alignment_text)
+    rts_policy_require_text("${_alignment_text}" "reinterpret_cast<size_t>(&nFlag)" "alignment checks must preserve native address width in ${_alignment_source}")
+    rts_policy_forbid_text("${_alignment_text}" "((unsigned)&nFlag" "alignment checks regressed to pointer-to-unsigned truncation in ${_alignment_source}")
+endforeach()
+
 message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, native handles stay native-width, and profiler identities are pointer-independent")

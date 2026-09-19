@@ -33,6 +33,7 @@
 #include "WWLib/stringex.h"
 #include <imagehlp.h>
 #include <cinttypes>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -197,7 +198,7 @@ void DebugStackwalk::Signature::GetSymbol(std::uintptr_t addr, char *buf, unsign
   if (!gDbg._SymGetSymFromAddr(GetCurrentProcess(),static_cast<DWORD>(addr),&displacement,symPtr))
     return;
 #endif
-  if (static_cast<unsigned>(bufEnd-buf)<strlen(symPtr->Name)+24)
+  if (static_cast<std::size_t>(bufEnd-buf)<strlen(symPtr->Name)+24)
     return;
   buf+=sprintf(buf,", %s+0x%llx",symPtr->Name,static_cast<unsigned long long>(displacement));
 
@@ -218,7 +219,7 @@ void DebugStackwalk::Signature::GetSymbol(std::uintptr_t addr, char *buf, unsign
 
   p=strrchr(line.FileName,'\\');
   p=p?p+1:line.FileName;
-  if (static_cast<unsigned>(bufEnd-buf)<strlen(p)+24)
+  if (static_cast<std::size_t>(bufEnd-buf)<strlen(p)+24)
     return;
   sprintf(buf,", %s:%lu+0x%lx",p,static_cast<unsigned long>(line.LineNumber),static_cast<unsigned long>(lineDisplacement));
 }

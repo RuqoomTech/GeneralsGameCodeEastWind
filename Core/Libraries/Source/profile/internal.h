@@ -35,6 +35,7 @@
 #include "internal_cmd.h"
 #include "internal_result.h"
 #include <windows.h>
+#include <stddef.h>
 
 #if !(defined(_MSC_VER) && _MSC_VER < 1300)
 #include <atomic>
@@ -56,7 +57,7 @@ class ProfileFastCS
 		volatile unsigned& nFlag=m_Flag;
 
 		#define ts_lock _emit 0xF0
-		DASSERT(((unsigned)&nFlag % 4) == 0);
+		DASSERT((reinterpret_cast<size_t>(&nFlag) % 4) == 0);
 
 		__asm {
 			mov ebx, [nFlag]

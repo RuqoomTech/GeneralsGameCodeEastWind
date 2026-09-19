@@ -45,7 +45,6 @@
 #include "vertmaterial.h"
 #include "texture.h"
 #include "d3d8.h"
-#include "d3dx8math.h"
 #include "statistics.h"
 #include <WWDebug/wwprofile.h>
 #include <algorithm>
@@ -242,14 +241,11 @@ void SortingRendererClass::Insert_Triangles(
 
 	if (bounding_sphere.Is_Valid())
 	{
-		D3DXMATRIX mtx=(D3DXMATRIX&)state->sorting_state.world*(D3DXMATRIX&)state->sorting_state.view;
-		D3DXVECTOR3 vec=(D3DXVECTOR3&)bounding_sphere.Center;
-		D3DXVECTOR4 transformed_vec;
-		D3DXVec3Transform(
-			&transformed_vec,
-			&vec,
-			&mtx);
-		state->transformed_center=Vector3(transformed_vec[0],transformed_vec[1],transformed_vec[2]);
+		const Matrix4x4 world = To_Matrix4x4(state->sorting_state.world);
+		const Matrix4x4 view = To_Matrix4x4(state->sorting_state.view);
+		const Matrix4x4 mtx = view * world;
+		const Vector4 transformed_vec = mtx * bounding_sphere.Center;
+		state->transformed_center=Vector3(transformed_vec.X,transformed_vec.Y,transformed_vec.Z);
 
 		Insert_To_Sorted_List(state);
 	}
@@ -450,8 +446,9 @@ void SortingRendererClass::Flush_Sorting_Pool()
 			memcpy(dest_verts, src_verts, sizeof(VertexFormatXYZNDUV2)*state->vertex_count);
 			dest_verts += state->vertex_count;
 
-			D3DXMATRIX d3d_mtx=(D3DXMATRIX&)state->sorting_state.world*(D3DXMATRIX&)state->sorting_state.view;
-			const Matrix4x4& mtx=(const Matrix4x4&)d3d_mtx;
+			const Matrix4x4 world = To_Matrix4x4(state->sorting_state.world);
+			const Matrix4x4 view = To_Matrix4x4(state->sorting_state.view);
+			const Matrix4x4 mtx = view * world;
 
 			unsigned short* indices=nullptr;
 			SortingIndexBufferClass* index_buffer=static_cast<SortingIndexBufferClass*>(state->sorting_state.index_buffer);
