@@ -213,3 +213,14 @@ cmake --build --preset mingw64-game --target z_generals -- -j1
 ```
 
 Report the first hard failure plus any actual compiler warnings. The `#pragma message` output remains informational. Do not replace the backend vertex path with DX8/D3DX compatibility code to bypass the next blocker.
+
+
+### Step 05H1N Windows continuation
+
+H1N fixes the `pointgr.cpp` WWMath compile blocker reached at 188/942 and removes the logical-audio pointer-width plus secondary-base intrusive-delete warnings from the same H1M Windows run. Continue with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus all actual compiler warnings. `#pragma message` output remains informational. Keep runtime-only native pointers separate from fixed-width gameplay/network/replay/Xfer data.

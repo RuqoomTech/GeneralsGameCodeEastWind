@@ -128,3 +128,12 @@ The H1J Windows build cleared the native-address sweep and advanced to Zero Hour
 - `RenderBackendColorVertex` and `RenderBackendTexturedVertex` now provide explicit `operator==`/`operator!=` without changing their storage layout or D3D12 upload representation.
 - The D3D12 policy locks this renderer-neutral value contract so later textured caller migration cannot regress into the same template failure.
 - No deterministic, wire, W3D/W3X asset, replay, CRC, RNG, Xfer, or gameplay state changes. Windows sign-off remains pending the next `z_generals -j1` build.
+
+
+## Step 05H1N candidate — point orientation / runtime pointer / intrusive-delete cleanup
+- Windows H1M validation cleared the real Evolution Render2D blocker and advanced the normal `z_generals` graph to `Core/.../WW3D2/pointgr.cpp` at 188/942.
+- `pointgr.cpp` now rotates the two ground-multiplier vectors with `Matrix3D::Rotate_Vector()`, preserving the H1K negative-Z rotation without depending on the disabled `ALLOW_TEMPORARIES` operator overload.
+- `SoundSceneObjClass::On_Event` now carries its runtime-only callback parameters as `std::uintptr_t`; `EVENT_LOGICAL_HEARD` no longer truncates listener/sound pointers through `uint32`. Deterministic/audio object IDs remain `uint32`.
+- `PivotMapClass` and `SnapPointsClass` now override `Delete_This()` at the complete-object class, avoiding deletion from their nonzero-offset secondary `RefCountClass` subobject.
+- x64/D3D12 policy guards cover all three fixes. Clean host validation rebuilt 46/46 actions and passed 26/26 tests.
+- H1N is locally validated only until the next real Windows `cmake --build --preset mingw64-game --target z_generals -- -j1` run.

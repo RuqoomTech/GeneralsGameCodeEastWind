@@ -1217,8 +1217,8 @@ void PointGroupClass::Update_Arrays(
 						Matrix3D rot_mat(true);
 						rot_mat.Rotate_Z(-((float)point_orientation[i] / 255.0f * 2.0f * WWMATH_PI));
 
-						Vector3 orientedVecX = rot_mat * GroundMultiplierX;
-						Vector3 orientedVecY = rot_mat * GroundMultiplierY;
+						Vector3 orientedVecX = rot_mat.Rotate_Vector(GroundMultiplierX);
+						Vector3 orientedVecY = rot_mat.Rotate_Vector(GroundMultiplierY);
 
 						vertex_loc[vert + 0].X = point_loc[i].X +	(orientedVecX.X + orientedVecY.X) * point_size[i];
 						vertex_loc[vert + 0].Y = point_loc[i].Y +	(orientedVecX.Y + orientedVecY.Y) * point_size[i];

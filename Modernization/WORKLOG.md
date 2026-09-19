@@ -534,3 +534,17 @@ The runtime pointer policy now guards the 32-bit token width and forbids the ori
 - Replaced the asset-manager pointer-to-`int` subtraction blocker plus the same active copies in `W3DAssetManager.cpp` and `meshmdlio.cpp` with pointer-difference arithmetic.
 - Corrected `PrimitiveAnimationChannelClass::KeyClass::Set_Time` from `float` to `void`; the only caller ignores a result and the old implementation returned none.
 - Extended the x64 platform policy, rebuilt the focused host graph, and passed 26/26 tests. Windows sign-off remains pending the next `z_generals -j1` build.
+
+
+### 2026-09-19 — Step 05H1M RenderBackend vertex value contract
+- H1L Windows validation advanced the real game graph to `render2d.cpp` at 154/942.
+- Added equality/inequality value semantics to `RenderBackendColorVertex` and `RenderBackendTexturedVertex` so Westwood `DynamicVectorClass` can instantiate its generic comparison/ID machinery.
+- Both renderer-neutral vertex records remain trivially copyable and keep their existing D3D12 upload layout.
+- Host focused graph passed 26/26; Windows sign-off remained pending.
+
+### 2026-09-19 — Step 05H1N point orientation / native callback / intrusive-delete cleanup
+- H1M Windows validation cleared Render2D and advanced to `pointgr.cpp` at 188/942.
+- Replaced the unavailable `Matrix3D * Vector3` point-orientation expressions with `Matrix3D::Rotate_Vector()` while preserving the H1K rotation angle/sign.
+- Widened only `SoundSceneObjClass::On_Event` runtime payloads to `std::uintptr_t` so logical listener/sound pointers are not truncated; persisted/gameplay IDs remain fixed-width.
+- Added complete-object `Delete_This()` overrides to `PivotMapClass` and `SnapPointsClass` to avoid secondary-base `delete this` diagnostics.
+- Clean host tests-only build completed 46/46 actions and 26/26 tests. Windows sign-off requires the next real `z_generals -j1` build.

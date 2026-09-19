@@ -276,6 +276,19 @@ rts_policy_require_contains(
     "BitmapHandlerClass::Create_Mipmap_B8G8R8A8"
     "Evolution missing-texture mip generation must use the existing CPU bitmap helper")
 
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp"
+    "rot_mat.Rotate_Vector(GroundMultiplierX)"
+    "point-group orientation must use the always-available WWMath rotation API")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp"
+    "rot_mat.Rotate_Vector(GroundMultiplierY)"
+    "point-group orientation must use the always-available WWMath rotation API")
+rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp"
+    "rot_mat * GroundMultiplier"
+    "point-group orientation must not depend on the ALLOW_TEMPORARIES Matrix3D operator")
+
 # Pure game/client math and files with unused D3DX includes must also stay
 # independent of the retired utility library so the normal x64 graph does not
 # stop before reaching genuine renderer migration work.

@@ -214,4 +214,27 @@ rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/prim_anim.h" _prim_anim_hea
 rts_policy_require_text("${_prim_anim_header}" "void\t\t\tSet_Time (float time)" "primitive animation Set_Time must match its side-effect-only contract")
 rts_policy_forbid_text("${_prim_anim_header}" "float\t\t\tSet_Time (float time)" "primitive animation Set_Time regressed to a non-void function without a return value")
 
+
+
+# Step 05H1N keeps runtime-only audio callback pointers native-width and makes
+# intrusive refcount deletion start from the complete object for secondary-base
+# RefCountClass users. These values are not serialized/gameplay identifiers.
+rts_policy_read("Core/Libraries/Source/WWVegas/WWAudio/SoundSceneObj.h" _sound_scene_obj_header)
+rts_policy_require_text("${_sound_scene_obj_header}" "std::uintptr_t param1 = 0, std::uintptr_t param2 = 0" "logical-audio event payloads must retain native pointer width")
+rts_policy_forbid_text("${_sound_scene_obj_header}" "uint32 param1 = 0, uint32 param2 = 0" "logical-audio event payloads regressed to 32-bit pointer transport")
+rts_policy_require_text("${_sound_scene_obj_header}" "reinterpret_cast<LogicalListenerClass *>(param1)" "logical-audio listener payload must reconstruct from native-width storage")
+rts_policy_require_text("${_sound_scene_obj_header}" "reinterpret_cast<LogicalSoundClass *>(param2)" "logical-audio sound payload must reconstruct from native-width storage")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWAudio/SoundScene.cpp" _sound_scene_source)
+rts_policy_require_text("${_sound_scene_source}" "reinterpret_cast<std::uintptr_t>(listener)" "logical-audio listener pointer must enter the callback event at native width")
+rts_policy_require_text("${_sound_scene_source}" "reinterpret_cast<std::uintptr_t>(sound_obj)" "logical-audio sound pointer must enter the callback event at native width")
+rts_policy_forbid_text("${_sound_scene_source}" "(uint32)listener" "logical-audio listener pointer regressed to 32-bit truncation")
+rts_policy_forbid_text("${_sound_scene_source}" "(uint32)sound_obj" "logical-audio sound pointer regressed to 32-bit truncation")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/hanim.h" _hanim_header)
+rts_policy_require_text("${_hanim_header}" "virtual void Delete_This() override { delete this; }" "PivotMapClass must delete from its complete-object subobject instead of the offset RefCountClass base")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/snapPts.h" _snap_points_header)
+rts_policy_require_text("${_snap_points_header}" "virtual void Delete_This() override { delete this; }" "SnapPointsClass must delete from its complete-object subobject instead of the offset RefCountClass base")
+
 message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, native handles stay native-width, and profiler identities are pointer-independent")

@@ -49,6 +49,7 @@ class SnapPointsClass : public DynamicVectorClass<Vector3>, public RefCountClass
 public:
 
 	WW3DErrorType Load_W3D(ChunkLoadClass & cload);
+	virtual void Delete_This() override { delete this; }
 
 protected:
 
