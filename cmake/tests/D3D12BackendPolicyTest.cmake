@@ -236,4 +236,37 @@ foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
         "the D3D12 backend must not include ${_legacy_header}")
 endforeach()
 
-message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, sampled textures, and the Step05H real Render2D screen-space path")
+# WWMath is renderer-neutral. Legacy D3D8 matrix conversion remains only with
+# the archival DX8 backend until those callers cross the renderer seam.
+foreach(_wwmath_matrix IN ITEMS
+    "Core/Libraries/Source/WWVegas/WWMath/matrix3d.cpp"
+    "Core/Libraries/Source/WWVegas/WWMath/matrix3d.h"
+    "Core/Libraries/Source/WWVegas/WWMath/matrix4.cpp"
+    "Core/Libraries/Source/WWVegas/WWMath/matrix4.h")
+    rts_policy_require_absent(
+        "${_wwmath_matrix}"
+        "d3dx8math.h"
+        "renderer-neutral WWMath must not depend on the retired D3DX8 math header")
+    rts_policy_require_absent(
+        "${_wwmath_matrix}"
+        "To_D3DMATRIX"
+        "legacy D3D matrix conversion must not live in renderer-neutral WWMath")
+    rts_policy_require_absent(
+        "${_wwmath_matrix}"
+        "To_D3DXMATRIX"
+        "dead D3DX8 matrix conversion must not return to renderer-neutral WWMath")
+endforeach()
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper.h"
+    "WWINLINE D3DMATRIX To_D3DMATRIX(const Matrix3D &m)"
+    "remaining D3D8 Matrix3D conversion must stay with the archival DX8 backend")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper.h"
+    "WWINLINE void To_Matrix4x4(Matrix4x4 &m, const D3DMATRIX &dxm)"
+    "remaining D3D8 Matrix4x4 conversion must stay with the archival DX8 backend")
+rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper.h"
+    "To_D3DXMATRIX"
+    "unused D3DX8 matrix conversion should remain deleted rather than perpetuating D3DX8")
+
+message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, sampled textures, the Step05H real Render2D path, and renderer-neutral WWMath no longer owns D3D8 matrix conversion")

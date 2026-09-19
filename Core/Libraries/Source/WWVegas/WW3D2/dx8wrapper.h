@@ -94,6 +94,100 @@ class TextureClass;
 class LightClass;
 class SurfaceClass;
 
+// Legacy Direct3D 8 matrix conversion belongs to the archival DX8 backend,
+// not renderer-neutral WWMath. Keep these temporary helpers inline because the
+// Evolution x64 graph intentionally excludes the DX8 implementation .cpp while
+// remaining legacy callers are migrated away from this header.
+WWINLINE void To_D3DMATRIX(D3DMATRIX &dxm, const Matrix3D &m)
+{
+	dxm.m[0][0] = m[0][0];
+	dxm.m[0][1] = m[1][0];
+	dxm.m[0][2] = m[2][0];
+	dxm.m[0][3] = 0.0f;
+
+	dxm.m[1][0] = m[0][1];
+	dxm.m[1][1] = m[1][1];
+	dxm.m[1][2] = m[2][1];
+	dxm.m[1][3] = 0.0f;
+
+	dxm.m[2][0] = m[0][2];
+	dxm.m[2][1] = m[1][2];
+	dxm.m[2][2] = m[2][2];
+	dxm.m[2][3] = 0.0f;
+
+	dxm.m[3][0] = m[0][3];
+	dxm.m[3][1] = m[1][3];
+	dxm.m[3][2] = m[2][3];
+	dxm.m[3][3] = 1.0f;
+}
+
+WWINLINE D3DMATRIX To_D3DMATRIX(const Matrix3D &m)
+{
+	D3DMATRIX dxm;
+	To_D3DMATRIX(dxm, m);
+	return dxm;
+}
+
+WWINLINE void To_D3DMATRIX(D3DMATRIX &dxm, const Matrix4x4 &m)
+{
+	dxm.m[0][0] = m[0][0];
+	dxm.m[0][1] = m[1][0];
+	dxm.m[0][2] = m[2][0];
+	dxm.m[0][3] = m[3][0];
+
+	dxm.m[1][0] = m[0][1];
+	dxm.m[1][1] = m[1][1];
+	dxm.m[1][2] = m[2][1];
+	dxm.m[1][3] = m[3][1];
+
+	dxm.m[2][0] = m[0][2];
+	dxm.m[2][1] = m[1][2];
+	dxm.m[2][2] = m[2][2];
+	dxm.m[2][3] = m[3][2];
+
+	dxm.m[3][0] = m[0][3];
+	dxm.m[3][1] = m[1][3];
+	dxm.m[3][2] = m[2][3];
+	dxm.m[3][3] = m[3][3];
+}
+
+WWINLINE D3DMATRIX To_D3DMATRIX(const Matrix4x4 &m)
+{
+	D3DMATRIX dxm;
+	To_D3DMATRIX(dxm, m);
+	return dxm;
+}
+
+WWINLINE void To_Matrix4x4(Matrix4x4 &m, const D3DMATRIX &dxm)
+{
+	m[0][0] = dxm.m[0][0];
+	m[0][1] = dxm.m[1][0];
+	m[0][2] = dxm.m[2][0];
+	m[0][3] = dxm.m[3][0];
+
+	m[1][0] = dxm.m[0][1];
+	m[1][1] = dxm.m[1][1];
+	m[1][2] = dxm.m[2][1];
+	m[1][3] = dxm.m[3][1];
+
+	m[2][0] = dxm.m[0][2];
+	m[2][1] = dxm.m[1][2];
+	m[2][2] = dxm.m[2][2];
+	m[2][3] = dxm.m[3][2];
+
+	m[3][0] = dxm.m[0][3];
+	m[3][1] = dxm.m[1][3];
+	m[3][2] = dxm.m[2][3];
+	m[3][3] = dxm.m[3][3];
+}
+
+WWINLINE Matrix4x4 To_Matrix4x4(const D3DMATRIX &dxm)
+{
+	Matrix4x4 m;
+	To_Matrix4x4(m, dxm);
+	return m;
+}
+
 struct DX8FrameStatistics
 {
 	DX8FrameStatistics() :

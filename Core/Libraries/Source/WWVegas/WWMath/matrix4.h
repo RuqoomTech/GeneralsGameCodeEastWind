@@ -878,18 +878,3 @@ WWINLINE void	Matrix4x4::Transform_Vector(const Matrix4x4 & A,const Vector4 & in
 	out->Z = (A[2][0] * v->X + A[2][1] * v->Y + A[2][2] * v->Z + A[2][3] * v->W);
 	out->W = (A[3][0] * v->X + A[3][1] * v->Y + A[3][2] * v->Z + A[3][3] * v->W);
 }
-
-
-// TheSuperHackers @info Always convert Matrix4x4 to D3DMATRIX or vice versa with the conversion functions below.
-// Reason being, D3DMATRIX is row-major, and Matrix4x4 is column-major and therefore copying one matrix to the
-// other will always require a transpose.
-
-struct _D3DMATRIX;
-struct D3DXMATRIX;
-
-extern void To_D3DMATRIX(_D3DMATRIX& dxm, const Matrix4x4& m);
-extern _D3DMATRIX To_D3DMATRIX(const Matrix4x4& m);
-extern D3DXMATRIX To_D3DXMATRIX(const Matrix4x4& m);
-
-extern void To_Matrix4x4(Matrix4x4& m, const _D3DMATRIX& dxm);
-extern Matrix4x4 To_Matrix4x4(const _D3DMATRIX& dxm);

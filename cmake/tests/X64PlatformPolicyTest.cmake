@@ -80,4 +80,31 @@ foreach(_entry IN ITEMS "SymFromAddr" "SymFunctionTableAccess64" "SymGetModuleBa
     rts_policy_require_text("${_dbghelp_loader}" "GetProcAddress(Inst->m_dllModule, \"${_entry}\")" "DbgHelpLoader must resolve native x64 entry point ${_entry}")
 endforeach()
 
-message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, and crash diagnostics stay native-width")
+# Win32 registry keys are opaque native handles, not deterministic/wire integers.
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/registry.h" _registry_header)
+rts_policy_require_text("${_registry_header}" "HKEY\tKey;" "RegistryClass must retain HKEY at native handle width")
+rts_policy_forbid_text("${_registry_header}" "int\tKey;" "RegistryClass regressed to 32-bit HKEY storage")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/registry.cpp" _registry_source)
+rts_policy_require_text("${_registry_source}" "Key = key;" "RegistryClass must assign the native HKEY without integer truncation")
+rts_policy_forbid_text("${_registry_source}" "Key = (int)key;" "RegistryClass regressed to HKEY-to-int truncation")
+rts_policy_forbid_text("${_registry_source}" "(HKEY)Key" "RegistryClass should not reconstruct HKEY from integer storage")
+rts_policy_forbid_text("${_registry_source}" "sizeof(HKEY) == sizeof(int)" "RegistryClass must not assume Win32-sized registry handles")
+
+# The legacy function-level profiler used the tracer object's address as a
+# pseudo thread ID.  That was accidentally pointer-sized on Win32 and truncates
+# on Win64.  Keep diagnostic thread identity explicit and pointer-independent.
+rts_policy_read("Core/Libraries/Source/profile/profile_funclevel.h" _profile_funclevel_header)
+rts_policy_require_text("${_profile_funclevel_header}" "unsigned GetId() const;" "profile thread ID must be resolved without an inline pointer cast")
+rts_policy_forbid_text("${_profile_funclevel_header}" "return unsigned(m_threadID);" "profile thread ID regressed to pointer truncation")
+
+rts_policy_read("Core/Libraries/Source/profile/internal_funclevel.h" _profile_internal_header)
+rts_policy_require_text("${_profile_internal_header}" "unsigned GetThreadId() const" "profile tracer must expose a logical thread ID")
+rts_policy_require_text("${_profile_internal_header}" "static unsigned nextThreadId;" "profile tracer must allocate logical thread IDs")
+rts_policy_require_text("${_profile_internal_header}" "unsigned threadId;" "profile tracer must store logical thread identity separately from its pointer")
+
+rts_policy_read("Core/Libraries/Source/profile/profile_funclevel.cpp" _profile_funclevel_source)
+rts_policy_require_text("${_profile_funclevel_source}" "threadId=nextThreadId;" "profile tracer must assign its logical ID under the existing profiler lock")
+rts_policy_require_text("${_profile_funclevel_source}" "return m_threadID ? m_threadID->GetThreadId() : 0;" "ProfileFuncLevel::Thread::GetId must return logical identity")
+
+message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, native handles stay native-width, and profiler identities are pointer-independent")
