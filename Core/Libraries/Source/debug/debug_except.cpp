@@ -31,6 +31,8 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 
 DebugExceptionhandler::DebugExceptionhandler()
 {
