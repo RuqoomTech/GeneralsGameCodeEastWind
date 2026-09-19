@@ -32,6 +32,11 @@
 #include <windows.h>
 #include "WWLib/stringex.h"
 #include <imagehlp.h>
+#include <cinttypes>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 
 // Definitions to allow run-time linking to the dbghelp.dll functions.
 
@@ -46,7 +51,7 @@ static union
   {
 #include "debug_stack.inl"
   };
-  unsigned funcPtr[1];
+  FARPROC funcPtr[1];
 } gDbg;
 #undef DBGHELP
 
@@ -89,11 +94,11 @@ static void InitDbghelp()
     return;
 
   // Get function addresses
-  unsigned *funcptr=gDbg.funcPtr;
+  FARPROC *funcptr=gDbg.funcPtr;
   unsigned k=0;
   for (;DebughelpFunctionNames[k];++k,++funcptr)
   {
-    *funcptr=(unsigned)GetProcAddress(g_dbghelp,DebughelpFunctionNames[k]);
+    *funcptr=GetProcAddress(g_dbghelp,DebughelpFunctionNames[k]);
     if (!*funcptr)
       break;
   }
@@ -109,7 +114,7 @@ static void InitDbghelp()
     gDbg._SymSetOptions(gDbg._SymGetOptions()|SYMOPT_DEFERRED_LOADS|SYMOPT_LOAD_LINES);
 
     // Init module
-    gDbg._SymInitialize((HANDLE)GetCurrentProcessId(),nullptr,TRUE);
+    gDbg._SymInitialize(GetCurrentProcess(),nullptr,TRUE);
 
     // Check: are we using a newer version of dbghelp.dll?
     // (older versions have some serious issues.. err... bugs)
@@ -135,13 +140,13 @@ DebugStackwalk::Signature& DebugStackwalk::Signature::operator=(const Signature&
   return *this;
 }
 
-unsigned DebugStackwalk::Signature::GetAddress(int n) const
+std::uintptr_t DebugStackwalk::Signature::GetAddress(int n) const
 {
   DFAIL_IF_MSG(n<0||n>=MAX_ADDR,n << "/" << MAX_ADDR) return 0;
   return m_addr[n];
 }
 
-void DebugStackwalk::Signature::GetSymbol(unsigned addr, char *buf, unsigned bufSize)
+void DebugStackwalk::Signature::GetSymbol(std::uintptr_t addr, char *buf, unsigned bufSize)
 {
   DFAIL_IF(!buf) return;
   DFAIL_IF(bufSize<64||bufSize>=0x80000000) return;
@@ -150,66 +155,79 @@ void DebugStackwalk::Signature::GetSymbol(unsigned addr, char *buf, unsigned buf
 
   char *bufEnd=buf+bufSize;
   *buf=0;
-  buf+=wsprintf(buf,"%08x",addr);
-
-  // determine module
-  unsigned modBase=gDbg._SymGetModuleBase((HANDLE)GetCurrentProcessId(),addr);
+#if defined(_WIN64)
+  buf+=sprintf(buf,"%016llx",static_cast<unsigned long long>(addr));
+  DWORD64 modBase=gDbg._SymGetModuleBase64(GetCurrentProcess(),static_cast<DWORD64>(addr));
+#else
+  buf+=sprintf(buf,"%08x",static_cast<unsigned>(addr));
+  DWORD modBase=gDbg._SymGetModuleBase(GetCurrentProcess(),static_cast<DWORD>(addr));
+#endif
   if (!modBase)
-	{
-		strcpy(buf," (unknown module)");
+  {
+    strcpy(buf," (unknown module)");
     return;
-	}
+  }
 
-  // illegal code ptr?
-	if (IsBadReadPtr((void *)addr,4)||IsBadCodePtr((FARPROC)addr))
-	{
-		strcpy(buf," (invalid code addr)");
-		return;
-	}
+  char symbolBuffer[sizeof(SYMBOL_INFO)+MAX_SYM_NAME+1];
+  char moduleBuffer[MAX_PATH];
+  GetModuleFileName(reinterpret_cast<HMODULE>(static_cast<std::uintptr_t>(modBase)),moduleBuffer,sizeof(moduleBuffer));
 
-  char symbolBuffer[512];
-  GetModuleFileName((HMODULE)modBase,symbolBuffer,sizeof(symbolBuffer));
-
-  char *p=strrchr(symbolBuffer,'\\'); // use filename only, strip off path
-  p=p?p+1:symbolBuffer;
+  char *p=strrchr(moduleBuffer,'\\');
+  p=p?p+1:moduleBuffer;
   *buf++=' ';
   strcpy(buf,p);
   buf+=strlen(buf);
   if (bufEnd-buf<32)
     return;
-  buf+=wsprintf(buf,"+0x%x",addr-modBase);
+  buf+=sprintf(buf,"+0x%llx",static_cast<unsigned long long>(addr-static_cast<std::uintptr_t>(modBase)));
 
-  // determine symbol
-  PIMAGEHLP_SYMBOL symPtr=(PIMAGEHLP_SYMBOL)symbolBuffer;
+#if defined(_WIN64)
+  PSYMBOL_INFO symPtr=reinterpret_cast<PSYMBOL_INFO>(symbolBuffer);
+  memset(symPtr,0,sizeof(symbolBuffer));
+  symPtr->SizeOfStruct=sizeof(SYMBOL_INFO);
+  symPtr->MaxNameLen=MAX_SYM_NAME;
+  DWORD64 displacement=0;
+  if (!gDbg._SymFromAddr(GetCurrentProcess(),static_cast<DWORD64>(addr),&displacement,symPtr))
+    return;
+#else
+  PIMAGEHLP_SYMBOL symPtr=reinterpret_cast<PIMAGEHLP_SYMBOL>(symbolBuffer);
   memset(symPtr,0,sizeof(symbolBuffer));
   symPtr->SizeOfStruct=sizeof(IMAGEHLP_SYMBOL);
   symPtr->MaxNameLength=sizeof(symbolBuffer)-sizeof(IMAGEHLP_SYMBOL);
-  DWORD displacement;
-  if (!gDbg._SymGetSymFromAddr((HANDLE)GetCurrentProcessId(),addr,&displacement,symPtr))
+  DWORD displacement=0;
+  if (!gDbg._SymGetSymFromAddr(GetCurrentProcess(),static_cast<DWORD>(addr),&displacement,symPtr))
     return;
-  if ((unsigned int)(bufEnd-buf)<strlen(symPtr->Name)+16)
+#endif
+  if (static_cast<std::size_t>(bufEnd-buf)<strlen(symPtr->Name)+24)
     return;
-  buf+=wsprintf(buf,", %s+0x%x",symPtr->Name,displacement);
+  buf+=sprintf(buf,", %s+0x%llx",symPtr->Name,static_cast<unsigned long long>(displacement));
 
-  // and line number
+#if defined(_WIN64)
+  IMAGEHLP_LINE64 line;
+#else
   IMAGEHLP_LINE line;
+#endif
   memset(&line,0,sizeof(line));
   line.SizeOfStruct=sizeof(line);
-  if (!gDbg._SymGetLineFromAddr((HANDLE)GetCurrentProcessId(),addr,&displacement,&line))
+  DWORD lineDisplacement=0;
+#if defined(_WIN64)
+  if (!gDbg._SymGetLineFromAddr64(GetCurrentProcess(),static_cast<DWORD64>(addr),&lineDisplacement,&line))
+#else
+  if (!gDbg._SymGetLineFromAddr(GetCurrentProcess(),static_cast<DWORD>(addr),&lineDisplacement,&line))
+#endif
     return;
 
-  p=strrchr(line.FileName,'\\'); // use filename only, strip off path
+  p=strrchr(line.FileName,'\\');
   p=p?p+1:line.FileName;
-
-  if ((unsigned int)(bufEnd-buf)<strlen(p)+16)
+  if (static_cast<std::size_t>(bufEnd-buf)<strlen(p)+24)
     return;
-  buf+=wsprintf(buf,", %s:%i+0x%x",p,line.LineNumber,displacement);
+  sprintf(buf,", %s:%lu+0x%lx",p,static_cast<unsigned long>(line.LineNumber),static_cast<unsigned long>(lineDisplacement));
 }
 
-void DebugStackwalk::Signature::GetSymbol(unsigned addr,
-                                          char *bufMod, unsigned sizeMod, unsigned *relMod,
-                                          char *bufSym, unsigned sizeSym, unsigned *relSym,
-                                          char *bufFile, unsigned sizeFile, unsigned *linePtr, unsigned *relLine)
+void DebugStackwalk::Signature::GetSymbol(std::uintptr_t addr,
+                                          char *bufMod, unsigned sizeMod, std::uintptr_t *relMod,
+                                          char *bufSym, unsigned sizeSym, std::uintptr_t *relSym,
+                                          char *bufFile, unsigned sizeFile, unsigned *linePtr, std::uintptr_t *relLine)
 {
   InitDbghelp();
 
@@ -217,7 +235,6 @@ void DebugStackwalk::Signature::GetSymbol(unsigned addr,
   if (relMod) *relMod=0;
   if (bufSym) *bufSym=0;
   if (relSym) *relSym=0;
-
   if (bufFile) *bufFile=0;
   if (linePtr) *linePtr=0;
   if (relLine) *relLine=0;
@@ -226,75 +243,77 @@ void DebugStackwalk::Signature::GetSymbol(unsigned addr,
   DFAIL_IF(bufSym&&sizeSym<16) return;
   DFAIL_IF(bufFile&&sizeFile<16) return;
 
-  // determine module
-  unsigned modBase=gDbg._SymGetModuleBase((HANDLE)GetCurrentProcessId(),addr);
+#if defined(_WIN64)
+  DWORD64 modBase=gDbg._SymGetModuleBase64(GetCurrentProcess(),static_cast<DWORD64>(addr));
+#else
+  DWORD modBase=gDbg._SymGetModuleBase(GetCurrentProcess(),static_cast<DWORD>(addr));
+#endif
   if (!modBase)
-	{
-    if (bufMod)
-		  strcpy(bufMod,"(unknown mod)");
-    if (bufSym)
-      strcpy(bufSym,"(unknown)");
+  {
+    if (bufMod) strcpy(bufMod,"(unknown mod)");
+    if (bufSym) strcpy(bufSym,"(unknown)");
     return;
-	}
+  }
 
-  // illegal code ptr?
-	if (IsBadReadPtr((void *)addr,4)||IsBadCodePtr((FARPROC)addr))
-	{
-    if (bufMod)
-		  strcpy(bufMod,"(inv code addr)");
-    if (bufSym)
-      strcpy(bufSym,"(unknown)");
-		return;
-	}
-
-  char symbolBuffer[512];
+  char symbolBuffer[sizeof(SYMBOL_INFO)+MAX_SYM_NAME+1];
+  char moduleBuffer[MAX_PATH];
   if (bufMod)
   {
-    GetModuleFileName((HMODULE)modBase,symbolBuffer,sizeof(symbolBuffer));
-
-    char *p=strrchr(symbolBuffer,'\\'); // use filename only, strip off path
-    p=p?p+1:symbolBuffer;
+    GetModuleFileName(reinterpret_cast<HMODULE>(static_cast<std::uintptr_t>(modBase)),moduleBuffer,sizeof(moduleBuffer));
+    char *p=strrchr(moduleBuffer,'\\');
+    p=p?p+1:moduleBuffer;
     strlcpy(bufMod,p,sizeMod);
   }
-  if (relMod)
-    *relMod=addr-modBase;
+  if (relMod) *relMod=addr-static_cast<std::uintptr_t>(modBase);
 
-  // determine symbol
   if (bufSym)
   {
-    PIMAGEHLP_SYMBOL symPtr=(PIMAGEHLP_SYMBOL)symbolBuffer;
+#if defined(_WIN64)
+    PSYMBOL_INFO symPtr=reinterpret_cast<PSYMBOL_INFO>(symbolBuffer);
+    memset(symPtr,0,sizeof(symbolBuffer));
+    symPtr->SizeOfStruct=sizeof(SYMBOL_INFO);
+    symPtr->MaxNameLen=MAX_SYM_NAME;
+    DWORD64 displacement=0;
+    if (gDbg._SymFromAddr(GetCurrentProcess(),static_cast<DWORD64>(addr),&displacement,symPtr))
+#else
+    PIMAGEHLP_SYMBOL symPtr=reinterpret_cast<PIMAGEHLP_SYMBOL>(symbolBuffer);
     memset(symPtr,0,sizeof(symbolBuffer));
     symPtr->SizeOfStruct=sizeof(IMAGEHLP_SYMBOL);
     symPtr->MaxNameLength=sizeof(symbolBuffer)-sizeof(IMAGEHLP_SYMBOL);
-    DWORD displacement;
-    if (gDbg._SymGetSymFromAddr((HANDLE)GetCurrentProcessId(),addr,&displacement,symPtr))
+    DWORD displacement=0;
+    if (gDbg._SymGetSymFromAddr(GetCurrentProcess(),static_cast<DWORD>(addr),&displacement,symPtr))
+#endif
     {
       strlcpy(bufSym,symPtr->Name,sizeSym);
-      if (relSym)
-        *relSym=displacement;
+      if (relSym) *relSym=static_cast<std::uintptr_t>(displacement);
     }
     else
       strcpy(bufSym,"(unknown)");
   }
 
-  // and line number
   if (bufFile)
   {
+#if defined(_WIN64)
+    IMAGEHLP_LINE64 line;
+#else
     IMAGEHLP_LINE line;
+#endif
     memset(&line,0,sizeof(line));
     line.SizeOfStruct=sizeof(line);
-    DWORD displacement;
-    if (!gDbg._SymGetLineFromAddr((HANDLE)GetCurrentProcessId(),addr,&displacement,&line))
+    DWORD displacement=0;
+#if defined(_WIN64)
+    if (!gDbg._SymGetLineFromAddr64(GetCurrentProcess(),static_cast<DWORD64>(addr),&displacement,&line))
+#else
+    if (!gDbg._SymGetLineFromAddr(GetCurrentProcess(),static_cast<DWORD>(addr),&displacement,&line))
+#endif
       strcpy(bufFile,"(unknown)");
     else
     {
-      char *p=strrchr(line.FileName,'\\'); // use filename only, strip off path
+      char *p=strrchr(line.FileName,'\\');
       p=p?p+1:line.FileName;
       strlcpy(bufFile,p,sizeFile);
-      if (linePtr)
-        *linePtr=line.LineNumber;
-      if (relLine)
-        *relLine=displacement;
+      if (linePtr) *linePtr=line.LineNumber;
+      if (relLine) *relLine=static_cast<std::uintptr_t>(displacement);
     }
   }
 }
@@ -335,71 +354,77 @@ bool DebugStackwalk::IsOldDbghelp()
   return g_oldDbghelp;
 }
 
-int DebugStackwalk::StackWalk(Signature &sig, struct _CONTEXT *ctx)
+int DebugStackwalk::Capture(Signature &sig, struct _CONTEXT *ctx)
 {
   InitDbghelp();
-
   sig.m_numAddr=0;
 
-  // bail out if no stack walk available
-  if (!gDbg._StackWalk)
+#if defined(_WIN64)
+  if (!gDbg._StackWalk64)
     return 0;
 
-	// Set up the stack frame structure for the start point of the stack walk (i.e. here).
-	STACKFRAME stackFrame;
-	memset(&stackFrame,0,sizeof(stackFrame));
-
-	stackFrame.AddrPC.Mode = AddrModeFlat;
-	stackFrame.AddrStack.Mode = AddrModeFlat;
-	stackFrame.AddrFrame.Mode = AddrModeFlat;
-
-	// Use the context struct if it was provided.
-	if (ctx)
-  {
-		stackFrame.AddrPC.Offset = ctx->Eip;
-		stackFrame.AddrStack.Offset = ctx->Esp;
-		stackFrame.AddrFrame.Offset = ctx->Ebp;
-	}
+  CONTEXT localContext;
+  if (ctx)
+    localContext=*ctx;
   else
-  {
-    // walk stack back using current call chain
-	  unsigned long reg_eip, reg_ebp, reg_esp;
-#if defined(_MSC_VER)
-	  __asm
-    {
-    here:
-		  lea	eax,here
-		  mov	reg_eip,eax
-		  mov	reg_ebp,ebp
-		  mov	reg_esp,esp
-	  };
-#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__i386__) || defined(_M_IX86))
-	  __asm__ __volatile__ (
-		  "call 1f\n\t"
-		  "1: pop %0\n\t"
-		  "mov %%ebp, %1\n\t"
-		  "mov %%esp, %2"
-		  : "=r" (reg_eip), "=r" (reg_ebp), "=r" (reg_esp)
-	  );
-#else
-#error "Unsupported compiler or architecture for register capture"
-#endif
-	  stackFrame.AddrPC.Offset = reg_eip;
-	  stackFrame.AddrStack.Offset = reg_esp;
-	  stackFrame.AddrFrame.Offset = reg_ebp;
-  }
+    RtlCaptureContext(&localContext);
 
-	// Walk the stack by the requested number of return address iterations.
+  STACKFRAME64 stackFrame;
+  memset(&stackFrame,0,sizeof(stackFrame));
+  stackFrame.AddrPC.Mode=AddrModeFlat;
+  stackFrame.AddrStack.Mode=AddrModeFlat;
+  stackFrame.AddrFrame.Mode=AddrModeFlat;
+  stackFrame.AddrPC.Offset=localContext.Rip;
+  stackFrame.AddrStack.Offset=localContext.Rsp;
+  stackFrame.AddrFrame.Offset=localContext.Rbp;
+
   bool skipFirst=!ctx;
-  while (sig.m_numAddr<Signature::MAX_ADDR&&
-		     gDbg._StackWalk(IMAGE_FILE_MACHINE_I386,GetCurrentProcess(),GetCurrentThread(),
-                         &stackFrame,nullptr,nullptr,gDbg._SymFunctionTableAccess,gDbg._SymGetModuleBase,nullptr))
+  while (sig.m_numAddr<Signature::MAX_ADDR &&
+         gDbg._StackWalk64(IMAGE_FILE_MACHINE_AMD64,GetCurrentProcess(),GetCurrentThread(),
+                           &stackFrame,&localContext,nullptr,gDbg._SymFunctionTableAccess64,
+                           gDbg._SymGetModuleBase64,nullptr))
   {
+    if (!stackFrame.AddrPC.Offset)
+      break;
     if (skipFirst)
       skipFirst=false;
     else
-      sig.m_addr[sig.m_numAddr++]=stackFrame.AddrPC.Offset;
+      sig.m_addr[sig.m_numAddr++]=static_cast<std::uintptr_t>(stackFrame.AddrPC.Offset);
   }
+#else
+  if (!gDbg._StackWalk)
+    return 0;
 
-	return sig.m_numAddr;
+  STACKFRAME stackFrame;
+  memset(&stackFrame,0,sizeof(stackFrame));
+  stackFrame.AddrPC.Mode=AddrModeFlat;
+  stackFrame.AddrStack.Mode=AddrModeFlat;
+  stackFrame.AddrFrame.Mode=AddrModeFlat;
+
+  CONTEXT localContext;
+  if (ctx)
+    localContext=*ctx;
+  else
+  {
+    RtlCaptureContext(&localContext);
+    ctx=&localContext;
+  }
+  stackFrame.AddrPC.Offset=ctx->Eip;
+  stackFrame.AddrStack.Offset=ctx->Esp;
+  stackFrame.AddrFrame.Offset=ctx->Ebp;
+
+  bool skipFirst=(ctx==&localContext);
+  while (sig.m_numAddr<Signature::MAX_ADDR &&
+         gDbg._StackWalk(IMAGE_FILE_MACHINE_I386,GetCurrentProcess(),GetCurrentThread(),
+                         &stackFrame,ctx,nullptr,gDbg._SymFunctionTableAccess,gDbg._SymGetModuleBase,nullptr))
+  {
+    if (!stackFrame.AddrPC.Offset)
+      break;
+    if (skipFirst)
+      skipFirst=false;
+    else
+      sig.m_addr[sig.m_numAddr++]=static_cast<std::uintptr_t>(stackFrame.AddrPC.Offset);
+  }
+#endif
+  return sig.m_numAddr;
 }

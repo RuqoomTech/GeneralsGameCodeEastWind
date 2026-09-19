@@ -290,3 +290,8 @@ Complete the documented support matrix:
 Only after profiling proves a need. Candidates include GPU culling/indirect submission, more bindless-style access, mesh shaders, VRS, or other D3D12 features.
 
 Do not make advanced hardware features prerequisites without measured benefit.
+
+
+### Current 05H migration note — H1K
+
+The real `z_generals` x64 graph is now past the early native-width/debug/compression blockers and has entered the WW3D renderer/resource dependency layer. H1K removes active D3DX8 utility/math dependencies across WW3D plus renderer-neutral game/client math, while intentionally leaving shader/water/terrain/tree behavior for coherent D3D12 migration. Continue using the first real compiler/linker failure as the queue; migrate renderer/resource responsibilities through the existing `IRenderBackend` seam rather than recreating D3DX8 or a broad DX8 compatibility layer.

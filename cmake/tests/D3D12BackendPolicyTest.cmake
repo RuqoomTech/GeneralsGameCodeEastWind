@@ -176,6 +176,14 @@ rts_policy_require_contains(
     "RenderBackend2DBlendMode"
     "screen-space blend responsibility must be explicit and renderer-neutral rather than a DX8 state facade")
 rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "operator == (const RenderBackendColorVertex &other) const"
+    "renderer-neutral color vertices must satisfy the legacy VectorClass value contract used by the real Render2D caller")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "operator != (const RenderBackendTexturedVertex &other) const"
+    "renderer-neutral textured vertices must remain compatible with legacy value containers as textured callers migrate")
+rts_policy_require_contains(
     "Core/Tests/D3D12BackendSmokeTest.cpp"
     "Draw_2D_Indexed_Triangles"
     "the Windows production-backend smoke must compile and execute the first real 2D PSO path")
@@ -236,4 +244,112 @@ foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")
         "the D3D12 backend must not include ${_legacy_header}")
 endforeach()
 
-message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, sampled textures, and the Step05H real Render2D screen-space path")
+# Step 05H1K: active Evolution WW3D sources must not require the retired
+# D3DX8 utility library. Pure math moves to WWMath; CPU image conversion and
+# mip generation reuse BitmapHandler. Archival DX8-only source may retain D3DX.
+foreach(_d3dx_free_source IN ITEMS
+    "GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/assetmgr.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/texture.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/textureloader.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/sortingrenderer.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/missingtexture.cpp")
+    rts_policy_require_absent(
+        "${_d3dx_free_source}"
+        "d3dx8"
+        "active Evolution WW3D source ${_d3dx_free_source} must not include D3DX8")
+    rts_policy_require_absent(
+        "${_d3dx_free_source}"
+        "D3DX"
+        "active Evolution WW3D source ${_d3dx_free_source} must not call D3DX8")
+endforeach()
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp"
+    "#if !defined(RTS_EVOLUTION_X64)"
+    "legacy SurfaceClass may include D3DX8 only outside the Evolution x64 graph")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp"
+    "Copy_Surface_Region_CPU"
+    "Evolution SurfaceClass copy/scale must use the existing CPU bitmap path instead of D3DX8")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/missingtexture.cpp"
+    "BitmapHandlerClass::Create_Mipmap_B8G8R8A8"
+    "Evolution missing-texture mip generation must use the existing CPU bitmap helper")
+
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp"
+    "rot_mat.Rotate_Vector(GroundMultiplierX)"
+    "point-group orientation must use the always-available WWMath rotation API")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp"
+    "rot_mat.Rotate_Vector(GroundMultiplierY)"
+    "point-group orientation must use the always-available WWMath rotation API")
+rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp"
+    "rot_mat * GroundMultiplier"
+    "point-group orientation must not depend on the ALLOW_TEMPORARIES Matrix3D operator")
+
+# Pure game/client math and files with unused D3DX includes must also stay
+# independent of the retired utility library so the normal x64 graph does not
+# stop before reaching genuine renderer migration work.
+foreach(_d3dx_free_game_source IN ITEMS
+    "Core/GameEngine/Include/Common/BezierSegment.h"
+    "Core/GameEngine/Source/Common/Bezier/BezierSegment.cpp"
+    "Core/GameEngine/Source/Common/Bezier/BezFwdIterator.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/BaseHeightMap.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/CameraShakeSystem.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/FlatHeightMap.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DView.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/HeightMap.cpp"
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DProjectedShadow.cpp"
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DVolumetricShadow.cpp"
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DShadow.cpp"
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DWebBrowser.cpp")
+    rts_policy_require_absent(
+        "${_d3dx_free_game_source}"
+        "d3dx8"
+        "active x64 source ${_d3dx_free_game_source} must not include D3DX8")
+    rts_policy_require_absent(
+        "${_d3dx_free_game_source}"
+        "D3DX"
+        "active x64 source ${_d3dx_free_game_source} must not call D3DX8")
+endforeach()
+rts_policy_require_contains(
+    "Core/GameEngine/Include/Common/BezierSegment.h"
+    "static const Matrix4x4 s_bezBasisMatrix"
+    "Bezier basis math must use renderer-neutral WWMath")
+
+# WWMath is renderer-neutral. Legacy D3D8 matrix conversion remains only with
+# the archival DX8 backend until those callers cross the renderer seam.
+foreach(_wwmath_matrix IN ITEMS
+    "Core/Libraries/Source/WWVegas/WWMath/matrix3d.cpp"
+    "Core/Libraries/Source/WWVegas/WWMath/matrix3d.h"
+    "Core/Libraries/Source/WWVegas/WWMath/matrix4.cpp"
+    "Core/Libraries/Source/WWVegas/WWMath/matrix4.h")
+    rts_policy_require_absent(
+        "${_wwmath_matrix}"
+        "d3dx8math.h"
+        "renderer-neutral WWMath must not depend on the retired D3DX8 math header")
+    rts_policy_require_absent(
+        "${_wwmath_matrix}"
+        "To_D3DMATRIX"
+        "legacy D3D matrix conversion must not live in renderer-neutral WWMath")
+    rts_policy_require_absent(
+        "${_wwmath_matrix}"
+        "To_D3DXMATRIX"
+        "dead D3DX8 matrix conversion must not return to renderer-neutral WWMath")
+endforeach()
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper.h"
+    "WWINLINE D3DMATRIX To_D3DMATRIX(const Matrix3D &m)"
+    "remaining D3D8 Matrix3D conversion must stay with the archival DX8 backend")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper.h"
+    "WWINLINE void To_Matrix4x4(Matrix4x4 &m, const D3DMATRIX &dxm)"
+    "remaining D3D8 Matrix4x4 conversion must stay with the archival DX8 backend")
+rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper.h"
+    "To_D3DXMATRIX"
+    "unused D3DX8 matrix conversion should remain deleted rather than perpetuating D3DX8")
+
+message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, sampled textures, the Step05H real Render2D path, and renderer-neutral WWMath no longer owns D3D8 matrix conversion")

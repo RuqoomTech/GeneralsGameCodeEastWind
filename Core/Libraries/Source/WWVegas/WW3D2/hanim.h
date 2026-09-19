@@ -124,6 +124,7 @@ class PivotMapClass : public DynamicVectorClass<float>, public RefCountClass
 {
 public:
 	virtual NamedPivotMapClass * As_Named_Pivot_Map() { return 0; }
+	virtual void Delete_This() override { delete this; }
 };
 
 

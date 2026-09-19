@@ -180,10 +180,7 @@ public:
 
       \return profile thread ID
     */
-    unsigned GetId() const
-    {
-      return unsigned(m_threadID);
-    }
+    unsigned GetId() const;
 
   private:
     /// internal thread ID

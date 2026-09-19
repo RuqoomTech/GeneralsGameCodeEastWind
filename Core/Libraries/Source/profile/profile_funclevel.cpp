@@ -129,15 +129,24 @@ extern "C" void __declspec(naked) __cdecl _penter()
 }
 
 ProfileFuncLevelTracer *ProfileFuncLevelTracer::head=nullptr;
+unsigned ProfileFuncLevelTracer::nextThreadId=0;
 bool ProfileFuncLevelTracer::shuttingDown=false;
 int ProfileFuncLevelTracer::curFrame=0;
 unsigned ProfileFuncLevelTracer::frameRecordMask;
 bool ProfileFuncLevelTracer::recordCaller=false;
 
 ProfileFuncLevelTracer::ProfileFuncLevelTracer():
-  stack(nullptr), usedStack(0), totalStack(0), maxDepth(0)
+  next(nullptr), threadId(0), stack(nullptr), usedStack(0), totalStack(0), maxDepth(0)
 {
   ProfileFastCS::Lock lock(cs);
+
+  // Profile-thread identity is diagnostic/runtime state only.  Keep it
+  // independent of native addresses so Win64 does not truncate pointers and
+  // profiling output does not expose allocator addresses as IDs.
+  ++nextThreadId;
+  if (nextThreadId == 0)
+    ++nextThreadId;
+  threadId=nextThreadId;
 
   next=head;
   head=this;
@@ -707,6 +716,11 @@ bool ProfileFuncLevel::Thread::EnumProfile(unsigned index, Id &id) const
     return false;
 }
 
+unsigned ProfileFuncLevel::Thread::GetId() const
+{
+  return m_threadID ? m_threadID->GetThreadId() : 0;
+}
+
 bool ProfileFuncLevel::EnumThreads(unsigned index, Thread &thread)
 {
   ProfileFastCS::Lock lock(cs);
@@ -778,6 +792,11 @@ ProfileFuncLevel::IdList ProfileFuncLevel::Id::GetCaller(unsigned frame) const
 bool ProfileFuncLevel::Thread::EnumProfile(unsigned index, Id &id) const
 {
   return false;
+}
+
+unsigned ProfileFuncLevel::Thread::GetId() const
+{
+  return 0;
 }
 
 bool ProfileFuncLevel::EnumThreads(unsigned index, Thread &thread)

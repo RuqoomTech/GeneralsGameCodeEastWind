@@ -243,6 +243,11 @@ public:
     return next;
   }
 
+  unsigned GetThreadId() const
+  {
+    return threadId;
+  }
+
   Function *FindFunction(unsigned addr)
   {
     return func.Find(addr);
@@ -306,8 +311,14 @@ private:
   /// head of list
   static ProfileFuncLevelTracer *head;
 
+  /// next logical profile-thread identity
+  static unsigned nextThreadId;
+
   /// next tracer object
   ProfileFuncLevelTracer *next;
+
+  /// stable profiler-owned identity; never derived from a native pointer
+  unsigned threadId;
 
   /// are we in shutdown mode?
   static bool shuttingDown;

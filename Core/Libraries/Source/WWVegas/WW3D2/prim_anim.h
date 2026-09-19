@@ -82,7 +82,7 @@ public:
 		const T &	Get_Value () const		{ return m_Value; }
 		T &			Get_Value ()				{ return m_Value; }
 
-		float			Set_Time (float time)		{ m_Time = time; }
+		void			Set_Time (float time)		{ m_Time = time; }
 		void			Set_Value (const T &value)	{ m_Value = value; }
 
 	private:

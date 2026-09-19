@@ -22,6 +22,7 @@
 #define __HUFWRITE 1
 
 #include <string.h>
+#include <cstddef>
 #include "codex.h"
 #include "huffcodex.h"
 
@@ -1050,8 +1051,10 @@ static void HUFF_pack(struct HuffEncodeContext *EC,
 		if (!i3)
 			HUFF_writecode(EC,dest,i);
 
-		if (((long) bptr1- (long) EC->buffer) >= (long)(EC->plen+curpc))
-			curpc = (long) bptr1 - (long) EC->buffer - EC->plen;
+		const std::ptrdiff_t buffer_offset = bptr1 - EC->buffer;
+		const std::ptrdiff_t progress_threshold = static_cast<std::ptrdiff_t>(EC->plen) + static_cast<std::ptrdiff_t>(curpc);
+		if (buffer_offset >= progress_threshold)
+			curpc = static_cast<unsigned int>(buffer_offset - static_cast<std::ptrdiff_t>(EC->plen));
 	}
 
 	/* write EOF ([clue] 0gn [10]) */

@@ -53,7 +53,63 @@
 #include "WWMath/vector2i.h"
 #include "colorspace.h"
 #include "WWLib/bound.h"
+#include "bitmaphandler.h"
+#if !defined(RTS_EVOLUTION_X64)
 #include <d3dx8.h>
+#endif
+
+#if defined(RTS_EVOLUTION_X64)
+namespace
+{
+bool Copy_Surface_Region_CPU(
+	IDirect3DSurface8 *dest_surface,
+	const SurfaceClass::SurfaceDescription &dest_desc,
+	const RECT &dest_rect,
+	IDirect3DSurface8 *src_surface,
+	const SurfaceClass::SurfaceDescription &src_desc,
+	const RECT &src_rect)
+{
+	const unsigned dest_width = static_cast<unsigned>(dest_rect.right - dest_rect.left);
+	const unsigned dest_height = static_cast<unsigned>(dest_rect.bottom - dest_rect.top);
+	const unsigned src_width = static_cast<unsigned>(src_rect.right - src_rect.left);
+	const unsigned src_height = static_cast<unsigned>(src_rect.bottom - src_rect.top);
+	if (dest_width == 0 || dest_height == 0 || src_width == 0 || src_height == 0) {
+		return true;
+	}
+
+	D3DLOCKED_RECT src_lock = {};
+	D3DLOCKED_RECT dest_lock = {};
+	HRESULT result = src_surface->LockRect(&src_lock, &src_rect, D3DLOCK_READONLY);
+	if (FAILED(result)) {
+		return false;
+	}
+	result = dest_surface->LockRect(&dest_lock, &dest_rect, 0);
+	if (FAILED(result)) {
+		src_surface->UnlockRect();
+		return false;
+	}
+
+	BitmapHandlerClass::Copy_Image(
+		static_cast<unsigned char *>(dest_lock.pBits),
+		dest_width,
+		dest_height,
+		static_cast<unsigned>(dest_lock.Pitch),
+		dest_desc.Format,
+		static_cast<unsigned char *>(src_lock.pBits),
+		src_width,
+		src_height,
+		static_cast<unsigned>(src_lock.Pitch),
+		src_desc.Format,
+		nullptr,
+		0,
+		false);
+
+	dest_surface->UnlockRect();
+	src_surface->UnlockRect();
+	return true;
+}
+}
+#endif
 
 void Convert_Pixel(Vector3 &rgb, const SurfaceClass::SurfaceDescription &sd, const unsigned char * pixel)
 {
@@ -456,6 +512,18 @@ void SurfaceClass::Copy(
 	if (src.right>int(osd.Width)) src.right=int(osd.Width);
 	if (src.bottom>int(osd.Height)) src.bottom=int(osd.Height);
 
+	RECT dest;
+	dest.left=dstx;
+	dest.right=dstx+width;
+	dest.top=dsty;
+	dest.bottom=dsty+height;
+
+	if (dest.right>int(sd.Width)) dest.right=int(sd.Width);
+	if (dest.bottom>int(sd.Height)) dest.bottom=int(sd.Height);
+
+#if defined(RTS_EVOLUTION_X64)
+	WWASSERT(Copy_Surface_Region_CPU(D3DSurface, sd, dest, other->D3DSurface, osd, src));
+#else
 	if (sd.Format==osd.Format && sd.Width==osd.Width && sd.Height==osd.Height)
 	{
 		POINT dst;
@@ -465,17 +533,9 @@ void SurfaceClass::Copy(
 	}
 	else
 	{
-		RECT dest;
-		dest.left=dstx;
-		dest.right=dstx+width;
-		dest.top=dsty;
-		dest.bottom=dsty+height;
-
-		if (dest.right>int(sd.Width)) dest.right=int(sd.Width);
-		if (dest.bottom>int(sd.Height)) dest.bottom=int(sd.Height);
-
 		DX8_ErrorCode(D3DXLoadSurfaceFromSurface(D3DSurface,nullptr,&dest,other->D3DSurface,nullptr,&src,D3DX_FILTER_NONE,0));
 	}
+#endif
 }
 
 /***********************************************************************************************
@@ -516,7 +576,11 @@ void SurfaceClass::Stretch_Copy(
 	dest.top=dsty;
 	dest.bottom=dsty+dstheight;
 
+#if defined(RTS_EVOLUTION_X64)
+	WWASSERT(Copy_Surface_Region_CPU(D3DSurface, sd, dest, other->D3DSurface, osd, src));
+#else
 	DX8_ErrorCode(D3DXLoadSurfaceFromSurface(D3DSurface,nullptr,&dest,other->D3DSurface,nullptr,&src,D3DX_FILTER_TRIANGLE ,0));
+#endif
 }
 
 /***********************************************************************************************
@@ -575,7 +639,7 @@ void SurfaceClass::FindBB(Vector2i *min,Vector2i*max)
 		for (x = min->I; x < max->I; x++) {
 
 			// HY - this is not endian safe
-			unsigned char *alpha=(unsigned char*) ((unsigned int)lock_rect.pBits+(y-min->J)*lock_rect.Pitch+(x-min->I)*size);
+			unsigned char *alpha = static_cast<unsigned char *>(lock_rect.pBits) + (y-min->J)*lock_rect.Pitch + (x-min->I)*size;
 			unsigned char myalpha=alpha[size-1];
 			myalpha=(myalpha>>(8-alphabits)) & mask;
 			if (myalpha) {
@@ -649,7 +713,7 @@ bool SurfaceClass::Is_Transparent_Column(unsigned int column)
 	for (y = 0; y < (int) sd.Height; y++)
 	{
 		// HY - this is not endian safe
-		unsigned char *alpha=(unsigned char*) ((unsigned int)lock_rect.pBits+y*lock_rect.Pitch);
+		unsigned char *alpha = static_cast<unsigned char *>(lock_rect.pBits) + y*lock_rect.Pitch;
 		unsigned char myalpha=alpha[size-1];
 		myalpha=(myalpha>>(8-alphabits)) & mask;
 		if (myalpha) {

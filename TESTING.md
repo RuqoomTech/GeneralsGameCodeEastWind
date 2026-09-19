@@ -158,8 +158,69 @@ The final Step 04F and Step 05A baselines are Windows-signed-off with MinGW-w64 
 
 ## Known warnings
 
-Legacy `GameMemory` warnings around custom allocation operators are known. They are not current blockers unless a warning becomes an error or directly affects the active subsystem.
+Step 05H1F removes the x64/UB warnings already exposed in the active `mingw64-game` transcript for `ThreadClass`, `Buffer`, `CriticalSectionClass`, and `Compare_EXE_Version`; these are fixed at the owning types rather than suppressed. `#pragma message` output is informational rather than a compiler warning. Legacy `GameMemory` warnings around custom allocation operators may still appear later in the full graph and remain technical debt unless they become errors or affect active work.
 
 ## Retired workflow
 
 The active modernization graph no longer supports an i686 MinGW oracle, `mingw32-*` modernization presets, the old cross-architecture timeline comparator, or `-IncludeLegacyX86`. Historical records are retained in `Modernization/WORKLOG.md` and `Modernization/History/`.
+
+### Step 05H1I Windows continuation
+
+H1I addresses the `core_debug/debug_stack.cpp` blocker found at 112/1077 by making its C-library declarations explicit and avoiding the Win32 `StackWalk` macro name in the engine-owned API. Continue the real-game migration with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+The informational `#pragma message` lines are not compiler warnings. Report the first hard failure and any newly exposed warnings.
+
+### Step 05H1J Windows continuation
+
+H1J addresses the `core_compression/EAC/huffencode.cpp` pointer-to-`long` blocker found at 4/826 and sweeps the same unambiguous native-address truncation pattern from active WW3D/debug code. Continue with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus any actual compiler warnings. Fixed-width compressed/game/network/replay fields must not be widened as part of warning cleanup.
+
+
+### Step 05H1K Windows continuation
+
+H1K removes D3DX8 utility/math dependencies from the active Evolution WW3D source set after the H1J build reached `GeneralsMD/.../WW3D2/assetmgr.cpp` at 132/947. Continue with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus any actual compiler warnings. `#pragma message` output remains informational. Do not restore D3DX8 headers or add a D3DX-on-D3D12 compatibility layer to bypass the next blocker.
+
+### Step 05H1L Windows continuation
+
+H1L addresses the active WW3D asset-name pointer-to-`int` arithmetic blocker found at 125/940 and removes the exposed `prim_anim.h` non-void/no-return warning. Continue with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus any actual compiler warnings. The `#pragma message` output remains informational.
+### Step 05H1M Windows continuation
+
+H1M fixes the renderer-neutral backend vertex value contract exposed when H1L reached the real Evolution `Render2D` caller at 154/942. Continue with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus any actual compiler warnings. The `#pragma message` output remains informational. Do not replace the backend vertex path with DX8/D3DX compatibility code to bypass the next blocker.
+
+
+### Step 05H1N Windows continuation
+
+H1N fixes the `pointgr.cpp` WWMath compile blocker reached at 188/942 and removes the logical-audio pointer-width plus secondary-base intrusive-delete warnings from the same H1M Windows run. Continue with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus all actual compiler warnings. `#pragma message` output remains informational. Keep runtime-only native pointers separate from fixed-width gameplay/network/replay/Xfer data.

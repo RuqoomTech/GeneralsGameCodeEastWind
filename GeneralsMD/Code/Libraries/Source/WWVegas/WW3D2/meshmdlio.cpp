@@ -2324,7 +2324,7 @@ WW3DErrorType MeshModelClass::write_header(ChunkSaveClass & csave,MeshSaveContex
 		if (mesh_name == nullptr) {
 			mesh_name = name;
 		} else {
-			hierarchy_name_len = (int)mesh_name - (int)name;
+			hierarchy_name_len = static_cast<int>(mesh_name - name);
 			mesh_name++;
 		}
 		assert( hierarchy_name_len < W3D_NAME_LEN);

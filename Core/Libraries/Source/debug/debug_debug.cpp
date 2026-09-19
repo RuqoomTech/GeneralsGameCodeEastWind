@@ -35,6 +35,10 @@
 #include <windows.h>
 #include <WWLib/WWCommon.h>
 #include <new>      // needed for placement new prototype
+#include <cstdint>
+#if defined(_MSC_VER) && !defined(_M_IX86)
+#include <intrin.h>
+#endif
 
 // a little dummy variable that makes the linker actually include
 // us...
@@ -73,7 +77,7 @@ Debug::LogDescription::LogDescription(const char *fileOrGroup, const char *descr
 Debug Debug::Instance;
 
 // more class static members
-unsigned Debug::curStackFrame;
+std::uintptr_t Debug::curStackFrame;
 
 // this constructor is empty on purpose because all construction
 // work is done in PreStaticInit (and some in PostStaticInit)
@@ -305,23 +309,21 @@ bool Debug::SkipNext()
 
   // do not implement this function inline, we do need
   // a valid frame pointer here!
-  unsigned help;
-#if defined(_MSC_VER)
+  std::uintptr_t help = 0;
+#if defined(_MSC_VER) && defined(_M_IX86)
+  unsigned help32;
   _asm
   {
     mov eax,[ebp+4]   // return address
-    mov help,eax
+    mov help32,eax
   };
-#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__i386__) || defined(_M_IX86))
-  // GCC/Clang inline assembly for x86-32
-  __asm__ __volatile__(
-    "mov 4(%%ebp), %0"
-    : "=r"(help)
-    :
-    : "memory"
-  );
+  help = help32;
+#elif defined(_MSC_VER)
+  help = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+#elif defined(__GNUC__) || defined(__clang__)
+  help = reinterpret_cast<std::uintptr_t>(__builtin_return_address(0));
 #else
-  #error "Unsupported compiler or architecture for inline assembly"
+  #error "Unsupported compiler for return-address capture"
 #endif
   curStackFrame=help;
 
@@ -400,7 +402,7 @@ bool Debug::AssertDone()
     if (curFrameEntry->hits==1)
     {
       DebugStackwalk::Signature sig;
-      if (m_stackWalk.StackWalk(sig))
+      if (m_stackWalk.Capture(sig))
         (*this) << sig;
     }
 
@@ -526,7 +528,7 @@ bool Debug::CheckDone()
     if (curFrameEntry->hits==1)
     {
       DebugStackwalk::Signature sig;
-      if (m_stackWalk.StackWalk(sig))
+      if (m_stackWalk.Capture(sig))
         (*this) << sig;
     }
 
@@ -670,7 +672,7 @@ bool Debug::CrashDone(bool die)
     if (curFrameEntry->hits==1)
     {
       DebugStackwalk::Signature sig;
-      if (m_stackWalk.StackWalk(sig))
+      if (m_stackWalk.Capture(sig))
         (*this) << sig;
     }
 
@@ -899,8 +901,10 @@ Debug& Debug::operator<<(const void *ptr)
   (*this) << "ptr:";
   if (ptr)
   {
-    char help[9];
-    (*this) << "0x" << _ultoa((unsigned long)ptr,help,16);
+    char help[2 + sizeof(std::uintptr_t) * 2 + 1];
+    snprintf(help, sizeof(help), "0x%llx",
+             static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(ptr)));
+    (*this) << help;
   }
   else
     (*this) << "null";
@@ -931,8 +935,12 @@ Debug& Debug::operator<<(const MemDump &dump)
   for (unsigned i=0;i<dump.m_numItems;i+=itemPerLine,cur+=itemPerLine*dump.m_bytePerItem)
   {
     // address
-    char buf[9];
-    sprintf(buf,"%08x",dump.m_absAddr?unsigned(cur):cur-dump.m_startPtr);
+    char buf[2 * sizeof(std::uintptr_t) + 1];
+    const std::uintptr_t address = dump.m_absAddr
+      ? reinterpret_cast<std::uintptr_t>(cur)
+      : static_cast<std::uintptr_t>(cur - dump.m_startPtr);
+    const int address_width = dump.m_absAddr ? static_cast<int>(2 * sizeof(std::uintptr_t)) : 8;
+    snprintf(buf, sizeof(buf), "%0*llx", address_width, static_cast<unsigned long long>(address));
     operator<<(buf);
 
     // items
@@ -1010,9 +1018,9 @@ bool Debug::IsLogEnabled(const char *fileOrGroup)
   // to be used from the D_ISLOG macros only and those guarantee
   // that we are having real static strings let's use
   // that strings address as frame address...
-  FrameHashEntry *e=Instance.LookupFrame((unsigned)fileOrGroup);
+  FrameHashEntry *e=Instance.LookupFrame(reinterpret_cast<std::uintptr_t>(fileOrGroup));
   if (!e)
-    e=Instance.AddFrameEntry((unsigned)fileOrGroup,FrameTypeLog,fileOrGroup,0);
+    e=Instance.AddFrameEntry(reinterpret_cast<std::uintptr_t>(fileOrGroup),FrameTypeLog,fileOrGroup,0);
   if (e->status==Unknown)
     Instance.UpdateFrameStatus(*e);
   return e->status==NoSkip;
@@ -1195,7 +1203,7 @@ void Debug::Update()
   }
 }
 
-Debug::FrameHashEntry* Debug::AddFrameEntry(unsigned addr, unsigned type,
+Debug::FrameHashEntry* Debug::AddFrameEntry(std::uintptr_t addr, unsigned type,
                                             const char *fileOrGroup, int line)
 {
   __ASSERT(LookupFrame(addr)==nullptr);

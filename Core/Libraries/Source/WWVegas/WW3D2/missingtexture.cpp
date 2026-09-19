@@ -20,7 +20,7 @@
 #include "missingtexture.h"
 #include "texture.h"
 #include "dx8wrapper.h"
-#include <d3dx8core.h>
+#include "bitmaphandler.h"
 
 static unsigned missing_image_width=128;
 static unsigned missing_image_height=128;
@@ -102,16 +102,23 @@ void MissingTexture::_Init()
 		DX8_ErrorCode(tex->GetSurfaceLevel(i-1,&src));
 		DX8_ErrorCode(tex->GetSurfaceLevel(i,&dst));
 
-		DX8_ErrorCode(D3DXLoadSurfaceFromSurface(
-			dst,
-			nullptr,	// palette
-			nullptr,	// rect
-			src,
-			nullptr,	// palette
-			nullptr,	// rect
-			D3DX_FILTER_BOX,	// box is good for 2:1 filtering
-			0));
+		D3DSURFACE_DESC src_desc;
+		D3DLOCKED_RECT src_lock;
+		D3DLOCKED_RECT dst_lock;
+		DX8_ErrorCode(src->GetDesc(&src_desc));
+		DX8_ErrorCode(src->LockRect(&src_lock,nullptr,D3DLOCK_READONLY));
+		DX8_ErrorCode(dst->LockRect(&dst_lock,nullptr,0));
 
+		BitmapHandlerClass::Create_Mipmap_B8G8R8A8(
+			static_cast<unsigned char *>(dst_lock.pBits),
+			static_cast<unsigned>(dst_lock.Pitch),
+			static_cast<unsigned char *>(src_lock.pBits),
+			static_cast<unsigned>(src_lock.Pitch),
+			src_desc.Width,
+			src_desc.Height);
+
+		DX8_ErrorCode(dst->UnlockRect());
+		DX8_ErrorCode(src->UnlockRect());
 		src->Release();
 		dst->Release();
 	}

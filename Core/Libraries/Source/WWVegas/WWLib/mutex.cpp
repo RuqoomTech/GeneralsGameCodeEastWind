@@ -107,7 +107,7 @@ CriticalSectionClass::~CriticalSectionClass()
 	#else
 		WWASSERT(!locked); // Can't delete locked mutex!
 		DeleteCriticalSection((CRITICAL_SECTION*)handle);
-		delete[] handle;
+		delete[] static_cast<char *>(handle);
 	#endif
 }
 

@@ -91,4 +91,150 @@ rts_policy_forbid_text("${_registry_source}" "Key = (int)key;" "RegistryClass re
 rts_policy_forbid_text("${_registry_source}" "(HKEY)Key" "RegistryClass should not reconstruct HKEY from integer storage")
 rts_policy_forbid_text("${_registry_source}" "sizeof(HKEY) == sizeof(int)" "RegistryClass must not assume Win32-sized registry handles")
 
-message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, and crash diagnostics and registry handles stay native-width")
+# The legacy function-level profiler used the tracer object's address as a
+# pseudo thread ID.  That was accidentally pointer-sized on Win32 and truncates
+# on Win64.  Keep diagnostic thread identity explicit and pointer-independent.
+rts_policy_read("Core/Libraries/Source/profile/profile_funclevel.h" _profile_funclevel_header)
+rts_policy_require_text("${_profile_funclevel_header}" "unsigned GetId() const;" "profile thread ID must be resolved without an inline pointer cast")
+rts_policy_forbid_text("${_profile_funclevel_header}" "return unsigned(m_threadID);" "profile thread ID regressed to pointer truncation")
+
+rts_policy_read("Core/Libraries/Source/profile/internal_funclevel.h" _profile_internal_header)
+rts_policy_require_text("${_profile_internal_header}" "unsigned GetThreadId() const" "profile tracer must expose a logical thread ID")
+rts_policy_require_text("${_profile_internal_header}" "static unsigned nextThreadId;" "profile tracer must allocate logical thread IDs")
+rts_policy_require_text("${_profile_internal_header}" "unsigned threadId;" "profile tracer must store logical thread identity separately from its pointer")
+
+rts_policy_read("Core/Libraries/Source/profile/profile_funclevel.cpp" _profile_funclevel_source)
+rts_policy_require_text("${_profile_funclevel_source}" "threadId=nextThreadId;" "profile tracer must assign its logical ID under the existing profiler lock")
+rts_policy_require_text("${_profile_funclevel_source}" "return m_threadID ? m_threadID->GetThreadId() : 0;" "ProfileFuncLevel::Thread::GetId must return logical identity")
+
+
+# Native Windows/runtime handles and diagnostic addresses must remain pointer-width
+# clean in the Evolution x64 graph. These are runtime-only values, never wire data.
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/thread.h" _thread_header)
+rts_policy_require_text("${_thread_header}" "volatile std::uintptr_t handle;" "ThreadClass must retain the _beginthread handle at native width")
+rts_policy_forbid_text("${_thread_header}" "volatile unsigned long handle;" "ThreadClass regressed to Win32-width thread handle storage")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/thread.cpp" _thread_source)
+rts_policy_forbid_text("${_thread_source}" "(HANDLE)handle" "ThreadClass must not reconstruct HANDLE from a truncated integer")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/buff.cpp" _buffer_source)
+rts_policy_forbid_text("${_buffer_source}" "delete [] BufferPtr;" "Buffer must delete owned char[] storage through its allocated type, not void*")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/mutex.cpp" _mutex_source)
+rts_policy_forbid_text("${_mutex_source}" "delete[] handle;" "CriticalSectionClass must not delete char[] storage through void*")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/verchk.h" _verchk_header)
+rts_policy_require_text("${_verchk_header}" "Compare_EXE_Version (HINSTANCE app_instance" "executable-version checks must carry the module handle as native HINSTANCE")
+rts_policy_forbid_text("${_verchk_header}" "Compare_EXE_Version (int app_instance" "executable-version checks regressed to 32-bit module-handle storage")
+
+rts_policy_read("Core/Libraries/Source/debug/debug_debug.h" _debug_header)
+rts_policy_require_text("${_debug_header}" "static std::uintptr_t curStackFrame;" "debug stack-frame identity must be native-width")
+rts_policy_require_text("${_debug_header}" "std::uintptr_t frameAddr;" "debug frame hash keys must be native-width")
+rts_policy_forbid_text("${_debug_header}" "static unsigned curStackFrame;" "debug stack-frame identity regressed to 32-bit")
+rts_policy_forbid_text("${_debug_header}" "unsigned frameAddr;" "debug frame hash keys regressed to 32-bit")
+
+rts_policy_read("Core/Libraries/Source/debug/debug_debug.cpp" _debug_source)
+rts_policy_require_text("${_debug_source}" "__builtin_return_address(0)" "MinGW x64 debug frame capture must use a compiler return-address primitive")
+rts_policy_forbid_text("${_debug_source}" "(unsigned)fileOrGroup" "debug log-group identity must not truncate pointer addresses")
+rts_policy_forbid_text("${_debug_source}" "_ultoa((unsigned long)ptr" "debug pointer formatting must not truncate native pointers")
+
+
+# The debug exception/stack-walk path must be native-width on Win64.
+rts_policy_read("Core/Libraries/Source/debug/debug_stack.h" _debug_stack_header)
+rts_policy_require_text("${_debug_stack_header}" "std::uintptr_t m_addr[MAX_ADDR];" "debug stack signatures must store native-width addresses")
+rts_policy_require_text("${_debug_stack_header}" "std::uintptr_t GetAddress(int n) const;" "debug stack accessors must expose native-width addresses")
+rts_policy_require_text("${_debug_stack_header}" "static int Capture(Signature &sig" "debug stack capture API must avoid the Win32 StackWalk macro name")
+rts_policy_forbid_text("${_debug_stack_header}" "static int StackWalk(Signature &sig" "debug stack capture API regressed to the Win32 StackWalk macro-collision name")
+rts_policy_forbid_text("${_debug_stack_header}" "unsigned m_addr[MAX_ADDR];" "debug stack signatures regressed to 32-bit addresses")
+
+rts_policy_read("Core/Libraries/Source/debug/debug_stack.cpp" _debug_stack_source)
+rts_policy_require_text("${_debug_stack_source}" "IMAGE_FILE_MACHINE_AMD64" "Win64 debug stack walking must use the AMD64 machine type")
+rts_policy_require_text("${_debug_stack_source}" "_StackWalk64" "Win64 debug stack walking must use StackWalk64")
+rts_policy_require_text("${_debug_stack_source}" "_SymFromAddr" "Win64 symbol lookup must use the 64-bit DbgHelp address API")
+rts_policy_require_text("${_debug_stack_source}" "RtlCaptureContext(&localContext)" "Win64 debug stack walking must capture a native CONTEXT when none is supplied")
+rts_policy_require_text("${_debug_stack_source}" "int DebugStackwalk::Capture(Signature &sig" "debug stack implementation must use the macro-safe Capture API")
+rts_policy_require_text("${_debug_stack_source}" "#include <cstdio>" "debug stack formatting must own its stdio declarations")
+
+rts_policy_read("Core/Libraries/Source/debug/debug_except.cpp" _debug_except_source)
+rts_policy_require_text("${_debug_except_source}" "ctx.Rip" "Win64 exception logging must read RIP")
+rts_policy_require_text("${_debug_except_source}" "const XMM_SAVE_AREA32 &flt=ctx.FltSave;" "Win64 FP diagnostics must use the native XMM save area")
+rts_policy_require_text("${_debug_except_source}" "static INT_PTR CALLBACK ExceptionDlgProc" "exception dialog callback must use the native DLGPROC return type")
+rts_policy_forbid_text("${_debug_except_source}" "static BOOL CALLBACK ExceptionDlgProc" "exception dialog callback regressed to the 32-bit BOOL signature")
+
+
+# Step 05H1J sweeps the same native-address truncation class beyond the first
+# Huffman blocker. Pointer differences stay native-width, D3D lock pointers are
+# addressed as pointers, and pointer equality stays pointer equality. Fixed
+# compressed/game data fields remain their existing widths.
+rts_policy_read("Core/Libraries/Source/Compression/EAC/huffencode.cpp" _huffencode_source)
+rts_policy_require_text("${_huffencode_source}" "const std::ptrdiff_t buffer_offset = bptr1 - EC->buffer;" "Huffman progress tracking must use native pointer-difference arithmetic")
+rts_policy_forbid_text("${_huffencode_source}" "(long) bptr1" "Huffman encoding regressed to pointer-to-long truncation")
+rts_policy_forbid_text("${_huffencode_source}" "(long) EC->buffer" "Huffman encoding regressed to pointer-to-long truncation")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp" _surface_source)
+rts_policy_require_text("${_surface_source}" "static_cast<unsigned char *>(lock_rect.pBits)" "surface pixel addressing must operate on the native pointer")
+rts_policy_forbid_text("${_surface_source}" "(unsigned int)lock_rect.pBits" "surface pixel addressing regressed to 32-bit pointer truncation")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/sphereobj.cpp" _sphere_source)
+rts_policy_require_text("${_sphere_source}" "WWASSERT(out == tri_poly + face_ct);" "sphere temporary-buffer validation must compare pointers directly")
+rts_policy_forbid_text("${_sphere_source}" "((int)out)" "sphere temporary-buffer validation regressed to pointer-to-int truncation")
+
+rts_policy_read("Core/Libraries/Source/debug/debug_stack.cpp" _debug_stack_native_source)
+rts_policy_require_text("${_debug_stack_native_source}" "static_cast<std::size_t>(bufEnd-buf)" "debug buffer capacity checks must retain native pointer-difference width")
+rts_policy_forbid_text("${_debug_stack_native_source}" "static_cast<unsigned>(bufEnd-buf)" "debug buffer capacity checks regressed to 32-bit pointer-difference narrowing")
+
+foreach(_alignment_source IN ITEMS
+    "Core/Libraries/Source/profile/internal.h"
+    "Core/Libraries/Source/WWVegas/WWDebug/wwmemlog.cpp"
+    "Core/Libraries/Source/WWVegas/WWLib/mutex.h")
+    rts_policy_read("${_alignment_source}" _alignment_text)
+    rts_policy_require_text("${_alignment_text}" "reinterpret_cast<size_t>(&nFlag)" "alignment checks must preserve native address width in ${_alignment_source}")
+    rts_policy_forbid_text("${_alignment_text}" "((unsigned)&nFlag" "alignment checks regressed to pointer-to-unsigned truncation in ${_alignment_source}")
+endforeach()
+
+
+
+# Step 05H1L removes another Win32 address-arithmetic class from the active
+# Zero Hour asset graph. String positions are pointer differences, never
+# addresses serialized through 32-bit int, and the primitive-animation setter
+# has the void contract its callers actually use.
+rts_policy_read("GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/assetmgr.cpp" _zh_assetmgr_source)
+rts_policy_require_text("${_zh_assetmgr_source}" "static_cast<int>(mesh_name - name) + 1" "Zero Hour WW3D asset loading must derive filename lengths from pointer differences")
+rts_policy_forbid_text("${_zh_assetmgr_source}" "((int)mesh_name) - ((int)name)" "Zero Hour WW3D asset loading regressed to pointer-to-int address arithmetic")
+
+rts_policy_read("GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DAssetManager.cpp" _zh_w3d_assetmgr_source)
+rts_policy_require_text("${_zh_w3d_assetmgr_source}" "static_cast<int>(mesh_name - name) + 1" "W3DAssetManager must derive filename lengths from pointer differences")
+rts_policy_forbid_text("${_zh_w3d_assetmgr_source}" "((int)mesh_name) - ((int)name)" "W3DAssetManager regressed to pointer-to-int address arithmetic")
+
+rts_policy_read("GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/meshmdlio.cpp" _zh_meshmdlio_source)
+rts_policy_require_text("${_zh_meshmdlio_source}" "hierarchy_name_len = static_cast<int>(mesh_name - name);" "mesh hierarchy name lengths must be computed from pointer differences")
+rts_policy_forbid_text("${_zh_meshmdlio_source}" "hierarchy_name_len = (int)mesh_name - (int)name;" "mesh model I/O regressed to pointer-to-int address arithmetic")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/prim_anim.h" _prim_anim_header)
+rts_policy_require_text("${_prim_anim_header}" "void\t\t\tSet_Time (float time)" "primitive animation Set_Time must match its side-effect-only contract")
+rts_policy_forbid_text("${_prim_anim_header}" "float\t\t\tSet_Time (float time)" "primitive animation Set_Time regressed to a non-void function without a return value")
+
+
+
+# Step 05H1N keeps runtime-only audio callback pointers native-width and makes
+# intrusive refcount deletion start from the complete object for secondary-base
+# RefCountClass users. These values are not serialized/gameplay identifiers.
+rts_policy_read("Core/Libraries/Source/WWVegas/WWAudio/SoundSceneObj.h" _sound_scene_obj_header)
+rts_policy_require_text("${_sound_scene_obj_header}" "std::uintptr_t param1 = 0, std::uintptr_t param2 = 0" "logical-audio event payloads must retain native pointer width")
+rts_policy_forbid_text("${_sound_scene_obj_header}" "uint32 param1 = 0, uint32 param2 = 0" "logical-audio event payloads regressed to 32-bit pointer transport")
+rts_policy_require_text("${_sound_scene_obj_header}" "reinterpret_cast<LogicalListenerClass *>(param1)" "logical-audio listener payload must reconstruct from native-width storage")
+rts_policy_require_text("${_sound_scene_obj_header}" "reinterpret_cast<LogicalSoundClass *>(param2)" "logical-audio sound payload must reconstruct from native-width storage")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WWAudio/SoundScene.cpp" _sound_scene_source)
+rts_policy_require_text("${_sound_scene_source}" "reinterpret_cast<std::uintptr_t>(listener)" "logical-audio listener pointer must enter the callback event at native width")
+rts_policy_require_text("${_sound_scene_source}" "reinterpret_cast<std::uintptr_t>(sound_obj)" "logical-audio sound pointer must enter the callback event at native width")
+rts_policy_forbid_text("${_sound_scene_source}" "(uint32)listener" "logical-audio listener pointer regressed to 32-bit truncation")
+rts_policy_forbid_text("${_sound_scene_source}" "(uint32)sound_obj" "logical-audio sound pointer regressed to 32-bit truncation")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/hanim.h" _hanim_header)
+rts_policy_require_text("${_hanim_header}" "virtual void Delete_This() override { delete this; }" "PivotMapClass must delete from its complete-object subobject instead of the offset RefCountClass base")
+
+rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/snapPts.h" _snap_points_header)
+rts_policy_require_text("${_snap_points_header}" "virtual void Delete_This() override { delete this; }" "SnapPointsClass must delete from its complete-object subobject instead of the offset RefCountClass base")
+
+message(STATUS "x64 platform policy passed: retired i686 modernization surfaces remain absent, fixed-width ABI guards remain intact, native handles stay native-width, and profiler identities are pointer-independent")
