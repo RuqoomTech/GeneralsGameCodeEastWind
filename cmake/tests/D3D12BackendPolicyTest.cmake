@@ -176,6 +176,14 @@ rts_policy_require_contains(
     "RenderBackend2DBlendMode"
     "screen-space blend responsibility must be explicit and renderer-neutral rather than a DX8 state facade")
 rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "operator == (const RenderBackendColorVertex &other) const"
+    "renderer-neutral color vertices must satisfy the legacy VectorClass value contract used by the real Render2D caller")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
+    "operator != (const RenderBackendTexturedVertex &other) const"
+    "renderer-neutral textured vertices must remain compatible with legacy value containers as textured callers migrate")
+rts_policy_require_contains(
     "Core/Tests/D3D12BackendSmokeTest.cpp"
     "Draw_2D_Indexed_Triangles"
     "the Windows production-backend smoke must compile and execute the first real 2D PSO path")

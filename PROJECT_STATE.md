@@ -121,3 +121,10 @@ The H1J Windows build cleared the native-address sweep and advanced to Zero Hour
 - Corrected `PrimitiveAnimationChannelClass::KeyClass::Set_Time` from `float` to `void`; its only caller ignores a result and the old body returned nothing.
 - Extended the x64 platform policy to forbid those address-truncating forms and the non-void/no-return setter regression.
 - No deterministic/wire/W3D serialized widths changed. Windows sign-off remains pending the next `z_generals -j1` build.
+
+## Step 05H1M candidate — Render2D backend-vertex container contract
+- Windows H1L validation cleared the asset-name/warning slice and advanced to `GeneralsMD/.../WW3D2/render2d.cpp` at 154/942.
+- The first real Evolution Render2D path uses `DynamicVectorClass<RenderBackendColorVertex>`; Westwood's generic vector vtable instantiates value equality/ID operations and therefore requires element equality operators.
+- `RenderBackendColorVertex` and `RenderBackendTexturedVertex` now provide explicit `operator==`/`operator!=` without changing their storage layout or D3D12 upload representation.
+- The D3D12 policy locks this renderer-neutral value contract so later textured caller migration cannot regress into the same template failure.
+- No deterministic, wire, W3D/W3X asset, replay, CRC, RNG, Xfer, or gameplay state changes. Windows sign-off remains pending the next `z_generals -j1` build.

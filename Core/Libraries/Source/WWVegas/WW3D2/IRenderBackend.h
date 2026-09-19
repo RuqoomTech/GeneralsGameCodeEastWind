@@ -38,6 +38,17 @@ struct RenderBackendColorVertex
     float g;
     float b;
     float a;
+
+    bool operator == (const RenderBackendColorVertex &other) const
+    {
+        return x == other.x && y == other.y && z == other.z &&
+               r == other.r && g == other.g && b == other.b && a == other.a;
+    }
+
+    bool operator != (const RenderBackendColorVertex &other) const
+    {
+        return !(*this == other);
+    }
 };
 
 struct RenderBackendTexturedVertex
@@ -51,6 +62,18 @@ struct RenderBackendTexturedVertex
     float a;
     float u;
     float v;
+
+    bool operator == (const RenderBackendTexturedVertex &other) const
+    {
+        return x == other.x && y == other.y && z == other.z &&
+               r == other.r && g == other.g && b == other.b && a == other.a &&
+               u == other.u && v == other.v;
+    }
+
+    bool operator != (const RenderBackendTexturedVertex &other) const
+    {
+        return !(*this == other);
+    }
 };
 
 struct RenderBackendViewport

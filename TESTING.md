@@ -204,3 +204,12 @@ cmake --build --preset mingw64-game --target z_generals -- -j1
 ```
 
 Report the first hard failure plus any actual compiler warnings. The `#pragma message` output remains informational.
+### Step 05H1M Windows continuation
+
+H1M fixes the renderer-neutral backend vertex value contract exposed when H1L reached the real Evolution `Render2D` caller at 154/942. Continue with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus any actual compiler warnings. The `#pragma message` output remains informational. Do not replace the backend vertex path with DX8/D3DX compatibility code to bypass the next blocker.
