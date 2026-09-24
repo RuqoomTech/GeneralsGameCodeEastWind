@@ -141,6 +141,26 @@ public:
     virtual void Set_Viewport(const RenderBackendViewport & viewport) = 0;
     virtual void Invalidate_Cached_Render_States() = 0;
 
+    // WW3D's normal display caller configures the active swapchain after
+    // creating the backend and queries its actual pixel dimensions for 2D UI.
+    virtual bool Configure_Output(unsigned int width, unsigned int height, bool windowed)
+    {
+        (void)width;
+        (void)height;
+        (void)windowed;
+        return false;
+    }
+
+    virtual bool Get_Output_Description(
+        int &width, int &height, int &bits, bool &windowed) const
+    {
+        (void)width;
+        (void)height;
+        (void)bits;
+        (void)windowed;
+        return false;
+    }
+
     // First renderer-neutral indexed primitive path. This deliberately uses a
     // small position/color vertex contract; mesh/material formats stay above
     // the backend and can add dedicated paths as they are migrated.

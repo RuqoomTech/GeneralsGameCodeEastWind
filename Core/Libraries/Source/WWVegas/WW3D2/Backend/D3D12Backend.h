@@ -48,6 +48,8 @@ public:
                float dest_alpha, float z, unsigned int stencil) override;
     void Set_Viewport(const RenderBackendViewport &viewport) override;
     void Invalidate_Cached_Render_States() override;
+    bool Configure_Output(unsigned int width, unsigned int height, bool windowed) override;
+    bool Get_Output_Description(int &width, int &height, int &bits, bool &windowed) const override;
     bool Draw_Indexed_Triangles(
         const RenderBackendColorVertex *vertices,
         unsigned int vertex_count,
@@ -147,6 +149,7 @@ private:
     void *m_window = nullptr;
     std::uint32_t m_width = 0;
     std::uint32_t m_height = 0;
+    bool m_windowed = true;
 
     IDXGIFactory4 *m_factory = nullptr;
     ID3D12Device *m_device = nullptr;

@@ -296,6 +296,7 @@ D3D12Backend::~D3D12Backend()
 void D3D12Backend::initialize(void *window)
 {
     m_window = window;
+    m_windowed = (GetWindowLongPtr(static_cast<HWND>(window), GWL_STYLE) & WS_CAPTION) != 0;
 
     RECT client_rect{};
     if (!GetClientRect(static_cast<HWND>(window), &client_rect))
@@ -878,6 +879,86 @@ void D3D12Backend::Invalidate_Cached_Render_States()
 {
     // D3D12 state is explicit and command-list local. There is no DX8-style
     // shadow state cache to invalidate here.
+}
+
+bool D3D12Backend::Configure_Output(unsigned int width, unsigned int height, bool windowed)
+{
+    if (m_scene_open || m_present_pending || m_swap_chain == nullptr ||
+        m_rtv_heap == nullptr || m_dsv_heap == nullptr || m_depth_stencil == nullptr ||
+        width == 0 || height == 0 ||
+        width > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION ||
+        height > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION)
+    {
+        return false;
+    }
+
+    if (width == m_width && height == m_height)
+    {
+        m_windowed = windowed;
+        return true;
+    }
+
+    try
+    {
+        waitForGpu();
+        for (std::uint32_t index = 0; index < FrameCount; ++index)
+        {
+            releaseFrameUploads(index);
+        }
+
+        // Reset the closed list so it no longer holds references to the old
+        // back buffers before DXGI resizes the flip-discard swapchain.
+        checkHresult("ID3D12CommandAllocator::Reset(resize)", m_command_allocators[m_frame_index]->Reset());
+        checkHresult("ID3D12GraphicsCommandList::Reset(resize)",
+            m_command_list->Reset(m_command_allocators[m_frame_index], nullptr));
+        checkHresult("ID3D12GraphicsCommandList::Close(resize)", m_command_list->Close());
+
+        for (auto &render_target : m_render_targets)
+        {
+            releaseCom(render_target);
+        }
+        releaseCom(m_depth_stencil);
+        releaseCom(m_rtv_heap);
+        releaseCom(m_dsv_heap);
+
+        checkHresult("IDXGISwapChain3::ResizeBuffers",
+            m_swap_chain->ResizeBuffers(FrameCount, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
+        m_width = width;
+        m_height = height;
+        m_frame_index = m_swap_chain->GetCurrentBackBufferIndex();
+        m_viewport = {0, 0, width, height, 0.0f, 1.0f};
+        createRenderTargets();
+        createDepthStencil();
+        m_windowed = windowed;
+        return true;
+    }
+    catch (const std::exception &error)
+    {
+        OutputDebugStringA("D3D12 output resize failed: ");
+        OutputDebugStringA(error.what());
+        OutputDebugStringA("\n");
+        return false;
+    }
+    catch (...)
+    {
+        OutputDebugStringA("D3D12 output resize failed with an unknown exception.\n");
+        return false;
+    }
+}
+
+bool D3D12Backend::Get_Output_Description(
+    int &width, int &height, int &bits, bool &windowed) const
+{
+    if (m_swap_chain == nullptr || m_rtv_heap == nullptr ||
+        m_dsv_heap == nullptr || m_depth_stencil == nullptr)
+    {
+        return false;
+    }
+    width = static_cast<int>(m_width);
+    height = static_cast<int>(m_height);
+    bits = 32;
+    windowed = m_windowed;
+    return true;
 }
 
 bool D3D12Backend::Draw_Indexed_Triangles(

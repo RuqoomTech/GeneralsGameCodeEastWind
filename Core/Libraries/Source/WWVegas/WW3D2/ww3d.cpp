@@ -241,7 +241,9 @@ void WW3D::Set_NPatches_Gap_Filling_Mode(NPatchesGapFillingModeEnum mode)
 {
 	if (NPatchesGapFillingMode!=mode) {
 		NPatchesGapFillingMode=mode;
+#if !defined(RTS_EVOLUTION_X64)
 		TheDX8MeshRenderer.Invalidate();
+#endif
 	}
 }
 
@@ -249,8 +251,10 @@ void WW3D::Set_NPatches_Level(unsigned level)
 {
 	if (level>8) level=8;
 	if (level<1) level=1;
+#if !defined(RTS_EVOLUTION_X64)
 	if (NPatchesLevel==1 && level>1) TheDX8MeshRenderer.Invalidate();
 	if (NPatchesLevel>1 && level==1) TheDX8MeshRenderer.Invalidate();
+#endif
 	NPatchesLevel = level;
 }
 
@@ -370,7 +374,9 @@ WW3DErrorType WW3D::Shutdown()
 		WW3DAssetManager::Get_Instance()->Free_Assets();
 	}
 
+#if !defined(RTS_EVOLUTION_X64)
 	DX8TextureManagerClass::Shutdown();
+#endif
 
 	delete RenderBackend;
 	RenderBackend = nullptr;
@@ -404,12 +410,19 @@ WW3DErrorType WW3D::Shutdown()
  *=============================================================================================*/
 WW3DErrorType WW3D::Set_Render_Device( const char * dev_name, int width, int height, int bits, int windowed, bool resize_window )
 {
+#if defined(RTS_EVOLUTION_X64)
+	if (dev_name != nullptr && strcmp(dev_name, "D3D12") != 0) {
+		return WW3D_ERROR_INITIALIZATION_FAILED;
+	}
+	return Set_Render_Device(0, width, height, bits, windowed, resize_window);
+#else
 	bool success = DX8Wrapper::Set_Render_Device(dev_name,width,height,bits,windowed,resize_window);
 	if (success) {
 		return WW3D_ERROR_OK;
 	} else {
 		return WW3D_ERROR_INITIALIZATION_FAILED;
 	}
+#endif
 }
 
 
@@ -427,12 +440,16 @@ WW3DErrorType WW3D::Set_Render_Device( const char * dev_name, int width, int hei
  *=============================================================================================*/
 WW3DErrorType WW3D::Set_Any_Render_Device()
 {
+#if defined(RTS_EVOLUTION_X64)
+	return RenderBackend != nullptr ? WW3D_ERROR_OK : WW3D_ERROR_INITIALIZATION_FAILED;
+#else
 	bool success = DX8Wrapper::Set_Any_Render_Device();
 	if (success) {
 		return WW3D_ERROR_OK;
 	} else {
 		return WW3D_ERROR_INITIALIZATION_FAILED;
 	}
+#endif
 }
 
 
@@ -450,12 +467,33 @@ WW3DErrorType WW3D::Set_Any_Render_Device()
  *=============================================================================================*/
 WW3DErrorType WW3D::Set_Render_Device(int dev, int width, int height, int bits, int windowed, bool resize_window, bool reset_device, bool restore_assets )
 {
+#if defined(RTS_EVOLUTION_X64)
+	(void)resize_window;
+	(void)reset_device;
+	(void)restore_assets;
+	if (RenderBackend == nullptr || (dev != -1 && dev != 0)) {
+		return WW3D_ERROR_INITIALIZATION_FAILED;
+	}
+	int current_width = 0, current_height = 0, current_bits = 0;
+	bool current_windowed = true;
+	if (!RenderBackend->Get_Output_Description(
+		current_width, current_height, current_bits, current_windowed)) {
+		return WW3D_ERROR_INITIALIZATION_FAILED;
+	}
+	const unsigned int target_width = static_cast<unsigned int>(width > 0 ? width : current_width);
+	const unsigned int target_height = static_cast<unsigned int>(height > 0 ? height : current_height);
+	const int target_bits = bits > 0 ? bits : current_bits;
+	const bool target_windowed = windowed >= 0 ? windowed != 0 : current_windowed;
+	return target_bits == 32 && RenderBackend->Configure_Output(target_width, target_height, target_windowed)
+		? WW3D_ERROR_OK : WW3D_ERROR_INITIALIZATION_FAILED;
+#else
 	bool success = DX8Wrapper::Set_Render_Device(dev,width,height,bits,windowed,resize_window,reset_device, restore_assets );
 	if (success) {
 		return WW3D_ERROR_OK;
 	} else {
 		return WW3D_ERROR_INITIALIZATION_FAILED;
 	}
+#endif
 }
 
 
@@ -512,7 +550,14 @@ void *WW3D::Get_Window()
  *=============================================================================================*/
 bool WW3D::Is_Windowed()
 {
+#if defined(RTS_EVOLUTION_X64)
+	int width = 0, height = 0, bits = 0;
+	bool windowed = true;
+	return RenderBackend == nullptr ||
+		!RenderBackend->Get_Output_Description(width, height, bits, windowed) || windowed;
+#else
 	return DX8Wrapper::Is_Windowed();
+#endif
 }
 
 /***********************************************************************************************
@@ -556,7 +601,11 @@ WW3DErrorType WW3D::Toggle_Windowed ()
  *=============================================================================================*/
 int WW3D::Get_Render_Device()
 {
+#if defined(RTS_EVOLUTION_X64)
+	return RenderBackend != nullptr ? 0 : -1;
+#else
 	return DX8Wrapper::Get_Render_Device();
+#endif
 }
 
 
@@ -595,7 +644,11 @@ const RenderDeviceDescClass & WW3D::Get_Render_Device_Desc(int deviceidx)
  *=============================================================================================*/
 int WW3D::Get_Render_Device_Count()
 {
+#if defined(RTS_EVOLUTION_X64)
+	return RenderBackend != nullptr ? 1 : 0;
+#else
 	return DX8Wrapper::Get_Render_Device_Count();
+#endif
 }
 
 
@@ -614,7 +667,11 @@ int WW3D::Get_Render_Device_Count()
  *=============================================================================================*/
 const char * WW3D::Get_Render_Device_Name(int device_index)
 {
+#if defined(RTS_EVOLUTION_X64)
+	return RenderBackend != nullptr && device_index == 0 ? "D3D12" : nullptr;
+#else
 	return DX8Wrapper::Get_Render_Device_Name(device_index);
+#endif
 }
 
 
@@ -632,6 +689,9 @@ const char * WW3D::Get_Render_Device_Name(int device_index)
  *=============================================================================================*/
 WW3DErrorType WW3D::Set_Device_Resolution(int width,int height,int bits,int windowed, bool resize_window)
 {
+#if defined(RTS_EVOLUTION_X64)
+	return Set_Render_Device(0, width, height, bits, windowed, resize_window);
+#else
 	bool success = DX8Wrapper::Set_Device_Resolution(width,height,bits,windowed,resize_window);
 
 	if (success) {
@@ -639,6 +699,7 @@ WW3DErrorType WW3D::Set_Device_Resolution(int width,int height,int bits,int wind
 	} else {
 		return WW3D_ERROR_INITIALIZATION_FAILED;
 	}
+#endif
 }
 
 
@@ -657,7 +718,15 @@ WW3DErrorType WW3D::Set_Device_Resolution(int width,int height,int bits,int wind
  *=============================================================================================*/
 void WW3D::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
 {
+#if defined(RTS_EVOLUTION_X64)
+	set_w = set_h = set_bits = 0;
+	set_windowed = true;
+	if (RenderBackend != nullptr) {
+		RenderBackend->Get_Output_Description(set_w, set_h, set_bits, set_windowed);
+	}
+#else
 	DX8Wrapper::Get_Render_Target_Resolution(set_w,set_h,set_bits,set_windowed);
+#endif
 }
 
 
@@ -676,7 +745,11 @@ void WW3D::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,b
  *=============================================================================================*/
 void WW3D::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
 {
+#if defined(RTS_EVOLUTION_X64)
+	Get_Render_Target_Resolution(set_w, set_h, set_bits, set_windowed);
+#else
 	DX8Wrapper::Get_Device_Resolution(set_w,set_h,set_bits,set_windowed);
+#endif
 }
 
 
@@ -812,12 +885,15 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 
 	WWPROFILE("WW3D::Begin_Render");
 	WWASSERT(IsInitted);
+#if !defined(RTS_EVOLUTION_X64)
 	HRESULT hr;
+#endif
 
 	SNAPSHOT_SAY(("=========================================="));
 	SNAPSHOT_SAY(("========== WW3D::Begin_Render ============"));
 	SNAPSHOT_SAY(("==========================================\n"));
 
+#if !defined(RTS_EVOLUTION_X64)
 	if (DX8Wrapper::_Get_D3D_Device8() && (hr=DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()) != D3D_OK)
 	{
         // If the device was lost, do not render until we get it back
@@ -833,6 +909,7 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 
 		return WW3D_ERROR_GENERIC;
 	}
+#endif
 
 #if defined(RTS_PERF_TELEMETRY)
 	Debug_Statistics::Begin_Performance_Frame((unsigned int)FrameCount + 1U, Get_Logic_Time_Milliseconds());
@@ -845,8 +922,10 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 
 	TextureLoader::Update(network_callback);
 //	TextureClass::_Reset_Time_Stamp();
+#if !defined(RTS_EVOLUTION_X64)
 	DynamicVBAccessClass::_Reset(true);
 	DynamicIBAccessClass::_Reset(true);
+#endif
 
 	Debug_Statistics::Begin_Statistics();
 
@@ -2037,16 +2116,29 @@ void WW3D::Update_Pixel_Center()
 
 void WW3D::Set_Texture_Bitdepth(int bitdepth)
 {
+#if defined(RTS_EVOLUTION_X64)
+	// The current D3D12 target is RGBA8; the historical 16-bit mode is retired.
+	(void)bitdepth;
+#else
 	DX8Wrapper::Set_Texture_Bitdepth(bitdepth);
+#endif
 }
 
 int WW3D::Get_Texture_Bitdepth()
 {
+#if defined(RTS_EVOLUTION_X64)
+	return 32;
+#else
 	return DX8Wrapper::Get_Texture_Bitdepth();
+#endif
 }
 
 void WW3D::Set_MSAA_Mode(MultiSampleModeEnum mode)
 {
+#if defined(RTS_EVOLUTION_X64)
+	// The D3D12 swapchain and current PSOs are single-sampled.
+	(void)mode;
+#else
 	switch (mode) {
 
 	default:
@@ -2067,10 +2159,14 @@ void WW3D::Set_MSAA_Mode(MultiSampleModeEnum mode)
 		break;
 
 	}
+#endif
 }
 
 WW3D::MultiSampleModeEnum WW3D::Get_MSAA_Mode()
 {
+#if defined(RTS_EVOLUTION_X64)
+	return MULTISAMPLE_MODE_NONE;
+#else
 	D3DMULTISAMPLE_TYPE type = DX8Wrapper::Get_MSAA_Mode();
 
 	switch (type) {
@@ -2089,6 +2185,7 @@ WW3D::MultiSampleModeEnum WW3D::Get_MSAA_Mode()
 		return MULTISAMPLE_MODE_8X;
 
 	}
+#endif
 }
 
 void WW3D::Add_To_Static_Sort_List(RenderObjClass *robj, unsigned int sort_level)
@@ -2111,7 +2208,9 @@ void WW3D::Enable_Sorting(bool onoff)
 	IsSortingEnabled = onoff;
 	// Have to invalidate mesh rendering system because
 	// meshes are put into different fvfs depending on their sort state
+#if !defined(RTS_EVOLUTION_X64)
 	TheDX8MeshRenderer.Invalidate();
+#endif
 }
 
 void WW3D::Override_Current_Static_Sort_Lists(StaticSortListClass * sort_list)

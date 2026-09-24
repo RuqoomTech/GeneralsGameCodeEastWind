@@ -837,6 +837,12 @@ void W3DDisplay::init()
 
 		WW3DErrorType renderDeviceError;
 		Int attempt = 0;
+		const Int maxAttempts =
+#if defined(RTS_EVOLUTION_X64)
+			1;
+#else
+			3;
+#endif
 		do
 		{
 			switch (attempt)
@@ -849,6 +855,7 @@ void W3DDisplay::init()
 				setBitDepth( DEFAULT_DISPLAY_BIT_DEPTH );
 				break;
 			}
+#if !defined(RTS_EVOLUTION_X64)
 			case 1:
 			{
 				// Getting the device at the default bit depth (32) didn't work, so try
@@ -880,11 +887,27 @@ void W3DDisplay::init()
 				setBitDepth( bitDepth );
 				break;
 			}
+#endif
 			}
 
 			// TheSuperHackers @feature Mauller 13/03/2026 Add native MSAA support, must be set before creating render device
 			WW3D::Set_MSAA_Mode((WW3D::MultiSampleModeEnum)TheWritableGlobalData->m_antiAliasLevel);
 
+#if defined(RTS_EVOLUTION_X64)
+			// The current Win32 platform owns the HWND until Step 06 moves it to SDL3.
+			// Resize its client area before DXGI resizes the swapchain buffers.
+			RECT window_rect = {0, 0, getWidth(), getHeight()};
+			const DWORD window_style = static_cast<DWORD>(GetWindowLongPtr(ApplicationHWnd, GWL_STYLE));
+			const DWORD window_ex_style = static_cast<DWORD>(GetWindowLongPtr(ApplicationHWnd, GWL_EXSTYLE));
+			if (!AdjustWindowRectEx(&window_rect, window_style, FALSE, window_ex_style) ||
+				!SetWindowPos(ApplicationHWnd, nullptr, 0, 0,
+					window_rect.right - window_rect.left,
+					window_rect.bottom - window_rect.top,
+					SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE)) {
+				renderDeviceError = WW3D_ERROR_INITIALIZATION_FAILED;
+				break;
+			}
+#endif
 			renderDeviceError = WW3D::Set_Render_Device(
 				0,
 				getWidth(),
@@ -905,7 +928,7 @@ void W3DDisplay::init()
 
 			++attempt;
 		}
-		while (attempt < 3 && renderDeviceError != WW3D_ERROR_OK);
+		while (attempt < maxAttempts && renderDeviceError != WW3D_ERROR_OK);
 
 		if (renderDeviceError != WW3D_ERROR_OK)
 		{

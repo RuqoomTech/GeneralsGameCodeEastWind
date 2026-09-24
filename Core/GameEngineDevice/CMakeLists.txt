@@ -229,9 +229,12 @@ target_link_libraries(corei_gameenginedevice_private INTERFACE
 target_link_libraries(corei_gameenginedevice_public INTERFACE
     binkloader
     corei_gameengine_public
-    d3d8lib
     milesloader
 )
+
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    target_link_libraries(corei_gameenginedevice_public INTERFACE d3d8lib)
+endif()
 
 if(RTS_BUILD_OPTION_FFMPEG)
     find_package(FFMPEG REQUIRED)
