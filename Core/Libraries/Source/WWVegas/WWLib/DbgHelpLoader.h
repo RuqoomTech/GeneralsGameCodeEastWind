@@ -120,6 +120,12 @@ public:
 		PDWORD64 Displacement,
 		PSYMBOL_INFO Symbol);
 
+	static BOOL WINAPI symGetLineFromAddr64(
+		HANDLE hProcess,
+		DWORD64 Address,
+		PDWORD Displacement,
+		PIMAGEHLP_LINE64 Line);
+
 	static LPVOID WINAPI symFunctionTableAccess64(
 		HANDLE hProcess,
 		DWORD64 AddrBase);
@@ -214,6 +220,12 @@ private:
 		PDWORD64 Displacement,
 		PSYMBOL_INFO Symbol);
 
+	typedef BOOL (WINAPI *SymGetLineFromAddr64_t) (
+		HANDLE hProcess,
+		DWORD64 Address,
+		PDWORD Displacement,
+		PIMAGEHLP_LINE64 Line);
+
 	typedef LPVOID (WINAPI *SymFunctionTableAccess64_t) (
 		HANDLE hProcess,
 		DWORD64 AddrBase);
@@ -255,6 +267,7 @@ private:
 	SymFunctionTableAccess_t m_symFunctionTableAccess;
 	StackWalk_t m_stackWalk;
 	SymFromAddr_t m_symFromAddr;
+	SymGetLineFromAddr64_t m_symGetLineFromAddr64;
 	SymFunctionTableAccess64_t m_symFunctionTableAccess64;
 	SymGetModuleBase64_t m_symGetModuleBase64;
 	StackWalk64_t m_stackWalk64;

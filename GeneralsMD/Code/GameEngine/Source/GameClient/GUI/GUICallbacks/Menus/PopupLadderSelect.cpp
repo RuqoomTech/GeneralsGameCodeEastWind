@@ -130,7 +130,7 @@ static void populateLadderListBox()
 	GadgetListBoxGetSelected(listboxLadderSelect, &selIndex);
 	if (selIndex < 0)
 		return;
-	selID = (Int)GadgetListBoxGetItemData(listboxLadderSelect, selIndex);
+	selID = static_cast<Int>(GadgetListBoxGetItemIntegerData(listboxLadderSelect, selIndex));
 	if (!selID)
 		return;
 	updateLadderDetails(selID, staticTextLadderName, listboxLadderDetails);
@@ -373,7 +373,7 @@ WindowMsgHandledType PopupLadderSelectSystem( GameWindow *window, UnsignedInt ms
 				if (selectPos < 0)
 					break;
 
-				ladderIndex = (Int)GadgetListBoxGetItemData( listboxLadderSelect, selectPos, 0 );
+				ladderIndex = static_cast<Int>(GadgetListBoxGetItemIntegerData( listboxLadderSelect, selectPos, 0 ));
 				const LadderInfo *li = TheLadderList->findLadderByIndex( ladderIndex );
 				if (li && li->cryptedPassword.isNotEmpty())
 				{
@@ -439,7 +439,7 @@ WindowMsgHandledType PopupLadderSelectSystem( GameWindow *window, UnsignedInt ms
 			if (selIndex < 0)
 				break;
 
-			selID = (Int)GadgetListBoxGetItemData(listboxLadderSelect, selIndex);
+			selID = static_cast<Int>(GadgetListBoxGetItemIntegerData(listboxLadderSelect, selIndex));
 			if (!selID)
 				break;
 
@@ -631,7 +631,7 @@ WindowMsgHandledType RCGameDetailsMenuSystem( GameWindow *window, UnsignedInt ms
 			{
 				GameWindow *control = (GameWindow *)mData1;
 				Int controlID = control->winGetWindowId();
-				Int selectedID = (Int)window->winGetUserData();
+				Int selectedID = static_cast<Int>(reinterpret_cast<std::intptr_t>(window->winGetUserData()));
 				if(!selectedID)
 					break;
 				closeRightClickMenu(window);
@@ -657,7 +657,7 @@ WindowMsgHandledType RCGameDetailsMenuSystem( GameWindow *window, UnsignedInt ms
 							rcMenu->winBringToTop();
 							rcMenu->winHide(FALSE);
 
-							rcMenu->winSetUserData((void *)selectedID);
+							rcMenu->winSetUserData(reinterpret_cast<void *>(static_cast<std::intptr_t>(selectedID)));
 							TheWindowManager->winSetLoneWindow(rcMenu);
 
 							GameWindow *st = TheWindowManager->winGetWindowFromId(nullptr,

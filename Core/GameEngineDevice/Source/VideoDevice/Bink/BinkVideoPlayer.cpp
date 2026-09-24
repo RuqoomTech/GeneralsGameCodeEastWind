@@ -312,6 +312,10 @@ void BinkVideoPlayer::notifyVideoPlayerOfNewProvider( Bool nowHasValid )
 //============================================================================
 void BinkVideoPlayer::initializeBinkWithMiles()
 {
+#if defined(_WIN64)
+	// The legacy binkw32 loader has no x64 exports or native DirectSound callback.
+	BinkSetSoundTrack(0, nullptr);
+#else
 	Int retVal = 0;
 	void *driver = TheAudio->getHandleForBink();
 
@@ -323,6 +327,7 @@ void BinkVideoPlayer::initializeBinkWithMiles()
 	{
 		BinkSetSoundTrack ( 0,nullptr );
 	}
+#endif
 }
 
 //============================================================================

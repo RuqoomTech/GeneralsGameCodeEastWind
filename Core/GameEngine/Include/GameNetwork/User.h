@@ -41,10 +41,10 @@ public:
 	Bool operator== (const User *other);
 	Bool operator!= (const User *other);
 
-	UnicodeString GetName() { return m_name; }
+	UnicodeString GetName() const { return m_name; }
 	void setName(UnicodeString name);
-	UnsignedShort GetPort() { return m_port; }
-	UnsignedInt GetIPAddr() { return m_ipaddr; }
+	UnsignedShort GetPort() const { return m_port; }
+	UnsignedInt GetIPAddr() const { return m_ipaddr; }
 	void SetPort(UnsignedShort port) { m_port = port; }
 	void SetIPAddr(UnsignedInt ipaddr) { m_ipaddr = ipaddr; }
 

@@ -508,7 +508,7 @@ WindowMsgHandledType PopupHostGameSystem( GameWindow *window, UnsignedInt msg, W
 				{
 					if (pos >= 0)
 					{
-						Int ladderID = (Int)GadgetComboBoxGetItemData(control, pos);
+						Int ladderID = static_cast<Int>(GadgetComboBoxGetItemIntegerData(control, pos));
 						if (ladderID < 0)
 						{
 							// "Choose a ladder" selected - open overlay
@@ -597,7 +597,7 @@ void createGame()
 	req.stagingRoomCreation.ladPort = 0;
 	if (ladderSelectPos >= 0)
 	{
-		ladderID = (Int)GadgetComboBoxGetItemData(comboBoxLadderName, ladderSelectPos);
+		ladderID = static_cast<Int>(GadgetComboBoxGetItemIntegerData(comboBoxLadderName, ladderSelectPos));
 		if (ladderID != 0)
 		{
 			// actual ladder

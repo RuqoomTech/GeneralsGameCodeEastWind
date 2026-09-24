@@ -99,7 +99,7 @@ static void mapListTooltipFunc(GameWindow *window,
 		return;
 	}
 
-	Int imageItemData = (Int)GadgetListBoxGetItemData(window, row, 1);
+	Int imageItemData = static_cast<Int>(GadgetListBoxGetItemIntegerData(window, row, 1));
 	UnicodeString tooltip;
 	switch (imageItemData)
 	{

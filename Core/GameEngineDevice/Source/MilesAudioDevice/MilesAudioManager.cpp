@@ -1450,7 +1450,7 @@ Bool MilesAudioManager::isCurrentlyPlaying( AudioHandle handle )
 }
 
 //-------------------------------------------------------------------------------------------------
-void MilesAudioManager::notifyOfAudioCompletion( UnsignedInt handle, UnsignedInt flags )
+void MilesAudioManager::notifyOfAudioCompletion( std::uintptr_t handle, UnsignedInt flags )
 {
 	PlayingAudio *playing = findPlayingAudioFrom(handle, flags);
 	if (!playing) {
@@ -1512,13 +1512,13 @@ void MilesAudioManager::notifyOfAudioCompletion( UnsignedInt handle, UnsignedInt
 }
 
 //-------------------------------------------------------------------------------------------------
-PlayingAudio *MilesAudioManager::findPlayingAudioFrom( UnsignedInt handle, UnsignedInt flags )
+PlayingAudio *MilesAudioManager::findPlayingAudioFrom( std::uintptr_t handle, UnsignedInt flags )
 {
 	std::list<PlayingAudio *>::iterator it;
 	PlayingAudio *playing;
 
 	if (flags == PAT_Sample) {
-		HSAMPLE sample = (HSAMPLE) handle;
+		HSAMPLE sample = reinterpret_cast<HSAMPLE>(handle);
 		CriticalSectionClass::LockClass lock(m_playingSoundsCS);
 		for (it = m_playingSounds.begin(); it != m_playingSounds.end(); ++it) {
 			playing = *it;
@@ -1529,7 +1529,7 @@ PlayingAudio *MilesAudioManager::findPlayingAudioFrom( UnsignedInt handle, Unsig
 	}
 
 	if (flags == PAT_3DSample) {
-		H3DSAMPLE sample3D = (H3DSAMPLE) handle;
+		H3DSAMPLE sample3D = reinterpret_cast<H3DSAMPLE>(handle);
 		CriticalSectionClass::LockClass lock(m_playing3DSoundsCS);
 		for (it = m_playing3DSounds.begin(); it != m_playing3DSounds.end(); ++it) {
 			playing = *it;
@@ -1540,7 +1540,7 @@ PlayingAudio *MilesAudioManager::findPlayingAudioFrom( UnsignedInt handle, Unsig
 	}
 
 	if (flags == PAT_Stream) {
-		HSTREAM stream = (HSTREAM) handle;
+		HSTREAM stream = reinterpret_cast<HSTREAM>(handle);
 		{
 			CriticalSectionClass::LockClass lock(m_playingStreamsCS);
 			for (it = m_playingStreams.begin(); it != m_playingStreams.end(); ++it) {
@@ -2760,7 +2760,7 @@ void MilesAudioManager::initSamplePools()
 		DEBUG_ASSERTCRASH(sample, ("Couldn't get %d 2D samples", i + 1));
 		if (sample) {
 			AIL_init_sample(sample);
-			AIL_set_sample_user_data(sample, 0, (void *)(i + 1));
+			AIL_set_sample_user_data(sample, 0, i + 1);
 			m_availableSamples.push_back(sample);
 			++m_num2DSamples;
 		}
@@ -2770,7 +2770,7 @@ void MilesAudioManager::initSamplePools()
 		H3DSAMPLE sample = AIL_allocate_3D_sample_handle(m_provider3D[m_selectedProvider].id);
 		DEBUG_ASSERTCRASH(sample, ("Couldn't get %d 3D samples", i + 1));
 		if (sample) {
-			AIL_set_3D_user_data(sample, 0, (void *)(i + 1));
+			AIL_set_3D_user_data(sample, 0, i + 1);
 			m_available3DSamples.push_back(sample);
 			++m_num3DSamples;
 		}
@@ -2892,19 +2892,19 @@ void MilesAudioManager::friend_forcePlayAudioEventRTS(const AudioEventRTS* event
 //-------------------------------------------------------------------------------------------------
 void AILCALLBACK setSampleCompleted( HSAMPLE sampleCompleted )
 {
-	TheAudio->notifyOfAudioCompletion((UnsignedInt) sampleCompleted, PAT_Sample);
+	TheAudio->notifyOfAudioCompletion(reinterpret_cast<std::uintptr_t>(sampleCompleted), PAT_Sample);
 }
 
 //-------------------------------------------------------------------------------------------------
 void AILCALLBACK set3DSampleCompleted( H3DSAMPLE sample3DCompleted )
 {
-	TheAudio->notifyOfAudioCompletion((UnsignedInt) sample3DCompleted, PAT_3DSample);
+	TheAudio->notifyOfAudioCompletion(reinterpret_cast<std::uintptr_t>(sample3DCompleted), PAT_3DSample);
 }
 
 //-------------------------------------------------------------------------------------------------
 void AILCALLBACK setStreamCompleted( HSTREAM streamCompleted )
 {
-	TheAudio->notifyOfAudioCompletion((UnsignedInt) streamCompleted, PAT_Stream);
+	TheAudio->notifyOfAudioCompletion(reinterpret_cast<std::uintptr_t>(streamCompleted), PAT_Stream);
 }
 
 //-------------------------------------------------------------------------------------------------

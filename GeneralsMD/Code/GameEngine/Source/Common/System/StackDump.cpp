@@ -37,14 +37,18 @@
 //	Prototypes
 //*****************************************************************************
 BOOL InitSymbolInfo();
+#if !defined(_WIN64)
 void MakeStackTrace(DWORD myeip,DWORD myesp,DWORD myebp, int skipFrames, void (*callback)(const char*));
-void GetFunctionDetails(void *pointer, char*name, char*filename, unsigned int* linenumber, unsigned int* address);
+#endif
+void GetFunctionDetails(void *pointer, char*name, char*filename, unsigned int* linenumber, DWORD_PTR* address);
 void WriteStackLine(void*address, void (*callback)(const char*));
 
 //*****************************************************************************
 //	Mis-named globals :-)
 //*****************************************************************************
+#if !defined(_WIN64)
 static CONTEXT gsContext;
+#endif
 
 
 //*****************************************************************************
@@ -53,6 +57,118 @@ void StackDumpDefaultHandler(const char*line)
 {
 	DEBUG_LOG((line));
 }
+
+#if defined(_WIN64)
+
+BOOL InitSymbolInfo()
+{
+	if (DbgHelpLoader::isFailed()) return FALSE;
+	const bool loaded_here = !DbgHelpLoader::isLoaded();
+	if (loaded_here && !DbgHelpLoader::load()) return FALSE;
+
+	// InvadeProcess loads the executable and its DLLs at their native bases.
+	if (!DbgHelpLoader::symInitialize(GetCurrentProcess(), nullptr, TRUE))
+	{
+		if (loaded_here) DbgHelpLoader::unload();
+		return FALSE;
+	}
+	if (loaded_here) atexit(DbgHelpLoader::unload);
+	return TRUE;
+}
+
+void GetFunctionDetails(void *pointer, char*name, char*filename, unsigned int* linenumber, DWORD_PTR* address)
+{
+	if (name) strcpy(name, "<Unknown>");
+	if (filename) strcpy(filename, "<Unknown>");
+	if (linenumber) *linenumber = 0;
+	if (address) *address = reinterpret_cast<DWORD_PTR>(pointer);
+	if (!InitSymbolInfo()) return;
+
+	const DWORD64 pc = reinterpret_cast<DWORD64>(pointer);
+	char symbol_buffer[sizeof(SYMBOL_INFO) + 512] = {};
+	auto *symbol = reinterpret_cast<SYMBOL_INFO *>(symbol_buffer);
+	symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+	symbol->MaxNameLen = 512;
+	DWORD64 displacement = 0;
+	if (DbgHelpLoader::symFromAddr(GetCurrentProcess(), pc, &displacement, symbol) && name)
+		strcpy(name, symbol->Name);
+
+	IMAGEHLP_LINE64 line = {};
+	line.SizeOfStruct = sizeof(line);
+	DWORD line_displacement = 0;
+	if (DbgHelpLoader::symGetLineFromAddr64(GetCurrentProcess(), pc, &line_displacement, &line))
+	{
+		if (filename) strcpy(filename, line.FileName);
+		if (linenumber) *linenumber = line.LineNumber;
+		if (address) *address = static_cast<DWORD_PTR>(line.Address);
+	}
+}
+
+static void WalkStack(CONTEXT context, unsigned int skip, unsigned int count,
+	void (*callback)(const char*), void **addresses)
+{
+	STACKFRAME64 frame = {};
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrPC.Offset = context.Rip;
+	frame.AddrStack.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = context.Rsp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = context.Rbp;
+
+	while (count && frame.AddrPC.Offset)
+	{
+		if (skip)
+			--skip;
+		else
+		{
+			void *pc = reinterpret_cast<void *>(static_cast<DWORD_PTR>(frame.AddrPC.Offset));
+			if (callback) WriteStackLine(pc, callback);
+			if (addresses) *addresses++ = pc;
+			--count;
+		}
+
+		const DWORD64 previous_pc = frame.AddrPC.Offset;
+		if (!DbgHelpLoader::stackWalk64(IMAGE_FILE_MACHINE_AMD64, GetCurrentProcess(),
+			GetCurrentThread(), &frame, &context, nullptr,
+			DbgHelpLoader::symFunctionTableAccess64, DbgHelpLoader::symGetModuleBase64, nullptr)
+			|| frame.AddrPC.Offset == previous_pc)
+			break;
+	}
+	while (addresses && count--) *addresses++ = nullptr;
+}
+
+void StackDump(void (*callback)(const char*))
+{
+	if (!InitSymbolInfo()) return;
+	if (!callback) callback = StackDumpDefaultHandler;
+	CONTEXT context = {};
+	RtlCaptureContext(&context);
+	callback("Call Stack\n**********\n");
+	WalkStack(context, 2, 30, callback, nullptr);
+}
+
+void StackDumpFromContext(const CONTEXT* context, void (*callback)(const char*))
+{
+	if (!context || !InitSymbolInfo()) return;
+	if (!callback) callback = StackDumpDefaultHandler;
+	callback("Call Stack\n**********\n");
+	WalkStack(*context, 0, 30, callback, nullptr);
+}
+
+void FillStackAddresses(void**addresses, unsigned int count, unsigned int skip)
+{
+	if (!addresses) return;
+	if (!InitSymbolInfo())
+	{
+		while (count--) *addresses++ = nullptr;
+		return;
+	}
+	CONTEXT context = {};
+	RtlCaptureContext(&context);
+	WalkStack(context, skip + 1, count, nullptr, addresses);
+}
+
+#else
 
 
 //*****************************************************************************
@@ -245,7 +361,7 @@ stack_frame.AddrFrame.Offset = myebp;
 
 //*****************************************************************************
 //*****************************************************************************
-void GetFunctionDetails(void *pointer, char*name, char*filename, unsigned int* linenumber, unsigned int* address)
+void GetFunctionDetails(void *pointer, char*name, char*filename, unsigned int* linenumber, DWORD_PTR* address)
 {
 	if (!InitSymbolInfo())
 		return;
@@ -431,6 +547,8 @@ stack_frame.AddrFrame.Offset = myebp;
 */
 }
 
+#endif // _WIN64
+
 
 
 //*****************************************************************************
@@ -463,10 +581,10 @@ void WriteStackLine(void*address, void (*callback)(const char*))
 	static char function_name[512];
 	static char filename[MAX_PATH];
 	unsigned int linenumber;
-	unsigned int addr;
+	DWORD_PTR addr;
 
 	GetFunctionDetails(address, function_name, filename, &linenumber, &addr);
-    sprintf(line, "  %s(%d) : %s 0x%08p", filename, linenumber, function_name, address);
+    snprintf(line, sizeof(line), "  %s(%u) : %s %p", filename, linenumber, function_name, address);
 		if (g_LastErrorDump.isNotEmpty()) {
 			g_LastErrorDump.concat(line);
 			g_LastErrorDump.concat("\n");
@@ -543,7 +661,7 @@ void DumpExceptionInfo( unsigned int u, EXCEPTION_POINTERS* e_info )
 	** The following are set for access violation only
 	*/
 	int access_read_write=-1;
-	unsigned long access_address = 0;
+	ULONG_PTR access_address = 0;
 	AsciiString msg;
 
 // DOUBLE_DEBUG does a DEBUG_LOG, and concats to g_LastErrorDump.  jba.
@@ -559,8 +677,7 @@ void DumpExceptionInfo( unsigned int u, EXCEPTION_POINTERS* e_info )
 	{
 		DOUBLE_DEBUG (("Exception code is %x", e_info->ExceptionRecord->ExceptionCode));
 	}
-	Int *winMainAddr = (Int *)WinMain;
-	DOUBLE_DEBUG(("WinMain at %x", winMainAddr));
+	DOUBLE_DEBUG(("WinMain at %p", reinterpret_cast<void *>(WinMain)));
 	/*
 	** Match the exception type with the error string and print it out
 	*/
@@ -580,16 +697,20 @@ void DumpExceptionInfo( unsigned int u, EXCEPTION_POINTERS* e_info )
 	{
 		if ( access_read_write )
 		{
-			DOUBLE_DEBUG( ("Access address:%08X was written to.", access_address));
+			DOUBLE_DEBUG( ("Access address:%p was written to.", reinterpret_cast<void *>(access_address)));
 		}
 		else
 		{
-			DOUBLE_DEBUG( ("Access address:%08X was read from.", access_address));
+			DOUBLE_DEBUG( ("Access address:%p was read from.", reinterpret_cast<void *>(access_address)));
 		}
 	}
 
 	DOUBLE_DEBUG (("\nStack Dump:"));
+#if defined(_WIN64)
+	StackDumpFromContext(context, nullptr);
+#else
 	StackDumpFromContext(context->Eip, context->Esp, context->Ebp, nullptr);
+#endif
 
 	DOUBLE_DEBUG (("\nDetails:"));
 
@@ -598,9 +719,15 @@ void DumpExceptionInfo( unsigned int u, EXCEPTION_POINTERS* e_info )
 	/*
 	** Dump the registers.
 	*/
+#if defined(_WIN64)
+	DOUBLE_DEBUG ( ( "Rip:%016llX\tRsp:%016llX\tRbp:%016llX", context->Rip, context->Rsp, context->Rbp));
+	DOUBLE_DEBUG ( ( "Rax:%016llX\tRbx:%016llX\tRcx:%016llX", context->Rax, context->Rbx, context->Rcx));
+	DOUBLE_DEBUG ( ( "Rdx:%016llX\tRsi:%016llX\tRdi:%016llX", context->Rdx, context->Rsi, context->Rdi));
+#else
 	DOUBLE_DEBUG ( ( "Eip:%08X\tEsp:%08X\tEbp:%08X", context->Eip, context->Esp, context->Ebp));
 	DOUBLE_DEBUG ( ( "Eax:%08X\tEbx:%08X\tEcx:%08X", context->Eax, context->Ebx, context->Ecx));
 	DOUBLE_DEBUG ( ( "Edx:%08X\tEsi:%08X\tEdi:%08X", context->Edx, context->Esi, context->Edi));
+#endif
 	DOUBLE_DEBUG ( ( "EFlags:%08X ", context->EFlags));
 	DOUBLE_DEBUG ( ( "CS:%04x  SS:%04x  DS:%04x  ES:%04x  FS:%04x  GS:%04x", context->SegCs, context->SegSs, context->SegDs, context->SegEs, context->SegFs, context->SegGs));
 
@@ -608,14 +735,26 @@ void DumpExceptionInfo( unsigned int u, EXCEPTION_POINTERS* e_info )
 	** Dump the bytes at EIP. This will make it easier to match the crash address with later versions of the game.
 	*/
 	char scrap[512];
+#if defined(_WIN64)
+	DOUBLE_DEBUG ( ("RIP bytes dump..."));
+	snprintf(scrap, sizeof(scrap), "\nBytes at RIP (%016llX)  : ", context->Rip);
+#else
 	DOUBLE_DEBUG ( ("EIP bytes dump..."));
 	wsprintf (scrap, "\nBytes at CS:EIP (%08X)  : ", context->Eip);
+#endif
 
+#if defined(_WIN64)
+	const DWORD_PTR instruction_address = static_cast<DWORD_PTR>(context->Rip);
+#else
 	unsigned char *eip_ptr = (unsigned char *) (context->Eip);
+#endif
 	char bytestr[32];
 
 	for (int c = 0 ; c < 32 ; c++)
 	{
+#if defined(_WIN64)
+		const auto *eip_ptr = reinterpret_cast<const unsigned char *>(instruction_address + c);
+#endif
 		if (IsBadReadPtr(eip_ptr, 1))
 		{
 			lstrcat (scrap, "?? ");
@@ -625,7 +764,9 @@ void DumpExceptionInfo( unsigned int u, EXCEPTION_POINTERS* e_info )
 			sprintf (bytestr, "%02X ", *eip_ptr);
 			strlcat(scrap, bytestr, ARRAY_SIZE(scrap));
 		}
+#if !defined(_WIN64)
 		eip_ptr++;
+#endif
 	}
 
 	DOUBLE_DEBUG ( ( (scrap)));
@@ -637,4 +778,3 @@ void DumpExceptionInfo( unsigned int u, EXCEPTION_POINTERS* e_info )
 #pragma pack(pop)
 
 #endif
-

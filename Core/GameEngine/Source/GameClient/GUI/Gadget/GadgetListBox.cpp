@@ -2720,6 +2720,11 @@ void *GadgetListBoxGetItemData( GameWindow *listbox, Int row, Int column)
 
 }
 
+std::intptr_t GadgetListBoxGetItemIntegerData( GameWindow *listbox, Int row, Int column)
+{
+	return reinterpret_cast<std::intptr_t>(GadgetListBoxGetItemData(listbox, row, column));
+}
+
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 Int GadgetListBoxGetBottomVisibleEntry( GameWindow *window )

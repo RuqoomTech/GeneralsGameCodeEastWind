@@ -34,6 +34,7 @@
 #include "Common/BattleHonors.h"
 #include "Common/FileSystem.h"
 #include "Common/GameEngine.h"
+#include "Common/MessageStream.h"
 #include "Common/PlayerTemplate.h"
 #include "Common/QuotedPrintable.h"
 #include "Common/RandomValue.h"
@@ -854,7 +855,7 @@ static void handlePlayerSelection(int index)
 	Int playerType, selIndex;
 	GadgetComboBoxGetSelectedPos(combo, &selIndex);
   UnicodeString title = GadgetComboBoxGetText(combo);
-	playerType = (Int)GadgetComboBoxGetItemData(combo, selIndex);
+	playerType = static_cast<Int>(GadgetComboBoxGetItemIntegerData(combo, selIndex));
 	GameInfo *myGame = TheSkirmishGameInfo;
 
 	if (myGame)
@@ -873,7 +874,7 @@ static void handleColorSelection(int index)
 	GameWindow *combo = comboBoxColor[index];
 	Int color, selIndex;
 	GadgetComboBoxGetSelectedPos(combo, &selIndex);
-	color = (Int)GadgetComboBoxGetItemData(combo, selIndex);
+	color = static_cast<Int>(GadgetComboBoxGetItemIntegerData(combo, selIndex));
 
 	GameInfo *myGame = TheSkirmishGameInfo;
 
@@ -913,7 +914,7 @@ static void handlePlayerTemplateSelection(int index)
 	GameWindow *combo = comboBoxPlayerTemplate[index];
 	Int playerTemplate, selIndex;
 	GadgetComboBoxGetSelectedPos(combo, &selIndex);
-	playerTemplate = (Int)GadgetComboBoxGetItemData(combo, selIndex);
+	playerTemplate = static_cast<Int>(GadgetComboBoxGetItemIntegerData(combo, selIndex));
 	GameInfo *myGame = TheSkirmishGameInfo;
 
 	if (myGame)
@@ -966,7 +967,7 @@ static void handleTeamSelection(int index)
 	GameWindow *combo = comboBoxTeam[index];
 	Int team, selIndex;
 	GadgetComboBoxGetSelectedPos(combo, &selIndex);
-	team = (Int)GadgetComboBoxGetItemData(combo, selIndex);
+	team = static_cast<Int>(GadgetComboBoxGetItemIntegerData(combo, selIndex));
 	GameInfo *myGame = TheSkirmishGameInfo;
 
 	if (myGame)
@@ -992,7 +993,7 @@ static void handleStartingCashSelection()
     GadgetComboBoxGetSelectedPos(comboBoxStartingCash, &selIndex);
 
     Money startingCash;
-    startingCash.deposit( (UnsignedInt)GadgetComboBoxGetItemData( comboBoxStartingCash, selIndex ), FALSE, FALSE );
+    startingCash.deposit( static_cast<UnsignedInt>(GadgetComboBoxGetItemIntegerData( comboBoxStartingCash, selIndex )), FALSE, FALSE );
     myGame->setStartingCash( startingCash );
   }
 }
@@ -1238,7 +1239,7 @@ void updateSkirmishGameOptions()
   Int index = 0;
   for ( ; index < itemCount; index++ )
   {
-    Int value  = (Int)GadgetComboBoxGetItemData(comboBoxStartingCash, index);
+    Int value  = static_cast<Int>(GadgetComboBoxGetItemIntegerData(comboBoxStartingCash, index));
     if ( value == TheSkirmishGameInfo->getStartingCash().countMoney() )
     {
       GadgetComboBoxSetSelectedPos(comboBoxStartingCash, index, TRUE);

@@ -1092,6 +1092,11 @@ void *GadgetComboBoxGetItemData( GameWindow *comboBox, Int index )
 	return (data);
 }
 
+std::intptr_t GadgetComboBoxGetItemIntegerData( GameWindow *comboBox, Int index )
+{
+	return reinterpret_cast<std::intptr_t>(GadgetComboBoxGetItemData(comboBox, index));
+}
+
 // GadgetComboBoxGetLength =================================================
 /** Get the list length data contained in the listboxData
 	* parameter. */
@@ -1104,4 +1109,3 @@ Int GadgetComboBoxGetLength( GameWindow *combobox )
 
 	return 0;
 }
-

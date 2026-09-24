@@ -45,6 +45,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 // SYSTEM INCLUDES ////////////////////////////////////////////////////////////
 
 // USER INCLUDES //////////////////////////////////////////////////////////////
@@ -69,6 +71,8 @@ extern void GadgetComboBoxSetSelectedPos( GameWindow *comboBox, Int selectedInde
 extern void GadgetComboBoxGetSelectedPos( GameWindow *comboBox, Int *selectedIndex );
 extern void GadgetComboBoxSetItemData( GameWindow *comboBox, Int index, void *data );
 extern void *GadgetComboBoxGetItemData( GameWindow *comboBox, Int index );
+// For entries whose item data is an integer tag rather than an object pointer.
+extern std::intptr_t GadgetComboBoxGetItemIntegerData( GameWindow *comboBox, Int index );
 extern Int  GadgetComboBoxGetLength( GameWindow *comboBox );
 
 extern void GadgetComboBoxHideList( GameWindow *comboBox );

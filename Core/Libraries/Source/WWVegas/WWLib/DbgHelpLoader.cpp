@@ -34,6 +34,7 @@ DbgHelpLoader::DbgHelpLoader()
 	, m_symFunctionTableAccess(nullptr)
 	, m_stackWalk(nullptr)
 	, m_symFromAddr(nullptr)
+	, m_symGetLineFromAddr64(nullptr)
 	, m_symFunctionTableAccess64(nullptr)
 	, m_symGetModuleBase64(nullptr)
 	, m_stackWalk64(nullptr)
@@ -126,6 +127,7 @@ bool DbgHelpLoader::load()
 	Inst->m_symFunctionTableAccess = reinterpret_cast<SymFunctionTableAccess_t>(::GetProcAddress(Inst->m_dllModule, "SymFunctionTableAccess"));
 	Inst->m_stackWalk = reinterpret_cast<StackWalk_t>(::GetProcAddress(Inst->m_dllModule, "StackWalk"));
 	Inst->m_symFromAddr = reinterpret_cast<SymFromAddr_t>(::GetProcAddress(Inst->m_dllModule, "SymFromAddr"));
+	Inst->m_symGetLineFromAddr64 = reinterpret_cast<SymGetLineFromAddr64_t>(::GetProcAddress(Inst->m_dllModule, "SymGetLineFromAddr64"));
 	Inst->m_symFunctionTableAccess64 = reinterpret_cast<SymFunctionTableAccess64_t>(::GetProcAddress(Inst->m_dllModule, "SymFunctionTableAccess64"));
 	Inst->m_symGetModuleBase64 = reinterpret_cast<SymGetModuleBase64_t>(::GetProcAddress(Inst->m_dllModule, "SymGetModuleBase64"));
 	Inst->m_stackWalk64 = reinterpret_cast<StackWalk64_t>(::GetProcAddress(Inst->m_dllModule, "StackWalk64"));
@@ -193,6 +195,7 @@ void DbgHelpLoader::freeResources()
 	Inst->m_symFunctionTableAccess = nullptr;
 	Inst->m_stackWalk = nullptr;
 	Inst->m_symFromAddr = nullptr;
+	Inst->m_symGetLineFromAddr64 = nullptr;
 	Inst->m_symFunctionTableAccess64 = nullptr;
 	Inst->m_symGetModuleBase64 = nullptr;
 	Inst->m_stackWalk64 = nullptr;
@@ -371,6 +374,20 @@ BOOL DbgHelpLoader::symFromAddr(
 
 	if (Inst != nullptr && Inst->m_symFromAddr)
 		return Inst->m_symFromAddr(hProcess, Address, Displacement, Symbol);
+
+	return FALSE;
+}
+
+BOOL DbgHelpLoader::symGetLineFromAddr64(
+	HANDLE hProcess,
+	DWORD64 Address,
+	PDWORD Displacement,
+	PIMAGEHLP_LINE64 Line)
+{
+	CriticalSectionClass::LockClass lock(CriticalSection);
+
+	if (Inst != nullptr && Inst->m_symGetLineFromAddr64)
+		return Inst->m_symGetLineFromAddr64(hProcess, Address, Displacement, Line);
 
 	return FALSE;
 }

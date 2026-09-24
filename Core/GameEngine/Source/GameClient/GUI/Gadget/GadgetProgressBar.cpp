@@ -90,7 +90,7 @@ WindowMsgHandledType GadgetProgressBarSystem( GameWindow *window, UnsignedInt ms
       if (newPos < 0 || newPos > 100)
         break;
 
-      window->winSetUserData( (void *)newPos );
+      window->winSetUserData(reinterpret_cast<void *>(static_cast<std::intptr_t>(newPos)));
 
 			break;
 
@@ -115,4 +115,9 @@ void GadgetProgressBarSetProgress( GameWindow *g, Int progress )
 		return;
 
 	TheWindowManager->winSendSystemMsg( g, GPM_SET_PROGRESS, progress, 0);
+}
+
+Int GadgetProgressBarGetProgress( GameWindow *g )
+{
+	return g ? static_cast<Int>(reinterpret_cast<std::intptr_t>(g->winGetUserData())) : 0;
 }
