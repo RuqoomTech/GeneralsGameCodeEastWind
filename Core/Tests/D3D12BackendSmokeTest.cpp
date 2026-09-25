@@ -72,6 +72,7 @@ int main()
     int output_width = 0, output_height = 0, output_bits = 0;
     bool output_windowed = false;
     if (!backend->Configure_Output(640, 480, true) ||
+        !backend->Is_Device_Ready() ||
         !backend->Get_Output_Description(
             output_width, output_height, output_bits, output_windowed) ||
         output_width != 640 || output_height != 480 || output_bits != 32 || !output_windowed)

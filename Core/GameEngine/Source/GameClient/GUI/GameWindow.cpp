@@ -96,8 +96,6 @@ GameWindow::GameWindow()
 
 	m_userData = nullptr;
 
-	m_inputData = nullptr;
-
 	winSetDrawFunc( TheWindowManager->getDefaultDraw() );
 	winSetInputFunc( TheWindowManager->getDefaultInput() );
 	winSetSystemFunc( TheWindowManager->getDefaultSystem() );
@@ -123,9 +121,6 @@ GameWindow::GameWindow()
 //=============================================================================
 GameWindow::~GameWindow()
 {
-
-	delete m_inputData;
-	m_inputData = nullptr;
 
 	delete m_editData;
 	m_editData = nullptr;

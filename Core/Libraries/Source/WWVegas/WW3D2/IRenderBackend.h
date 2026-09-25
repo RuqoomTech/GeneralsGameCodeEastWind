@@ -121,9 +121,8 @@ struct RenderBackendTextureHandle
 // across this seam. Each migrated renderer responsibility belongs here (or in a
 // renderer-neutral WW3D abstraction), not in a D3D8-on-D3D12 compatibility shim.
 //
-// Method names intentionally match the existing DX8Wrapper names so migrating a
-// caller is a mechanical DX8Wrapper::X(...) -> Get_Render_Backend()->X(...)
-// rewrite.
+// Add renderer-neutral capabilities for actual WW3D callers. Do not mirror the
+// legacy DX8Wrapper state machine or its resource interfaces here.
 
 class IRenderBackend
 {
@@ -140,6 +139,10 @@ public:
                        float dest_alpha = 0.0f, float z = 1.0f, unsigned int stencil = 0) = 0;
     virtual void Set_Viewport(const RenderBackendViewport & viewport) = 0;
     virtual void Invalidate_Cached_Render_States() = 0;
+
+    // Device availability is renderer-owned. Frame callers use this before
+    // updating view data that will be consumed by the active render device.
+    virtual bool Is_Device_Ready() const { return false; }
 
     // WW3D's normal display caller configures the active swapchain after
     // creating the backend and queries its actual pixel dimensions for 2D UI.

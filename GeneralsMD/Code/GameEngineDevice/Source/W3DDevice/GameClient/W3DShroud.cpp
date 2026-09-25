@@ -31,6 +31,8 @@
 #include "WW3D2/camera.h"
 #include "WWLib/simplevec.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/IRenderBackend.h"
+#include "WW3D2/ww3d.h"
 #include "Common/MapObject.h"
 #include "Common/PerfTimer.h"
 #include "W3DDevice/GameClient/HeightMap.h"
@@ -526,7 +528,12 @@ void W3DShroud::render(CameraClass *cam)
 	if (!m_pSrcTexture)
 		return; //nothing to update from.  Must be in reset state.
 
+#if defined(RTS_EVOLUTION_X64)
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend != nullptr && !backend->Is_Device_Ready())
+#else
 	if (DX8Wrapper::_Get_D3D_Device8() && (DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()) != D3D_OK)
+#endif
 		return;	//device not ready to render anything
 
 #if defined(RTS_DEBUG)

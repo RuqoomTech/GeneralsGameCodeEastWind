@@ -48,6 +48,7 @@ public:
                float dest_alpha, float z, unsigned int stencil) override;
     void Set_Viewport(const RenderBackendViewport &viewport) override;
     void Invalidate_Cached_Render_States() override;
+    bool Is_Device_Ready() const override;
     bool Configure_Output(unsigned int width, unsigned int height, bool windowed) override;
     bool Get_Output_Description(int &width, int &height, int &bits, bool &windowed) const override;
     bool Draw_Indexed_Triangles(

@@ -118,12 +118,16 @@ public:
 
 	static int					Get_Render_Device_Count();
 	static const char *		Get_Render_Device_Name(int device_index);
+#if !defined(RTS_EVOLUTION_X64)
 	static const RenderDeviceDescClass &								Get_Render_Device_Desc(int device = -1);
+#endif
 
 	static int					Get_Render_Device();
 	static WW3DErrorType		Set_Render_Device( int dev=-1, int resx=-1, int resy=-1, int bits=-1, int windowed=-1, bool resize_window = false, bool reset_device=false, bool restore_assets=true);
 	static WW3DErrorType		Set_Render_Device( const char *dev_name, int resx=-1, int resy=-1, int bits=-1, int windowed=-1, bool resize_window = false  );
+#if !defined(RTS_EVOLUTION_X64)
 	static WW3DErrorType		Set_Next_Render_Device();
+#endif
 	static WW3DErrorType		Set_Any_Render_Device();
 
 	static void					Get_Pixel_Center(float &x, float &y);
@@ -132,17 +136,21 @@ public:
 	static WW3DErrorType		Set_Device_Resolution(int w=-1,int h=-1,int bits=-1,int windowed=-1, bool resize_window=false );
 
 	static bool					Is_Windowed();
+#if !defined(RTS_EVOLUTION_X64)
 	static WW3DErrorType		Toggle_Windowed ();
+#endif
 	static void					Set_Window( void *hwnd );
 	static void *				Get_Window();
 
 	static WW3DErrorType		On_Activate_App();
 	static WW3DErrorType		On_Deactivate_App();
 
+#if !defined(RTS_EVOLUTION_X64)
 	static WW3DErrorType		Registry_Save_Render_Device( const char * sub_key );
 	static WW3DErrorType		Registry_Save_Render_Device( const char * sub_key, int device, int width, int height, int depth, bool windowed, int texture_depth );
 	static WW3DErrorType		Registry_Load_Render_Device( const char * sub_key, bool resize_window = false );
 	static bool					Registry_Load_Render_Device( const char * sub_key, char *device, int device_len, int &width, int &height, int &depth, int &windowed, int& texture_depth);
+#endif
 
 	// 0 = bilinear, 1 = trilinear, 2 = anisotropic
 	static void					Set_Texture_Filter(int filter);
@@ -240,7 +248,9 @@ public:
 	static int					Get_Texture_Min_Dimension();
 	static void					Enable_Large_Texture_Extra_Reduction(bool onoff);
 	static bool					Is_Large_Texture_Extra_Reduction_Enabled();
+#if !defined(RTS_EVOLUTION_X64)
 	static void					_Invalidate_Mesh_Cache();
+#endif
 	static void					_Invalidate_Textures();
 
 	static void					Set_Thumbnail_Enabled(bool b) { ThumbnailEnabled=b; }

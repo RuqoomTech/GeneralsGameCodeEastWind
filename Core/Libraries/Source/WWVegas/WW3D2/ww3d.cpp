@@ -163,7 +163,7 @@ const char* DAZZLE_INI_FILENAME="DAZZLE.INI";
 **
 ***********************************************************************************/
 
-float														WW3D::LogicFrameTimeMs = 1000.0f / WWSyncPerSecond; // initialized to something to avoid division by zero on first use
+float														WW3D::LogicFrameTimeMs = 1000.0f / static_cast<float>(WWSyncPerSecond); // initialized to something to avoid division by zero on first use
 float															WW3D::FractionalSyncMs = 0.0f;
 unsigned int											WW3D::SyncTime = 0;
 unsigned int											WW3D::PreviousSyncTime = 0;
@@ -509,6 +509,7 @@ WW3DErrorType WW3D::Set_Render_Device(int dev, int width, int height, int bits, 
  * HISTORY:                                                                                    *
  *   3/26/98    GTH : Created.                                                                 *
  *=============================================================================================*/
+#if !defined(RTS_EVOLUTION_X64)
 WW3DErrorType WW3D::Set_Next_Render_Device()
 {
 	bool success = DX8Wrapper::Set_Next_Render_Device();
@@ -518,6 +519,7 @@ WW3DErrorType WW3D::Set_Next_Render_Device()
 		return WW3D_ERROR_INITIALIZATION_FAILED;
 	}
 }
+#endif
 
 /***********************************************************************************************
  * WW3D::Get_Window -- returns the handle of the render window.										  *
@@ -575,6 +577,7 @@ bool WW3D::Is_Windowed()
  * HISTORY:                                                                                    *
  *   1/11/99    PDS : Created.                                                                 *
  *=============================================================================================*/
+#if !defined(RTS_EVOLUTION_X64)
 WW3DErrorType WW3D::Toggle_Windowed ()
 {
 	bool success = DX8Wrapper::Toggle_Windowed();
@@ -584,6 +587,7 @@ WW3DErrorType WW3D::Toggle_Windowed ()
 		return WW3D_ERROR_INITIALIZATION_FAILED;
 	}
 }
+#endif
 
 
 /***********************************************************************************************
@@ -622,10 +626,12 @@ int WW3D::Get_Render_Device()
  *   3/26/98    GTH : Created.                                                                 *
  *   1/25/2001  gth : converted to dx8                                                         *
  *=============================================================================================*/
+#if !defined(RTS_EVOLUTION_X64)
 const RenderDeviceDescClass & WW3D::Get_Render_Device_Desc(int deviceidx)
 {
 	return DX8Wrapper::Get_Render_Device_Desc(deviceidx);
 }
+#endif
 
 
 
@@ -766,6 +772,7 @@ void WW3D::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bool & s
  *   12/3/98    BMG : Created.                                                                 *
  *   1/25/2001  gth : converted to dx8                                                         *
  *=============================================================================================*/
+#if !defined(RTS_EVOLUTION_X64)
 WW3DErrorType WW3D::Registry_Save_Render_Device( const char * sub_key )
 {
 	bool success = DX8Wrapper::Registry_Save_Render_Device(sub_key);
@@ -825,11 +832,14 @@ bool WW3D::Registry_Load_Render_Device( const char * sub_key, char *device, int 
 {
 	return DX8Wrapper::Registry_Load_Render_Device(sub_key,device,device_len,width,height,depth,windowed,texture_depth);
 }
+#endif
 
+#if !defined(RTS_EVOLUTION_X64)
 void WW3D::_Invalidate_Mesh_Cache()
 {
 	TheDX8MeshRenderer.Invalidate();
 }
+#endif
 
 void WW3D::_Invalidate_Textures()
 {
@@ -893,7 +903,11 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 	SNAPSHOT_SAY(("========== WW3D::Begin_Render ============"));
 	SNAPSHOT_SAY(("==========================================\n"));
 
-#if !defined(RTS_EVOLUTION_X64)
+#if defined(RTS_EVOLUTION_X64)
+	if (RenderBackend == nullptr || !RenderBackend->Is_Device_Ready()) {
+		return WW3D_ERROR_GENERIC;
+	}
+#else
 	if (DX8Wrapper::_Get_D3D_Device8() && (hr=DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()) != D3D_OK)
 	{
         // If the device was lost, do not render until we get it back
@@ -2074,8 +2088,10 @@ void WW3D::Release_Debug_Resources()
 
 WW3DErrorType WW3D::On_Deactivate_App()
 {
+#if !defined(RTS_EVOLUTION_X64)
 	_Invalidate_Textures();
 	_Invalidate_Mesh_Cache();
+#endif
 
 	return WW3D_ERROR_OK;
 }

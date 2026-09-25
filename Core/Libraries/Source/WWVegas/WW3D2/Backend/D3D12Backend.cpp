@@ -881,6 +881,24 @@ void D3D12Backend::Invalidate_Cached_Render_States()
     // shadow state cache to invalidate here.
 }
 
+bool D3D12Backend::Is_Device_Ready() const
+{
+    if (m_device == nullptr || m_swap_chain == nullptr || m_rtv_heap == nullptr ||
+        m_dsv_heap == nullptr || m_depth_stencil == nullptr ||
+        FAILED(m_device->GetDeviceRemovedReason()))
+    {
+        return false;
+    }
+    for (const ID3D12Resource *render_target : m_render_targets)
+    {
+        if (render_target == nullptr)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool D3D12Backend::Configure_Output(unsigned int width, unsigned int height, bool windowed)
 {
     if (m_scene_open || m_present_pending || m_swap_chain == nullptr ||

@@ -31,6 +31,8 @@
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#include <cstdint>
+
 #include "Common/GameEngine.h"
 #include "Common/QuickmatchPreferences.h"
 #include "Common/LadderPreferences.h"
@@ -67,6 +69,11 @@
 #include "GameNetwork/GameSpy/PersistentStorageThread.h"
 #include "GameNetwork/RankPointValue.h"
 #include "GameNetwork/GameSpy/LadderDefs.h"
+
+static void *asGadgetItemData(Int value)
+{
+	return reinterpret_cast<void *>(static_cast<std::intptr_t>(value));
+}
 
 #ifdef DEBUG_LOGGING
 #include "Common/MiniLog.h"
@@ -264,7 +271,7 @@ static void populateQMColorComboBox(QuickMatchPreferences& pref)
 
 	MultiplayerColorDefinition *def = TheMultiplayerSettings->getColor(PLAYERTEMPLATE_RANDOM);
 	Int newIndex = GadgetComboBoxAddEntry(comboBoxColor, TheGameText->fetch("GUI:???"), def->getColor());
-	GadgetComboBoxSetItemData(comboBoxColor, newIndex, (void *)-1);
+	GadgetComboBoxSetItemData(comboBoxColor, newIndex, asGadgetItemData(-1));
 
 	for (Int c=0; c<numColors; ++c)
 	{
@@ -274,7 +281,7 @@ static void populateQMColorComboBox(QuickMatchPreferences& pref)
 
 		colorName = TheGameText->fetch(def->getTooltipName().str());
 		newIndex = GadgetComboBoxAddEntry(comboBoxColor, colorName, def->getColor());
-		GadgetComboBoxSetItemData(comboBoxColor, newIndex, (void *)c);
+		GadgetComboBoxSetItemData(comboBoxColor, newIndex, asGadgetItemData(c));
 	}
 	GadgetComboBoxSetSelectedPos(comboBoxColor, pref.getColor());
 }
@@ -290,7 +297,7 @@ static void populateQMSideComboBox(Int favSide, const LadderInfo *li = nullptr)
 
 	MultiplayerColorDefinition *def = TheMultiplayerSettings->getColor(PLAYERTEMPLATE_RANDOM);
 	Int newIndex = GadgetComboBoxAddEntry(comboBoxSide, TheGameText->fetch("GUI:Random"), def->getColor());
-	GadgetComboBoxSetItemData(comboBoxSide, newIndex, (void *)PLAYERTEMPLATE_RANDOM);
+	GadgetComboBoxSetItemData(comboBoxSide, newIndex, asGadgetItemData(PLAYERTEMPLATE_RANDOM));
 
 	std::set<AsciiString> seenSides;
 
@@ -328,7 +335,7 @@ static void populateQMSideComboBox(Int favSide, const LadderInfo *li = nullptr)
 		seenSides.insert(side);
 
 		newIndex = GadgetComboBoxAddEntry(comboBoxSide, TheGameText->fetch(side), def->getColor());
-		GadgetComboBoxSetItemData(comboBoxSide, newIndex, (void *)c);
+		GadgetComboBoxSetItemData(comboBoxSide, newIndex, asGadgetItemData(c));
 
 		if (c == favSide)
 			entryToSelect = newIndex;
@@ -423,7 +430,7 @@ void PopulateQMLadderListBox( GameWindow *win )
 	{
 		usedLadders.insert(info);
 		index = GadgetListBoxAddEntryText( win, info->name, favoriteColor, -1 );
-		GadgetListBoxSetItemData( win, (void *)(info->index), index );
+		GadgetListBoxSetItemData( win, asGadgetItemData(info->index), index );
 		selectedPos = index;
 	}
 
@@ -442,7 +449,7 @@ void PopulateQMLadderListBox( GameWindow *win )
 		{
 			usedLadders.insert(info);
 			index = GadgetListBoxAddEntryText( win, info->name, favoriteColor, -1 );
-			GadgetListBoxSetItemData( win, (void *)(info->index), index );
+			GadgetListBoxSetItemData( win, asGadgetItemData(info->index), index );
 		}
 	}
 
@@ -456,7 +463,7 @@ void PopulateQMLadderListBox( GameWindow *win )
 		{
 			usedLadders.insert(info);
 			index = GadgetListBoxAddEntryText( win, info->name, specialColor, -1 );
-			GadgetListBoxSetItemData( win, (void *)(info->index), index );
+			GadgetListBoxSetItemData( win, asGadgetItemData(info->index), index );
 		}
 	}
 
@@ -469,7 +476,7 @@ void PopulateQMLadderListBox( GameWindow *win )
 		{
 			usedLadders.insert(info);
 			index = GadgetListBoxAddEntryText( win, info->name, normalColor, -1 );
-			GadgetListBoxSetItemData( win, (void *)(info->index), index );
+			GadgetListBoxSetItemData( win, asGadgetItemData(info->index), index );
 		}
 	}
 
@@ -514,7 +521,7 @@ void PopulateQMLadderComboBox()
 	{
 		usedLadders.insert(info);
 		index = GadgetComboBoxAddEntry( comboBoxLadder, info->name, specialColor );
-		GadgetComboBoxSetItemData( comboBoxLadder, index, (void *)(info->index) );
+		GadgetComboBoxSetItemData( comboBoxLadder, index, asGadgetItemData(info->index) );
 		selectedPos = index;
 
 		// we selected a ladder?  No game size choice for us...
@@ -540,12 +547,12 @@ void PopulateQMLadderComboBox()
 		{
 			usedLadders.insert(info);
 			index = GadgetComboBoxAddEntry( comboBoxLadder, info->name, normalColor );
-			GadgetComboBoxSetItemData( comboBoxLadder, index, (void *)(info->index) );
+			GadgetComboBoxSetItemData( comboBoxLadder, index, asGadgetItemData(info->index) );
 		}
 	}
 
 	index = GadgetComboBoxAddEntry( comboBoxLadder, TheGameText->fetch("GUI:ChooseLadder"), normalColor );
-	GadgetComboBoxSetItemData( comboBoxLadder, index, (void *)-1 );
+	GadgetComboBoxSetItemData( comboBoxLadder, index, asGadgetItemData(-1) );
 
 	GadgetComboBoxSetSelectedPos( comboBoxLadder, selectedPos );
 	isPopulatingLadderBox = false;
@@ -603,7 +610,7 @@ static void populateQuickMatchMapSelectListbox( QuickMatchPreferences& pref )
 			}
 			Int index = GadgetListBoxAddEntryImage(listboxMapSelect, img, -1, 0, height, width);
 			GadgetListBoxAddEntryText(listboxMapSelect, displayName, GameSpyColor[(isSelected)?GSCOLOR_MAP_SELECTED:GSCOLOR_MAP_UNSELECTED], index, 1);
-			GadgetListBoxSetItemData(listboxMapSelect, (void *)isSelected, index);
+			GadgetListBoxSetItemData(listboxMapSelect, asGadgetItemData(isSelected), index);
 			GadgetListBoxSetItemData(listboxMapSelect, (void *)md, index, 1);
 		}
 	}
@@ -1829,7 +1836,7 @@ WindowMsgHandledType WOLQuickMatchMenuSystem( GameWindow *window, UnsignedInt ms
 					for ( Int i=0; i<numMaps; ++i )
 					{
 						GadgetListBoxAddEntryImage(listboxMapSelect, selectedImage, i, 0);
-						GadgetListBoxSetItemData(listboxMapSelect, (void *)1, i);
+						GadgetListBoxSetItemData(listboxMapSelect, asGadgetItemData(1), i);
 						GadgetListBoxAddEntryText(listboxMapSelect, GadgetListBoxGetText(listboxMapSelect, i, 1), GameSpyColor[GSCOLOR_MAP_SELECTED], i, 1);
 					}
 				}
@@ -1839,7 +1846,7 @@ WindowMsgHandledType WOLQuickMatchMenuSystem( GameWindow *window, UnsignedInt ms
 					for ( Int i=0; i<numMaps; ++i )
 					{
 						GadgetListBoxAddEntryImage(listboxMapSelect, unselectedImage, i, 0);
-						GadgetListBoxSetItemData(listboxMapSelect, (void *)nullptr, i);
+						GadgetListBoxSetItemData(listboxMapSelect, nullptr, i);
 						GadgetListBoxAddEntryText(listboxMapSelect, GadgetListBoxGetText(listboxMapSelect, i, 1), GameSpyColor[GSCOLOR_MAP_UNSELECTED], i, 1);
 					}
 				}
@@ -1858,7 +1865,7 @@ WindowMsgHandledType WOLQuickMatchMenuSystem( GameWindow *window, UnsignedInt ms
 					if (selected >= 0 && (!li || !li->randomMaps))
 					{
 						Bool wasSelected = static_cast<Bool>(GadgetListBoxGetItemIntegerData(control, selected, 0));
-						GadgetListBoxSetItemData(control, (void *)(!wasSelected), selected, 0);
+						GadgetListBoxSetItemData(control, asGadgetItemData(!wasSelected), selected, 0);
 						Int width = 10;
 						Int height = 10;
 						const Image *img = (!wasSelected)?selectedImage:unselectedImage;

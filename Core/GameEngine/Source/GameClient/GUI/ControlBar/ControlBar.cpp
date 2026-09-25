@@ -1050,7 +1050,7 @@ ControlBar::~ControlBar()
 
 	if (m_rightHUDCameoWindow && m_rightHUDCameoWindow->winGetUserData())
 	{
-		delete m_rightHUDCameoWindow->winGetUserData();
+		delete static_cast<PushButtonData *>(m_rightHUDCameoWindow->winGetUserData());
 		m_rightHUDCameoWindow->winSetUserData(nullptr);
 	}
 

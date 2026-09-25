@@ -406,7 +406,6 @@ protected:
 
 	void *m_userData;										// User defined data area
 	WinInstanceData m_instData;					// Class data, varies by window type
-	void *m_inputData;								  // Client data
 
   // user defined callbacks
 	GameWinInputFunc			m_input;					///< callback for input
