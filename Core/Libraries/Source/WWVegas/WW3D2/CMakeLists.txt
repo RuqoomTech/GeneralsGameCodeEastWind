@@ -267,6 +267,7 @@ endif()
 
 target_link_libraries(corei_ww3d2 INTERFACE
     core_browserengine
+    core_profile_legacy
     core_wwlib
     core_wwmath
 )

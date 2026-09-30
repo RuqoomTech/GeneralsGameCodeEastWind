@@ -84,6 +84,21 @@ set(CMAKE_AR "${_RTS_MINGW_AR}")
 set(CMAKE_RANLIB "${_RTS_MINGW_RANLIB}")
 set(CMAKE_DLLTOOL "${_RTS_MINGW_DLLTOOL}")
 
+if(CMAKE_HOST_WIN32)
+    # GCC starts ld from the triplet's bin directory, where its runtime DLLs
+    # are not adjacent. Keep DLL lookup in the selected toolchain even when
+    # the calling shell has another MSYS2 runtime or SDK first on PATH.
+    foreach(_rts_link_language C CXX)
+        list(FIND CMAKE_${_rts_link_language}_LINKER_LAUNCHER
+            "PATH=path_list_prepend:${RTS_MINGW_BIN_DIR}" _rts_link_path_index)
+        if(_rts_link_path_index EQUAL -1)
+            list(PREPEND CMAKE_${_rts_link_language}_LINKER_LAUNCHER
+                "${CMAKE_COMMAND}" -E env --modify
+                "PATH=path_list_prepend:${RTS_MINGW_BIN_DIR}" --)
+        endif()
+    endforeach()
+endif()
+
 set(CMAKE_FIND_ROOT_PATH "${RTS_MINGW_ROOT}")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)

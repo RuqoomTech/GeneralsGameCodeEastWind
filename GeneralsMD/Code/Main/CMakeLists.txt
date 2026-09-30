@@ -10,7 +10,6 @@ endif()
 target_link_libraries(z_generals PRIVATE
     binkloader
     comctl32
-    dinput8
     dxguid
     imm32
     milesloader

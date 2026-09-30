@@ -226,6 +226,12 @@ target_link_libraries(corei_gameenginedevice_private INTERFACE
     stb
 )
 
+if(WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows")
+    # Win32DIKeyboard owns these imports. Keep them after its consuming
+    # archive on GNU link lines, rather than only on the game executable.
+    target_link_libraries(corei_gameenginedevice_private INTERFACE dinput8 dxguid)
+endif()
+
 target_link_libraries(corei_gameenginedevice_public INTERFACE
     binkloader
     corei_gameengine_public
