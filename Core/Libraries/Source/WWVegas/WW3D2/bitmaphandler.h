@@ -97,6 +97,17 @@ public:
 		unsigned width,
 		unsigned height);
 
+	// Generate one box-filtered mip level using renderer-neutral CPU pixels.
+	static void Create_Mipmap(
+		unsigned char* dest_surface,
+		unsigned dest_surface_pitch,
+		WW3DFormat dest_format,
+		const unsigned char* src_surface,
+		unsigned src_surface_pitch,
+		WW3DFormat src_format,
+		unsigned src_width,
+		unsigned src_height);
+
 	static void Copy_Image_Generate_Mipmap(
 		unsigned width,
 		unsigned height,

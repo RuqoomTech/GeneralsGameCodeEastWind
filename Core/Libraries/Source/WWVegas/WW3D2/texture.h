@@ -339,6 +339,9 @@ public:
 
 protected:
 
+	// Generate the allocated mip chain with the shared CPU box filter.
+	bool Generate_Mipmaps();
+
 	WW3DFormat				TextureFormat;
 
 	// legacy

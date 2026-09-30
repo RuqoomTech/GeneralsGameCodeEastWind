@@ -304,7 +304,8 @@ foreach(_d3dx_free_game_source IN ITEMS
     "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DProjectedShadow.cpp"
     "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DVolumetricShadow.cpp"
     "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DShadow.cpp"
-    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DWebBrowser.cpp")
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DWebBrowser.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp")
     rts_policy_require_absent(
         "${_d3dx_free_game_source}"
         "d3dx8"
@@ -314,6 +315,28 @@ foreach(_d3dx_free_game_source IN ITEMS
         "D3DX"
         "active x64 source ${_d3dx_free_game_source} must not call D3DX8")
 endforeach()
+foreach(_cpu_mip_source IN ITEMS
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/TerrainTex.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp")
+    rts_policy_require_absent(
+        "${_cpu_mip_source}"
+        "d3dx8tex.h"
+        "procedural terrain/tree mip generation must not depend on the D3DX8 texture utility header")
+    rts_policy_require_absent(
+        "${_cpu_mip_source}"
+        "D3DXFilterTexture"
+        "procedural terrain/tree mip generation must use the shared CPU bitmap path instead of D3DXFilterTexture")
+endforeach()
+
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/bitmaphandler.cpp"
+    "void BitmapHandlerClass::Create_Mipmap("
+    "procedural texture mip generation must remain owned by the renderer-neutral CPU bitmap helper")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/texture.cpp"
+    "BitmapHandlerClass::Create_Mipmap("
+    "TextureClass procedural mip chains must reuse the shared CPU bitmap helper instead of D3DX8")
+
 rts_policy_require_contains(
     "Core/GameEngine/Include/Common/BezierSegment.h"
     "static const Matrix4x4 s_bezBasisMatrix"

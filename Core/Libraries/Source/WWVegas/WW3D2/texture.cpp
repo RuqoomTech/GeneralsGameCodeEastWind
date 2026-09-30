@@ -47,6 +47,7 @@
 #include <WWLib/nstrdup.h>
 #include "w3d_file.h"
 #include "assetmgr.h"
+#include "bitmaphandler.h"
 #include "formconv.h"
 #include "textureloader.h"
 #include "missingtexture.h"
@@ -964,6 +965,82 @@ void TextureClass::Apply(unsigned int stage)
 	}
 
 	Filter.Apply(stage);
+}
+
+//**********************************************************************************************
+//! Generate the allocated mip chain using renderer-neutral CPU filtering.
+/*!
+*/
+bool TextureClass::Generate_Mipmaps()
+{
+	IDirect3DTexture8* texture = Peek_D3D_Texture();
+	if (texture == nullptr) {
+		return false;
+	}
+
+	const unsigned level_count = texture->GetLevelCount();
+	if (level_count <= 1) {
+		return true;
+	}
+
+	// Keep this transition helper deliberately narrow: the active procedural
+	// terrain/tree atlases use these two CPU-addressable formats.
+	if (TextureFormat != WW3D_FORMAT_A1R5G5B5 && TextureFormat != WW3D_FORMAT_A8R8G8B8) {
+		return false;
+	}
+
+	for (unsigned level = 0; level + 1 < level_count; ++level) {
+		D3DSURFACE_DESC src_desc = {};
+		D3DSURFACE_DESC dest_desc = {};
+
+		HRESULT result = texture->GetLevelDesc(level, &src_desc);
+		if (FAILED(result)) {
+			DX8_ErrorCode(result);
+			return false;
+		}
+
+		result = texture->GetLevelDesc(level + 1, &dest_desc);
+		if (FAILED(result)) {
+			DX8_ErrorCode(result);
+			return false;
+		}
+
+		const unsigned expected_width = src_desc.Width > 1 ? src_desc.Width / 2 : 1;
+		const unsigned expected_height = src_desc.Height > 1 ? src_desc.Height / 2 : 1;
+		if (dest_desc.Width != expected_width || dest_desc.Height != expected_height) {
+			return false;
+		}
+
+		D3DLOCKED_RECT src_lock = {};
+		D3DLOCKED_RECT dest_lock = {};
+		result = texture->LockRect(level, &src_lock, nullptr, D3DLOCK_READONLY);
+		if (FAILED(result)) {
+			DX8_ErrorCode(result);
+			return false;
+		}
+
+		result = texture->LockRect(level + 1, &dest_lock, nullptr, 0);
+		if (FAILED(result)) {
+			DX8_ErrorCode(result);
+			DX8_ErrorCode(texture->UnlockRect(level));
+			return false;
+		}
+
+		BitmapHandlerClass::Create_Mipmap(
+			static_cast<unsigned char*>(dest_lock.pBits),
+			dest_lock.Pitch,
+			TextureFormat,
+			static_cast<const unsigned char*>(src_lock.pBits),
+			src_lock.Pitch,
+			TextureFormat,
+			src_desc.Width,
+			src_desc.Height);
+
+		DX8_ErrorCode(texture->UnlockRect(level + 1));
+		DX8_ErrorCode(texture->UnlockRect(level));
+	}
+
+	return true;
 }
 
 //**********************************************************************************************

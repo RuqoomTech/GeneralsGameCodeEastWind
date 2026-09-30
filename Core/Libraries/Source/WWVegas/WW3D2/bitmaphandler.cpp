@@ -49,6 +49,57 @@ void BitmapHandlerClass::Create_Mipmap_B8G8R8A8(
 	}
 }
 
+void BitmapHandlerClass::Create_Mipmap(
+	unsigned char* dest_surface,
+	unsigned dest_surface_pitch,
+	WW3DFormat dest_format,
+	const unsigned char* src_surface,
+	unsigned src_surface_pitch,
+	WW3DFormat src_format,
+	unsigned src_width,
+	unsigned src_height)
+{
+	WWASSERT(dest_surface != nullptr);
+	WWASSERT(src_surface != nullptr);
+	WWASSERT(src_width != 0);
+	WWASSERT(src_height != 0);
+	WWASSERT(src_format != WW3D_FORMAT_P8);
+	WWASSERT(dest_format != WW3D_FORMAT_P8);
+
+	const unsigned src_bpp = Get_Bytes_Per_Pixel(src_format);
+	const unsigned dest_bpp = Get_Bytes_Per_Pixel(dest_format);
+	const unsigned dest_width = src_width > 1 ? src_width / 2 : 1;
+	const unsigned dest_height = src_height > 1 ? src_height / 2 : 1;
+
+	for (unsigned y = 0; y < dest_height; ++y) {
+		const unsigned y0 = y * 2;
+		const unsigned y1 = y0 + 1 < src_height ? y0 + 1 : y0;
+		unsigned char* dest_ptr = dest_surface + y * dest_surface_pitch;
+
+		for (unsigned x = 0; x < dest_width; ++x) {
+			const unsigned x0 = x * 2;
+			const unsigned x1 = x0 + 1 < src_width ? x0 + 1 : x0;
+
+			const unsigned char* src00 = src_surface + y0 * src_surface_pitch + x0 * src_bpp;
+			const unsigned char* src01 = src_surface + y0 * src_surface_pitch + x1 * src_bpp;
+			const unsigned char* src10 = src_surface + y1 * src_surface_pitch + x0 * src_bpp;
+			const unsigned char* src11 = src_surface + y1 * src_surface_pitch + x1 * src_bpp;
+
+			unsigned bgra00;
+			unsigned bgra01;
+			unsigned bgra10;
+			unsigned bgra11;
+			Read_B8G8R8A8(bgra00, src00, src_format, nullptr, 0);
+			Read_B8G8R8A8(bgra01, src01, src_format, nullptr, 0);
+			Read_B8G8R8A8(bgra10, src10, src_format, nullptr, 0);
+			Read_B8G8R8A8(bgra11, src11, src_format, nullptr, 0);
+
+			const unsigned filtered = Combine_A8R8G8B8(bgra00, bgra01, bgra10, bgra11);
+			Write_B8G8R8A8(dest_ptr + x * dest_bpp, dest_format, filtered);
+		}
+	}
+}
+
 void BitmapHandlerClass::Copy_Image_Generate_Mipmap(
 	unsigned width,
 	unsigned height,
