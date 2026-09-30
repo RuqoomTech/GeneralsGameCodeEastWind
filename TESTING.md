@@ -243,3 +243,18 @@ cmake --build --preset mingw64-game --target z_generals -- -j1
 ```
 
 Report the first hard failure plus all actual compiler warnings. Do not translate the tree shader or tree rendering subsystem preemptively. If `z_generals` links, stop compile-only migration and move directly to the real runtime/data environment, D3D12 backend creation, first Present, and first visible Generals/UI geometry.
+
+
+### Step 05H1R Windows continuation result
+
+H1R cleared the `W3DTreeBuffer.cpp` D3DX matrix/vector blocker on real Windows MinGW-w64 GCC 16.2. The incremental `z_generals` build advanced to `Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp` at 8/14 and stopped on that file's remaining `d3dx8math.h` include. The enum/floating-point and non-standard-layout `offsetof` diagnostics emitted before the stop remain warnings and are not part of the H1S water-math responsibility.
+
+### Step 05H1S Windows continuation
+
+H1S removes D3DX8 math from the active Evolution water source while preserving the old inverse-view texture-coordinate transform, sea world transform, and transposed world-view-projection shader constants with `D3DMATRIX` plus existing WWMath conversions. `Vector4` replaces D3DX vector constants. The archival inline `ps.1.1` D3DX assembler remains only under `!RTS_EVOLUTION_X64`; Evolution does not restore a D3DX8 dependency merely to compile, and those shaders remain scheduled for coherent D3D12 translation when the real water caller crosses the backend seam. Continue incrementally with:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Report the first hard failure plus all actual compiler warnings. Do not preemptively rewrite the whole water renderer. If `z_generals` links, stop compile-only migration and move directly to runtime/data setup, D3D12 backend creation, first Present, and first visible game/UI geometry.

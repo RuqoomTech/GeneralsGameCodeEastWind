@@ -376,4 +376,36 @@ rts_policy_require_absent(
     "To_D3DXMATRIX"
     "unused D3DX8 matrix conversion should remain deleted rather than perpetuating D3DX8")
 
-message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, sampled textures, the Step05H real Render2D path, and renderer-neutral WWMath no longer owns D3D8 matrix conversion")
+# Step 05H1S: the active Evolution water source must not depend on D3DX8 math.
+# The archival inline ps.1.1 assembler remains isolated to the non-Evolution
+# reference branch until the real water caller is translated through D3D12.
+rts_policy_require_absent(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "d3dx8math.h"
+    "Evolution water math must not depend on the retired D3DX8 math header")
+rts_policy_require_absent(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "D3DXMATRIX"
+    "Evolution water matrix math must use D3DMATRIX plus WWMath")
+rts_policy_require_absent(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "D3DXVECTOR4"
+    "Evolution water shader constants must use renderer-neutral vectors")
+rts_policy_require_absent(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "D3DXMatrix"
+    "Evolution water matrix operations must use existing WWMath conversions")
+rts_policy_require_contains(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "Build_Water_Noise_Texture_Transform"
+    "water texture-coordinate generation must preserve the legacy inverse-view transform without D3DX8")
+rts_policy_require_contains(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "Build_Water_World_View_Projection_Constants"
+    "water vertex-shader constants must preserve the legacy transposed WVP calculation through WWMath")
+rts_policy_require_contains(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "#if !defined(RTS_EVOLUTION_X64)"
+    "legacy D3DX8 shader assembly must stay outside the Evolution x64 path")
+
+message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, sampled textures, the Step05H real Render2D path, and active Evolution shader/tree/water math no longer depends on D3DX8")
