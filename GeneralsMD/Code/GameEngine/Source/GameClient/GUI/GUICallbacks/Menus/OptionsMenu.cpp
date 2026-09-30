@@ -1077,7 +1077,7 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 		count++;
 		str.translate(IPlist->getIPstring());
 		index = GadgetComboBoxAddEntry(comboBoxLANIP, str, color);
-		GadgetComboBoxSetItemData(comboBoxLANIP, index, (void *)(IPlist->getIP()));
+		GadgetComboBoxSetItemIntegerData(comboBoxLANIP, index, IPlist->getIP());
 		if (selectedIP == IPlist->getIP())
 		{
 			selectedIndex = index;
@@ -1113,7 +1113,7 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 			count++;
 			str.translate(IPlist->getIPstring());
 			index = GadgetComboBoxAddEntry(comboBoxOnlineIP, str, color);
-			GadgetComboBoxSetItemData(comboBoxOnlineIP, index, (void *)(IPlist->getIP()));
+			GadgetComboBoxSetItemIntegerData(comboBoxOnlineIP, index, IPlist->getIP());
 			if (selectedIP == IPlist->getIP())
 			{
 				selectedIndex = index;

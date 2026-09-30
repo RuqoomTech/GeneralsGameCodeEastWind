@@ -258,3 +258,17 @@ cmake --build --preset mingw64-game --target z_generals -- -j1
 ```
 
 Report the first hard failure plus all actual compiler warnings. Do not preemptively rewrite the whole water renderer. If `z_generals` links, stop compile-only migration and move directly to runtime/data setup, D3D12 backend creation, first Present, and first visible game/UI geometry.
+
+### Step 05H1T local linker continuation
+
+The requested `z_generals -j1` build reached the final link after H1S. The opaque `collect2: ld returned 8` failure was a linker startup failure caused by DLL lookup through an incompatible inherited `PATH`. The canonical Windows MinGW toolchain now launches C/C++ compilation and linking with its selected bin directory prepended, including fresh compiler ABI checks. Existing compiler/linker launchers are retained and repeated toolchain loading does not duplicate the environment prefix.
+
+DirectInput imports now belong to the device source interface rather than an early executable-only link entry. WW3D declares the existing telemetry library that its statistics implementation calls. These changes address GNU library ordering without restoring a DX8 renderer dependency.
+
+Local validation passes fresh C/C++ configure, build and execution with pre-existing launchers and the original shell environment, plus all 27 `mingw64-tests` regressions. The normal game still exposes unresolved direct DX8 renderer callers; it has not linked or produced a visible frame. Continue using:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Migrate the remaining real callers through `WW3D -> IRenderBackend -> D3D12Backend`. The backend smoke test is not game boot evidence, and local validation is not user Windows sign-off.

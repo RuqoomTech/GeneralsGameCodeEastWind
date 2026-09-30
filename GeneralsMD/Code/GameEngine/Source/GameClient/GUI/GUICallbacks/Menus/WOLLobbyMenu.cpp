@@ -348,13 +348,13 @@ static void populateGroupRoomListbox(GameWindow *lb)
 			if (room.m_groupID == TheGameSpyInfo->getCurrentGroupRoom())
 			{
 				Int selected = GadgetComboBoxAddEntry(lb, room.m_translatedName, GameSpyColor[GSCOLOR_CURRENTROOM]);
-				GadgetComboBoxSetItemData(lb, selected, (void *)(room.m_groupID));
+				GadgetComboBoxSetItemIntegerData(lb, selected, room.m_groupID);
 				indexToSelect = selected;
 			}
 			else
 			{
 				Int selected = GadgetComboBoxAddEntry(lb, room.m_translatedName, GameSpyColor[GSCOLOR_ROOM]);
-				GadgetComboBoxSetItemData(lb, selected, (void *)(room.m_groupID));
+				GadgetComboBoxSetItemIntegerData(lb, selected, room.m_groupID);
 			}
 		}
 		else

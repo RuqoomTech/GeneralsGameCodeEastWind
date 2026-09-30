@@ -1092,6 +1092,11 @@ void *GadgetComboBoxGetItemData( GameWindow *comboBox, Int index )
 	return (data);
 }
 
+void GadgetComboBoxSetItemIntegerData( GameWindow *comboBox, Int index, std::intptr_t data )
+{
+	GadgetComboBoxSetItemData(comboBox, index, reinterpret_cast<void *>(data));
+}
+
 std::intptr_t GadgetComboBoxGetItemIntegerData( GameWindow *comboBox, Int index )
 {
 	return reinterpret_cast<std::intptr_t>(GadgetComboBoxGetItemData(comboBox, index));

@@ -96,6 +96,7 @@ extern void GadgetListBoxReset( GameWindow *listbox );
 extern void GadgetListBoxSetItemData( GameWindow *listbox,  void *data, Int row, Int column = 0);
 extern void *GadgetListBoxGetItemData( GameWindow *listbox, Int row, Int column = 0);
 // For cells whose item data is an integer tag rather than an object pointer.
+extern void GadgetListBoxSetItemIntegerData( GameWindow *listbox, std::intptr_t data, Int row, Int column = 0);
 extern std::intptr_t GadgetListBoxGetItemIntegerData( GameWindow *listbox, Int row, Int column = 0);
 
 extern bool GadgetListBoxIsFull(GameWindow *window);
