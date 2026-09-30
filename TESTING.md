@@ -230,12 +230,16 @@ Report the first hard failure plus all actual compiler warnings. `#pragma messag
 
 The H1P procedural mip-isolation change cleared the `TerrainTex.cpp` `d3dx8tex.h` blocker on real Windows MinGW-w64 GCC 16.2. The incremental `z_generals` build advanced to `Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp` at 110/126 and then stopped on that file's remaining `d3dx8tex.h` include. The emitted `#pragma message` remains informational; the other warnings in that run are tracked separately and are not part of the H1Q shader-math responsibility.
 
-### Step 05H1Q Windows continuation
+### Step 05H1Q Windows continuation result
 
-H1Q removes D3DX vector/matrix math from `W3DShaderManager.cpp` while leaving its legacy DX8 rendering calls intact until their real callers cross the D3D12 seam. Continue incrementally with:
+H1Q cleared the `W3DShaderManager.cpp` D3DX math blocker on real Windows MinGW-w64 GCC 16.2. The incremental `z_generals` build advanced to `Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp` at 8/18 and stopped in `drawTrees()` where the legacy tree vertex-shader constant setup still used `D3DXMATRIX`, matrix multiply, and transpose helpers. The enum/floating-point diagnostics in the same file are warnings and are not part of the H1R renderer-math responsibility.
+
+### Step 05H1R Windows continuation
+
+H1R keeps the existing DX8 tree draw path intact but rebuilds the old transposed world-view-projection shader constant using `D3DMATRIX`, `To_Matrix4x4`, and existing `Matrix4x4` multiplication, with no D3DX dependency. The disabled pixel-shader branch is also made D3DX-free so this active source remains clean if that branch is revisited. Continue incrementally with:
 
 ```powershell
 cmake --build --preset mingw64-game --target z_generals -- -j1
 ```
 
-Report the first hard failure plus all actual compiler warnings. Do not restore `d3dx8tex.h`/D3DX8 or translate unrelated water/terrain/tree shader systems preemptively. If `z_generals` links, stop compile-only migration and move directly to the real runtime/data environment, D3D12 backend creation, first Present, and first visible Generals/UI geometry.
+Report the first hard failure plus all actual compiler warnings. Do not translate the tree shader or tree rendering subsystem preemptively. If `z_generals` links, stop compile-only migration and move directly to the real runtime/data environment, D3D12 backend creation, first Present, and first visible Generals/UI geometry.

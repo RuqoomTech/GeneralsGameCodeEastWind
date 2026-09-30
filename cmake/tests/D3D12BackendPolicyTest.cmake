@@ -305,7 +305,8 @@ foreach(_d3dx_free_game_source IN ITEMS
     "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DVolumetricShadow.cpp"
     "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DShadow.cpp"
     "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DWebBrowser.cpp"
-    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp")
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp")
     rts_policy_require_absent(
         "${_d3dx_free_game_source}"
         "d3dx8"

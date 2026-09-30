@@ -1647,17 +1647,27 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 	DX8Wrapper::Apply_Render_State_Changes();
 
 	if (m_dwTreeVertexShader) {
-		D3DXMATRIX matProj, matView, matWorld;
+		D3DMATRIX matProj, matView, matWorld;
 		DX8Wrapper::_Get_DX8_Transform(D3DTS_WORLD, matWorld);
 		DX8Wrapper::_Get_DX8_Transform(D3DTS_VIEW, matView);
 		DX8Wrapper::_Get_DX8_Transform(D3DTS_PROJECTION, matProj);
-		D3DXMATRIX mat;
-		D3DXMatrixMultiply( &mat, &matView, &matProj );
-		D3DXMatrixMultiply( &mat, &matWorld, &mat );
-		D3DXMatrixTranspose( &mat, &mat );
+
+		// The legacy utility path built world * view * projection, then transposed
+		// that matrix before uploading it as four shader constants.
+		// To_Matrix4x4 transposes a D3DMATRIX into the WWMath convention, so the
+		// reversed projection * view * world order below produces the same final
+		// transposed shader matrix without the retired utility library.
+		const Matrix4x4 shaderMatrix =
+			To_Matrix4x4(matProj) * To_Matrix4x4(matView) * To_Matrix4x4(matWorld);
+		D3DMATRIX shaderConstants = {};
+		for (Int row = 0; row < 4; ++row) {
+			for (Int column = 0; column < 4; ++column) {
+				shaderConstants.m[row][column] = shaderMatrix[row][column];
+			}
+		}
 
 		// c4  - Composite World-View-Projection Matrix
-		DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  4, &mat,  4 );
+		DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  4, &shaderConstants,  4 );
 		Vector4 noSway(0,0,0,0);
 		DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  8, &noSway,  1 );
 
@@ -1697,7 +1707,8 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 		Real mulTwoX = 0.5f;
 		if(TheGlobalData && TheGlobalData->m_useOverbright)
 			mulTwoX = 1.0f;
-		DX8Wrapper::_Get_D3D_Device8()->SetPixelShaderConstant(1, D3DXVECTOR4(mulTwoX, mulTwoX, mulTwoX, mulTwoX), 1);
+		Vector4 overbrightConstant(mulTwoX, mulTwoX, mulTwoX, mulTwoX);
+		DX8Wrapper::_Get_D3D_Device8()->SetPixelShaderConstant(1, &overbrightConstant.X, 1);
 #endif
 
 	} else {
