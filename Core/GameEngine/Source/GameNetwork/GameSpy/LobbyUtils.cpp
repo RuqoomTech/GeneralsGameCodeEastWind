@@ -570,7 +570,7 @@ static Int insertGame( GameWindow *win, GameSpyStagingRoom *game, Bool showMap )
 
 
 	Int index = GadgetListBoxAddEntryText(win, game->getGameName(), gameColor, -1, COLUMN_NAME);
-	GadgetListBoxSetItemData(win, (void *)game->getID(), index);
+	GadgetListBoxSetItemIntegerData(win, game->getID(), index);
 
 	UnicodeString s;
 

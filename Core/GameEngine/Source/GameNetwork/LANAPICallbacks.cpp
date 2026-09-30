@@ -653,7 +653,7 @@ void LANAPI::OnPlayerList( LANPlayer *playerList )
 		while (player)
 		{
 			Int addedIndex = GadgetListBoxAddEntryText(listboxPlayers, player->getName(), playerColor, -1, -1);
-			GadgetListBoxSetItemData(listboxPlayers, (void *)player->getIP(),addedIndex, 0 );
+			GadgetListBoxSetItemIntegerData(listboxPlayers, player->getIP(),addedIndex, 0 );
 
 			if (selectedIP == player->getIP())
 				indexToSelect = addedIndex;
@@ -743,5 +743,5 @@ void LANAPI::OnChat( UnicodeString player, UnsignedInt ip, UnicodeString message
 			break;
 		}
 	}
-	GadgetListBoxSetItemData(chatWindow, (void *)-1, index);
+	GadgetListBoxSetItemIntegerData(chatWindow, -1, index);
 }
