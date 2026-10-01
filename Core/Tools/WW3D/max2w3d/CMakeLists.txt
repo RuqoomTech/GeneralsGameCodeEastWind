@@ -163,7 +163,6 @@ target_link_libraries(core_max2w3d PRIVATE
     # This is only linked to have its basetsd.h used instead of the vs6's basetsd.h
     # The headers typedef INT_PTR to different types, but maxsdk expects it
     # typedef'ed to int, otherwise throws linker errors.
-    d3d8lib
     maxsdk
     winmm
     core_pluglib

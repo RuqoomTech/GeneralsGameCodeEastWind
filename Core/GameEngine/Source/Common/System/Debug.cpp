@@ -73,8 +73,15 @@
 #include "Common/MiniDumper.h"
 #endif
 
-// Horrible reference, but we really, really need to know if we are windowed.
-extern bool DX8Wrapper_IsWindowed;
+namespace
+{
+	bool s_debugWindowedMode = true;
+}
+
+void DebugSetWindowedMode(bool windowed)
+{
+	s_debugWindowedMode = windowed;
+}
 extern HWND ApplicationHWnd;
 
 extern const char *gAppPrefix; /// So WB can have a different log file name.
@@ -151,7 +158,7 @@ static void doStackDump();
 // ----------------------------------------------------------------------------
 inline Bool ignoringAsserts()
 {
-	if (!DX8Wrapper_IsWindowed)
+	if (!s_debugWindowedMode)
 		return true;
 	if (TheGlobalData && TheGlobalData->m_headless)
 		return true;
@@ -749,7 +756,7 @@ void ReleaseCrash(const char *reason)
 {
 	/// do additional reporting on the crash, if possible
 
-	if (!DX8Wrapper_IsWindowed) {
+	if (!s_debugWindowedMode) {
 		if (ApplicationHWnd) {
 			ShowWindow(ApplicationHWnd, SW_HIDE);
 		}
@@ -799,7 +806,7 @@ void ReleaseCrash(const char *reason)
 		theReleaseCrashLogFile = nullptr;
 	}
 
-	if (!DX8Wrapper_IsWindowed) {
+	if (!s_debugWindowedMode) {
 		if (ApplicationHWnd) {
 			ShowWindow(ApplicationHWnd, SW_HIDE);
 		}
@@ -847,7 +854,7 @@ void ReleaseCrashLocalized(const AsciiString& p, const AsciiString& m)
 
 	/// do additional reporting on the crash, if possible
 
-	if (!DX8Wrapper_IsWindowed) {
+	if (!s_debugWindowedMode) {
 		if (ApplicationHWnd) {
 			ShowWindow(ApplicationHWnd, SW_HIDE);
 		}

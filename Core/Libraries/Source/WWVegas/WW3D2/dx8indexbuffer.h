@@ -107,7 +107,7 @@ class DynamicIBAccessClass
 {
 	W3DMPO_CODE(DynamicIBAccessClass)
 
-	friend DX8Wrapper;
+	friend class DX8Wrapper;
 	friend SortingRendererClass;
 
 	unsigned Type;
@@ -183,7 +183,7 @@ class SortingIndexBufferClass : public IndexBufferClass
 {
 	W3DMPO_CODE(SortingIndexBufferClass)
 
-	friend DX8Wrapper;
+	friend class DX8Wrapper;
 	friend SortingRendererClass;
 	friend IndexBufferClass::WriteLockClass;
 	friend IndexBufferClass::AppendLockClass;

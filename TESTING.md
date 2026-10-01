@@ -271,4 +271,24 @@ Local validation passes fresh C/C++ configure, build and execution with pre-exis
 cmake --build --preset mingw64-game --target z_generals -- -j1
 ```
 
+The full serial compile completed. The final link reports 107 distinct unresolved legacy renderer symbols; the DirectInput and telemetry symbols are resolved. The x64 warning sweep adds native-width integer setters beside the existing gadget integer getters and uses them for local menu/lobby/chat/map tags. Sabotage-frame callback transport uses `std::uintptr_t` while the frame counter remains `UnsignedInt`.
+
 Migrate the remaining real callers through `WW3D -> IRenderBackend -> D3D12Backend`. The backend smoke test is not game boot evidence, and local validation is not user Windows sign-off.
+
+### Step 05H1U D3D12-only continuation — 2026-10-01
+
+The DX8 backend adapter/SDK CMake lane is retired. Full-game configuration now requires Windows x64 Evolution. D3D12 output ownership covers presentation intervals, stencil capability, screen coordinate normalization, synchronous RGBA8 capture for the existing screenshot/movie callers, and real submission counters for telemetry. Capture retains the output on the GPU before flip-discard Present; its cost is one additional output-sized GPU image and copy per submitted scene.
+
+Run the existing gates:
+
+```powershell
+cmake --preset mingw64-game
+cmake --build --preset mingw64-game --target z_generals -- -j1
+cmake --preset mingw64-tests
+cmake --build --preset mingw64-tests -- -j1
+ctest --preset mingw64-tests
+```
+
+The local game compile clears the migrated output/statistics callers and reaches a failed final link with 98 distinct remaining legacy renderer symbols. The next actual error is `W3DProjectedShadow.cpp` calling `DX8Wrapper::Create_Render_Target`. It requires coherent off-screen resource, mesh/material, and shadow draw migration. Do not restore the old backend, drop required sources, or substitute empty drawing implementations to resolve it.
+
+The 27 focused regressions pass. The GPU smoke asserts real dynamic/static/textured submission counts, accepts presentation intervals 0-4 and rejects 5, reads known pixel colors after deferred and immediate presentation, and resizes to 643x479 to verify RGBA order, orientation, and GPU row padding. Empty/open-scene/just-resized captures are rejected. In-game screenshot/movie files, real game boot/frame, and optional Generals/viewer targets remain separate unfulfilled runtime/build gates. Continue Step05H; Step06 SDL3 and major W3X runtime work remain deferred.

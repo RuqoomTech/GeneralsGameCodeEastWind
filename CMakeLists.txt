@@ -81,9 +81,8 @@ if(NOT RTS_BUILD_TESTS_ONLY)
     add_subdirectory(Dependencies/Bink)
     add_subdirectory(Dependencies/Miles)
 
-    # DirectX 8 remains a frozen x86 compatibility-renderer dependency only.
-    if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND ${CMAKE_SIZEOF_VOID_P} EQUAL 4)
-        include(cmake/dx8.cmake)
+    if(NOT (WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR NOT RTS_BUILD_EVOLUTION_X64)
+        message(FATAL_ERROR "The game renderer requires Windows x64 and Direct3D 12. Use the focused headless test graph on other hosts.")
     endif()
 
     # Define a dummy stlport target when not on VC6.

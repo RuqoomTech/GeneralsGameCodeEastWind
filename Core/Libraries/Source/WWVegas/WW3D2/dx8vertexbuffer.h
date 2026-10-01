@@ -129,7 +129,7 @@ protected:
 
 class DynamicVBAccessClass
 {
-	friend DX8Wrapper;
+	friend class DX8Wrapper;
 	friend SortingRendererClass;
 
 	const FVFInfoClass& FVFInfo;
@@ -238,7 +238,7 @@ class SortingVertexBufferClass : public VertexBufferClass
 {
 	W3DMPO_CODE(SortingVertexBufferClass)
 
-	friend DX8Wrapper;
+	friend class DX8Wrapper;
 	friend SortingRendererClass;
 	friend VertexBufferClass::WriteLockClass;
 	friend VertexBufferClass::AppendLockClass;

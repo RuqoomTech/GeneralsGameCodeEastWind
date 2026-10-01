@@ -10,9 +10,8 @@ endif()
 target_link_libraries(g_generals PRIVATE
     binkloader
     comctl32
-    d3d8
-    d3dx8
-    dinput8
+    d3d12
+    dxgi
     dxguid
     g_gameengine
     g_gameenginedevice
@@ -22,6 +21,8 @@ target_link_libraries(g_generals PRIVATE
     vfw32
     winmm
 )
+
+rts_stage_ww3d_shaders(g_generals)
 
 # TODO Originally referred to build host and user, replace with git info perhaps?
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/GeneratedVersion.h

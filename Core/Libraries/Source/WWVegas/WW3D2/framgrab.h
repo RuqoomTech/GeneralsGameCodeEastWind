@@ -71,6 +71,9 @@ public:
 	void Grab(void *BitmapPointer);
 
 	long * GetBuffer()			{ return Bitmap; }
+	int GetWidth() const { return BitmapInfoHeader.biWidth; }
+	int GetHeight() const { return BitmapInfoHeader.biHeight; }
+	unsigned int GetRowPitch() const { return ((BitmapInfoHeader.biWidth * BitmapInfoHeader.biBitCount + 31u) & ~31u) / 8u; }
 	float	GetFrameRate()			{ return FrameRate; }
 
 protected:

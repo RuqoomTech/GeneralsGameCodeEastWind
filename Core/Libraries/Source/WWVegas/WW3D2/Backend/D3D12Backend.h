@@ -49,6 +49,13 @@ public:
     void Set_Viewport(const RenderBackendViewport &viewport) override;
     void Invalidate_Cached_Render_States() override;
     bool Is_Device_Ready() const override;
+    bool Has_Stencil() const override;
+    void Reset_Frame_Statistics() override;
+    RenderBackendFrameStatistics Get_Frame_Statistics() const override;
+    bool Set_Swap_Interval(unsigned int interval) override;
+    unsigned int Get_Swap_Interval() const override;
+    bool Read_Output_RGBA8(unsigned int &width, unsigned int &height,
+                          std::vector<unsigned char> &pixels) override;
     bool Configure_Output(unsigned int width, unsigned int height, bool windowed) override;
     bool Get_Output_Description(int &width, int &height, int &bits, bool &windowed) const override;
     bool Draw_Indexed_Triangles(
@@ -151,6 +158,9 @@ private:
     std::uint32_t m_width = 0;
     std::uint32_t m_height = 0;
     bool m_windowed = true;
+    unsigned int m_sync_interval = 1;
+    bool m_capture_available = false;
+    RenderBackendFrameStatistics m_frame_statistics;
 
     IDXGIFactory4 *m_factory = nullptr;
     ID3D12Device *m_device = nullptr;
@@ -161,6 +171,7 @@ private:
     ID3D12DescriptorHeap *m_texture_srv_heap = nullptr;
     ID3D12Resource *m_render_targets[FrameCount]{};
     ID3D12Resource *m_depth_stencil = nullptr;
+    ID3D12Resource *m_output_capture = nullptr;
     ID3D12CommandAllocator *m_command_allocators[FrameCount]{};
     ID3D12GraphicsCommandList *m_command_list = nullptr;
     ID3D12RootSignature *m_primitive_root_signature = nullptr;

@@ -39,6 +39,9 @@ FrameGrabClass::FrameGrabClass(const char *filename, MODE mode, int width, int h
 
 	Stream = nullptr;
 	AVIFile = nullptr;
+	Bitmap = nullptr;
+	memset(&BitmapInfoHeader, 0, sizeof(BitmapInfoHeader));
+	memset(&AVIStreamInfo, 0, sizeof(AVIStreamInfo));
 
 	if(Mode != AVI) return;
 

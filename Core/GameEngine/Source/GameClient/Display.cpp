@@ -156,6 +156,8 @@ Bool Display::setDisplayMode( UnsignedInt xres, UnsignedInt yres, UnsignedInt bi
 
 	setWidth(xres);
 	setHeight(yres);
+	setBitDepth(bitdepth);
+	setWindowed(windowed);
 
 	//Adjust view to match previous proportions
 	TheTacticalView->setWidth((Real)oldViewWidth/(Real)oldDisplayWidth*(Real)xres);

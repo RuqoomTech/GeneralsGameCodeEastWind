@@ -216,7 +216,6 @@ target_precompile_headers(z_worldbuilder PRIVATE
 )
 
 target_link_libraries(z_worldbuilder PRIVATE
-    d3d8lib
     imm32
     vfw32
     winmm

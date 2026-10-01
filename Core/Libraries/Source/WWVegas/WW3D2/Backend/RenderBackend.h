@@ -16,15 +16,13 @@
 **	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-// TheSuperHackers @refactor bobtista 10/04/2026 Backend selection seam. The
-// build links exactly one backend implementation, and that implementation
-// defines Create_Render_Backend. WW3D owns the instance it returns; use
+// TheSuperHackers @refactor bobtista 10/04/2026 WW3D backend creation seam.
+// D3D12 defines Create_Render_Backend. WW3D owns the instance it returns; use
 // WW3D::Get_Render_Backend() to reach the active backend.
 
 #pragma once
 
 class IRenderBackend;
 
-// Construct and initialize the backend selected by the build. Exactly one
-// backend implementation must define this function. Returns null on failure.
+// Construct and initialize the D3D12 backend. Returns null on failure.
 IRenderBackend *Create_Render_Backend(void * window, bool lite);

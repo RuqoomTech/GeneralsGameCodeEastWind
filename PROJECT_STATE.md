@@ -1,6 +1,6 @@
 # Project state
 
-Updated: 2026-09-30
+Updated: 2026-10-01
 
 ## Current baseline
 
@@ -8,16 +8,30 @@ Step 04 is complete and Windows-signed-off. The supported Evolution path is x64-
 
 Step 05A is Windows-signed-off. Step 05B's temporary standalone D3D12 shell is also Windows-signed-off: MinGW-w64 GCC 16.2 built it successfully, Intel UHD 770 and WARP both presented frames, the staged executable ran, and the focused graph passed 26/26.
 
-Step 05C2 through Step 05G are Windows-signed-off. The production D3D12 backend lives behind the existing WW3D renderer seam; the standalone `Evolution/` tree is gone, canonical HLSL is staged beside the executable, persistent indexed geometry uses default-heap buffers, and sampled RGBA8 textures use shader-visible SRVs plus the static sampler. Step 05H is active and the normal `z_generals` x64 graph is now the migration queue. H1A-H1N cleared the initial x64/native-width/D3DX utility blockers; H1O modernized the game-side Win64 stack-dump path; H1P removed the procedural terrain/tree `D3DXFilterTexture` dependency. Real Windows MinGW-w64 GCC 16.2 validation of H1Q advanced to `W3DTreeBuffer.cpp` at 8/18; H1R removed that tree-buffer D3DX math and the next real Windows continuation advanced to `Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp` at 8/14, where the active source still included `d3dx8math.h`. H1S is the current candidate: active Evolution water matrix/vector work now uses `D3DMATRIX`, `Matrix4x4`, `Vector4`, and the existing D3D/WWMath conversion seam; the legacy inverse-view noise transform and transposed sea world-view-projection constants are preserved; and inline `ps.1.1` D3DX assembly is isolated to `!RTS_EVOLUTION_X64` instead of pulling D3DX8 back into Evolution merely to compile. Actual water rendering/shader translation remains deferred until that caller crosses `IRenderBackend`. H1S is not Windows-signed-off until the same incremental `z_generals -j1` build is rerun.
+Step 05C2 through Step 05G are Windows-signed-off. The production D3D12 backend lives behind WW3D; the standalone `Evolution/` tree is gone, canonical HLSL is staged beside the executable, and persistent geometry/RGBA8 textures use default-heap resources. Step 05H remains active. H1A-H1S cleared native-width and D3DX utility/math blockers, and H1T reached the real game link. H1U is the current locally validated candidate: the archival DX8 build lane is retired, output/capture/statistics callers use D3D12, and 98 unresolved legacy renderer symbols still prevent linking the normal game. Actual shader, texture, camera, mesh, shadow, terrain, and effect migration remains unfinished. No visible game frame or user H1U Windows sign-off is claimed.
 
 The local H1T continuation reached the final link. GNU `ld` initially failed at startup (`collect2: ld returned 8`): GCC selected the linker in the MinGW triplet directory, but its DLL lookup reached incompatible tools on the inherited `PATH`. The canonical Windows toolchain now prepends its selected bin directory for C/C++ compiler and linker subprocesses, preserving existing launchers. Fresh C/C++ ABI detection and executable builds pass without changing the calling shell. DirectInput imports are owned by the device source interface, and WW3D declares its existing telemetry library dependency so GNU archive ordering resolves both. The focused x64 graph passes 27/27 tests, including the D3D12 backend smoke test. The game still requires migration of direct DX8 callers before it can link and boot; this is local validation, not user Windows sign-off or a first-game-frame claim.
+
+The full local serial compile completed, and the final linker now exposes 107 distinct unresolved legacy renderer symbols. The DirectInput and telemetry references are resolved. The accompanying warning sweep completes the existing gadget integer-data API with native-width setters for local GUI tags (including negative ladder IDs and unsigned 32-bit IP values) and fixes the two sabotage-frame callback casts without widening the `UnsignedInt` frame counter. This does not complete the DX8 caller migration or establish game boot/frame evidence.
+
+## Step 05H1U candidate — D3D12-only build and output ownership
+
+The user's October 1 direction retires the archival DX8 build lane too. `DX8Backend.cpp/.h` and `cmake/dx8.cmake` are deleted. Full-game configuration requires Windows x64 Evolution; game/viewer CMake targets select D3D12/DXGI, and no CMake target links `d3d8`, `d3dx8`, or `d3d8lib`. WW3D owns the shared shader staging command. Its superseded DX8 device lifecycle, registry, and MSAA fallback branches are removed.
+
+Confirmed window mode now belongs to the existing crash-report owner rather than a DX8 global, and the obsolete device-only `-FPUPreserve` switch is removed. Display resize bookkeeping retains bit depth/window mode as well as dimensions. Presentation intervals, coordinate normalization, and stencil capability use the D3D12 output/resource seam. Existing statistics capture real D3D12 draw counts while preserving historical CSV column names.
+
+WW3D TGA/BMP and AVI capture plus the existing threaded PNG/JPEG screenshot caller now read tightly packed top-down RGBA8 through `IRenderBackend`. The backend retains one GPU output image before flip-discard presentation, adding a GPU copy per submitted scene; GPU/CPU synchronization happens only when readback is requested. BMP file size/padding and AVI buffer dimensions/padding are corrected, and AVI handles/buffers are initialized before any failure cleanup. PNG/JPEG encoding and notifications retain their existing worker/main-thread split.
+
+Local GCC 16.2 compilation passes for these changes. All 27 focused tests pass, including GPU checks for interval validation, submitted draw counts, readback before/after presentation, resize, pixel channel order, vertical orientation, and unaligned row pitch. The real `z_generals -j1` build still fails its final link with **98 distinct unresolved legacy renderer symbols**, down from 107. The first is projected-shadow render-target creation, followed by mesh, buffer, material, texture, and effect callers. Legacy headers and implementation reference files still exist; complete DX8 source removal and game boot remain unfinished. PNG/JPEG/TGA/BMP/AVI in-game capture, Generals/viewer builds, and a visible game frame are not validated. No user Windows sign-off or sealed milestone is claimed.
+
+Fresh patch reconstruction from baseline `6d6b94e9e` compares 4555 candidate files with 4555 reconstructed files: zero missing, extra, or byte differences. `git diff --check` passes.
 
 ## Locked architecture
 
 - Evolution runtime is x64-only.
 - Direct3D 12 is the only Evolution renderer target; no D3D9/D3D11 intermediate.
 - `IRenderBackend` is the current WW3D migration seam. It should grow only for real migrated callers.
-- The x64 backend is D3D12. The DX8 backend/source remains 32-bit historical/reference material only while direct legacy call sites are removed.
+- D3D12 is the only selectable renderer. The DX8 backend adapter and SDK build dependency are retired; remaining DX8 caller code is unfinished migration work and provides no supported renderer lane.
 - CMake + Ninja + MinGW-w64 GCC is the primary Windows toolchain; Clang is secondary.
 - Simulation, replay, networking, CRC, RNG, Xfer and snapshot behavior remain deterministic.
 - Fixed-width game/wire/replay fields do not widen on x64.

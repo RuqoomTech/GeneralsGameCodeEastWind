@@ -41,7 +41,6 @@
 
 
 Bool TheDebugIgnoreSyncErrors = FALSE;
-extern Int DX8Wrapper_PreserveFPU;
 
 #ifdef DEBUG_CRC
 Int TheCRCFirstFrameToLog = -1;
@@ -139,17 +138,6 @@ Int parseNoVideo(char *args[], int)
 	TheWritableGlobalData->m_videoOn = false;
 
 	return 1;
-}
-
-//=============================================================================
-//=============================================================================
-Int parseFPUPreserve(char *args[], int argc)
-{
-	if (argc > 1)
-	{
-		DX8Wrapper_PreserveFPU = atoi(args[1]);
-	}
-	return 2;
 }
 
 //=============================================================================
@@ -414,11 +402,8 @@ Int parseHeadless(char *args[], int num)
 	TheWritableGlobalData->m_playIntro = FALSE;
 	TheWritableGlobalData->m_playSizzle = FALSE;
 
-	// TheSuperHackers @fix bobtista 03/02/2026 Set DX8Wrapper_IsWindowed to false in headless
-	// mode so that ignoringAsserts() works correctly throughout the entire process lifetime,
-	// including during shutdown after TheGlobalData has been destroyed.
-	extern bool DX8Wrapper_IsWindowed;
-	DX8Wrapper_IsWindowed = false;
+	// Keep assertion policy headless even after TheGlobalData is destroyed.
+	DebugSetWindowedMode(false);
 
 	return 1;
 }
@@ -1210,7 +1195,6 @@ static CommandLineParam paramsForEngineInit[] =
 	{ "-nomusic", parseNoMusic },
 	{ "-novideo", parseNoVideo },
 	{ "-noLogOrCrash", parseNoLogOrCrash },
-	{ "-FPUPreserve", parseFPUPreserve },
 	{ "-benchmark", parseBenchmark },
 #ifdef DUMP_PERF_STATS
 	{ "-stats", parseStats },

@@ -47,6 +47,9 @@
 
 class AsciiString;
 
+// Retain the confirmed presentation mode for crash reporting after teardown.
+void DebugSetWindowedMode(bool windowed);
+
 #define NO_RELEASE_DEBUG_LOGGING
 
 #ifdef RELEASE_DEBUG_LOGGING  ///< Creates a DebugLogFile.txt (No I or D) with all the debug log goodness.  Good for startup problems.

@@ -20,9 +20,8 @@
 #include "rts/profile.h"
 #include "WWLib/wwstring.h"
 #include "WWLib/simplevec.h"
-#include "dx8renderer.h"
-#include "dx8wrapper.h"
-#include "dx8caps.h"
+#include "ww3d.h"
+#include "IRenderBackend.h"
 #include "textureloader.h"
 #include "texture.h"
 
@@ -294,11 +293,9 @@ void Debug_Statistics::Record_DX8_Skin_Polys_And_Vertices(int pcount,int vcount)
 
 void Debug_Statistics::Record_DX8_Polys_And_Vertices(int pcount,int vcount,const ShaderClass& shader)
 {
-	if (shader.Get_NPatch_Enable()==ShaderClass::NPATCH_ENABLE && DX8Wrapper::Get_Current_Caps()->Support_NPatches()) {
-		unsigned level=WW3D::Get_NPatches_Level();
-		level*=level;
-		pcount*=level;
-	}
+	// GPU totals come from the backend at End_Statistics. D3D12's current
+	// pipelines do not tessellate, so legacy N-patch flags cannot inflate them.
+	(void)shader;
 	dx8_polygons+=pcount;
 	dx8_vertices+=vcount;
 	draw_calls++;
@@ -368,8 +365,9 @@ void Debug_Statistics::Begin_Statistics()
 	sorting_vertices=0;
 	draw_calls=0;
 	Record_Texture_Begin();
-	DX8Wrapper::Begin_Statistics();
-//	DX8MeshRendererClass::Begin_Statistics();
+	if (IRenderBackend *backend = WW3D::Get_Render_Backend()) {
+		backend->Reset_Frame_Statistics();
+	}
 }
 
 void Debug_Statistics::End_Statistics()
@@ -383,8 +381,13 @@ void Debug_Statistics::End_Statistics()
 	last_frame_sorting_polygons=sorting_polygons;
 	last_frame_sorting_vertices=sorting_vertices;
 	last_frame_draw_calls=draw_calls;
-//	DX8MeshRendererClass::End_Statistics();
-	DX8Wrapper::End_Statistics();
+	if (IRenderBackend *backend = WW3D::Get_Render_Backend()) {
+		const RenderBackendFrameStatistics counters = backend->Get_Frame_Statistics();
+		last_frame_draw_calls = static_cast<int>(counters.draw_calls);
+		// Preserve historical telemetry column names while recording real D3D12 draws.
+		last_frame_dx8_polygons = static_cast<int>(counters.triangles);
+		last_frame_dx8_vertices = static_cast<int>(counters.vertices);
+	}
 }
 
 void Debug_Statistics::Begin_Performance_Frame(unsigned int renderFrame, unsigned int syncTimeMs)

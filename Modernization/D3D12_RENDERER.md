@@ -9,9 +9,9 @@ Replace the DX8-era renderer in the existing game architecture with a clean x64 
 The initial D3D12 proof was Windows-verified in Step 05B on Intel UHD 770 and WARP. Step 05C/C2 folded that proven implementation into the pre-existing WW3D backend seam and is Windows-signed-off:
 
 - `Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.*` owns the x64 device/frame lifecycle;
-- `Create_Render_Backend()` selects D3D12 on the x64 path;
-- DX8 backend/implementation sources are excluded from the x64 WW3D source graph;
-- the normal Zero Hour executable selects `d3d12` + `dxgi` on x64 instead of `d3d8` + `d3dx8`;
+- `Create_Render_Backend()` creates the D3D12 backend;
+- the DX8 backend adapter and SDK build dependency are deleted; legacy implementation reference files/callers still await migration;
+- full-game configuration requires Windows x64 Evolution and selects `d3d12` + `dxgi`;
 - color and depth/stencil clears, viewport/scissor, present and fence synchronization are implemented through D3D12;
 - a Windows smoke target exercises the production backend through the same factory used by WW3D;
 - Step 05D adds the first indexed position/color primitive contract, root signature, PSO, shader compilation and upload-buffer lifetime tracking without introducing a second renderer abstraction;
@@ -25,11 +25,19 @@ Step 05H1 enables configuration of the normal x64 Zero Hour game target through 
 
 ### Step 05H1 real-caller bootstrap
 
-The first normal-game draw responsibility has crossed the seam: untextured `Render2DClass` geometry used by `W3DDisplay` for lines, outlines, filled rectangles and rectangle clocks now converts its existing screen-space vertices/colors into `RenderBackendColorVertex` data and submits through `IRenderBackend::Draw_2D_Indexed_Triangles()`. D3D12 owns dedicated depth-disabled opaque, source-alpha and additive PSOs for this path. The old DX8 dynamic VB/IB implementation remains compiled only outside `RTS_EVOLUTION_X64`.
+The first normal-game draw responsibility has crossed the seam: untextured `Render2DClass` geometry used by `W3DDisplay` for lines, outlines, filled rectangles and rectangle clocks now converts its existing screen-space vertices/colors into `RenderBackendColorVertex` data and submits through `IRenderBackend::Draw_2D_Indexed_Triangles()`. D3D12 owns dedicated depth-disabled opaque, source-alpha and additive PSOs for this path. The old Render2D branch remains source reference; full-game configuration requires `RTS_EVOLUTION_X64` and provides no supported DX8 build lane.
 
 This intentionally does **not** treat `TextureClass` as a D3D8 texture on x64. Textured and grayscale `Render2D` batches remain the next coherent resource-lifetime migration, where real texture data must map to `RenderBackendTextureHandle` rather than a DX8 compatibility facade.
 
 ## Migration rule
+
+### D3D12-only retirement — October 1, 2026
+
+The archival DX8 backend adapter and SDK build lane are removed. D3D12/DXGI is the only renderer selected by CMake. Unmigrated DX8 declarations/callers remain a failing migration queue; they do not provide a supported fallback. Full source retirement is incomplete until those callers have equivalent D3D12 behavior and the normal game links and renders.
+
+Output ownership now includes presentation intervals, stencil capability, and synchronous top-down RGBA8 readback for WW3D screenshots/movie capture and the existing PNG/JPEG screenshot worker. The output is retained before Present because [flip-discard does not guarantee preservation of presented back-buffer contents](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/ne-dxgi-dxgi_swap_effect). This uses one additional GPU image/copy per submitted scene; readback waits only on demand. The existing statistics owner reads actual D3D12 submissions through a small neutral counter value, preserving historical telemetry field names.
+
+The next actual link error is projected-shadow render-target allocation. Off-screen targets must migrate with their mesh/material draw and texture sampling lifecycle. Camera transforms, real CPU texture loading/upload, mesh batches, shadows, terrain, water, and effects still need migration. The normal game has not linked, booted, or shown a frame.
 
 Prefer the smallest existing abstraction that matches the real responsibility:
 

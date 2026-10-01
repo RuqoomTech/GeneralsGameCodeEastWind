@@ -88,7 +88,6 @@
 #include "predlod.h"
 #include "camera.h"
 #include "scene.h"
-#include "WWLib/registry.h"
 #include "segline.h"
 #include "shader.h"
 #include "vertmaterial.h"
@@ -115,7 +114,6 @@
 #include "sortingrenderer.h"
 #include "WWLib/thread.h"
 #include "WWLib/cpudetect.h"
-#include "dx8texman.h"
 #include "animatedsoundmgr.h"
 #include "static_sort_list.h"
 #include "shdlib.h"
@@ -241,9 +239,6 @@ void WW3D::Set_NPatches_Gap_Filling_Mode(NPatchesGapFillingModeEnum mode)
 {
 	if (NPatchesGapFillingMode!=mode) {
 		NPatchesGapFillingMode=mode;
-#if !defined(RTS_EVOLUTION_X64)
-		TheDX8MeshRenderer.Invalidate();
-#endif
 	}
 }
 
@@ -251,10 +246,6 @@ void WW3D::Set_NPatches_Level(unsigned level)
 {
 	if (level>8) level=8;
 	if (level<1) level=1;
-#if !defined(RTS_EVOLUTION_X64)
-	if (NPatchesLevel==1 && level>1) TheDX8MeshRenderer.Invalidate();
-	if (NPatchesLevel>1 && level==1) TheDX8MeshRenderer.Invalidate();
-#endif
 	NPatchesLevel = level;
 }
 
@@ -344,11 +335,6 @@ WW3DErrorType WW3D::Shutdown()
 	assert(Lite || IsInitted == true);
 //	WWDEBUG_SAY(("WW3D::Shutdown"));
 
-#ifdef WW3D_DX8
-	if (IsCapturing) {
-		Stop_Movie_Capture();
-	}
-#endif //WW3D_DX8
 
 	//restore the previous timer resolution
 	MAYBE_UNUSED MMRESULT r=timeEndPeriod(1);
@@ -374,9 +360,6 @@ WW3DErrorType WW3D::Shutdown()
 		WW3DAssetManager::Get_Instance()->Free_Assets();
 	}
 
-#if !defined(RTS_EVOLUTION_X64)
-	DX8TextureManagerClass::Shutdown();
-#endif
 
 	delete RenderBackend;
 	RenderBackend = nullptr;
@@ -410,19 +393,10 @@ WW3DErrorType WW3D::Shutdown()
  *=============================================================================================*/
 WW3DErrorType WW3D::Set_Render_Device( const char * dev_name, int width, int height, int bits, int windowed, bool resize_window )
 {
-#if defined(RTS_EVOLUTION_X64)
 	if (dev_name != nullptr && strcmp(dev_name, "D3D12") != 0) {
 		return WW3D_ERROR_INITIALIZATION_FAILED;
 	}
 	return Set_Render_Device(0, width, height, bits, windowed, resize_window);
-#else
-	bool success = DX8Wrapper::Set_Render_Device(dev_name,width,height,bits,windowed,resize_window);
-	if (success) {
-		return WW3D_ERROR_OK;
-	} else {
-		return WW3D_ERROR_INITIALIZATION_FAILED;
-	}
-#endif
 }
 
 
@@ -440,16 +414,7 @@ WW3DErrorType WW3D::Set_Render_Device( const char * dev_name, int width, int hei
  *=============================================================================================*/
 WW3DErrorType WW3D::Set_Any_Render_Device()
 {
-#if defined(RTS_EVOLUTION_X64)
 	return RenderBackend != nullptr ? WW3D_ERROR_OK : WW3D_ERROR_INITIALIZATION_FAILED;
-#else
-	bool success = DX8Wrapper::Set_Any_Render_Device();
-	if (success) {
-		return WW3D_ERROR_OK;
-	} else {
-		return WW3D_ERROR_INITIALIZATION_FAILED;
-	}
-#endif
 }
 
 
@@ -467,7 +432,6 @@ WW3DErrorType WW3D::Set_Any_Render_Device()
  *=============================================================================================*/
 WW3DErrorType WW3D::Set_Render_Device(int dev, int width, int height, int bits, int windowed, bool resize_window, bool reset_device, bool restore_assets )
 {
-#if defined(RTS_EVOLUTION_X64)
 	(void)resize_window;
 	(void)reset_device;
 	(void)restore_assets;
@@ -486,14 +450,6 @@ WW3DErrorType WW3D::Set_Render_Device(int dev, int width, int height, int bits, 
 	const bool target_windowed = windowed >= 0 ? windowed != 0 : current_windowed;
 	return target_bits == 32 && RenderBackend->Configure_Output(target_width, target_height, target_windowed)
 		? WW3D_ERROR_OK : WW3D_ERROR_INITIALIZATION_FAILED;
-#else
-	bool success = DX8Wrapper::Set_Render_Device(dev,width,height,bits,windowed,resize_window,reset_device, restore_assets );
-	if (success) {
-		return WW3D_ERROR_OK;
-	} else {
-		return WW3D_ERROR_INITIALIZATION_FAILED;
-	}
-#endif
 }
 
 
@@ -509,17 +465,6 @@ WW3DErrorType WW3D::Set_Render_Device(int dev, int width, int height, int bits, 
  * HISTORY:                                                                                    *
  *   3/26/98    GTH : Created.                                                                 *
  *=============================================================================================*/
-#if !defined(RTS_EVOLUTION_X64)
-WW3DErrorType WW3D::Set_Next_Render_Device()
-{
-	bool success = DX8Wrapper::Set_Next_Render_Device();
-	if (success) {
-		return WW3D_ERROR_OK;
-	} else {
-		return WW3D_ERROR_INITIALIZATION_FAILED;
-	}
-}
-#endif
 
 /***********************************************************************************************
  * WW3D::Get_Window -- returns the handle of the render window.										  *
@@ -552,14 +497,15 @@ void *WW3D::Get_Window()
  *=============================================================================================*/
 bool WW3D::Is_Windowed()
 {
-#if defined(RTS_EVOLUTION_X64)
 	int width = 0, height = 0, bits = 0;
 	bool windowed = true;
 	return RenderBackend == nullptr ||
 		!RenderBackend->Get_Output_Description(width, height, bits, windowed) || windowed;
-#else
-	return DX8Wrapper::Is_Windowed();
-#endif
+}
+
+bool WW3D::Has_Stencil()
+{
+	return RenderBackend != nullptr && RenderBackend->Has_Stencil();
 }
 
 /***********************************************************************************************
@@ -577,17 +523,6 @@ bool WW3D::Is_Windowed()
  * HISTORY:                                                                                    *
  *   1/11/99    PDS : Created.                                                                 *
  *=============================================================================================*/
-#if !defined(RTS_EVOLUTION_X64)
-WW3DErrorType WW3D::Toggle_Windowed ()
-{
-	bool success = DX8Wrapper::Toggle_Windowed();
-	if (success) {
-		return WW3D_ERROR_OK;
-	} else {
-		return WW3D_ERROR_INITIALIZATION_FAILED;
-	}
-}
-#endif
 
 
 /***********************************************************************************************
@@ -605,11 +540,7 @@ WW3DErrorType WW3D::Toggle_Windowed ()
  *=============================================================================================*/
 int WW3D::Get_Render_Device()
 {
-#if defined(RTS_EVOLUTION_X64)
 	return RenderBackend != nullptr ? 0 : -1;
-#else
-	return DX8Wrapper::Get_Render_Device();
-#endif
 }
 
 
@@ -626,12 +557,6 @@ int WW3D::Get_Render_Device()
  *   3/26/98    GTH : Created.                                                                 *
  *   1/25/2001  gth : converted to dx8                                                         *
  *=============================================================================================*/
-#if !defined(RTS_EVOLUTION_X64)
-const RenderDeviceDescClass & WW3D::Get_Render_Device_Desc(int deviceidx)
-{
-	return DX8Wrapper::Get_Render_Device_Desc(deviceidx);
-}
-#endif
 
 
 
@@ -650,11 +575,7 @@ const RenderDeviceDescClass & WW3D::Get_Render_Device_Desc(int deviceidx)
  *=============================================================================================*/
 int WW3D::Get_Render_Device_Count()
 {
-#if defined(RTS_EVOLUTION_X64)
 	return RenderBackend != nullptr ? 1 : 0;
-#else
-	return DX8Wrapper::Get_Render_Device_Count();
-#endif
 }
 
 
@@ -673,11 +594,7 @@ int WW3D::Get_Render_Device_Count()
  *=============================================================================================*/
 const char * WW3D::Get_Render_Device_Name(int device_index)
 {
-#if defined(RTS_EVOLUTION_X64)
 	return RenderBackend != nullptr && device_index == 0 ? "D3D12" : nullptr;
-#else
-	return DX8Wrapper::Get_Render_Device_Name(device_index);
-#endif
 }
 
 
@@ -695,17 +612,7 @@ const char * WW3D::Get_Render_Device_Name(int device_index)
  *=============================================================================================*/
 WW3DErrorType WW3D::Set_Device_Resolution(int width,int height,int bits,int windowed, bool resize_window)
 {
-#if defined(RTS_EVOLUTION_X64)
 	return Set_Render_Device(0, width, height, bits, windowed, resize_window);
-#else
-	bool success = DX8Wrapper::Set_Device_Resolution(width,height,bits,windowed,resize_window);
-
-	if (success) {
-		return WW3D_ERROR_OK;
-	} else {
-		return WW3D_ERROR_INITIALIZATION_FAILED;
-	}
-#endif
 }
 
 
@@ -724,15 +631,11 @@ WW3DErrorType WW3D::Set_Device_Resolution(int width,int height,int bits,int wind
  *=============================================================================================*/
 void WW3D::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
 {
-#if defined(RTS_EVOLUTION_X64)
 	set_w = set_h = set_bits = 0;
 	set_windowed = true;
 	if (RenderBackend != nullptr) {
 		RenderBackend->Get_Output_Description(set_w, set_h, set_bits, set_windowed);
 	}
-#else
-	DX8Wrapper::Get_Render_Target_Resolution(set_w,set_h,set_bits,set_windowed);
-#endif
 }
 
 
@@ -751,11 +654,7 @@ void WW3D::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,b
  *=============================================================================================*/
 void WW3D::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
 {
-#if defined(RTS_EVOLUTION_X64)
 	Get_Render_Target_Resolution(set_w, set_h, set_bits, set_windowed);
-#else
-	DX8Wrapper::Get_Device_Resolution(set_w,set_h,set_bits,set_windowed);
-#endif
 }
 
 
@@ -772,74 +671,7 @@ void WW3D::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bool & s
  *   12/3/98    BMG : Created.                                                                 *
  *   1/25/2001  gth : converted to dx8                                                         *
  *=============================================================================================*/
-#if !defined(RTS_EVOLUTION_X64)
-WW3DErrorType WW3D::Registry_Save_Render_Device( const char * sub_key )
-{
-	bool success = DX8Wrapper::Registry_Save_Render_Device(sub_key);
-	if (success) {
-		return WW3D_ERROR_OK;
-	} else {
-		return WW3D_ERROR_INITIALIZATION_FAILED;
-	}
-}
 
-/***********************************************************************************************
- * WW3D::Registry_Save_Render_Device -- Saves settings to Registry
- *                                                                                             *
- * INPUT:                                                                                      *
- *                                                                                             *
- * OUTPUT:                                                                                     *
- *                                                                                             *
- * WARNINGS:                                                                                   *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   12/3/98    BMG : Created.                                                                 *
- *=============================================================================================*/
-WW3DErrorType WW3D::Registry_Save_Render_Device( const char *sub_key, int device, int width, int height, int depth, bool windowed, int texture_depth )
-{
-	bool success = DX8Wrapper::Registry_Save_Render_Device(sub_key,device,width,height,depth,windowed,texture_depth);
-	if (success) {
-		return WW3D_ERROR_OK;
-	} else {
-		return WW3D_ERROR_INITIALIZATION_FAILED;
-	}
-}
-
-
-/***********************************************************************************************
- * WW3D::Registry_Load_Render_Device -- Loads settings from Registry
- *                                                                                             *
- * INPUT:                                                                                      *
- *                                                                                             *
- * OUTPUT:                                                                                     *
- *                                                                                             *
- * WARNINGS:                                                                                   *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   12/3/98    BMG : Created.                                                                 *
- *=============================================================================================*/
-WW3DErrorType WW3D::Registry_Load_Render_Device( const char * sub_key, bool resize_window )
-{
-	bool success = DX8Wrapper::Registry_Load_Render_Device(sub_key,resize_window);
-	if (success) {
-		return WW3D_ERROR_OK;
-	} else {
-		return WW3D_ERROR_INITIALIZATION_FAILED;
-	}
-}
-
-bool WW3D::Registry_Load_Render_Device( const char * sub_key, char *device, int device_len, int &width, int &height, int &depth, int &windowed, int &texture_depth)
-{
-	return DX8Wrapper::Registry_Load_Render_Device(sub_key,device,device_len,width,height,depth,windowed,texture_depth);
-}
-#endif
-
-#if !defined(RTS_EVOLUTION_X64)
-void WW3D::_Invalidate_Mesh_Cache()
-{
-	TheDX8MeshRenderer.Invalidate();
-}
-#endif
 
 void WW3D::_Invalidate_Textures()
 {
@@ -895,35 +727,14 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 
 	WWPROFILE("WW3D::Begin_Render");
 	WWASSERT(IsInitted);
-#if !defined(RTS_EVOLUTION_X64)
-	HRESULT hr;
-#endif
 
 	SNAPSHOT_SAY(("=========================================="));
 	SNAPSHOT_SAY(("========== WW3D::Begin_Render ============"));
 	SNAPSHOT_SAY(("==========================================\n"));
 
-#if defined(RTS_EVOLUTION_X64)
 	if (RenderBackend == nullptr || !RenderBackend->Is_Device_Ready()) {
 		return WW3D_ERROR_GENERIC;
 	}
-#else
-	if (DX8Wrapper::_Get_D3D_Device8() && (hr=DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()) != D3D_OK)
-	{
-        // If the device was lost, do not render until we get it back
-        if( D3DERR_DEVICELOST == hr )
-            return WW3D_ERROR_GENERIC;	//other app has the device
-
-        // Check if the device needs to be reset
-        if( D3DERR_DEVICENOTRESET == hr )
-        {
-            WWDEBUG_SAY(("WW3D::Begin_Render is resetting the device."));
-            DX8Wrapper::Reset_Device();
-        }
-
-		return WW3D_ERROR_GENERIC;
-	}
-#endif
 
 #if defined(RTS_PERF_TELEMETRY)
 	Debug_Statistics::Begin_Performance_Frame((unsigned int)FrameCount + 1U, Get_Logic_Time_Milliseconds());
@@ -936,10 +747,6 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 
 	TextureLoader::Update(network_callback);
 //	TextureClass::_Reset_Time_Stamp();
-#if !defined(RTS_EVOLUTION_X64)
-	DynamicVBAccessClass::_Reset(true);
-	DynamicIBAccessClass::_Reset(true);
-#endif
 
 	Debug_Statistics::Begin_Statistics();
 
@@ -1325,7 +1132,9 @@ void WW3D::Sync(bool step)
  *=============================================================================================*/
 void WW3D::Set_Ext_Swap_Interval(long swap)
 {
-	DX8Wrapper::Set_Swap_Interval(swap);
+	if (RenderBackend != nullptr && swap >= 0 && swap <= 4) {
+		RenderBackend->Set_Swap_Interval(static_cast<unsigned int>(swap));
+	}
 }
 
 
@@ -1343,7 +1152,7 @@ void WW3D::Set_Ext_Swap_Interval(long swap)
  *=============================================================================================*/
 long WW3D::Get_Ext_Swap_Interval()
 {
-	return DX8Wrapper::Get_Swap_Interval();
+	return RenderBackend != nullptr ? static_cast<long>(RenderBackend->Get_Swap_Interval()) : 1;
 }
 
 
@@ -1399,13 +1208,11 @@ int WW3D::Get_Collision_Box_Display_Mask()
  *=============================================================================================*/
 void WW3D::Normalize_Coordinates(int x, int y, float &fx, float &fy)
 {
-	// clip the coordinates back into the resolution of the screen
-	x = Bound(x, 0, DX8Wrapper::Get_Device_Resolution_Width());
-	y = Bound(y, 0, DX8Wrapper::Get_Device_Resolution_Height());
-
-	// now that the coordinates are clipped convert them to their normalized values.
-	fx = (float)x / DX8Wrapper::Get_Device_Resolution_Width();
-	fy = (float)y / DX8Wrapper::Get_Device_Resolution_Height();
+	int width = 0, height = 0, bits = 0;
+	bool windowed = true;
+	Get_Render_Target_Resolution(width, height, bits, windowed);
+	fx = width > 0 ? static_cast<float>(Bound(x, 0, width)) / width : 0.0f;
+	fy = height > 0 ? static_cast<float>(Bound(y, 0, height)) / height : 0.0f;
 }
 
 
@@ -1471,37 +1278,12 @@ void WW3D::Make_Screen_Shot( const char * filename_base , const float gamma, con
 		gamma_lut[i] = (unsigned char) (256.0f * powf(i / 256.0f, recip));
 	}
 
-	// TheSuperHackers @bugfix xezon 21/05/2025 Get the back buffer and create a copy of the surface.
-	// Originally this code took the front buffer and tried to lock it. This does not work when the
-	// render view clips outside the desktop boundaries. It crashed the game.
-	SurfaceClass* surface = DX8Wrapper::_Get_DX8_Back_Buffer();
-
-	SurfaceClass::SurfaceDescription surfaceDesc;
-	surface->Get_Description(surfaceDesc);
-
-	SurfaceClass* surfaceCopy = NEW_REF(SurfaceClass, (DX8Wrapper::_Create_DX8_Surface(surfaceDesc.Width, surfaceDesc.Height, surfaceDesc.Format)));
-	DX8Wrapper::_Copy_DX8_Rects(surface->Peek_D3D_Surface(), nullptr, 0, surfaceCopy->Peek_D3D_Surface(), nullptr);
-
-	surface->Release_Ref();
-	surface = nullptr;
-
-	struct Rect
-	{
-		int Pitch;
-		void* pBits;
-	} lrect;
-
-	lrect.pBits = surfaceCopy->Lock(&lrect.Pitch);
-	if (lrect.pBits == nullptr)
-	{
-		surfaceCopy->Release_Ref();
+	unsigned int width = 0, height = 0;
+	std::vector<unsigned char> pixels;
+	if (RenderBackend == nullptr || !RenderBackend->Read_Output_RGBA8(width, height, pixels)) {
 		return;
 	}
-
-	unsigned int x,y,index,index2,width,height;
-
-	width = surfaceDesc.Width;
-	height = surfaceDesc.Height;
+	unsigned int x, y;
 
 	unsigned char *image=W3DNEWARRAY unsigned char[3*width*height];
 
@@ -1510,19 +1292,13 @@ void WW3D::Make_Screen_Shot( const char * filename_base , const float gamma, con
 		for (x=0; x<width; x++)
 		{
 			// index for image
-			index=3*(x+y*width);
-			// index for fb
-			index2=y*lrect.Pitch+4*x;
-
-			image[index]   = gamma_lut[*((unsigned char *) lrect.pBits + index2+2)];
-			image[index+1] = gamma_lut[*((unsigned char *) lrect.pBits + index2+1)];
-			image[index+2] = gamma_lut[*((unsigned char *) lrect.pBits + index2+0)];
+			const size_t index = 3 * (static_cast<size_t>(x) + static_cast<size_t>(y) * width);
+			const size_t index2 = 4 * (static_cast<size_t>(x) + static_cast<size_t>(y) * width);
+			image[index]   = gamma_lut[pixels[index2]];
+			image[index+1] = gamma_lut[pixels[index2+1]];
+			image[index+2] = gamma_lut[pixels[index2+2]];
 		}
 	}
-
-	surfaceCopy->Unlock();
-	surfaceCopy->Release_Ref();
-	surfaceCopy = nullptr;
 
 	switch (format) {
 		case TGA:
@@ -1564,7 +1340,8 @@ void WW3D::Make_Screen_Shot( const char * filename_base , const float gamma, con
 				memset(&fileheader, 0, sizeof(BITMAPFILEHEADER));
 				fileheader.bfType = 19778; // BM
 				fileheader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-				fileheader.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 3 * len * height * sizeof(char);
+				header.biSizeImage = len * height;
+				fileheader.bfSize = fileheader.bfOffBits + header.biSizeImage;
 
 				FileClass *file = _TheWritingFileFactory->Get_File( filename );
 				if ( file ) {
@@ -1575,8 +1352,8 @@ void WW3D::Make_Screen_Shot( const char * filename_base , const float gamma, con
 					WWASSERT(num == sizeof(BITMAPFILEHEADER));
 					num = file->Write(&header, sizeof(BITMAPINFOHEADER));
 					WWASSERT(num == sizeof(BITMAPINFOHEADER));
-					char *temp = new char [3 * len];
-					memset(temp, 0, 3 * len * sizeof(char));
+					char *temp = new char [len];
+					memset(temp, 0, len);
 					// invert image, pad and swap R and B
 					for (y = 0; y < (int) height; y++) {
 						memcpy(&temp[0], &image[ 3 * width * (height - y - 1)], 3 * width * sizeof(char));
@@ -1622,10 +1399,13 @@ void WW3D::Start_Movie_Capture( const char * filename_base, float frame_rate )
 	WWASSERT( !IsCapturing);
 	IsCapturing = true;
 
-	RECT bounds;
-	GetWindowRect(_Hwnd,&bounds);
-	int height=bounds.bottom-bounds.top;
-	int width=bounds.right-bounds.left;
+	int width = 0, height = 0, bits = 0;
+	bool windowed = true;
+	Get_Render_Target_Resolution(width, height, bits, windowed);
+	if (width <= 0 || height <= 0) {
+		IsCapturing = false;
+		return;
+	}
 	int depth=24;
 
 	WWASSERT( Movie == nullptr);
@@ -1638,6 +1418,10 @@ void WW3D::Start_Movie_Capture( const char * filename_base, float frame_rate )
 	}
 
 	Movie = W3DNEW FrameGrabClass( filename_base, FrameGrabClass::AVI, width, height, depth, frame_rate);
+	if (Movie == nullptr || Movie->GetBuffer() == nullptr) {
+		Stop_Movie_Capture();
+		return;
+	}
 
 	WWDEBUG_SAY(( "Starting Movie %s", filename_base ));
 #endif
@@ -1821,58 +1605,32 @@ void WW3D::Update_Movie_Capture()
 	WWPROFILE("WW3D::Update_Movie_Capture");
 	WWDEBUG_SAY(( "Updating"));
 
-	// TheSuperHackers @bugfix xezon 21/05/2025 Get the back buffer and create a copy of the surface.
-	// Originally this code took the front buffer and tried to lock it. This does not work when the
-	// render view clips outside the desktop boundaries. It crashed the game.
-	SurfaceClass* surface = DX8Wrapper::_Get_DX8_Back_Buffer();
-
-	SurfaceClass::SurfaceDescription surfaceDesc;
-	surface->Get_Description(surfaceDesc);
-
-	SurfaceClass* surfaceCopy = NEW_REF(SurfaceClass, (DX8Wrapper::_Create_DX8_Surface(surfaceDesc.Width, surfaceDesc.Height, surfaceDesc.Format)));
-	DX8Wrapper::_Copy_DX8_Rects(surface->Peek_D3D_Surface(), nullptr, 0, surfaceCopy->Peek_D3D_Surface(), nullptr);
-
-	surface->Release_Ref();
-	surface = nullptr;
-
-	struct Rect
-	{
-		int Pitch;
-		void* pBits;
-	} lrect;
-
-	lrect.pBits = surfaceCopy->Lock(&lrect.Pitch);
-	if (lrect.pBits == nullptr)
-	{
-		surfaceCopy->Release_Ref();
+	unsigned int width = 0, height = 0;
+	std::vector<unsigned char> pixels;
+	if (Movie == nullptr || Movie->GetBuffer() == nullptr || RenderBackend == nullptr ||
+		!RenderBackend->Read_Output_RGBA8(width, height, pixels)) {
 		return;
 	}
-
-	unsigned int x,y,index,index2,width,height;
-
-	width = surfaceDesc.Width;
-	height = surfaceDesc.Height;
-
-	char *image=(char *)Movie->GetBuffer();
-
-	for (y=0; y<height; y++)
+	// AVI dimensions are fixed at creation; resizing must not overrun its buffer.
+	if (width != static_cast<unsigned int>(Movie->GetWidth()) ||
+		height != static_cast<unsigned int>(Movie->GetHeight())) {
+		Stop_Movie_Capture();
+		return;
+	}
+	char *image = reinterpret_cast<char *>(Movie->GetBuffer());
+	const size_t pitch = Movie->GetRowPitch();
+	memset(image, 0, pitch * height);
+	for (unsigned int y=0; y<height; y++)
 	{
-		for (x=0; x<width; x++)
+		for (unsigned int x=0; x<width; x++)
 		{
-			// index for image
-			index=3*(x+(height-y-1)*width);
-			// index for fb
-			index2=y*lrect.Pitch+4*x;
-
-			image[index]=*((char *) lrect.pBits + index2+0);
-			image[index+1]=*((char *) lrect.pBits + index2+1);
-			image[index+2]=*((char *) lrect.pBits + index2+2);
+			const size_t index = 3 * static_cast<size_t>(x) + (height-y-1) * pitch;
+			const size_t index2 = 4 * (static_cast<size_t>(x) + static_cast<size_t>(y) * width);
+			image[index] = static_cast<char>(pixels[index2+2]);
+			image[index+1] = static_cast<char>(pixels[index2+1]);
+			image[index+2] = static_cast<char>(pixels[index2]);
 		}
 	}
-
-	surfaceCopy->Unlock();
-	surfaceCopy->Release_Ref();
-	surfaceCopy = nullptr;
 
 	Movie->Grab(image);
 #endif
@@ -2088,10 +1846,6 @@ void WW3D::Release_Debug_Resources()
 
 WW3DErrorType WW3D::On_Deactivate_App()
 {
-#if !defined(RTS_EVOLUTION_X64)
-	_Invalidate_Textures();
-	_Invalidate_Mesh_Cache();
-#endif
 
 	return WW3D_ERROR_OK;
 }
@@ -2111,97 +1865,28 @@ void WW3D::Get_Pixel_Center(float &x, float &y)
 
 void WW3D::Update_Pixel_Center()
 {
-#ifdef WW3D_DX8
-	const char *name = _RenderDeviceShortNameTable.getString(CurRenderDevice);
-	if ( strstr(name, "OpenGL") ) {
-		PixelCenterX = 0.0f; PixelCenterY = 0.0f;
-	} else if ( strstr(name, "Glide") ) {
-		PixelCenterX = 0.0f; PixelCenterY = 0.0f;
-	} else if ( strstr(name, "DirectX") ) {
-		PixelCenterX = 0.5f; PixelCenterY = 0.5f;
-	} else if ( strstr(name, "Software") ) {
-		PixelCenterX = 0.0f; PixelCenterY = 0.0f;
-	} else if ( strstr(name, "Null") ) {
-		PixelCenterX = 0.0f; PixelCenterY = 0.0f;
-	} else {
-		// unknown device
-		PixelCenterX = 0.0f; PixelCenterY = 0.0f;
-	}
-#endif //WW3D_DX8
 }
 
 void WW3D::Set_Texture_Bitdepth(int bitdepth)
 {
-#if defined(RTS_EVOLUTION_X64)
 	// The current D3D12 target is RGBA8; the historical 16-bit mode is retired.
 	(void)bitdepth;
-#else
-	DX8Wrapper::Set_Texture_Bitdepth(bitdepth);
-#endif
 }
 
 int WW3D::Get_Texture_Bitdepth()
 {
-#if defined(RTS_EVOLUTION_X64)
 	return 32;
-#else
-	return DX8Wrapper::Get_Texture_Bitdepth();
-#endif
 }
 
 void WW3D::Set_MSAA_Mode(MultiSampleModeEnum mode)
 {
-#if defined(RTS_EVOLUTION_X64)
 	// The D3D12 swapchain and current PSOs are single-sampled.
 	(void)mode;
-#else
-	switch (mode) {
-
-	default:
-	case MULTISAMPLE_MODE_NONE:
-		DX8Wrapper::Set_MSAA_Mode(D3DMULTISAMPLE_NONE);
-		break;
-
-	case MULTISAMPLE_MODE_2X:
-		DX8Wrapper::Set_MSAA_Mode(D3DMULTISAMPLE_2_SAMPLES);
-		break;
-
-	case MULTISAMPLE_MODE_4X:
-		DX8Wrapper::Set_MSAA_Mode(D3DMULTISAMPLE_4_SAMPLES);
-		break;
-
-	case MULTISAMPLE_MODE_8X:
-		DX8Wrapper::Set_MSAA_Mode(D3DMULTISAMPLE_8_SAMPLES);
-		break;
-
-	}
-#endif
 }
 
 WW3D::MultiSampleModeEnum WW3D::Get_MSAA_Mode()
 {
-#if defined(RTS_EVOLUTION_X64)
 	return MULTISAMPLE_MODE_NONE;
-#else
-	D3DMULTISAMPLE_TYPE type = DX8Wrapper::Get_MSAA_Mode();
-
-	switch (type) {
-
-	default:
-	case D3DMULTISAMPLE_NONE:
-		return MULTISAMPLE_MODE_NONE;
-
-	case D3DMULTISAMPLE_2_SAMPLES:
-		return MULTISAMPLE_MODE_2X;
-
-	case D3DMULTISAMPLE_4_SAMPLES:
-		return MULTISAMPLE_MODE_4X;
-
-	case D3DMULTISAMPLE_8_SAMPLES:
-		return MULTISAMPLE_MODE_8X;
-
-	}
-#endif
 }
 
 void WW3D::Add_To_Static_Sort_List(RenderObjClass *robj, unsigned int sort_level)
@@ -2224,9 +1909,6 @@ void WW3D::Enable_Sorting(bool onoff)
 	IsSortingEnabled = onoff;
 	// Have to invalidate mesh rendering system because
 	// meshes are put into different fvfs depending on their sort state
-#if !defined(RTS_EVOLUTION_X64)
-	TheDX8MeshRenderer.Invalidate();
-#endif
 }
 
 void WW3D::Override_Current_Static_Sort_Lists(StaticSortListClass * sort_list)

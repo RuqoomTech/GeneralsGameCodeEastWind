@@ -17,17 +17,25 @@
 */
 
 // TheSuperHackers @refactor bobtista 10/04/2026 Abstract W3D-facing rendering
-// interface so WW3D2 rendering can be re-targeted to other backends while the
-// x64 runtime is migrated to Direct3D 12 while the legacy DX8 path remains
-// available only to archival 32-bit/reference builds.
+// interface for WW3D2's Direct3D 12 renderer. Legacy callers are migrated
+// through this seam; they do not select a separate compatibility backend.
 
 #pragma once
+
+#include <vector>
 
 // Forward declarations keep this header includable without pulling in the full
 // WW3D2 header graph. All W3D types below are passed by pointer or reference.
 
 class LightEnvironmentClass;
 class Vector3;
+
+struct RenderBackendFrameStatistics
+{
+    unsigned int draw_calls = 0;
+    unsigned int triangles = 0;
+    unsigned int vertices = 0;
+};
 
 struct RenderBackendColorVertex
 {
@@ -143,6 +151,19 @@ public:
     // Device availability is renderer-owned. Frame callers use this before
     // updating view data that will be consumed by the active render device.
     virtual bool Is_Device_Ready() const { return false; }
+    virtual bool Has_Stencil() const = 0;
+    virtual void Reset_Frame_Statistics() = 0;
+    virtual RenderBackendFrameStatistics Get_Frame_Statistics() const = 0;
+
+    // Presentation intervals count vertical retraces (0 is immediate, 1-4
+    // wait for retraces). They are local renderer state, never simulation time.
+    virtual bool Set_Swap_Interval(unsigned int interval) = 0;
+    virtual unsigned int Get_Swap_Interval() const = 0;
+
+    // Capture the latest submitted output in tightly packed top-down RGBA8.
+    // CPU pixels have no GPU/native object representation and are local only.
+    virtual bool Read_Output_RGBA8(unsigned int &width, unsigned int &height,
+                                  std::vector<unsigned char> &pixels) = 0;
 
     // WW3D's normal display caller configures the active swapchain after
     // creating the backend and queries its actual pixel dimensions for 2D UI.

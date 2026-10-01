@@ -664,6 +664,18 @@ void D3D12Backend::createRenderTargets()
         checkHresult("IDXGISwapChain3::GetBuffer", m_swap_chain->GetBuffer(index, IID_PPV_ARGS(&m_render_targets[index])));
         m_device->CreateRenderTargetView(m_render_targets[index], nullptr, offsetHandle(start, index, m_rtv_descriptor_size));
     }
+
+    // Flip-discard does not preserve presented back buffers. Retain the latest
+    // output on the GPU before Present so existing synchronous capture callers
+    // can read it later without depending on discarded swapchain contents.
+    D3D12_HEAP_PROPERTIES heap{};
+    heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heap.CreationNodeMask = heap.VisibleNodeMask = 1;
+    D3D12_RESOURCE_DESC capture_desc = m_render_targets[0]->GetDesc();
+    capture_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    checkHresult("CreateCommittedResource(retained output)",
+        m_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &capture_desc,
+            D3D12_RESOURCE_STATE_COPY_SOURCE, nullptr, IID_PPV_ARGS(&m_output_capture)));
 }
 
 void D3D12Backend::createDepthStencil()
@@ -899,6 +911,125 @@ bool D3D12Backend::Is_Device_Ready() const
     return true;
 }
 
+bool D3D12Backend::Set_Swap_Interval(unsigned int interval)
+{
+    if (interval > 4)
+    {
+        return false;
+    }
+    m_sync_interval = interval;
+    return true;
+}
+
+bool D3D12Backend::Has_Stencil() const
+{
+    return m_depth_stencil != nullptr &&
+        m_depth_stencil->GetDesc().Format == DXGI_FORMAT_D24_UNORM_S8_UINT;
+}
+
+void D3D12Backend::Reset_Frame_Statistics()
+{
+    m_frame_statistics = {};
+}
+
+RenderBackendFrameStatistics D3D12Backend::Get_Frame_Statistics() const
+{
+    return m_frame_statistics;
+}
+
+unsigned int D3D12Backend::Get_Swap_Interval() const
+{
+    return m_sync_interval;
+}
+
+bool D3D12Backend::Read_Output_RGBA8(
+    unsigned int &width, unsigned int &height, std::vector<unsigned char> &pixels)
+{
+    width = height = 0;
+    pixels.clear();
+    if (m_scene_open || !m_capture_available || m_output_capture == nullptr || !Is_Device_Ready())
+    {
+        return false;
+    }
+
+    ID3D12Resource *readback = nullptr;
+    ID3D12CommandAllocator *allocator = nullptr;
+    ID3D12GraphicsCommandList *list = nullptr;
+    try
+    {
+        ID3D12Resource *source = m_output_capture;
+        const D3D12_RESOURCE_DESC source_desc = source->GetDesc();
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
+        UINT rows = 0;
+        UINT64 row_bytes = 0, total_bytes = 0;
+        m_device->GetCopyableFootprints(&source_desc, 0, 1, 0,
+                                       &footprint, &rows, &row_bytes, &total_bytes);
+        if (source_desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM || rows != m_height ||
+            row_bytes != static_cast<UINT64>(m_width) * 4 ||
+            total_bytes > std::numeric_limits<std::size_t>::max())
+        {
+            return false;
+        }
+        std::vector<unsigned char> captured(static_cast<std::size_t>(m_width) * m_height * 4);
+        D3D12_HEAP_PROPERTIES heap{};
+        heap.Type = D3D12_HEAP_TYPE_READBACK;
+        heap.CreationNodeMask = heap.VisibleNodeMask = 1;
+        D3D12_RESOURCE_DESC buffer{};
+        buffer.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        buffer.Width = total_bytes;
+        buffer.Height = 1;
+        buffer.DepthOrArraySize = buffer.MipLevels = 1;
+        buffer.SampleDesc.Count = 1;
+        buffer.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        checkHresult("CreateCommittedResource(output readback)",
+            m_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &buffer,
+                D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback)));
+        checkHresult("CreateCommandAllocator(output readback)",
+            m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator)));
+        checkHresult("CreateCommandList(output readback)",
+            m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator,
+                                       nullptr, IID_PPV_ARGS(&list)));
+        D3D12_TEXTURE_COPY_LOCATION destination{};
+        destination.pResource = readback;
+        destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        destination.PlacedFootprint = footprint;
+        D3D12_TEXTURE_COPY_LOCATION origin{};
+        origin.pResource = source;
+        origin.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        list->CopyTextureRegion(&destination, 0, 0, 0, &origin, nullptr);
+        checkHresult("Close(output readback)", list->Close());
+        ID3D12CommandList *lists[] = {list};
+        m_command_queue->ExecuteCommandLists(1, lists);
+        waitForGpu();
+        const D3D12_RANGE read_range{0, static_cast<std::size_t>(total_bytes)};
+        void *mapped = nullptr;
+        checkHresult("Map(output readback)", readback->Map(0, &read_range, &mapped));
+        const auto *data = static_cast<const unsigned char *>(mapped) + footprint.Offset;
+        for (unsigned int row = 0; row < m_height; ++row)
+        {
+            std::memcpy(captured.data() + static_cast<std::size_t>(row) * m_width * 4,
+                        data + static_cast<std::size_t>(row) * footprint.Footprint.RowPitch,
+                        static_cast<std::size_t>(row_bytes));
+        }
+        const D3D12_RANGE no_write{0, 0};
+        readback->Unmap(0, &no_write);
+        width = m_width;
+        height = m_height;
+        pixels.swap(captured);
+        releaseCom(list);
+        releaseCom(allocator);
+        releaseCom(readback);
+        return true;
+    }
+    catch (...)
+    {
+        releaseCom(list);
+        releaseCom(allocator);
+        releaseCom(readback);
+        return false;
+    }
+}
+
 bool D3D12Backend::Configure_Output(unsigned int width, unsigned int height, bool windowed)
 {
     if (m_scene_open || m_present_pending || m_swap_chain == nullptr ||
@@ -919,6 +1050,7 @@ bool D3D12Backend::Configure_Output(unsigned int width, unsigned int height, boo
     try
     {
         waitForGpu();
+        m_capture_available = false;
         for (std::uint32_t index = 0; index < FrameCount; ++index)
         {
             releaseFrameUploads(index);
@@ -936,6 +1068,7 @@ bool D3D12Backend::Configure_Output(unsigned int width, unsigned int height, boo
             releaseCom(render_target);
         }
         releaseCom(m_depth_stencil);
+        releaseCom(m_output_capture);
         releaseCom(m_rtv_heap);
         releaseCom(m_dsv_heap);
 
@@ -1080,6 +1213,9 @@ bool D3D12Backend::drawDynamicColorGeometry(
         m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
         m_command_list->IASetIndexBuffer(&index_view);
         m_command_list->DrawIndexedInstanced(index_count, 1, 0, 0, 0);
+        ++m_frame_statistics.draw_calls;
+        m_frame_statistics.triangles += index_count / 3;
+        m_frame_statistics.vertices += vertex_count;
         return true;
     }
     catch (...)
@@ -1303,6 +1439,9 @@ bool D3D12Backend::drawStaticGeometry(RenderBackendGeometryHandle geometry_handl
     m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
     m_command_list->IASetIndexBuffer(&index_view);
     m_command_list->DrawIndexedInstanced(geometry.index_count, 1, 0, 0, 0);
+    ++m_frame_statistics.draw_calls;
+    m_frame_statistics.triangles += geometry.index_count / 3;
+    m_frame_statistics.vertices += geometry.vertex_bytes / geometry.vertex_stride;
     return true;
 }
 
@@ -1571,6 +1710,9 @@ bool D3D12Backend::Draw_Static_Indexed_Textured_Geometry(
     m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
     m_command_list->IASetIndexBuffer(&index_view);
     m_command_list->DrawIndexedInstanced(geometry.index_count, 1, 0, 0, 0);
+    ++m_frame_statistics.draw_calls;
+    m_frame_statistics.triangles += geometry.index_count / 3;
+    m_frame_statistics.vertices += geometry.vertex_bytes / geometry.vertex_stride;
     return true;
 }
 
@@ -1616,8 +1758,23 @@ void D3D12Backend::submitScene(bool present)
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition.pResource = m_render_targets[m_frame_index];
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    m_command_list->ResourceBarrier(1, &barrier);
+
+    D3D12_RESOURCE_BARRIER capture_barrier{};
+    capture_barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    capture_barrier.Transition.pResource = m_output_capture;
+    capture_barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    capture_barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+    capture_barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    m_command_list->ResourceBarrier(1, &capture_barrier);
+    m_command_list->CopyResource(m_output_capture, m_render_targets[m_frame_index]);
+    capture_barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    capture_barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    m_command_list->ResourceBarrier(1, &capture_barrier);
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
     m_command_list->ResourceBarrier(1, &barrier);
 
     checkHresult("ID3D12GraphicsCommandList::Close", m_command_list->Close());
@@ -1631,6 +1788,7 @@ void D3D12Backend::submitScene(bool present)
 
     m_scene_open = false;
     m_present_pending = true;
+    m_capture_available = true;
     if (present)
     {
         presentPendingFrame();
@@ -1644,7 +1802,7 @@ void D3D12Backend::presentPendingFrame()
         return;
     }
 
-    checkHresult("IDXGISwapChain3::Present", m_swap_chain->Present(1, 0));
+    checkHresult("IDXGISwapChain3::Present", m_swap_chain->Present(m_sync_interval, 0));
     m_present_pending = false;
     m_frame_index = m_swap_chain->GetCurrentBackBufferIndex();
 }
@@ -1748,6 +1906,7 @@ void D3D12Backend::releaseObjects() noexcept
         releaseCom(render_target);
     }
     releaseCom(m_depth_stencil);
+    releaseCom(m_output_capture);
     releaseCom(m_fence);
     releaseCom(m_command_list);
     for (auto &allocator : m_command_allocators)

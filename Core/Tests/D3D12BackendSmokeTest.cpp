@@ -73,6 +73,7 @@ int main()
     bool output_windowed = false;
     if (!backend->Configure_Output(640, 480, true) ||
         !backend->Is_Device_Ready() ||
+        !backend->Has_Stencil() ||
         !backend->Get_Output_Description(
             output_width, output_height, output_bits, output_windowed) ||
         output_width != 640 || output_height != 480 || output_bits != 32 || !output_windowed)
@@ -85,7 +86,31 @@ int main()
     }
 
     RenderBackendViewport viewport{0, 0, 640, 480, 0.0f, 1.0f};
+    if (backend->Get_Swap_Interval() != 1 ||
+        !backend->Set_Swap_Interval(0) || backend->Get_Swap_Interval() != 0 ||
+        !backend->Set_Swap_Interval(4) || backend->Get_Swap_Interval() != 4 ||
+        backend->Set_Swap_Interval(5) || backend->Get_Swap_Interval() != 4 ||
+        !backend->Set_Swap_Interval(0))
+    {
+        delete backend;
+        DestroyWindow(window);
+        UnregisterClassW(WindowClassName, instance);
+        std::cerr << "D3D12 backend smoke failed: presentation interval contract failed.\n";
+        return 11;
+    }
     backend->Set_Viewport(viewport);
+
+    unsigned int captured_width = 99, captured_height = 99;
+    std::vector<unsigned char> captured_pixels{99};
+    if (backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) ||
+        captured_width != 0 || captured_height != 0 || !captured_pixels.empty())
+    {
+        delete backend;
+        DestroyWindow(window);
+        UnregisterClassW(WindowClassName, instance);
+        std::cerr << "D3D12 backend smoke failed: capture before submission was accepted.\n";
+        return 12;
+    }
 
     const RenderBackendColorVertex triangle_vertices[] = {
         {-0.65f, -0.55f, 0.50f, 1.00f, 0.15f, 0.10f, 1.00f},
@@ -154,8 +179,23 @@ int main()
     backend->End_Scene(false);
     backend->Flip_To_Primary();
 
+    if (!backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) ||
+        captured_width != 640 || captured_height != 480 ||
+        captured_pixels.size() != 640u * 480u * 4u ||
+        captured_pixels[0] != 15 || captured_pixels[1] != 20 ||
+        captured_pixels[2] != 31 || captured_pixels[3] != 255)
+    {
+        delete backend;
+        DestroyWindow(window);
+        UnregisterClassW(WindowClassName, instance);
+        std::cerr << "D3D12 backend smoke failed: latest presented output capture is incorrect.\n";
+        return 13;
+    }
+
     for (int frame = 0; frame < 6; ++frame)
     {
+        backend->Reset_Frame_Statistics();
+        backend->Set_Swap_Interval(static_cast<unsigned int>(frame % 2));
         const float phase = static_cast<float>(frame) / 5.0f;
         backend->Clear(true, true, Vector3(0.08f + phase * 0.08f, 0.08f, 0.12f), 1.0f, 1.0f, 0);
         backend->Begin_Scene();
@@ -165,7 +205,9 @@ int main()
         const bool textured_draw_ok = backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, checker_texture);
         const bool screen_draw_ok = backend->Draw_2D_Indexed_Triangles(
             triangle_vertices, 3, triangle_indices, 3, RenderBackend2DBlendMode::Alpha);
-        if (!color_draw_ok || !textured_draw_ok || !screen_draw_ok)
+        const RenderBackendFrameStatistics counters = backend->Get_Frame_Statistics();
+        if (!color_draw_ok || !textured_draw_ok || !screen_draw_ok ||
+            counters.draw_calls != 3 || counters.triangles != 4 || counters.vertices != 10)
         {
             backend->Release_Static_Texture(checker_texture);
             backend->Release_Static_Geometry(textured_quad);
@@ -182,10 +224,42 @@ int main()
     backend->Release_Static_Texture(checker_texture);
     backend->Release_Static_Geometry(textured_quad);
     backend->Release_Static_Geometry(static_triangle);
+    // A width not divisible by the GPU row alignment catches padding leaks;
+    // an asymmetric draw catches vertical inversion and RGBA channel swaps.
+    bool capture_ok = backend->Configure_Output(643, 479, true);
+    capture_ok = capture_ok && !backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels);
+    backend->Set_Viewport(RenderBackendViewport{0, 0, 643, 479, 0.0f, 1.0f});
+    backend->Clear(true, true, Vector3(0.25f, 0.5f, 0.75f), 1.0f, 1.0f, 0);
+    backend->Begin_Scene();
+    capture_ok = capture_ok && !backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels);
+    const RenderBackendColorVertex top_left_vertices[] = {
+        {-1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+        { 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+        {-1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+    };
+    capture_ok = capture_ok && backend->Draw_2D_Indexed_Triangles(
+        top_left_vertices, 3, triangle_indices, 3, RenderBackend2DBlendMode::Opaque);
+    backend->End_Scene(false);
+    capture_ok = capture_ok && backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) &&
+        captured_width == 643 && captured_height == 479 && captured_pixels.size() == 643u * 479u * 4u;
+    if (capture_ok)
+    {
+        const std::size_t lower_right = (643u * 479u - 1u) * 4u;
+        capture_ok = captured_pixels[0] == 255 && captured_pixels[1] == 0 && captured_pixels[2] == 0 &&
+            captured_pixels[3] == 255 && captured_pixels[lower_right] == 64 &&
+            captured_pixels[lower_right + 1] == 128 && captured_pixels[lower_right + 2] == 191 &&
+            captured_pixels[lower_right + 3] == 255;
+    }
+    backend->Flip_To_Primary();
     delete backend;
     DestroyWindow(window);
     UnregisterClassW(WindowClassName, instance);
 
-    std::cout << "D3D12 backend smoke passed: WW3D uploaded RGBA8 texture data, bound shader-visible SRV/static-sampler state, exercised the real 2D blend PSO path, reused textured/default-heap geometry across frames, and released resources safely.\n";
+    if (!capture_ok)
+    {
+        std::cerr << "D3D12 backend smoke failed: resized/deferred output capture is incorrect.\n";
+        return 14;
+    }
+    std::cout << "D3D12 backend smoke passed: textured geometry, 2D blending, presentation intervals, and resized/deferred RGBA8 readback.\n";
     return 0;
 }

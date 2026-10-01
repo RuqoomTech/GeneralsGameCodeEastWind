@@ -20,28 +20,16 @@
 #include "Common/GlobalData.h"
 #include "GameClient/GameText.h"
 #include "GameClient/InGameUI.h"
-#include "WW3D2/dx8wrapper.h"
-#include "WW3D2/surfaceclass.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WWLib/mpsc_intrusive_queue.h"
 #include <stb_image_write.h>
 
 struct ScreenshotThreadData
 {
-	ScreenshotThreadData()
-		: pixelData(nullptr)
-	{
-	}
-
-	~ScreenshotThreadData()
-	{
-		delete[] pixelData;
-	}
-
-	unsigned char* pixelData; // is owner
+	std::vector<unsigned char> pixelData; // owned, top-down RGBA8
 	unsigned int width;
 	unsigned int height;
-	unsigned int pitch;
-	bool is16Bit;
 	char userDataDirectory[_MAX_PATH];
 	char leafname[_MAX_FNAME];
 	int quality;
@@ -75,49 +63,23 @@ static DWORD WINAPI screenshotThreadFunc(LPVOID param)
 	const unsigned int height = data->height;
 
 	// Convert to R8G8B8 for stb_image_write.
-	unsigned char* image = new unsigned char[3 * width * height];
-
-	if (!data->is16Bit)
+	const size_t pixelCount = static_cast<size_t>(width) * height;
+	std::vector<unsigned char> image(pixelCount * 3);
+	for (size_t pixel = 0; pixel < pixelCount; ++pixel)
 	{
-		// Convert A8R8G8B8/X8R8G8B8 to R8G8B8
-		for (unsigned int y = 0; y < height; ++y)
-		{
-			const unsigned int* srcLine = reinterpret_cast<const unsigned int*>(data->pixelData + y * data->pitch);
-			for (unsigned int x = 0; x < width; ++x)
-			{
-				const unsigned int argb = srcLine[x];
-				const unsigned int index = 3 * (x + y * width);
-				image[index + 0] = (unsigned char)(argb >> 16); // r
-				image[index + 1] = (unsigned char)(argb >> 8);  // g
-				image[index + 2] = (unsigned char)(argb >> 0);  // b
-			}
-		}
-	}
-	else
-	{
-		// Convert R5G6B5 to R8G8B8
-		for (unsigned int y = 0; y < height; ++y)
-		{
-			const unsigned short* srcLine = reinterpret_cast<const unsigned short*>(data->pixelData + y * data->pitch);
-			for (unsigned int x = 0; x < width; ++x)
-			{
-				const unsigned short rgb = srcLine[x];
-				const unsigned int index = 3 * (x + y * width);
-				image[index + 0] = (unsigned char)((rgb & 0xF800) >> 8); // r
-				image[index + 1] = (unsigned char)((rgb & 0x07E0) >> 3); // g
-				image[index + 2] = (unsigned char)((rgb & 0x001F) << 3); // b
-			}
-		}
+		image[3 * pixel] = data->pixelData[4 * pixel];
+		image[3 * pixel + 1] = data->pixelData[4 * pixel + 1];
+		image[3 * pixel + 2] = data->pixelData[4 * pixel + 2];
 	}
 
 	int success = 0;
 	switch (data->format)
 	{
 		case SCREENSHOT_JPEG:
-			success = stbi_write_jpg(pathname, width, height, 3, image, data->quality);
+			success = stbi_write_jpg(pathname, width, height, 3, image.data(), data->quality);
 			break;
 		case SCREENSHOT_PNG:
-			success = stbi_write_png(pathname, width, height, 3, image, width * 3);
+			success = stbi_write_png(pathname, width, height, 3, image.data(), width * 3);
 			break;
 	}
 
@@ -132,7 +94,6 @@ static DWORD WINAPI screenshotThreadFunc(LPVOID param)
 		DEBUG_LOG(("Failed to write screenshot %s", pathname));
 	}
 
-	delete[] image;
 	delete data;
 
 	return success;
@@ -156,6 +117,9 @@ void W3D_TakeCompressedScreenshot(ScreenshotFormat format, Int jpegQuality)
 {
 	static constexpr const char* const ScreenshotFormatExtensions[] = { "jpg", "png" };
 	static_assert(ARRAY_SIZE(ScreenshotFormatExtensions) == SCREENSHOT_FORMAT_COUNT, "Incorrect array size");
+	if (format < 0 || format >= SCREENSHOT_FORMAT_COUNT) {
+		return;
+	}
 
 	// The filename is created here so the timestamp matches the capture time.
 	char leafname[_MAX_FNAME];
@@ -166,63 +130,17 @@ void W3D_TakeCompressedScreenshot(ScreenshotFormat format, Int jpegQuality)
 	sprintf(leafname, "sshot_%04d%02d%02d_%02d%02d%02d_%03d.%s",
 		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, extension);
 
-	// TheSuperHackers @bugfix xezon 21/05/2025 Get the back buffer and create a copy of the surface.
-	// Originally this code took the front buffer and tried to lock it. This does not work when the
-	// render view clips outside the desktop boundaries. It crashed the game.
-	SurfaceClass* surface = DX8Wrapper::_Get_DX8_Back_Buffer();
-	SurfaceClass::SurfaceDescription surfaceDesc;
-	surface->Get_Description(surfaceDesc);
-
-	// TheSuperHackers @bugfix bobtista 08/07/2026 Support the 16 bit back buffer format that the
-	// game uses when running in 16 bit color mode. Reading it with the 32 bit stride read garbage.
-	const bool is32Bit = surfaceDesc.Format == WW3D_FORMAT_A8R8G8B8 || surfaceDesc.Format == WW3D_FORMAT_X8R8G8B8;
-	const bool is16Bit = surfaceDesc.Format == WW3D_FORMAT_R5G6B5;
-
-	if (!is32Bit && !is16Bit)
-	{
-		DEBUG_LOG(("Screenshot does not support back buffer format %d", (int)surfaceDesc.Format));
-		surface->Release_Ref();
-		return;
-	}
-
-	SurfaceClass* surfaceCopy = NEW_REF(SurfaceClass, (DX8Wrapper::_Create_DX8_Surface(surfaceDesc.Width, surfaceDesc.Height, surfaceDesc.Format)));
-	DX8Wrapper::_Copy_DX8_Rects(surface->Peek_D3D_Surface(), nullptr, 0, surfaceCopy->Peek_D3D_Surface(), nullptr);
-
-	surface->Release_Ref();
-	surface = nullptr;
-
-	struct Rect
-	{
-		int Pitch;
-		void* pBits;
-	} lrect;
-
-	lrect.pBits = surfaceCopy->Lock(&lrect.Pitch);
-	if (lrect.pBits == nullptr)
-	{
-		surfaceCopy->Release_Ref();
-		return;
-	}
-
 	ScreenshotThreadData* threadData = new ScreenshotThreadData();
-	threadData->width = surfaceDesc.Width;
-	threadData->height = surfaceDesc.Height;
-	threadData->pitch = lrect.Pitch;
-	threadData->is16Bit = is16Bit;
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr || !backend->Read_Output_RGBA8(
+		threadData->width, threadData->height, threadData->pixelData)) {
+		delete threadData;
+		return;
+	}
 	threadData->quality = jpegQuality;
 	threadData->format = format;
 	strlcpy(threadData->userDataDirectory, TheGlobalData->getPath_UserData().str(), ARRAY_SIZE(threadData->userDataDirectory));
 	strlcpy(threadData->leafname, leafname, ARRAY_SIZE(threadData->leafname));
-
-	// Copy the locked surface with a single memcpy, including any row padding. The pixel
-	// conversion and all file operations are done on the screenshot thread to keep the
-	// main thread cheap.
-	threadData->pixelData = new unsigned char[threadData->pitch * threadData->height];
-	memcpy(threadData->pixelData, lrect.pBits, threadData->pitch * threadData->height);
-
-	surfaceCopy->Unlock();
-	surfaceCopy->Release_Ref();
-	surfaceCopy = nullptr;
 
 	const HANDLE hThread = CreateThread(nullptr, 0, screenshotThreadFunc, threadData, 0, nullptr);
 	if (hThread)

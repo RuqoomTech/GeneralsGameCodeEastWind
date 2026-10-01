@@ -215,40 +215,15 @@ set(WW3D2_SRC
     ww3dtrig.h
 )
 
-# The x64 runtime uses Direct3D 12 in-place through the existing WW3D backend
-# seam. The old DX8 implementation remains source-only reference for 32-bit
-# archival builds; it is not part of the Evolution x64 compile graph.
+# Direct3D 12 is the only game renderer. The remaining legacy caller declarations
+# are migration work, and must never select another backend to resolve linkage.
 if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     list(APPEND WW3D2_SRC
         Backend/D3D12Backend.cpp
         Backend/D3D12Backend.h
     )
 else()
-    list(APPEND WW3D2_SRC
-        Backend/DX8Backend.cpp
-        Backend/DX8Backend.h
-        dx8caps.cpp
-        dx8caps.h
-        dx8fvf.cpp
-        dx8fvf.h
-        dx8indexbuffer.cpp
-        dx8indexbuffer.h
-        dx8list.h
-        dx8polygonrenderer.cpp
-        dx8polygonrenderer.h
-        dx8renderer.cpp
-        dx8renderer.h
-        dx8rendererdebugger.cpp
-        dx8rendererdebugger.h
-        dx8texman.cpp
-        dx8texman.h
-        dx8vertexbuffer.cpp
-        dx8vertexbuffer.h
-        dx8webbrowser.cpp
-        dx8webbrowser.h
-        dx8wrapper.cpp
-        dx8wrapper.h
-    )
+    message(FATAL_ERROR "WW3D rendering requires Windows x64 and Direct3D 12")
 endif()
 
 add_library(corei_ww3d2 INTERFACE)
@@ -275,3 +250,15 @@ target_link_libraries(corei_ww3d2 INTERFACE
 if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     target_link_libraries(corei_ww3d2 INTERFACE d3d12 d3dcompiler dxgi dxguid)
 endif()
+
+# Both normal game executables consume the same canonical WW3D shader assets.
+function(rts_stage_ww3d_shaders target_name)
+    set(_shader "${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl")
+    set_property(TARGET ${target_name} APPEND PROPERTY LINK_DEPENDS "${_shader}")
+    add_custom_command(TARGET ${target_name} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target_name}>/Shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_shader}" "$<TARGET_FILE_DIR:${target_name}>/Shaders/PrimitiveColor.hlsl"
+        VERBATIM
+    )
+endfunction()

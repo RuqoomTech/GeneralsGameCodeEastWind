@@ -1212,10 +1212,6 @@ target_link_libraries(corei_gameengine_public INTERFACE
     stlport
 )
 
-if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-    target_link_libraries(corei_gameengine_public INTERFACE d3d8lib)
-endif()
-
 # ReactOS ATL for MinGW-w64 only (MSVC uses native ATL)
 if(MINGW)
     target_link_libraries(corei_gameengine_public INTERFACE reactos_atl)

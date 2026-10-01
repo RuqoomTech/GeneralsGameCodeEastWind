@@ -64,7 +64,7 @@ class VertexMaterialClass : public RefCountClass
 {
 	W3DMPO_CODE(VertexMaterialClass)
 
-	friend DX8Wrapper;
+	friend class DX8Wrapper;
 
 public:
 	/*

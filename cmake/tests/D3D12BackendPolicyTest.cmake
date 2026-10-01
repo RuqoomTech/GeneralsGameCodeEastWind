@@ -1,5 +1,42 @@
 include("${RTS_SOURCE_DIR}/cmake/tests/PolicyTestHelpers.cmake")
 
+foreach(retired_file IN ITEMS
+    "cmake/dx8.cmake"
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/DX8Backend.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/Backend/DX8Backend.h")
+    if(EXISTS "${RTS_SOURCE_DIR}/${retired_file}")
+        message(FATAL_ERROR "Policy regression: retired renderer file ${retired_file} must not return")
+    endif()
+endforeach()
+
+rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/ww3d.cpp"
+    "#if !defined(RTS_EVOLUTION_X64)"
+    "WW3D must not retain an alternative DX8 device lifecycle")
+rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/ww3d.cpp"
+    "_Get_DX8_Back_Buffer"
+    "screen/movie capture must use the renderer-neutral D3D12 readback seam")
+rts_policy_require_absent(
+    "Core/GameEngine/Source/Common/CommandLine.cpp"
+    "DX8Wrapper_PreserveFPU"
+    "the retired DX8 device FPU flag must not be reintroduced")
+rts_policy_require_absent(
+    "Core/GameEngine/Source/Common/System/Debug.cpp"
+    "DX8Wrapper_IsWindowed"
+    "crash reporting must retain confirmed presentation mode in its own owner")
+
+file(GLOB_RECURSE renderer_build_files "${RTS_SOURCE_DIR}/Core/CMakeLists.txt"
+    "${RTS_SOURCE_DIR}/Core/*/CMakeLists.txt" "${RTS_SOURCE_DIR}/Generals/CMakeLists.txt"
+    "${RTS_SOURCE_DIR}/Generals/*/CMakeLists.txt" "${RTS_SOURCE_DIR}/GeneralsMD/CMakeLists.txt"
+    "${RTS_SOURCE_DIR}/GeneralsMD/*/CMakeLists.txt")
+foreach(renderer_build_file IN LISTS renderer_build_files)
+    file(READ "${renderer_build_file}" renderer_build_source)
+    if(renderer_build_source MATCHES "(^|[ \t\r\n])(d3d8|d3dx8|d3d8lib)([ \t\r\n)]|$)")
+        message(FATAL_ERROR "Policy regression: DX8 build dependency in ${renderer_build_file}")
+    endif()
+endforeach()
+
 if(EXISTS "${RTS_SOURCE_DIR}/Evolution")
     message(FATAL_ERROR "Policy regression: the standalone Evolution application tree must not return")
 endif()
@@ -134,7 +171,7 @@ rts_policy_require_contains(
     "Shaders/PrimitiveColor.hlsl"
     "the Windows backend smoke test must stage the canonical HLSL shader asset beside the executable")
 rts_policy_require_contains(
-    "GeneralsMD/Code/Main/CMakeLists.txt"
+    "Core/Libraries/Source/WWVegas/WW3D2/CMakeLists.txt"
     "Shaders/PrimitiveColor.hlsl"
     "the x64 game executable must stage the same canonical HLSL shader asset used by the production backend")
 rts_policy_require_contains(
@@ -142,9 +179,13 @@ rts_policy_require_contains(
     "LINK_DEPENDS"
     "shader edits must invalidate the Windows smoke executable so its staged HLSL stays current")
 rts_policy_require_contains(
-    "GeneralsMD/Code/Main/CMakeLists.txt"
+    "Core/Libraries/Source/WWVegas/WW3D2/CMakeLists.txt"
     "LINK_DEPENDS"
     "shader edits must invalidate the x64 game executable so its staged HLSL stays current")
+rts_policy_require_contains(
+    "GeneralsMD/Code/Main/CMakeLists.txt"
+    "rts_stage_ww3d_shaders(z_generals)"
+    "the game must call the shared WW3D shader staging owner")
 rts_policy_require_contains(
     "GeneralsMD/CMakeLists.txt"
     "PrimitiveColor.hlsl"
