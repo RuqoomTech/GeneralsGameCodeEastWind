@@ -65,3 +65,11 @@ float4 PSTextured(TexturedPSInput input) : SV_TARGET
 {
     return PrimitiveTexture.Sample(PrimitiveSampler, input.texcoord) * input.color;
 }
+
+// The real decal caller clamps to its edge and explicitly disables mipmaps.
+SamplerState DecalSampler : register(s1);
+
+float4 PSDecal(TexturedPSInput input) : SV_TARGET
+{
+    return PrimitiveTexture.SampleLevel(DecalSampler, input.texcoord, 0.0f) * input.color;
+}

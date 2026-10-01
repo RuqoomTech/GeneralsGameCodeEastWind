@@ -84,7 +84,6 @@
 #include "matpass.h"
 #include "bwrender.h"
 #include "assetmgr.h"
-#include "dx8wrapper.h"
 
 
 // DEBUG DEBUG
@@ -1116,67 +1115,39 @@ bool TexProjectClass::Compute_Texture
 	SpecialRenderInfoClass * context
 )
 {
-	if ((model == nullptr) || (context == nullptr))
-	{
-		return false;
-	}
-	/*
-	** Render to texture
-	*/
-	TextureClass * rtarget=nullptr;
-	ZTextureClass* ztarget=nullptr;
+	if (model == nullptr || context == nullptr || !WW3D::Is_Initted()) return false;
+	TextureClass *target = nullptr;
+	ZTextureClass *depth = nullptr;
+	Peek_Render_Target(&target, &depth);
+	// This caller uses a color-only projected-shadow target. Custom depth
+	// attachments require their own backend contract before they can render.
+	if (target == nullptr || depth != nullptr || !WW3D::Set_Render_Texture(target)) return false;
 
-	Peek_Render_Target(&rtarget,&ztarget);
-
-	if (rtarget != nullptr)
-	{
-		// set projector for render context KJM
-		context->Texture_Projector=this;
-
-		/*
-		** Set the render target
-		*/
-		DX8Wrapper::Set_Render_Target_With_Z (rtarget,ztarget);
-
-		/*
-		** Set up the camera
-		*/
+	TexProjectClass *previous_projector = context->Texture_Projector;
+	const bool snapshot = WW3D::Is_Snapshot_Activated();
+	context->Texture_Projector = this;
+	bool begun = false;
+	bool success = false;
+	try {
 		Configure_Camera(context->Camera);
-
-		/*
-		** Render the object
-		*/
-		Vector3 color(0.0f,0.0f,0.0f);
-		if (Get_Flag(ADDITIVE) == false) {
-			color.Set(1.0f,1.0f,1.0f);
+		const Vector3 color = Get_Flag(ADDITIVE) ? Vector3(0.0f, 0.0f, 0.0f) : Vector3(1.0f, 1.0f, 1.0f);
+		if (WW3D::Begin_Render(true, false, color) == WW3D_ERROR_OK) {
+			begun = true;
+			success = WW3D::Render(*model, *context) == WW3D_ERROR_OK;
+			success = (WW3D::End_Render(false) == WW3D_ERROR_OK) && success;
+			begun = false;
 		}
-
-		bool zclear=ztarget!=nullptr;
-
-		bool snapshot=WW3D::Is_Snapshot_Activated();
-		SNAPSHOT_SAY(("TexProjectCLass::Begin_Render()"));
-		WW3D::Begin_Render(true,zclear,color);	// false to zclear as we don't have z-buffer
-		WW3D::Render(*model,*context);
-		SNAPSHOT_SAY(("TexProjectCLass::End_Render()"));
-		WW3D::End_Render(false);
-		WW3D::Activate_Snapshot(snapshot);	// End_Render() ends the shapsnot, so restore the state
-
-		DX8Wrapper::Set_Render_Target((IDirect3DSurface8 *)nullptr);
-
+	} catch (...) {
+		if (begun) WW3D::End_Render(false);
+		WW3D::Set_Render_Texture(nullptr);
+		WW3D::Activate_Snapshot(snapshot);
+		context->Texture_Projector = previous_projector;
+		throw;
 	}
-
-#if 0
-
-	/*
-	** Render the object with the BW Renderer into our color surface
-	*/
-	BWRenderClass bwr((unsigned char*)shadow_surface->getDataPtr(),tex_size);
-	bwr.Fill(0xff);
-	context->BWRenderer = &bwr;
-	model->Special_Render(*context);
-	context->BWRenderer = nullptr;
-#endif
-	return true;
+	success = WW3D::Set_Render_Texture(nullptr) && success;
+	WW3D::Activate_Snapshot(snapshot);
+	context->Texture_Projector = previous_projector;
+	return success;
 }
 
 

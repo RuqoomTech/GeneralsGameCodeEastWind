@@ -147,7 +147,7 @@ int main()
         backend->Create_Static_RGBA8_Texture(2, 2, checker_rgba, 8);
     if (!textured_quad.Is_Valid() || !checker_texture.Is_Valid())
     {
-        backend->Release_Static_Texture(checker_texture);
+        backend->Release_Texture(checker_texture);
         backend->Release_Static_Geometry(textured_quad);
         backend->Release_Static_Geometry(static_triangle);
         delete backend;
@@ -164,7 +164,7 @@ int main()
     backend->Begin_Scene();
     if (!backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, checker_texture))
     {
-        backend->Release_Static_Texture(checker_texture);
+        backend->Release_Texture(checker_texture);
         backend->Release_Static_Geometry(textured_quad);
         backend->Release_Static_Geometry(static_triangle);
         delete backend;
@@ -210,7 +210,7 @@ int main()
         if (!color_draw_ok || !textured_draw_ok || !screen_draw_ok ||
             counters.draw_calls != 3 || counters.triangles != 4 || counters.vertices != 10)
         {
-            backend->Release_Static_Texture(checker_texture);
+            backend->Release_Texture(checker_texture);
             backend->Release_Static_Geometry(textured_quad);
             backend->Release_Static_Geometry(static_triangle);
             delete backend;
@@ -268,9 +268,109 @@ int main()
         }
         backend->Flip_To_Primary();
     }
-    backend->Release_Static_Texture(checker_texture);
+    // Projected shadows render into one texture, copy to another, and sample
+    // that copy later. Exercise actual GPU pixels and restore the output state.
+    const auto render_texture = backend->Create_Render_Texture(61, 37);
+    const auto shadow_texture = backend->Create_Render_Texture(61, 37);
+    const auto wrong_size = backend->Create_Render_Texture(17, 19);
+    bool target_ok = render_texture.Is_Valid() && shadow_texture.Is_Valid() && wrong_size.Is_Valid() &&
+        !backend->Create_Render_Texture(0, 37).Is_Valid() &&
+        !backend->Set_Render_Texture(checker_texture) && !backend->Set_Render_Texture({1, 0}) &&
+        !backend->Copy_Texture(shadow_texture, wrong_size) &&
+        !backend->Copy_Texture(shadow_texture, shadow_texture);
+    const Matrix4x4 identity(true);
+    for (unsigned int path = 0; target_ok && path < 3; ++path)
+    {
+        backend->Set_Viewport({80, 60, 480, 360, 0.0f, 1.0f});
+        backend->Set_View_Projection(view_projection);
+        backend->Clear(true, true, Vector3(0.0f, 0.0f, 0.0f), 1.0f, 1.0f, 0);
+        backend->Begin_Scene();
+        target_ok = backend->Draw_Static_Indexed_Color_Geometry(static_triangle) && target_ok;
+        backend->End_Scene(false); // A shadow pass must preserve this deferred output.
+        target_ok = backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) && target_ok;
+        const auto retained_output = captured_pixels;
+        const std::size_t restored_pixel = (330u * captured_width + 188u) * 4u;
+        target_ok = target_ok && (captured_pixels[restored_pixel] || captured_pixels[restored_pixel + 1]);
+
+        target_ok = backend->Set_Render_Texture(render_texture) && target_ok;
+        int width = 0, height = 0, bits = 0;
+        bool windowed = false;
+        target_ok = backend->Get_Render_Target_Size(width, height) && width == 61 && height == 37 && target_ok;
+        target_ok = backend->Get_Output_Description(width, height, bits, windowed) &&
+            width == 640 && height == 480 && target_ok;
+        backend->Set_View_Projection(identity);
+        backend->Clear(true, true, Vector3(0.25f, 0.5f, 0.75f), 1.0f, 1.0f, 0);
+        backend->Begin_Scene();
+        target_ok = !backend->Set_Render_Texture({}) &&
+            !backend->Create_Render_Texture(61, 37).Is_Valid() &&
+            !backend->Copy_Texture(shadow_texture, render_texture) &&
+            !backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, render_texture) && target_ok;
+        if (path == 0) target_ok = backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3) && target_ok;
+        if (path == 1) target_ok = backend->Draw_Static_Indexed_Color_Geometry(static_triangle) && target_ok;
+        if (path == 2) target_ok = backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, checker_texture) && target_ok;
+        target_ok = backend->Draw_2D_Indexed_Triangles(top_left_vertices, 3, triangle_indices, 3,
+            path == 0 ? RenderBackend2DBlendMode::Opaque :
+            path == 1 ? RenderBackend2DBlendMode::Alpha : RenderBackend2DBlendMode::Additive) && target_ok;
+        backend->End_Scene(true); // Offscreen submission must never present or replace output capture.
+        target_ok = backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) &&
+            captured_pixels == retained_output && target_ok;
+        target_ok = backend->Copy_Texture(shadow_texture, render_texture) && target_ok;
+        target_ok = backend->Set_Render_Texture({}) && target_ok;
+        backend->Flip_To_Primary();
+
+        // Selection restored both the saved camera and pixel viewport.
+        backend->Clear(true, true, Vector3(0.0f, 0.0f, 0.0f), 1.0f, 1.0f, 0);
+        backend->Begin_Scene();
+        target_ok = backend->Draw_Static_Indexed_Color_Geometry(static_triangle) && target_ok;
+        backend->End_Scene(false);
+        target_ok = backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) &&
+            captured_pixels == retained_output && target_ok;
+        backend->Flip_To_Primary();
+
+        backend->Set_Viewport(viewport);
+        backend->Set_View_Projection(identity);
+        backend->Clear(true, true, Vector3(0.0f, 0.0f, 0.0f), 1.0f, 1.0f, 0);
+        backend->Begin_Scene();
+        target_ok = backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, shadow_texture) && target_ok;
+        backend->End_Scene(false);
+        target_ok = backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) && target_ok;
+        const std::size_t lower_right = (420u * captured_width + 540u) * 4u;
+        const std::size_t top_left = (100u * captured_width + 100u) * 4u;
+        const std::size_t middle = (240u * captured_width + 320u) * 4u;
+        target_ok = target_ok && captured_pixels[top_left] == 255 &&
+            captured_pixels[top_left + 1] == (path == 2 ? 128 : 0) &&
+            captured_pixels[top_left + 2] == (path == 2 ? 191 : 0) &&
+            captured_pixels[lower_right] == 0 && // Outside the sampled quad.
+            (captured_pixels[middle] != 64 || captured_pixels[middle + 1] != 128 || captured_pixels[middle + 2] != 191);
+        // Inside the quad, away from every offscreen draw, the copied clear is exact.
+        const std::size_t background = (390u * captured_width + 540u) * 4u;
+        target_ok = target_ok && captured_pixels[background] == 64 &&
+            captured_pixels[background + 1] == 128 && captured_pixels[background + 2] == 191 &&
+            captured_pixels[background + 3] == 255;
+        backend->Flip_To_Primary();
+    }
+    target_ok = backend->Set_Render_Texture(render_texture) && target_ok;
+    backend->Release_Texture(render_texture); // Release of a selected target restores output.
+    const auto replacement_texture = backend->Create_Render_Texture(61, 37);
+    output_width = output_height = 0;
+    target_ok = backend->Get_Render_Target_Size(output_width, output_height) &&
+        output_width == 640 && output_height == 480 && replacement_texture.Is_Valid() &&
+        replacement_texture.slot == render_texture.slot && replacement_texture.generation != render_texture.generation &&
+        !backend->Set_Render_Texture(render_texture) && !backend->Copy_Texture(shadow_texture, render_texture) && target_ok;
+    backend->Release_Texture(replacement_texture);
+    backend->Release_Texture(wrong_size);
+    backend->Release_Texture(shadow_texture);
+    backend->Release_Texture(checker_texture);
     backend->Release_Static_Geometry(textured_quad);
     backend->Release_Static_Geometry(static_triangle);
+    if (!target_ok)
+    {
+        delete backend;
+        DestroyWindow(window);
+        UnregisterClassW(WindowClassName, instance);
+        std::cerr << "D3D12 backend smoke failed: render texture lifecycle, pixels, or output restoration is incorrect.\n";
+        return 16;
+    }
     if (!camera_ok)
     {
         delete backend;
@@ -302,6 +402,20 @@ int main()
     }
     backend->Flip_To_Primary();
     delete backend;
+    // Texture owners may outlive WW3D shutdown. A replacement device must not
+    // reinterpret an old slot/generation as its newly allocated render target.
+    backend = Create_Render_Backend(window, false);
+    bool device_generation_ok = backend != nullptr;
+    if (backend != nullptr)
+    {
+        const auto new_target = backend->Create_Render_Texture(61, 37);
+        device_generation_ok = new_target.Is_Valid() && new_target.slot == checker_texture.slot &&
+            new_target.generation != checker_texture.generation && !backend->Set_Render_Texture(checker_texture);
+        backend->Release_Texture(checker_texture);
+        device_generation_ok = backend->Set_Render_Texture(new_target) && device_generation_ok;
+        backend->Release_Texture(new_target);
+        delete backend;
+    }
     DestroyWindow(window);
     UnregisterClassW(WindowClassName, instance);
 
@@ -310,6 +424,11 @@ int main()
         std::cerr << "D3D12 backend smoke failed: resized/deferred output capture is incorrect.\n";
         return 14;
     }
-    std::cout << "D3D12 backend smoke passed: camera transforms, textured geometry, isolated 2D blending, presentation intervals, and resized/deferred RGBA8 readback.\n";
+    if (!device_generation_ok)
+    {
+        std::cerr << "D3D12 backend smoke failed: stale texture handle crossed device recreation.\n";
+        return 17;
+    }
+    std::cout << "D3D12 backend smoke passed: camera transforms, render textures/copies, device generations, textured geometry, isolated 2D blending, presentation intervals, and resized/deferred RGBA8 readback.\n";
     return 0;
 }

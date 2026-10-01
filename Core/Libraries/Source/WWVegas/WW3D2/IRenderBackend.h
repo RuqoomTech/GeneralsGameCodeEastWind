@@ -102,6 +102,13 @@ enum class RenderBackend2DBlendMode
     Additive,
 };
 
+enum class RenderBackendDecalBlendMode
+{
+    Multiply,
+    Alpha,
+    Additive,
+};
+
 struct RenderBackendGeometryHandle
 {
     unsigned int slot;
@@ -150,6 +157,13 @@ public:
     // World-space primitive draws use WWMath column-vector math and a 0..1
     // clip-depth projection. Screen-space draws remain independent of camera.
     virtual void Set_View_Projection(const Matrix4x4 &view_projection) = 0;
+    // Projected-shadow textures use RGBA8 color-only targets. Selection is
+    // between scenes; an empty handle restores output viewport/camera state.
+    virtual RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height) = 0;
+    virtual bool Set_Render_Texture(RenderBackendTextureHandle texture) = 0;
+    virtual bool Get_Render_Target_Size(int &width, int &height) const = 0;
+    // Whole RGBA8 level-zero copy, between scenes, with matching dimensions.
+    virtual bool Copy_Texture(RenderBackendTextureHandle destination, RenderBackendTextureHandle source) = 0;
     virtual void Invalidate_Cached_Render_States() = 0;
 
     // Device availability is renderer-owned. Frame callers use this before
@@ -284,10 +298,14 @@ public:
         return false;
     }
 
-    virtual void Release_Static_Texture(RenderBackendTextureHandle texture)
-    {
-        (void)texture;
-    }
+    virtual bool Is_Texture_Valid(RenderBackendTextureHandle texture) const = 0;
+    // World-space decal batches: texture * diffuse, clamp/no mipmaps, LEQUAL,
+    // no depth writes, clockwise culling, and the selected blend equation.
+    virtual bool Draw_Indexed_Decal_Triangles(
+        const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
+        const unsigned short *indices, unsigned int index_count,
+        RenderBackendTextureHandle texture, RenderBackendDecalBlendMode blend_mode) = 0;
+    virtual void Release_Texture(RenderBackendTextureHandle texture) = 0;
 
     virtual void Set_Ambient(const Vector3 & color) = 0;
     virtual void Set_Light_Environment(LightEnvironmentClass * light_env) = 0;

@@ -48,6 +48,10 @@ public:
                float dest_alpha, float z, unsigned int stencil) override;
     void Set_Viewport(const RenderBackendViewport &viewport) override;
     void Set_View_Projection(const Matrix4x4 &view_projection) override;
+    RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height) override;
+    bool Set_Render_Texture(RenderBackendTextureHandle texture) override;
+    bool Get_Render_Target_Size(int &width, int &height) const override;
+    bool Copy_Texture(RenderBackendTextureHandle destination, RenderBackendTextureHandle source) override;
     void Invalidate_Cached_Render_States() override;
     bool Is_Device_Ready() const override;
     bool Has_Stencil() const override;
@@ -90,7 +94,12 @@ public:
     bool Draw_Static_Indexed_Textured_Geometry(
         RenderBackendGeometryHandle geometry,
         RenderBackendTextureHandle texture) override;
-    void Release_Static_Texture(RenderBackendTextureHandle texture) override;
+    bool Is_Texture_Valid(RenderBackendTextureHandle texture) const override;
+    bool Draw_Indexed_Decal_Triangles(
+        const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
+        const unsigned short *indices, unsigned int index_count,
+        RenderBackendTextureHandle texture, RenderBackendDecalBlendMode blend_mode) override;
+    void Release_Texture(RenderBackendTextureHandle texture) override;
 
     void Set_Ambient(const Vector3 &color) override;
     void Set_Light_Environment(LightEnvironmentClass *light_env) override;
@@ -111,9 +120,10 @@ private:
         bool occupied = false;
     };
 
-    struct StaticTextureResource
+    struct TextureResource
     {
         ID3D12Resource *texture = nullptr;
+        ID3D12DescriptorHeap *rtv_heap = nullptr;
         unsigned int width = 0;
         unsigned int height = 0;
         unsigned int generation = 0;
@@ -131,13 +141,15 @@ private:
     void createSynchronizationObjects();
     void createPrimitivePipeline();
     void ensureTextureDescriptorCapacity(std::size_t required_capacity);
-    bool drawDynamicColorGeometry(
-        const RenderBackendColorVertex *vertices,
+    bool drawDynamicGeometry(
+        const void *vertices,
         unsigned int vertex_count,
+        unsigned int vertex_stride,
         const unsigned short *indices,
         unsigned int index_count,
         ID3D12PipelineState *pipeline,
-        bool screen_space);
+        bool screen_space,
+        RenderBackendTextureHandle texture = {});
     RenderBackendGeometryHandle createStaticGeometry(
         const void *vertices,
         unsigned int vertex_count,
@@ -146,13 +158,16 @@ private:
         unsigned int index_count,
         bool textured);
     bool drawStaticGeometry(RenderBackendGeometryHandle geometry, bool textured);
+    TextureResource *findTexture(RenderBackendTextureHandle texture);
+    ID3D12Resource *activeColorTarget() const;
+    void bindActiveTarget();
     void applyPendingClear();
     void submitScene(bool present);
     void presentPendingFrame();
     void waitForFrame(std::uint32_t frame_index);
     void releaseFrameUploads(std::uint32_t frame_index) noexcept;
     void releaseStaticGeometry(StaticGeometryResource &geometry) noexcept;
-    void releaseStaticTexture(StaticTextureResource &texture) noexcept;
+    void releaseTexture(TextureResource &texture) noexcept;
     void waitForGpu();
     void releaseObjects() noexcept;
 
@@ -178,14 +193,22 @@ private:
     ID3D12GraphicsCommandList *m_command_list = nullptr;
     ID3D12RootSignature *m_primitive_root_signature = nullptr;
     ID3D12PipelineState *m_primitive_pipeline = nullptr;
+    ID3D12PipelineState *m_color_only_pipeline = nullptr;
+    ID3D12PipelineState *m_color_only_alpha_pipeline = nullptr;
+    ID3D12PipelineState *m_color_only_additive_pipeline = nullptr;
     ID3D12PipelineState *m_2d_opaque_pipeline = nullptr;
     ID3D12PipelineState *m_2d_alpha_pipeline = nullptr;
     ID3D12PipelineState *m_2d_additive_pipeline = nullptr;
+    ID3D12PipelineState *m_decal_pipelines[3]{};
     ID3D12PipelineState *m_textured_pipeline = nullptr;
+    ID3D12PipelineState *m_textured_color_only_pipeline = nullptr;
     ID3D12Fence *m_fence = nullptr;
     void *m_fence_event = nullptr;
 
     RenderBackendViewport m_viewport{};
+    RenderBackendViewport m_output_viewport{};
+    RenderBackendTextureHandle m_selected_texture;
+    float m_output_view_projection[16]{};
     float m_view_projection[16]{
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
@@ -207,5 +230,5 @@ private:
     std::uint64_t m_frame_fence_values[FrameCount]{};
     std::vector<ID3D12Resource *> m_frame_uploads[FrameCount];
     std::vector<StaticGeometryResource> m_static_geometry;
-    std::vector<StaticTextureResource> m_static_textures;
+    std::vector<TextureResource> m_textures;
 };

@@ -125,7 +125,35 @@ TextureBaseClass::~TextureBaseClass()
 		D3DTexture = nullptr;
 	}
 
-	DX8TextureManagerClass::Remove(this);
+	if (RendererTexture.Is_Valid()) {
+		// WW3D may already have shut down. A new backend rejects the old generation.
+		if (RendererOwner == WW3D::Get_Render_Backend())
+			RendererOwner->Release_Texture(RendererTexture);
+	} else {
+		DX8TextureManagerClass::Remove(this);
+	}
+}
+
+RenderBackendTextureHandle TextureBaseClass::Get_Renderer_Texture() const
+{
+	return RendererOwner == WW3D::Get_Render_Backend() ? RendererTexture : RenderBackendTextureHandle{};
+}
+
+TextureClass::TextureClass(unsigned width, unsigned height, RenderBackendTextureHandle texture, IRenderBackend *owner)
+	: TextureBaseClass(width, height, MIP_LEVELS_1, POOL_DEFAULT, true, false),
+	  TextureFormat(WW3D_FORMAT_A8R8G8B8), Filter(MIP_LEVELS_1)
+{
+	RendererTexture = texture;
+	RendererOwner = owner;
+	Initialized = IsProcedural = true;
+	LastAccessed = WW3D::Get_Sync_Time();
+}
+
+bool TextureClass::Copy_From(const TextureClass &source)
+{
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	return backend != nullptr && backend == RendererOwner && backend == source.RendererOwner &&
+		backend->Copy_Texture(RendererTexture, source.RendererTexture);
 }
 
 
@@ -1069,6 +1097,12 @@ SurfaceClass *TextureClass::Get_Surface_Level(unsigned int level)
 */
 void TextureClass::Get_Level_Description( SurfaceClass::SurfaceDescription & desc, unsigned int level )
 {
+	if (RendererTexture.Is_Valid()) {
+		desc.Format = level == 0 ? TextureFormat : WW3D_FORMAT_UNKNOWN;
+		desc.Width = level == 0 ? static_cast<unsigned>(Width) : 0;
+		desc.Height = level == 0 ? static_cast<unsigned>(Height) : 0;
+		return;
+	}
 	SurfaceClass * surf = Get_Surface_Level(level);
 	if (surf != nullptr) {
 		surf->Get_Description(desc);
@@ -1099,6 +1133,7 @@ IDirect3DSurface8 *TextureClass::Get_D3D_Surface_Level(unsigned int level)
 */
 unsigned TextureClass::Get_Texture_Memory_Usage() const
 {
+	if (RendererTexture.Is_Valid()) return static_cast<unsigned>(Width) * static_cast<unsigned>(Height) * 4u;
 	int size=0;
 	if (!Peek_D3D_Texture()) return 0;
 	for (unsigned i=0;i<Peek_D3D_Texture()->GetLevelCount();++i)

@@ -1,5 +1,18 @@
 include("${RTS_SOURCE_DIR}/cmake/tests/PolicyTestHelpers.cmake")
 
+rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/texproject.cpp"
+    "DX8Wrapper"
+    "projector target selection must remain on the renderer-neutral texture seam")
+foreach(game IN ITEMS Generals GeneralsMD)
+    foreach(retired_shadow_operation IN ITEMS "DX8Wrapper::Create_Render_Target" "Get_Surface_Level()")
+        rts_policy_require_absent(
+            "${game}/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shadow/W3DProjectedShadow.cpp"
+            "${retired_shadow_operation}"
+            "projected-shadow texture allocation/copy must not restore legacy GPU surfaces")
+    endforeach()
+endforeach()
+
 foreach(retired_file IN ITEMS
     "cmake/dx8.cmake"
     "Core/Libraries/Source/WWVegas/WW3D2/Backend/DX8Backend.cpp"
@@ -291,7 +304,7 @@ rts_policy_require_contains(
     "the Windows GPU smoke test must sample the uploaded texture on indexed geometry")
 rts_policy_require_contains(
     "Core/Tests/D3D12BackendSmokeTest.cpp"
-    "Release_Static_Texture"
+    "Release_Texture"
     "the Windows GPU smoke test must cover explicit texture destruction")
 
 foreach(_legacy_header IN ITEMS "d3d8.h" "d3d9.h" "d3d11.h")

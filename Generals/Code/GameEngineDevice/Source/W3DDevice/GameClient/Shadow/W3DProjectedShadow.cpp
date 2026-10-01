@@ -260,20 +260,14 @@ Bool W3DProjectedShadowManager::ReAcquireResources()
 
 	DEBUG_ASSERTCRASH(m_dynamicRenderTarget == nullptr, ("Acquire of existing shadow render target"));
 
-	m_renderTargetHasAlpha=TRUE;
-	if ((m_dynamicRenderTarget=DX8Wrapper::Create_Render_Target (DEFAULT_RENDER_TARGET_WIDTH, DEFAULT_RENDER_TARGET_HEIGHT, WW3D_FORMAT_A8R8G8B8)) == nullptr)
-	{
-			m_renderTargetHasAlpha=FALSE;
-
-			//failed to get a render target with alpha.
-			//try again without.
-			m_dynamicRenderTarget=DX8Wrapper::Create_Render_Target (DEFAULT_RENDER_TARGET_WIDTH, DEFAULT_RENDER_TARGET_HEIGHT);
-	}
+	m_dynamicRenderTarget = WW3D::Create_Render_Texture(DEFAULT_RENDER_TARGET_WIDTH, DEFAULT_RENDER_TARGET_HEIGHT);
+	m_renderTargetHasAlpha = m_dynamicRenderTarget != nullptr;
+	if (m_dynamicRenderTarget == nullptr) return FALSE;
 
 	LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
 
 	DEBUG_ASSERTCRASH(m_pDev, ("Trying to ReAcquireResources on W3DProjectedShadowManager without device"));
-	DEBUG_ASSERTCRASH(shadowDecalIndexBufferD3D == nullptr && shadowDecalIndexBufferD3D == nullptr, ("ReAcquireResources not released in W3DProjectedShadowManager"));
+	DEBUG_ASSERTCRASH(shadowDecalIndexBufferD3D == nullptr && shadowDecalVertexBufferD3D == nullptr, ("ReAcquireResources not released in W3DProjectedShadowManager"));
 
 	if (FAILED(m_pDev->CreateIndexBuffer
 	(
@@ -2125,7 +2119,7 @@ void W3DProjectedShadow::updateTexture(Vector3 &lightPos)
 		objToLight.Normalize();
 		objToLight =  objPos + objToLight * 2000.0f;
 
-		m_shadowProjector->Compute_Perspective_Projection(m_robj,objToLight);
+		if (!m_shadowProjector->Compute_Perspective_Projection(m_robj,objToLight)) return;
 		m_shadowProjector->Set_Render_Target(TheW3DProjectedShadowManager->getRenderTarget());
 
 		//Set ambient to 0, so we get a black shadow on solid background
@@ -2134,16 +2128,11 @@ void W3DProjectedShadow::updateTexture(Vector3 &lightPos)
 
 		context->light_environment->Reset(m_robj->Get_Position(), Vector3(0,0,0));
 
-		m_shadowProjector->Compute_Texture(m_robj,context);
+		if (!m_shadowProjector->Compute_Texture(m_robj,context)) return;
 
-		//Need to copy generated texture into permanent texture.
-		SurfaceClass *oldSurface=m_shadowTexture[0]->getTexture()->Get_Surface_Level();
-		SurfaceClass *newSurface=TheW3DProjectedShadowManager->getRenderTarget()->Get_Surface_Level();
+		// Copy the generated RGBA8 shadow entirely on the GPU.
+		if (!m_shadowTexture[0]->getTexture()->Copy_From(*TheW3DProjectedShadowManager->getRenderTarget())) return;
 
-		//Copy shadow from temporary video-memory surface into a permanent texture
-		oldSurface->Copy(0,0,0,0,DEFAULT_RENDER_TARGET_WIDTH,DEFAULT_RENDER_TARGET_HEIGHT,newSurface);
-		REF_PTR_RELEASE(newSurface);
-		REF_PTR_RELEASE(oldSurface);
 		m_shadowTexture[0]->updateBounds(TheW3DShadowManager->getLightPosWorld(0),m_robj);	//update local shadow bounds
 	}
 	else
@@ -2207,7 +2196,7 @@ void W3DProjectedShadow::update()
 			objToLight.Normalize();
 			objToLight =  m_robj->Get_Position() + objToLight * 2000.0f;
 
-			m_shadowProjector->Compute_Perspective_Projection(m_robj,objToLight);
+			if (!m_shadowProjector->Compute_Perspective_Projection(m_robj,objToLight)) return;
 		}
 		setObjPosHistory(m_robj->Get_Position());
 	}
@@ -2220,7 +2209,8 @@ Int W3DShadowTexture::init(RenderObjClass *robj)
 
 	TheW3DProjectedShadowManager->getRenderTarget()->Get_Level_Description(surface_desc);
 
-	TextureClass *new_texture = MSGNEW("TextureClass") TextureClass(surface_desc.Width,surface_desc.Height,surface_desc.Format,MIP_LEVELS_1);
+	TextureClass *new_texture = WW3D::Create_Render_Texture(surface_desc.Width, surface_desc.Height);
+	if (new_texture == nullptr) return FALSE;
 
 	setTexture(new_texture);
 

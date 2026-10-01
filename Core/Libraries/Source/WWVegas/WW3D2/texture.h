@@ -48,6 +48,7 @@
 #include "WWLib/wwstring.h"
 #include "WWMath/vector3.h"
 #include "texturefilter.h"
+#include "IRenderBackend.h"
 
 struct IDirect3DBaseTexture8;
 struct IDirect3DTexture8;
@@ -155,7 +156,10 @@ public:
 	// This utility function processes the texture reduction (used during rendering)
 	void Invalidate();
 
-	// texture accessors (dx8)
+	// Native renderer resource; never part of asset serialization.
+	RenderBackendTextureHandle Get_Renderer_Texture() const;
+
+	// Unported legacy texture accessors
 	IDirect3DBaseTexture8 *Peek_D3D_Base_Texture() const;
 	void Set_D3D_Base_Texture(IDirect3DBaseTexture8* tex);
 
@@ -205,6 +209,8 @@ protected:
 	void Load_Locked_Surface();
 	void Poke_Texture(IDirect3DBaseTexture8* tex) { D3DTexture = tex; }
 
+	RenderBackendTextureHandle RendererTexture;
+	IRenderBackend *RendererOwner = nullptr;
 	bool Initialized;
 
 	// For debug purposes the texture sets this true if it is a lightmap texture
@@ -325,6 +331,7 @@ public:
 	// Get the surface of one of the mipmap levels (defaults to highest-resolution one)
 	SurfaceClass *Get_Surface_Level(unsigned int level = 0);
 	IDirect3DSurface8 *Get_D3D_Surface_Level(unsigned int level = 0);
+	bool Copy_From(const TextureClass &source);
 	void Get_Level_Description( SurfaceClass::SurfaceDescription & desc, unsigned int level = 0 );
 
 	TextureFilterClass& Get_Filter() { return Filter; }
@@ -346,6 +353,10 @@ protected:
 
 	// legacy
 	TextureFilterClass	Filter;
+
+private:
+	friend class WW3D;
+	TextureClass(unsigned width, unsigned height, RenderBackendTextureHandle texture, IRenderBackend *owner);
 };
 
 class ZTextureClass : public TextureBaseClass

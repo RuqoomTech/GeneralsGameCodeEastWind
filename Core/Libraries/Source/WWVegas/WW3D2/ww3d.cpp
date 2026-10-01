@@ -105,6 +105,7 @@
 #include "dx8renderer.h"
 #include "Backend/RenderBackend.h"
 #include "IRenderBackend.h"
+#include "texture.h"
 #include "render2d.h"
 #include "WWLib/bound.h"
 #include "rddesc.h"
@@ -629,12 +630,34 @@ WW3DErrorType WW3D::Set_Device_Resolution(int width,int height,int bits,int wind
  *   3/24/98    GTH : Created.                                                                 *
  *   1/25/2001  gth : converted to dx8                                                         *
  *=============================================================================================*/
+TextureClass *WW3D::Create_Render_Texture(unsigned width, unsigned height)
+{
+	if (RenderBackend == nullptr) return nullptr;
+	const RenderBackendTextureHandle handle = RenderBackend->Create_Render_Texture(width, height);
+	if (!handle.Is_Valid()) return nullptr;
+	try {
+		return new TextureClass(width, height, handle, RenderBackend);
+	} catch (...) {
+		RenderBackend->Release_Texture(handle);
+		throw;
+	}
+}
+
+bool WW3D::Set_Render_Texture(TextureClass *texture)
+{
+	if (RenderBackend == nullptr) return false;
+	if (texture == nullptr) return RenderBackend->Set_Render_Texture({});
+	const RenderBackendTextureHandle handle = texture->Get_Renderer_Texture();
+	return handle.Is_Valid() && RenderBackend->Set_Render_Texture(handle);
+}
+
 void WW3D::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
 {
 	set_w = set_h = set_bits = 0;
 	set_windowed = true;
 	if (RenderBackend != nullptr) {
 		RenderBackend->Get_Output_Description(set_w, set_h, set_bits, set_windowed);
+		RenderBackend->Get_Render_Target_Size(set_w, set_h);
 	}
 }
 
@@ -654,7 +677,10 @@ void WW3D::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,b
  *=============================================================================================*/
 void WW3D::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
 {
-	Get_Render_Target_Resolution(set_w, set_h, set_bits, set_windowed);
+	set_w = set_h = set_bits = 0;
+	set_windowed = true;
+	if (RenderBackend != nullptr)
+		RenderBackend->Get_Output_Description(set_w, set_h, set_bits, set_windowed);
 }
 
 
