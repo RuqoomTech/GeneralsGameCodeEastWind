@@ -258,3 +258,29 @@ void MatrixMapperClass::Apply(int uv_array_index)
 
 
 }
+
+bool MatrixMapperClass::Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &)
+{
+    TextureMapperRenderMapping result;
+    result.input = TextureMapperRenderMapping::CameraPosition;
+    result.matrix = ViewToPixel;
+    switch (Type) {
+    case ORTHO_PROJECTION: break;
+    case PERSPECTIVE_PROJECTION:
+        result.matrix[2] = ViewToPixel[3];
+        result.projected = true;
+        break;
+    case DEPTH_GRADIENT:
+        result.matrix[0].Set(0,0,0,GradientUCoord);
+        result.matrix[1] = ViewToPixel[2];
+        break;
+    case NORMAL_GRADIENT:
+        result.input = TextureMapperRenderMapping::CameraNormal;
+        result.matrix[0].Set(0,0,0,GradientUCoord);
+        result.matrix[1].Set(ViewSpaceProjectionNormal.X,ViewSpaceProjectionNormal.Y,ViewSpaceProjectionNormal.Z,0);
+        break;
+    default: return false;
+    }
+    mapping = result;
+    return true;
+}

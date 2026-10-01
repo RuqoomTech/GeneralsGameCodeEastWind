@@ -42,7 +42,7 @@
 #include "WW3D2/meshmdl.h"
 #include "WW3D2/assetmgr.h"
 #include "WW3D2/texproject.h"
-#include "WW3D2/dx8renderer.h"
+#include "WW3D2/meshrenderer.h"
 #include "Lib/BaseType.h"
 #include "W3DDevice/GameClient/HeightMap.h"
 #include "Common/GlobalData.h"
@@ -1116,7 +1116,7 @@ Int W3DProjectedShadowManager::renderShadows(RenderInfoClass & rinfo)
 	{
 		// Render the object
 		rinfo.Camera.Apply();
-		TheDX8MeshRenderer.Set_Camera(&rinfo.Camera);
+		TheMeshRenderer.Set_Camera(&rinfo.Camera);
 
 		//keep track of active decal texture so we can render all decals at once.
 		W3DShadowTexture *lastShadowDecalTexture=nullptr;
@@ -1228,7 +1228,7 @@ Int W3DProjectedShadowManager::renderShadows(RenderInfoClass & rinfo)
 		}
 
 		if (!flushDecals(lastShadowDecalTexture,lastShadowType)) return 0;	//make sure there are not any unrendered decals left over.
-		TheDX8MeshRenderer.Flush();	//draw all the shadow receiving objects
+		TheMeshRenderer.Flush();	//draw all the shadow receiving objects
 	}
 	if (m_decalList)
 	{

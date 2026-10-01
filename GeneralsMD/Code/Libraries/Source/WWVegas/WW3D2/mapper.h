@@ -49,6 +49,21 @@
 
 class INIClass;
 
+class CameraClass;
+
+// CPU texgen packet, prepared once per draw so animation advances once.
+// Projected coordinates retain q until pixel shading after interpolation.
+struct TextureMapperRenderMapping
+{
+	enum Input { UV, CameraPosition, CameraNormal, CameraReflection };
+	Matrix4x4 matrix = Matrix4x4(true);
+	Input input = UV;
+	bool projected = false;
+	Vector3 Map_Coordinate(const Vector2 &uv, const Vector3 &camera_position,
+	                       const Vector3 &camera_normal) const;
+};
+
+
 /*
 ** TextureMapperClass
 ** Base class for all texture mappers.
@@ -91,6 +106,8 @@ class TextureMapperClass : public RefCountClass
 		virtual int								Mapper_ID() const { return MAPPER_ID_UNKNOWN;}
 
 		virtual TextureMapperClass *		Clone() const = 0;
+
+		virtual bool Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera);
 
 		virtual bool							Is_Time_Variant() { return false; }
 		virtual void							Apply(int uv_array_index) = 0;
@@ -371,6 +388,7 @@ public:
 	EdgeMapperClass(const EdgeMapperClass & src);
 	virtual int	Mapper_ID() const override { return MAPPER_ID_EDGE;}
 	virtual TextureMapperClass* Clone() const override { return NEW_REF( EdgeMapperClass, (*this)); }
+	virtual bool Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Reset() override;
 	virtual bool Is_Time_Variant() override { return true; }
@@ -391,7 +409,9 @@ public:
 	WSEnvMapperClass(const WSEnvMapperClass & src) : TextureMapperClass(src), Axis(src.Axis) { }
 	WSEnvMapperClass(const INIClass &ini, const char *section, unsigned int stage);
 	virtual bool Needs_Normals() override { return true; }
+	void Calculate_Render_Texture_Matrix(Matrix4x4 &tex_matrix, CameraClass &camera);
 	virtual void Calculate_Texture_Matrix(Matrix4x4 &tex_matrix) override;
+	void Calculate_With_View(Matrix4x4 &tex_matrix, const Matrix4x4 &view);
 protected:
 	AxisType		Axis;
 };
@@ -464,8 +484,10 @@ public:
 	ScreenMapperClass(const ScreenMapperClass & src) : LinearOffsetTextureMapperClass(src) { }
 	virtual int	Mapper_ID() const override { return MAPPER_ID_SCREEN;}
 	virtual TextureMapperClass* Clone() const override { return NEW_REF( ScreenMapperClass, (*this)); }
+	virtual bool Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Calculate_Texture_Matrix(Matrix4x4 &tex_matrix) override;
+	void Calculate_With_Projection(Matrix4x4 &tex_matrix, const Matrix4x4 &projection);
 };
 
 /**
@@ -533,8 +555,10 @@ public:
 	GridWSEnvMapperClass(float fps, unsigned int gridwidth_log2, unsigned int last_frame, unsigned int offset, AxisType axis, unsigned int stage);
 	GridWSEnvMapperClass(const GridWSEnvMapperClass & src);
 	GridWSEnvMapperClass(const INIClass &ini, const char *section, unsigned int stage);
+	void Calculate_Render_Texture_Matrix(Matrix4x4 &tex_matrix, CameraClass &camera);
 	virtual void Calculate_Texture_Matrix(Matrix4x4 &tex_matrix) override;
 	virtual bool Needs_Normals() override { return true; }
+	void Calculate_With_View(Matrix4x4 &tex_matrix, const Matrix4x4 &view);
 protected:
 	AxisType		Axis;
 };

@@ -44,8 +44,7 @@
 #include "WWMath/matrix4.h"
 #include "mapper.h"
 
-// Modified to use DX 8 texture matrices
-// Hector Yee 1/29/01
+// Projected texture mapping is prepared on the CPU.
 
 /**
 ** MatrixMapperClass.  Does the chore of computing the u-v coordinates for
@@ -96,6 +95,7 @@ public:
 
 	virtual TextureMapperClass*	Clone() const override { 	WWASSERT(0);	return nullptr; }
 
+	virtual bool Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera) override;
 	virtual void			Apply(int uv_array_index) override;
 	virtual void			Calculate_Texture_Matrix(Matrix4x4 &tex_matrix) override;
 
@@ -130,6 +130,7 @@ public:
 
 	virtual TextureMapperClass *Clone() const override { return NEW_REF( CompositeMatrixMapperClass, (*this)); }
 
+	virtual bool Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Calculate_Texture_Matrix(Matrix4x4 &tex_matrix) override;
 

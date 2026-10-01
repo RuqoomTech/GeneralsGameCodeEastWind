@@ -36,6 +36,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "mapper.h"
+#include "camera.h"
 #include "ww3d.h"
 #include "WWLib/INI.h"
 #include "WWLib/chunkio.h"
@@ -769,37 +770,9 @@ WSEnvMapperClass::WSEnvMapperClass(const INIClass &ini, const char *section, uns
 
 void WSEnvMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
 {
-	// The canonical environment map
-	// scale the normal by (.5,.5) and add (.5,.5) to move it to (0,1) range
-	switch (Axis) {
-		case AXISTYPE_X:
-			tex_matrix.Init(	0.0f, 0.5f, 0.0f, 0.5f,
-									0.0f, 0.0f, 0.5f, 0.5f,
-									0.0f, 0.0f, 1.0f, 0.0f,
-									0.0f, 0.0f, 0.0f, 1.0f );
-			break;
-		case AXISTYPE_Y:
-			tex_matrix.Init(	0.5f, 0.0f, 0.0f, 0.5f,
-									0.0f, 0.0f, 0.5f, 0.5f,
-									0.0f, 0.0f, 1.0f, 0.0f,
-									0.0f, 0.0f, 0.0f, 1.0f );
-			break;
-		case AXISTYPE_Z:
-		default:
-			tex_matrix.Init(	0.5f, 0.0f, 0.0f, 0.5f,
-									0.0f, 0.5f, 0.0f, 0.5f,
-									0.0f, 0.0f, 1.0f, 0.0f,
-									0.0f, 0.0f, 0.0f, 1.0f );
-			break;
-	}
-	// multiply by inverse of view transform
-	Matrix4x4 mat;
-	DX8Wrapper::Get_Transform(D3DTS_VIEW,mat);
-	Matrix4x4 mat2(	mat[0].X, mat[1].X, mat[2].X, 0.0f,
-						mat[0].Y, mat[1].Y, mat[2].Y, 0.0f,
-						mat[0].Z, mat[1].Z, mat[2].Z, 0.0f,
-						0.0f, 0.0f, 0.0f, 1.0f );
-	tex_matrix = tex_matrix * mat2;
+    Matrix4x4 view;
+    DX8Wrapper::Get_Transform(D3DTS_VIEW, view);
+    Calculate_With_View(tex_matrix, view);
 }
 
 void WSClassicEnvironmentMapperClass::Apply(int uv_array_index)
@@ -906,41 +879,9 @@ void ScreenMapperClass::Apply(int uv_array_index)
 
 void ScreenMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
 {
-	unsigned int delta = WW3D::Get_Sync_Time() - LastUsedSyncTime;
-	float del = (float)delta;
-	float offset_u = CurrentUVOffset.X + UVOffsetDeltaPerMS.X * del;
-	float offset_v = CurrentUVOffset.Y + UVOffsetDeltaPerMS.Y * del;
-
-	// We need to clamp these texture coordinates to a reasonable range so the hardware doesn't
-	// choke on them. We do this in one of two ways:
-	// If ClampFix is not TRUE we use the fractional part of the offset, restricting it between
-	// 0 and 1 with wraparound. This works well for tiled textures.
-	// If ClampFix is TRUE we clamp the offsets between -Scale and +Scale with no wraparound.
-	// This works well for clamped textures.
-	if (!ClampFix) {
-		offset_u = offset_u - WWMath::Floor(offset_u);
-		offset_v = offset_v - WWMath::Floor(offset_v);
-	} else {
-		offset_u = WWMath::Clamp(offset_u, -Scale.X, Scale.X);
-		offset_v = WWMath::Clamp(offset_v, -Scale.Y, Scale.Y);
-	}
-
-	// multiply by projection matrix
-	// followed by scale and translation
-	DX8Wrapper::Get_Transform(D3DTS_PROJECTION, tex_matrix);
-	tex_matrix[0] *= Scale.X; // entire row since we're pre-multiplying
-	tex_matrix[1] *= Scale.Y;
-	Vector4 last(tex_matrix[3]); // this gets the w
-	last *= offset_u; // multiply by w because the projected flag will divide by w
-	tex_matrix[0] += last;
-	last = tex_matrix[3];
-	last *= offset_v;
-	tex_matrix[1] += last;
-
-	// Update state
-	CurrentUVOffset.X = offset_u;
-	CurrentUVOffset.Y = offset_v;
-	LastUsedSyncTime = WW3D::Get_Sync_Time();
+    Matrix4x4 projection;
+    DX8Wrapper::Get_Transform(D3DTS_PROJECTION, projection);
+    Calculate_With_Projection(tex_matrix, projection);
 }
 
 RandomTextureMapperClass::RandomTextureMapperClass(float fps, const Vector2 &scale, unsigned int stage):
@@ -1152,49 +1093,9 @@ GridWSEnvMapperClass::GridWSEnvMapperClass(const INIClass &ini, const char *sect
 
 void GridWSEnvMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
 {
-	// multiply by inverse of view transform
-	Matrix4x4 mat;
-	DX8Wrapper::Get_Transform(D3DTS_VIEW,mat);
-	Matrix4x4 mv (	mat[0].X, mat[1].X, mat[2].X, 0.0f,
-						mat[0].Y, mat[1].Y, mat[2].Y, 0.0f,
-						mat[0].Z, mat[1].Z, mat[2].Z, 0.0f,
-						0.0f, 0.0f, 0.0f, 1.0f );
-
-	update_temporal_state();
-
-	float u_offset, v_offset;
-	calculate_uv_offset(&u_offset, &v_offset);
-
-	float del=0.5f * OOGridWidth;
-	// Set up the offset matrix
-	Matrix4x4 md;
-
-	switch (Axis) {
-		case AXISTYPE_X:
-			md.Init(				0.0f, del, 0.0f, u_offset + del,
-									0.0f, 0.0f, del, v_offset + del,
-									0.0f, 0.0f, 1.0f, 0.0f,
-									0.0f, 0.0f, 0.0f, 1.0f );
-			break;
-		case AXISTYPE_Y:
-			md.Init(				del, 0.0f, 0.0f, u_offset + del,
-									0.0f, 0.0f, del, v_offset + del,
-									0.0f, 0.0f, 1.0f, 0.0f,
-									0.0f, 0.0f, 0.0f, 1.0f );
-			break;
-		case AXISTYPE_Z:
-		default:
-			md.Init(				del, 0.0f, 0.0f, u_offset + del,
-									0.0f, del, 0.0f, v_offset + del,
-									0.0f, 0.0f, 1.0f, 0.0f,
-									0.0f, 0.0f, 0.0f, 1.0f );
-			break;
-	}
-	// multiply by inverse of view transform, then
-	// change the world space reflection vector to a UV coordinate
-	// then offset by the grid coordinate
-
-	tex_matrix = md * mv;
+    Matrix4x4 view;
+    DX8Wrapper::Get_Transform(D3DTS_VIEW, view);
+    Calculate_With_View(tex_matrix, view);
 }
 
 /***********************************************************************************************
@@ -1282,4 +1183,201 @@ void GridWSEnvironmentMapperClass::Apply(int uv_array_index)
 
 	// Tell rasterizer to expect 2D matrices
 	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+}
+
+Vector3 TextureMapperRenderMapping::Map_Coordinate(const Vector2 &uv,
+    const Vector3 &camera_position, const Vector3 &camera_normal) const
+{
+	Vector3 value(uv.X, uv.Y, 1.0f);
+	if (input == CameraPosition) value = camera_position;
+	else if (input == CameraNormal) value = camera_normal;
+	else if (input == CameraReflection) {
+	    Vector3 incident = camera_position;
+	    incident.Normalize();
+	    value = incident - camera_normal * (2.0f * Vector3::Dot_Product(incident, camera_normal));
+	}
+	Vector4 coordinate(value.X, value.Y, value.Z, 1.0f);
+	return Vector3(Vector4::Dot_Product(matrix[0], coordinate),
+	               Vector4::Dot_Product(matrix[1], coordinate),
+	               projected ? Vector4::Dot_Product(matrix[2], coordinate) : 1.0f);
+}
+
+bool TextureMapperClass::Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera)
+{
+	TextureMapperRenderMapping result;
+	switch (Mapper_ID()) {
+	case MAPPER_ID_LINEAR_OFFSET: case MAPPER_ID_SCALE: case MAPPER_ID_GRID:
+	case MAPPER_ID_ROTATE: case MAPPER_ID_SINE_LINEAR_OFFSET: case MAPPER_ID_STEP_LINEAR_OFFSET:
+	case MAPPER_ID_ZIGZAG_LINEAR_OFFSET: case MAPPER_ID_RANDOM:
+	    break;
+	case MAPPER_ID_CLASSIC_ENVIRONMENT: case MAPPER_ID_GRID_CLASSIC_ENVIRONMENT:
+	case MAPPER_ID_WS_CLASSIC_ENVIRONMENT: case MAPPER_ID_GRID_WS_CLASSIC_ENVIRONMENT:
+	    result.input = TextureMapperRenderMapping::CameraNormal; break;
+	case MAPPER_ID_ENVIRONMENT: case MAPPER_ID_GRID_ENVIRONMENT:
+	case MAPPER_ID_WS_ENVIRONMENT: case MAPPER_ID_GRID_WS_ENVIRONMENT:
+	    result.input = TextureMapperRenderMapping::CameraReflection; break;
+	default: return false;
+	}
+	// World-space variants need the current view matrix, not legacy device state.
+	if (auto world = dynamic_cast<WSEnvMapperClass *>(this))
+	    world->Calculate_Render_Texture_Matrix(result.matrix, camera);
+	else if (auto grid_world = dynamic_cast<GridWSEnvMapperClass *>(this))
+	    grid_world->Calculate_Render_Texture_Matrix(result.matrix, camera);
+	else Calculate_Texture_Matrix(result.matrix);
+	mapping = result;
+	return true;
+}
+
+bool EdgeMapperClass::Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &)
+{
+	TextureMapperRenderMapping result;
+	result.input = UseReflect ? TextureMapperRenderMapping::CameraReflection : TextureMapperRenderMapping::CameraNormal;
+	Calculate_Texture_Matrix(result.matrix);
+	mapping = result;
+	return true;
+}
+
+void WSEnvMapperClass::Calculate_With_View(Matrix4x4 &tex_matrix, const Matrix4x4 &view)
+{
+	// The canonical environment map
+	// scale the normal by (.5,.5) and add (.5,.5) to move it to (0,1) range
+	switch (Axis) {
+		case AXISTYPE_X:
+			tex_matrix.Init(	0.0f, 0.5f, 0.0f, 0.5f,
+									0.0f, 0.0f, 0.5f, 0.5f,
+									0.0f, 0.0f, 1.0f, 0.0f,
+									0.0f, 0.0f, 0.0f, 1.0f );
+			break;
+		case AXISTYPE_Y:
+			tex_matrix.Init(	0.5f, 0.0f, 0.0f, 0.5f,
+									0.0f, 0.0f, 0.5f, 0.5f,
+									0.0f, 0.0f, 1.0f, 0.0f,
+									0.0f, 0.0f, 0.0f, 1.0f );
+			break;
+		case AXISTYPE_Z:
+		default:
+			tex_matrix.Init(	0.5f, 0.0f, 0.0f, 0.5f,
+									0.0f, 0.5f, 0.0f, 0.5f,
+									0.0f, 0.0f, 1.0f, 0.0f,
+									0.0f, 0.0f, 0.0f, 1.0f );
+			break;
+	}
+	// multiply by inverse of view transform
+	Matrix4x4 mat;
+	mat = view;
+	Matrix4x4 mat2(	mat[0].X, mat[1].X, mat[2].X, 0.0f,
+						mat[0].Y, mat[1].Y, mat[2].Y, 0.0f,
+						mat[0].Z, mat[1].Z, mat[2].Z, 0.0f,
+						0.0f, 0.0f, 0.0f, 1.0f );
+	tex_matrix = tex_matrix * mat2;
+}
+
+
+void GridWSEnvMapperClass::Calculate_With_View(Matrix4x4 &tex_matrix, const Matrix4x4 &view)
+{
+	// multiply by inverse of view transform
+	Matrix4x4 mat;
+	mat = view;
+	Matrix4x4 mv (	mat[0].X, mat[1].X, mat[2].X, 0.0f,
+						mat[0].Y, mat[1].Y, mat[2].Y, 0.0f,
+						mat[0].Z, mat[1].Z, mat[2].Z, 0.0f,
+						0.0f, 0.0f, 0.0f, 1.0f );
+
+	update_temporal_state();
+
+	float u_offset, v_offset;
+	calculate_uv_offset(&u_offset, &v_offset);
+
+	float del=0.5f * OOGridWidth;
+	// Set up the offset matrix
+	Matrix4x4 md;
+
+	switch (Axis) {
+		case AXISTYPE_X:
+			md.Init(				0.0f, del, 0.0f, u_offset + del,
+									0.0f, 0.0f, del, v_offset + del,
+									0.0f, 0.0f, 1.0f, 0.0f,
+									0.0f, 0.0f, 0.0f, 1.0f );
+			break;
+		case AXISTYPE_Y:
+			md.Init(				del, 0.0f, 0.0f, u_offset + del,
+									0.0f, 0.0f, del, v_offset + del,
+									0.0f, 0.0f, 1.0f, 0.0f,
+									0.0f, 0.0f, 0.0f, 1.0f );
+			break;
+		case AXISTYPE_Z:
+		default:
+			md.Init(				del, 0.0f, 0.0f, u_offset + del,
+									0.0f, del, 0.0f, v_offset + del,
+									0.0f, 0.0f, 1.0f, 0.0f,
+									0.0f, 0.0f, 0.0f, 1.0f );
+			break;
+	}
+	// multiply by inverse of view transform, then
+	// change the world space reflection vector to a UV coordinate
+	// then offset by the grid coordinate
+
+	tex_matrix = md * mv;
+}
+
+
+void ScreenMapperClass::Calculate_With_Projection(Matrix4x4 &tex_matrix, const Matrix4x4 &projection)
+{
+	unsigned int delta = WW3D::Get_Sync_Time() - LastUsedSyncTime;
+	float del = (float)delta;
+	float offset_u = CurrentUVOffset.X + UVOffsetDeltaPerMS.X * del;
+	float offset_v = CurrentUVOffset.Y + UVOffsetDeltaPerMS.Y * del;
+
+	// We need to clamp these texture coordinates to a reasonable range so the hardware doesn't
+	// choke on them. We do this in one of two ways:
+	// If ClampFix is not TRUE we use the fractional part of the offset, restricting it between
+	// 0 and 1 with wraparound. This works well for tiled textures.
+	// If ClampFix is TRUE we clamp the offsets between -Scale and +Scale with no wraparound.
+	// This works well for clamped textures.
+	if (!ClampFix) {
+		offset_u = offset_u - WWMath::Floor(offset_u);
+		offset_v = offset_v - WWMath::Floor(offset_v);
+	} else {
+		offset_u = WWMath::Clamp(offset_u, -Scale.X, Scale.X);
+		offset_v = WWMath::Clamp(offset_v, -Scale.Y, Scale.Y);
+	}
+
+	// multiply by projection matrix
+	// followed by scale and translation
+	tex_matrix = projection;
+	tex_matrix[0] *= Scale.X; // entire row since we're pre-multiplying
+	tex_matrix[1] *= Scale.Y;
+	Vector4 last(tex_matrix[3]); // this gets the w
+	last *= offset_u; // multiply by w because the projected flag will divide by w
+	tex_matrix[0] += last;
+	last = tex_matrix[3];
+	last *= offset_v;
+	tex_matrix[1] += last;
+
+	// Update state
+	CurrentUVOffset.X = offset_u;
+	CurrentUVOffset.Y = offset_v;
+	LastUsedSyncTime = WW3D::Get_Sync_Time();
+}
+
+void WSEnvMapperClass::Calculate_Render_Texture_Matrix(Matrix4x4 &tex_matrix, CameraClass &camera)
+{
+    Calculate_With_View(tex_matrix, Matrix4x4(camera.Get_View_Matrix()));
+}
+
+void GridWSEnvMapperClass::Calculate_Render_Texture_Matrix(Matrix4x4 &tex_matrix, CameraClass &camera)
+{
+    Calculate_With_View(tex_matrix, Matrix4x4(camera.Get_View_Matrix()));
+}
+
+bool ScreenMapperClass::Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera)
+{
+    Matrix4x4 projection;
+    camera.Get_Zero_To_One_Projection_Matrix(&projection);
+    TextureMapperRenderMapping result;
+    Calculate_With_Projection(result.matrix, projection);
+    result.input = TextureMapperRenderMapping::CameraPosition;
+    result.projected = true;
+    mapping = result;
+    return true;
 }

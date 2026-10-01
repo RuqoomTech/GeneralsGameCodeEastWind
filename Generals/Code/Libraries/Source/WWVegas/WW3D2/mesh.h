@@ -55,7 +55,7 @@ class RenderInfoClass;
 class MeshModelClass;
 class DecalMeshClass;
 class MaterialPassClass;
-class IndexBufferClass;
+class MeshRendererClass;
 struct W3dMeshHeaderStruct;
 struct W3dTexCoordStruct;
 class TextureClass;
@@ -84,7 +84,6 @@ public:
 	virtual void					Set_Name(const char * name) override;
 	virtual int						Get_Num_Polys() const override;
 	virtual void					Render(RenderInfoClass & rinfo) override;
-	void								Render_Material_Pass(MaterialPassClass * pass,IndexBufferClass * ib);
 	virtual void					Special_Render(SpecialRenderInfoClass & rinfo) override;
 
 	/////////////////////////////////////////////////////////////////////////////
@@ -189,6 +188,7 @@ protected:
 	bool								IsDisabledByDebugger;
 
 	friend class MeshBuilderClass;
+	friend class MeshRendererClass;
 };
 
 inline MeshModelClass * MeshClass::Peek_Model()

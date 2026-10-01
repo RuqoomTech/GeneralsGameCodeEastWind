@@ -527,48 +527,99 @@ IDirect3DTexture8* TextureLoader::Load_Thumbnail(const StringClass& filename, co
 // format and performs color space conversion.
 //
 // ----------------------------------------------------------------------------
+static unsigned Get_Requested_Reduction(unsigned width, unsigned height, unsigned mip_count);
+
+static void Recolor_RGBA8(std::vector<unsigned char> &pixels, const Vector3 &hsv_shift)
+{
+    if (hsv_shift == Vector3(0.0f, 0.0f, 0.0f)) return;
+    for (std::size_t i = 0; i < pixels.size(); i += 4) {
+        unsigned argb = (unsigned(pixels[i+3])<<24) | (unsigned(pixels[i])<<16) | (unsigned(pixels[i+1])<<8) | pixels[i+2];
+        Recolor(argb, hsv_shift);
+        pixels[i] = static_cast<unsigned char>(argb>>16);
+        pixels[i+1] = static_cast<unsigned char>(argb>>8);
+        pixels[i+2] = static_cast<unsigned char>(argb);
+    }
+}
+
+bool TextureLoader::Load_RGBA8_Mip_Chain(const StringClass &filename, unsigned requested_levels,
+    bool allow_reduction, bool allow_compression, const Vector3 &hsv_shift,
+    std::vector<RGBA8MipLevel> &levels)
+{
+    levels.clear();
+    DDSFileClass dds(filename, 0, true);
+    const bool authored = allow_compression && dds.Get_Type() == DDS_TEXTURE &&
+        dds.Get_Mip_Level_Count() != 0 && dds.Load();
+    unsigned width = 0, height = 0, available_levels = 0;
+    Targa targa;
+    WW3DFormat format = WW3D_FORMAT_UNKNOWN;
+    unsigned bpp = 0;
+    if (authored) {
+        width = dds.Get_Full_Width(); height = dds.Get_Full_Height();
+        available_levels = dds.Get_Mip_Level_Count();
+    } else {
+        if (targa.Open(filename, TGA_READMODE) != 0) return false;
+        // Preserve the established game texture orientation; RGBA readback is top-down.
+        targa.Header.ImageDescriptor ^= TGAIDF_YORIGIN;
+        Get_WW3D_Format(format, bpp, targa);
+        width = targa.Header.Width; height = targa.Header.Height;
+        if (format == WW3D_FORMAT_UNKNOWN || width == 0 || height == 0 || width > 16384 || height > 16384) return false;
+        available_levels = 1;
+        for (unsigned dim = max(width, height); dim > 1; dim >>= 1) ++available_levels;
+    }
+
+    const unsigned requested = requested_levels == MIP_LEVELS_ALL ? available_levels : min(requested_levels, available_levels);
+    if (requested == 0) return false;
+    unsigned reduction = allow_reduction && requested != 1 ? Get_Requested_Reduction(width, height, available_levels) : 0;
+    if (allow_reduction && requested != 1 && WW3D::Is_Large_Texture_Extra_Reduction_Enabled() && (width > 256 || height > 256))
+        reduction = min(reduction+1, available_levels-1);
+    reduction = min(reduction, requested-1);
+    std::vector<RGBA8MipLevel> decoded;
+    decoded.reserve(requested-reduction);
+    if (authored) {
+        for (unsigned level = reduction; level < requested; ++level) {
+            RGBA8MipLevel image;
+            image.width = max(1u, width>>level); image.height = max(1u, height>>level);
+            image.pixels.resize(static_cast<std::size_t>(image.width)*image.height*4);
+            if (!dds.Copy_Level_RGBA8(level, image.pixels.data(), image.width*4)) return false;
+            Recolor_RGBA8(image.pixels, hsv_shift);
+            decoded.push_back(std::move(image));
+        }
+    } else {
+        char palette[256*4]{};
+        targa.SetPalette(palette);
+        if (targa.Load(filename, TGAF_IMAGE, false) != 0 || targa.GetImage() == nullptr) return false;
+        RGBA8MipLevel image;
+        image.width = width; image.height = height;
+        image.pixels.resize(static_cast<std::size_t>(width)*height*4);
+        BitmapHandlerClass::Copy_Image(image.pixels.data(), width, height, width*4, WW3D_FORMAT_A8R8G8B8,
+            reinterpret_cast<unsigned char *>(targa.GetImage()), width, height, width*bpp, format,
+            reinterpret_cast<const unsigned char *>(targa.GetPalette()), targa.Header.CMapDepth>>3, false, hsv_shift);
+        for (std::size_t i = 0; i < image.pixels.size(); i += 4) std::swap(image.pixels[i], image.pixels[i+2]);
+        for (unsigned level = 0; level < requested; ++level) {
+            RGBA8MipLevel next;
+            if (level+1 != requested) {
+                next.width = max(1u, image.width/2); next.height = max(1u, image.height/2);
+                next.pixels.resize(static_cast<std::size_t>(next.width)*next.height*4);
+                // Box averaging treats RGBA/BGRA channels identically and preserves the original rounding.
+                BitmapHandlerClass::Create_Mipmap(next.pixels.data(), next.width*4, WW3D_FORMAT_A8R8G8B8,
+                    image.pixels.data(), image.width*4, WW3D_FORMAT_A8R8G8B8, image.width, image.height);
+            }
+            if (level >= reduction) decoded.push_back(std::move(image));
+            image = std::move(next);
+        }
+    }
+    levels.swap(decoded);
+    return !levels.empty();
+}
+
 bool TextureLoader::Load_RGBA8_Image(const StringClass &filename, unsigned &width, unsigned &height,
     std::vector<unsigned char> &pixels, const Vector3 &hsv_shift)
 {
-    width = height = 0;
-    pixels.clear();
-    DDSFileClass dds(filename, 0);
-    if (dds.Get_Type() == DDS_TEXTURE && dds.Get_Mip_Level_Count() != 0 && dds.Load()) {
-        width = dds.Get_Full_Width(); height = dds.Get_Full_Height();
-        pixels.resize(static_cast<std::size_t>(width)*height*4);
-        if (dds.Copy_Level_RGBA8(0, pixels.data(), width*4)) {
-            if (hsv_shift != Vector3(0.0f, 0.0f, 0.0f)) {
-                for (std::size_t i = 0; i < pixels.size(); i += 4) {
-                    unsigned argb = (unsigned(pixels[i+3])<<24) | (unsigned(pixels[i])<<16) | (unsigned(pixels[i+1])<<8) | pixels[i+2];
-                    Recolor(argb, hsv_shift);
-                    pixels[i] = static_cast<unsigned char>(argb>>16);
-                    pixels[i+1] = static_cast<unsigned char>(argb>>8);
-                    pixels[i+2] = static_cast<unsigned char>(argb);
-                }
-            }
-            return true;
-        }
-    }
-    Targa targa;
-    if (targa.Open(filename, TGA_READMODE) != 0) { width = height = 0; pixels.clear(); return false; }
-    // Preserve the established game texture orientation; RGBA readback is top-down.
-    targa.Header.ImageDescriptor ^= TGAIDF_YORIGIN;
-    WW3DFormat format; unsigned bpp = 0;
-    Get_WW3D_Format(format, bpp, targa);
-    width = targa.Header.Width; height = targa.Header.Height;
-    if (format == WW3D_FORMAT_UNKNOWN || width == 0 || height == 0 || width > 16384 || height > 16384) {
-        width = height = 0; pixels.clear(); return false;
-    }
-    char palette[256*4]{};
-    targa.SetPalette(palette);
-    if (targa.Load(filename, TGAF_IMAGE, false) != 0 || targa.GetImage() == nullptr) {
-        width = height = 0; pixels.clear(); return false;
-    }
-    pixels.resize(static_cast<std::size_t>(width)*height*4);
-    BitmapHandlerClass::Copy_Image(pixels.data(), width, height, width*4, WW3D_FORMAT_A8R8G8B8,
-        reinterpret_cast<unsigned char *>(targa.GetImage()), width, height, width*bpp, format,
-        reinterpret_cast<const unsigned char *>(targa.GetPalette()), targa.Header.CMapDepth>>3, false, hsv_shift);
-    for (std::size_t i = 0; i < pixels.size(); i += 4) std::swap(pixels[i], pixels[i+2]);
+    width = height = 0; pixels.clear();
+    std::vector<RGBA8MipLevel> levels;
+    if (!Load_RGBA8_Mip_Chain(filename, MIP_LEVELS_1, false, true, hsv_shift, levels)) return false;
+    width = levels[0].width; height = levels[0].height;
+    pixels.swap(levels[0].pixels);
     return true;
 }
 
@@ -980,6 +1031,12 @@ void TextureLoader::Process_Foreground_Load(TextureLoadTaskClass *task)
 
 void TextureLoader::Begin_Load_And_Queue(TextureLoadTaskClass *task)
 {
+	TextureClass *texture = task->Peek_Texture()->As_TextureClass();
+	if (WW3D::Get_Render_Backend() && texture && !texture->Is_Procedural()) {
+		task->Finish_Load();
+		task->Destroy();
+		return;
+	}
 	// should only be called from the DX8 thread.
 	WWASSERT(Is_Render_Thread());
 
@@ -1004,6 +1061,11 @@ void TextureLoader::Begin_Load_And_Queue(TextureLoadTaskClass *task)
 
 void TextureLoader::Load_Thumbnail(TextureBaseClass *tc)
 {
+	TextureClass *texture = tc->As_TextureClass();
+	if (WW3D::Get_Render_Backend() && texture && !texture->Is_Procedural()) {
+		texture->Ensure_Renderer_Texture();
+		return;
+	}
 	// All D3D operations must run from main thread
 	WWASSERT(Is_Render_Thread());
 
@@ -1302,6 +1364,11 @@ void TextureLoadTaskClass::End_Load()
 
 void TextureLoadTaskClass::Finish_Load()
 {
+	TextureClass *texture = Texture->As_TextureClass();
+	if (WW3D::Get_Render_Backend() && texture && !texture->Is_Procedural()) {
+		if (texture->Ensure_Renderer_Texture()) State = STATE_LOAD_COMPLETE;
+		return;
+	}
 	switch (State) {
 		// NOTE: fall-through below is intentional.
 

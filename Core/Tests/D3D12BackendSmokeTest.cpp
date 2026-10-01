@@ -51,6 +51,64 @@ HWND createHiddenWindow(HINSTANCE instance)
         instance,
         nullptr);
 }
+bool verifySceneTextureLoading(IRenderBackend &backend)
+{
+    const unsigned char red[] = {255,0,0,255}, green[] = {0,255,0,255}, blue[] = {0,0,255,255};
+    std::vector<RenderBackendTextureHandle> textures;
+    textures.reserve(134);
+    textures.push_back(backend.Create_Static_RGBA8_Texture(1,1,red,4));
+    RenderBackendTexturedVertex quad[] = {
+        {-.8f,0,.5f,1,1,1,1,0,0}, {-.8f,.8f,.5f,1,1,1,1,0,0},
+        {0,.8f,.5f,1,1,1,1,0,0}, {0,0,.5f,1,1,1,1,0,0}};
+    const unsigned short indices[] = {0,2,1,0,3,2};
+    RenderBackendMaterialState material;
+    material.depth_test=RenderBackendDepthTest::Disabled;
+    material.depth_write=false;
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Set_View_Projection(Matrix4x4(true));
+    backend.Clear(true,true,Vector3(0,0,0),1,1,0);
+    backend.Begin_Scene();
+    // This draw references the original heap before either growth occurs.
+    bool ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,textures.front(),material);
+    for (unsigned i=0;i<132;++i) {
+        const auto texture=backend.Create_Static_RGBA8_Texture(1,1,i==64 ? green : blue,4);
+        textures.push_back(texture);
+        ok=texture.Is_Valid() && ok;
+        if (!texture.Is_Valid()) std::cerr << "Scene texture upload failed at " << i << ".\n";
+        // Record another draw between the 64->128 and 128->256 heap growths.
+        if (i==64) {
+            for (auto &v:quad) v.y-=.8f;
+            ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material) && ok;
+            for (auto &v:quad) v.y+=.8f;
+        }
+    }
+    for (auto &v:quad) v.x+=.8f;
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,textures.back(),material) && ok;
+    for (auto &v:quad) v.y-=.8f;
+    // Old resources must remain sampleable through their rebuilt SRVs in the new heap.
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,textures.front(),material) && ok;
+    backend.End_Scene(false);
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    ok=read && ok;
+    if (read) {
+        const unsigned centers[]={120*640+160,360*640+160,120*640+480,360*640+480};
+        const unsigned channels[]={0,1,2,0};
+        for (unsigned sample=0;sample<4;++sample) for (unsigned channel=0;channel<4;++channel)
+            ok=pixels[centers[sample]*4+channel]==(channel==3 || channel==channels[sample] ? 255 : 0) && ok;
+    }
+    backend.Flip_To_Primary();
+    for (const auto texture:textures) backend.Release_Texture(texture);
+    if (!ok) {
+        std::cerr << "Scene texture upload or descriptor heap lifetime check failed.\n";
+        if (read) for (const unsigned center:{120*640+160,360*640+160,120*640+480,360*640+480})
+            std::cerr << int(pixels[center*4]) << ',' << int(pixels[center*4+1]) << ',' <<
+                int(pixels[center*4+2]) << ',' << int(pixels[center*4+3]) << '\n';
+    }
+    return ok;
+}
+
 bool verifyMaterials(IRenderBackend &backend)
 {
     const unsigned char rgba[] = {128,64,192,128};
@@ -81,10 +139,10 @@ bool verifyMaterials(IRenderBackend &backend)
     const float source[] = {.25f,.5f,.75f,.5f}, destination[] = {.2f,.4f,.6f,.8f};
     auto factor = [&](unsigned mode,unsigned channel) {
         return mode==0 ? 0.f : mode==1 ? 1.f : mode==2 ? source[channel] :
-            mode==3 ? 1-source[channel] : mode==4 ? source[3] : 1-source[3];
+            mode==3 ? 1-source[channel] : mode==4 ? source[3] : mode==5 ? 1-source[3] : destination[channel];
     };
     // Validate every supported RGBA blend equation, including RGB factors' alpha mapping.
-    for (unsigned src=0;src<6;++src) for (unsigned dst=0;dst<6;++dst) {
+    for (unsigned src=0;src<7;++src) for (unsigned dst=0;dst<7;++dst) {
         material.source_blend=static_cast<RenderBackendBlendFactor>(src);
         material.destination_blend=static_cast<RenderBackendBlendFactor>(dst);
         backend.Clear(true,true,Vector3(destination[0],destination[1],destination[2]),destination[3],1,0);
@@ -170,8 +228,8 @@ bool verifyMaterials(IRenderBackend &backend)
         return !backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},bad);
     };
     material.depth_test=static_cast<RenderBackendDepthTest>(9); ok=rejected(material) && ok; material={};
-    material.source_blend=static_cast<RenderBackendBlendFactor>(6); ok=rejected(material) && ok; material={};
-    material.destination_blend=static_cast<RenderBackendBlendFactor>(6); ok=rejected(material) && ok; material={};
+    material.source_blend=static_cast<RenderBackendBlendFactor>(7); ok=rejected(material) && ok; material={};
+    material.destination_blend=static_cast<RenderBackendBlendFactor>(7); ok=rejected(material) && ok; material={};
     material.cull=static_cast<RenderBackendCullMode>(3); ok=rejected(material) && ok; material={};
     material.texture_combine=static_cast<RenderBackendTextureCombine>(4); ok=rejected(material) && ok; material={};
     material.alpha_test=static_cast<RenderBackendAlphaTest>(3); ok=rejected(material) && ok; material={};
@@ -596,7 +654,7 @@ int main()
         std::cerr << "D3D12 backend smoke failed: camera transform or screen-space isolation is incorrect.\n";
         return 15;
     }
-    if (!verifyMaterials(*backend) || !verifyDecals(*backend)) {
+    if (!verifySceneTextureLoading(*backend) || !verifyMaterials(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

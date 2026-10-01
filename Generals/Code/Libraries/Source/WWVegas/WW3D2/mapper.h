@@ -48,6 +48,22 @@
 #include "WWMath/matrix4.h"
 
 class INIClass;
+class CameraClass;
+
+// CPU texgen packet, prepared once per draw so animation advances once.
+// Projected coordinates retain q until pixel shading after interpolation.
+struct TextureMapperRenderMapping
+{
+	enum Input { UV, CameraPosition, CameraNormal, CameraReflection };
+	Matrix4x4 matrix = Matrix4x4(true);
+	Input input = UV;
+	bool projected = false;
+	Vector3 Map_Coordinate(const Vector2 &uv, const Vector3 &camera_position,
+	                       const Vector3 &camera_normal) const;
+};
+
+
+
 
 /*
 ** TextureMapperClass
@@ -89,6 +105,8 @@ class TextureMapperClass : public RefCountClass
 
 		virtual TextureMapperClass *		Clone() const = 0;
 
+		virtual bool Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera);
+
 		virtual bool							Is_Time_Variant() { return false; }
 		virtual void							Apply(int uv_array_index) = 0;
 		virtual void							Reset() { }
@@ -97,6 +115,7 @@ class TextureMapperClass : public RefCountClass
 		int										Get_Stage() const { return Stage; }
 
 	protected:
+		virtual bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection);
 		unsigned int							Stage;
 };
 
@@ -117,6 +136,7 @@ public:
 
 	virtual TextureMapperClass *Clone() const override { return NEW_REF( ScaleTextureMapperClass, (*this)); }
 
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 
 protected:
@@ -141,6 +161,7 @@ public:
 
 	virtual bool Is_Time_Variant() override { return true; }
 
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Reset() override { Set_Current_UV_Offset(Vector2(0.0f, 0.0f)); }
 
@@ -180,6 +201,7 @@ public:
 	virtual TextureMapperClass *Clone() const override { return NEW_REF( GridTextureMapperClass, (*this)); }
 
 	virtual bool Is_Time_Variant() override { return true; }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Reset() override;
 
@@ -222,6 +244,7 @@ public:
 	virtual TextureMapperClass *Clone() const override { return NEW_REF( RotateTextureMapperClass, (*this)); }
 
 	virtual bool Is_Time_Variant() override { return true; }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Reset() override { CurrentAngle = 0.0f; }
 
@@ -249,6 +272,7 @@ public:
 	virtual TextureMapperClass *Clone() const override { return NEW_REF( SineLinearOffsetTextureMapperClass, (*this)); }
 
 	virtual bool Is_Time_Variant() override { return true; }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Reset() override { CurrentAngle = 0.0f; }
 
@@ -276,6 +300,7 @@ public:
 	virtual TextureMapperClass *Clone() const override { return NEW_REF( StepLinearOffsetTextureMapperClass, (*this)); }
 
 	virtual bool Is_Time_Variant() override { return true; }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Reset() override;
 
@@ -303,6 +328,7 @@ public:
 	virtual TextureMapperClass *Clone() const override { return NEW_REF( ZigZagLinearOffsetTextureMapperClass, (*this)); }
 
 	virtual bool Is_Time_Variant() override { return true; }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Reset() override;
 
@@ -327,6 +353,7 @@ public:
 	ClassicEnvironmentMapperClass(const ClassicEnvironmentMapperClass & src) : TextureMapperClass(src) { }
 	virtual int	Mapper_ID() const override { return MAPPER_ID_CLASSIC_ENVIRONMENT;}
 	virtual TextureMapperClass* Clone() const override { return NEW_REF( ClassicEnvironmentMapperClass, (*this)); }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual bool Needs_Normals() override { return true; }
 };
@@ -339,6 +366,7 @@ public:
 	EnvironmentMapperClass(const EnvironmentMapperClass & src) : TextureMapperClass(src) { }
 	virtual int	Mapper_ID() const override { return MAPPER_ID_ENVIRONMENT;}
 	virtual TextureMapperClass* Clone() const override { return NEW_REF( EnvironmentMapperClass, (*this)); }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual bool Needs_Normals() override { return true; }
 };
@@ -352,6 +380,7 @@ public:
 	EdgeMapperClass(const EdgeMapperClass & src);
 	virtual int	Mapper_ID() const override { return MAPPER_ID_EDGE;}
 	virtual TextureMapperClass* Clone() const override { return NEW_REF( EdgeMapperClass, (*this)); }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Reset() override;
 	virtual bool Is_Time_Variant() override { return true; }
@@ -371,6 +400,7 @@ public:
 	WSClassicEnvironmentMapperClass(const WSClassicEnvironmentMapperClass & src) : TextureMapperClass(src) { }
 	virtual int	Mapper_ID() const override { return MAPPER_ID_WS_CLASSIC_ENVIRONMENT;}
 	virtual TextureMapperClass* Clone() const override { return NEW_REF( WSClassicEnvironmentMapperClass, (*this)); }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual bool Needs_Normals() override { return true; }
 };
@@ -383,6 +413,7 @@ public:
 	WSEnvironmentMapperClass(const WSEnvironmentMapperClass & src) : TextureMapperClass(src) { }
 	virtual int	Mapper_ID() const override { return MAPPER_ID_WS_ENVIRONMENT;}
 	virtual TextureMapperClass* Clone() const override { return NEW_REF( WSEnvironmentMapperClass, (*this)); }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual bool Needs_Normals() override { return true; }
 };
@@ -396,6 +427,7 @@ public:
 	GridClassicEnvironmentMapperClass(const GridTextureMapperClass & src) : GridTextureMapperClass(src) { }
 	virtual int	Mapper_ID() const override { return MAPPER_ID_GRID_CLASSIC_ENVIRONMENT;}
 	virtual TextureMapperClass* Clone() const override { return NEW_REF( GridClassicEnvironmentMapperClass, (*this)); }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual bool Needs_Normals() override { return true; }
 };
@@ -409,6 +441,7 @@ public:
 	GridEnvironmentMapperClass(const GridTextureMapperClass & src) : GridTextureMapperClass(src) { }
 	virtual int	Mapper_ID() const override { return MAPPER_ID_GRID_ENVIRONMENT;}
 	virtual TextureMapperClass* Clone() const override { return NEW_REF( GridEnvironmentMapperClass, (*this)); }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual bool Needs_Normals() override { return true; }
 };
@@ -428,6 +461,7 @@ public:
 	ScreenMapperClass(const LinearOffsetTextureMapperClass & src):LinearOffsetTextureMapperClass(src) { }
 	virtual int	Mapper_ID() const override { return MAPPER_ID_SCREEN;}
 	virtual TextureMapperClass* Clone() const override { return NEW_REF( ScreenMapperClass, (*this)); }
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 };
 
@@ -447,6 +481,7 @@ public:
 
 	virtual TextureMapperClass *Clone() const override { return NEW_REF( RandomTextureMapperClass, (*this)); }
 
+	bool Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection) override;
 	virtual void Apply(int uv_array_index) override;
 	virtual void Reset() override;
 	virtual bool Is_Time_Variant() override { return true; }

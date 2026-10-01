@@ -35,7 +35,7 @@
 #include "WW3D2/dx8wrapper.h"
 #include "WW3D2/dx8indexbuffer.h"
 #include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8renderer.h"
+#include "WW3D2/meshrenderer.h"
 #include "WW3D2/dx8fvf.h"
 #include "WW3D2/vertmaterial.h"
 #include "WW3D2/font3d.h"
@@ -2035,13 +2035,13 @@ void WbView3d::render()
 		}
 		if (m_showObjToolTrackingObj && m_objectToolTrackingObj) {
 			m_transparentObjectsScene->Add_Render_Object(m_objectToolTrackingObj);
-			DX8TextureCategoryClass::SetForceMultiply(true);
-			TheDX8MeshRenderer.Enable_Lighting(false);
+			TheMeshRenderer.Set_Force_Multiply(true);
+			TheMeshRenderer.Enable_Lighting(false);
 			Real lightLevel = 1.0f;
 			m_transparentObjectsScene->Set_Ambient_Light(Vector3(lightLevel,lightLevel,lightLevel));
 			WW3D::Render(m_transparentObjectsScene, m_camera);
-			TheDX8MeshRenderer.Enable_Lighting(true);
-			DX8TextureCategoryClass::SetForceMultiply(false);
+			TheMeshRenderer.Enable_Lighting(true);
+			TheMeshRenderer.Set_Force_Multiply(false);
 			m_transparentObjectsScene->Remove_Render_Object(m_objectToolTrackingObj);
 		}
 

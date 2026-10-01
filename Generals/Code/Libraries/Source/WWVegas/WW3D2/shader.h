@@ -39,6 +39,7 @@
 #include "WWLib/always.h"
 
 class DX8Wrapper;
+struct RenderBackendMaterialState;
 struct W3dMaterial3Struct;
 class StringClass;
 
@@ -77,6 +78,7 @@ enum ShaderShiftConstants
 class ShaderClass
 {
 	friend class DX8Wrapper;
+struct RenderBackendMaterialState;
 
 	void	Apply();
 public:
@@ -308,6 +310,8 @@ public:
 	void	Set_Src_Blend_Func(SrcBlendFuncType x)					{ ShaderBits&=~MASK_SRCBLEND;ShaderBits|=(x<<SHIFT_SRCBLEND);		}
 	void	Set_Texturing(TexturingType x)							{ ShaderBits&=~MASK_TEXTURING; ShaderBits|=(x<<SHIFT_TEXTURING);	}
 	void	Set_NPatch_Enable(NPatchEnableType x)					{ ShaderBits&=~MASK_NPATCHENABLE; ShaderBits|=(x<<SHIFT_NPATCHENABLE);	}
+
+	bool Get_Render_Backend_State(RenderBackendMaterialState &state) const;
 
 	void	Init_From_Material3(const W3dMaterial3Struct & mat3);
 	void	Enable_Fog (const char *source);

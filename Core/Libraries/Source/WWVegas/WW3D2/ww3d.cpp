@@ -102,7 +102,7 @@
 #include "WWLib/INI.h"
 #include "dazzle.h"
 #include "meshmdl.h"
-#include "dx8renderer.h"
+#include "meshrenderer.h"
 #include "Backend/RenderBackend.h"
 #include "IRenderBackend.h"
 #include "texture.h"
@@ -281,6 +281,7 @@ WW3DErrorType WW3D::Init(void *hwnd, char *defaultpal, bool lite)
 		return(WW3D_ERROR_INITIALIZATION_FAILED);
 	}
 	if (!lite) TextureLoader::Init();
+	TheMeshRenderer.Init();
 
 	WWDEBUG_SAY(("Allocate Debug Resources"));
 	Allocate_Debug_Resources();
@@ -335,6 +336,7 @@ WW3DErrorType WW3D::Init(void *hwnd, char *defaultpal, bool lite)
 WW3DErrorType WW3D::Shutdown()
 {
 	assert(Lite || IsInitted == true);
+	TheMeshRenderer.Shutdown();
 	// Stop texture work before releasing the assets and their GPU owner.
 	if (!Lite) TextureLoader::Deinit();
 //	WWDEBUG_SAY(("WW3D::Shutdown"));
@@ -923,7 +925,7 @@ WW3DErrorType WW3D::Render(SceneClass * scene,CameraClass * cam,bool clear,bool 
 
 	// render the scene
 
-	TheDX8MeshRenderer.Set_Camera(&rinfo.Camera);
+	TheMeshRenderer.Set_Camera(&rinfo.Camera);
 
 	scene->Render(rinfo);
 
@@ -975,7 +977,7 @@ WW3DErrorType WW3D::Render(
 	}
 
 	// Render the object
-	TheDX8MeshRenderer.Set_Camera(&rinfo.Camera);
+	TheMeshRenderer.Set_Camera(&rinfo.Camera);
 
 	obj.Render(rinfo);
 
@@ -1006,12 +1008,11 @@ WW3DErrorType WW3D::Render(
  *=============================================================================================*/
 void WW3D::Flush(RenderInfoClass & rinfo)
 {
-	TheDX8MeshRenderer.Flush();
+	TheMeshRenderer.Flush();
 	SHD_FLUSH;
 	WW3D::Render_And_Clear_Static_Sort_Lists(rinfo);	//draws things like water
 
 	SortingRendererClass::Flush();
-	TheDX8MeshRenderer.Clear_Pending_Delete_Lists();
 }
 
 

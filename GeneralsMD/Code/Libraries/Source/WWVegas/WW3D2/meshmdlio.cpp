@@ -2104,7 +2104,7 @@ void MeshLoadContextClass::Add_Legacy_Material(ShaderClass shader,VertexMaterial
 		unsigned long crc = vmat->Get_CRC();
 		int vi=0;
 		for (; vi<VertexMaterialCrcs.Count(); vi++) {
-			if (VertexMaterialCrcs[vi] == crc) break;
+			if (VertexMaterialCrcs[vi] == crc && VertexMaterials[vi]->Equals_Render_Material(*vmat)) break;
 		}
 		if (vi == VertexMaterials.Count()) {
 			mat->VertexMaterialIdx = Add_Vertex_Material(vmat);

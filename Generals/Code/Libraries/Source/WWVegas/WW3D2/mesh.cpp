@@ -112,9 +112,7 @@
 #include "inttest.h"
 #include "decalmsh.h"
 #include "decalsys.h"
-#include "dx8polygonrenderer.h"
-#include "dx8indexbuffer.h"
-#include "dx8renderer.h"
+#include "meshrenderer.h"
 #include "visrasterizer.h"
 #include "WWDebug/wwmemlog.h"
 #include <WWDebug/wwprofile.h>
@@ -682,14 +680,14 @@ void MeshClass::Render(RenderInfoClass & rinfo)
 		if (	Model->Get_Flag(MeshGeometryClass::SKIN) ||
 				CollisionMath::Overlap_Test(frustum,Get_Bounding_Box())!=CollisionMath::OUTSIDE )
 		{
-			bool rendered_something = false;
+
 
 			/*
-			** If this mesh model has never been rendered, we need to generate the DX8 datastructures
+			** Register this CPU asset with the renderer on its first visible submission.
 			*/
-			if (Model->PolygonRendererList.Is_Empty()) {
+			if (!Model->Is_Registered_For_Rendering()) {
 				Model->Register_For_Rendering();
-				WWASSERT(!Model->PolygonRendererList.Is_Empty());
+				WWASSERT(Model->Is_Registered_For_Rendering());
 			}
 
 			/*
@@ -713,20 +711,15 @@ void MeshClass::Render(RenderInfoClass & rinfo)
 			** Look up the FVF container that this mesh is in
 			** TODO: make this a little nicer?
 			*/
-			DX8FVFCategoryContainer * fvf_container = Model->PolygonRendererList.Peek_Head()->Get_Texture_Category()->Get_Container();
+			
 			if ((rinfo.Current_Override_Flags() & RenderInfoClass::RINFO_OVERRIDE_ADDITIONAL_PASSES_ONLY) == 0) {
 
 				/*
 				** Link each polygon renderer for this mesh into the visible list
 				*/
-				DX8PolygonRendererListIterator it(&(Model->PolygonRendererList));
-				while (!it.Is_Done()) {
-					DX8PolygonRendererClass* polygon_renderer=it.Peek_Obj();
-					polygon_renderer->Get_Texture_Category()->Add_Render_Task(polygon_renderer,this);
-					it.Next();
-				}
+				TheMeshRenderer.Queue_Base_Passes(this);
 
-				rendered_something = true;
+
 
 			}
 
@@ -739,8 +732,8 @@ void MeshClass::Render(RenderInfoClass & rinfo)
 				MaterialPassClass * matpass = rinfo.Peek_Additional_Pass(i);
 
 				if ((!Is_Translucent()) || (matpass->Is_Enabled_On_Translucent_Meshes())) {
-					fvf_container->Add_Visible_Material_Pass(matpass,this);
-					rendered_something = true;
+					TheMeshRenderer.Queue_Material_Pass(this, matpass, false);
+	
 				}
 			}
 
@@ -748,10 +741,7 @@ void MeshClass::Render(RenderInfoClass & rinfo)
 			** If we rendered any base or procedural passes and this is a skin, we need
 			** to tell the mesh rendering system to process this skin
 			*/
-			if (rendered_something && Model->Get_Flag(MeshGeometryClass::SKIN)) {
-				//WWASSERT(dynamic_cast<DX8SkinFVFCategoryContainer *>(fvf_container) != nullptr);
-				static_cast<DX8SkinFVFCategoryContainer*>(fvf_container)->Add_Visible_Skin(this);
-			}
+
 
 			/*
 			** If we have a decal mesh, link it into the mesh rendering system
@@ -761,7 +751,7 @@ void MeshClass::Render(RenderInfoClass & rinfo)
 				Vector3 cam_space_sphere_center;
 				rinfo.Camera.Transform_To_View_Space(cam_space_sphere_center,ws_sphere.Center);
 				if (-cam_space_sphere_center.Z - ws_sphere.Radius < WW3D::Get_Decal_Rejection_Distance()) {
-					TheDX8MeshRenderer.Add_To_Render_List(DecalMesh);
+					TheMeshRenderer.Add_To_Render_List(DecalMesh);
 				}
 			}
 		}
@@ -781,193 +771,7 @@ void MeshClass::Render(RenderInfoClass & rinfo)
  * HISTORY:                                                                                    *
  *   3/4/2001   gth : Created.                                                                 *
  *=============================================================================================*/
-void MeshClass::Render_Material_Pass(MaterialPassClass * pass,IndexBufferClass * ib)
-{
-	//Added to allow dynamic opacity on additional render passed
-	//without having to create a new material pass per object instance. -MW
-	float oldOpacity=-1.0f;
-	Vector3 oldEmissive(-1,-1,-1);
 
-	if (LightEnvironment != nullptr) {
-		DX8Wrapper::Set_Light_Environment(LightEnvironment);
-	}
-
-	if (Model->Get_Flag(MeshModelClass::SKIN)) {
-
-		/*
-		** In the case of skin meshes, we need to render our polys with the identity transform
-		*/
-		if (m_materialPassAlphaOverride != 1.0f)
-		{	VertexMaterialClass *mat=pass->Peek_Material();
-			if (mat)
-			{
-				oldOpacity=mat->Get_Opacity();
-				mat->Set_Opacity(m_materialPassAlphaOverride);
-			}
-		}
-		if (m_materialPassEmissiveOverride != 1.0f)
-		{	VertexMaterialClass *mat=pass->Peek_Material();
-			if (mat)
-			{
-				mat->Get_Emissive(&oldEmissive);
-				mat->Set_Emissive(m_materialPassEmissiveOverride*oldEmissive);
-			}
-		}
-		pass->Install_Materials();
-		DX8Wrapper::Set_Index_Buffer(ib,0);
-
-		SNAPSHOT_SAY(("Set_World_Identity"));
-		DX8Wrapper::Set_World_Identity();
-
-		DX8PolygonRendererListIterator it(&Model->PolygonRendererList);
-		while (!it.Is_Done()) {
-			if (it.Peek_Obj()->Get_Pass() == 0)
-				it.Peek_Obj()->Render(BaseVertexOffset);
-			it.Next();
-		}
-
-		if (oldOpacity >= 0)
-		{	//opacity was modified for this mesh instance, so need to restore the material setting which may be shared
-			//among other instances.
-			pass->Peek_Material()->Set_Opacity(oldOpacity);
-		}
-		if (oldEmissive.X >= 0)
-		{	//emissive was modified for this mesh instance, so need to restore the material setting which may be shared
-			//among other instances.
-			pass->Peek_Material()->Set_Emissive(oldEmissive);
-		}
-		//MW: Need uninstall custom materials in case they leave D3D in unknown state
-		pass->UnInstall_Materials();
-
-	} else if ((pass->Get_Cull_Volume() != nullptr) && (MaterialPassClass::Is_Per_Polygon_Culling_Enabled())) {
-
-		/*
-		** Generate the APT
-		*/
-		static SimpleDynVecClass<uint32> temp_apt;
-		temp_apt.Delete_All(false);
-
-		Matrix3D modeltminv;
-		Get_Transform().Get_Orthogonal_Inverse(modeltminv);
-
-		OBBoxClass localbox;
-		OBBoxClass::Transform(modeltminv,*(pass->Get_Cull_Volume()),&localbox);
-
-		Vector3 view_dir;
-		localbox.Basis.Get_Z_Vector(&view_dir);
-		view_dir = -view_dir;
-
-		if (Model->Has_Cull_Tree()) {
-			Model->Generate_Rigid_APT(localbox,view_dir,temp_apt);
-		} else {
-			Model->Generate_Rigid_APT(view_dir,temp_apt);
-		}
-
-		if (temp_apt.Count() > 0) {
-
-			int buftype = BUFFER_TYPE_DYNAMIC_DX8;
-			if (Model->Get_Flag(MeshGeometryClass::SORT) && WW3D::Is_Sorting_Enabled()) {
-				buftype = BUFFER_TYPE_DYNAMIC_SORTING;
-			}
-
-			/*
-			** Spew triangles in the APT into the dynamic index buffer
-			*/
-			int min_v = Model->Get_Vertex_Count();
-			int max_v = 0;
-
-			DynamicIBAccessClass dynamic_ib(buftype,temp_apt.Count() * 3);
-			{
-				DynamicIBAccessClass::WriteLockClass lock(&dynamic_ib);
-				unsigned short * indices = lock.Get_Index_Array();
-				const TriIndex * polys = Model->Get_Polygon_Array();
-
-				for (int i=0; i < temp_apt.Count(); i++)
-				{
-					unsigned v0 = polys[temp_apt[i]].I;
-					unsigned v1 = polys[temp_apt[i]].J;
-					unsigned v2 = polys[temp_apt[i]].K;
-
-					indices[i*3 + 0] = (unsigned short)v0;
-					indices[i*3 + 1] = (unsigned short)v1;
-					indices[i*3 + 2] = (unsigned short)v2;
-
-					min_v = WWMath::Min(v0,min_v);
-					min_v = WWMath::Min(v1,min_v);
-					min_v = WWMath::Min(v2,min_v);
-
-					max_v = WWMath::Max(v0,max_v);
-					max_v = WWMath::Max(v1,max_v);
-					max_v = WWMath::Max(v2,max_v);
-				}
-			}
-
-			/*
-			** Render
-			*/
-			int vertex_offset = Model->PolygonRendererList.Peek_Head()->Get_Vertex_Offset();
-			pass->Install_Materials();
-
-			DX8Wrapper::Set_Transform(D3DTS_WORLD,Get_Transform());
-			DX8Wrapper::Set_Index_Buffer(dynamic_ib,vertex_offset);
-
-			DX8Wrapper::Draw_Triangles(
-				0,
-				temp_apt.Count(),
-				min_v,
-				max_v-min_v+1);
-			//MW: Need uninstall custom materials in case they leave D3D in unknown state
-			pass->UnInstall_Materials();
-		}
-	} else {
-
-		/*
-		** Normal mesh case, render polys with this mesh's transform
-		*/
-		if (m_materialPassAlphaOverride != 1.0f)
-		{	VertexMaterialClass *mat=pass->Peek_Material();
-			if (mat)
-			{
-				oldOpacity=mat->Get_Opacity();
-				mat->Set_Opacity(m_materialPassAlphaOverride);
-			}
-		}
-		if (m_materialPassEmissiveOverride != 1.0f)
-		{	VertexMaterialClass *mat=pass->Peek_Material();
-			if (mat)
-			{
-				mat->Get_Emissive(&oldEmissive);
-				mat->Set_Emissive(m_materialPassEmissiveOverride*oldEmissive);
-			}
-		}
-		pass->Install_Materials();
-		DX8Wrapper::Set_Index_Buffer(ib,0);
-
-		SNAPSHOT_SAY(("Set_World_Transform"));
-		DX8Wrapper::Set_Transform(D3DTS_WORLD,Transform);
-
-		DX8PolygonRendererListIterator it(&Model->PolygonRendererList);
-		while (!it.Is_Done()) {
-
-			if (it.Peek_Obj()->Get_Pass() == 0)
-				it.Peek_Obj()->Render(BaseVertexOffset);
-			it.Next();
-		}
-
-		if (oldOpacity >= 0)
-		{	//opacity was modified for this mesh instance, so need to restore the material setting which may be shared
-			//among other instances.
-			pass->Peek_Material()->Set_Opacity(oldOpacity);
-		}
-		if (oldEmissive.X >= 0)
-		{	//emissive was modified for this mesh instance, so need to restore the material setting which may be shared
-			//among other instances.
-			pass->Peek_Material()->Set_Emissive(oldEmissive);
-		}
-		//MW: Need uninstall custom materials in case they leave D3D in unknown state
-		pass->UnInstall_Materials();
-	}
-}
 
 
 /***********************************************************************************************
@@ -1531,7 +1335,7 @@ int MeshClass::Get_Draw_Call_Count() const
 {
 	if (Model != nullptr) {
 		// Prefer to return the number of polygon renderers
-		int prcount = Model->PolygonRendererList.Count();
+		int prcount = Model->Get_Pass_Count();
 		if (prcount > 0) {
 			return prcount;
 		}

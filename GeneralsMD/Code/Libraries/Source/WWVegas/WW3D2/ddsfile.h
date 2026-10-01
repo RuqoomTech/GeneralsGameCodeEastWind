@@ -198,7 +198,7 @@ class DDSFileClass
 public:
 	// You can pass the name in .tga or .dds format, the class will automatically try and load .dds file.
 	// Note that creating the object will only give you image info - call Load() to load the surfaces.
-	DDSFileClass(const char* name,unsigned reduction_factor);
+	DDSFileClass(const char* name,unsigned reduction_factor,bool retain_authored_mips=false);
 	~DDSFileClass();
 
 	unsigned Get_Width(unsigned level) const;
@@ -216,7 +216,7 @@ public:
 
 	DDSType Get_Type() const { return Type; }
 
-	// CPU decoding used by renderer-neutral level-zero texture uploads.
+	// CPU decoding used by renderer-neutral texture mip uploads.
 	bool Copy_Level_RGBA8(unsigned level, unsigned char *pixels, unsigned pitch) const;
 
 	// Copy pixels to the destination surface.

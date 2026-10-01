@@ -51,7 +51,7 @@
 #include "rinfo.h"
 #include "meshgeometry.h"
 #include "meshmatdesc.h"
-#include "WW3D2/dx8list.h"
+
 
 class TextureClass;
 class RenderInfoClass;
@@ -73,9 +73,6 @@ class HTreeClass;
 class DecalGeneratorClass;
 class LightEnvironmentClass;
 
-class DX8MeshRendererClass;
-class DX8PolygonRendererAttachClass;
-class DX8SkinFVFCategoryContainer;
 class GapFillerClass;
 
 struct VertexFormatXYZNDUV2;
@@ -243,7 +240,6 @@ public:
 //	void							Process_Texture_Reduction();
 
 	// FVF category container will be null if the mesh hasn't been registered to the rendering system
-	DX8FVFCategoryContainer* Peek_FVF_Category_Container();
 
 	// Determine whether any rendering feature used by this mesh requires vertex normals
 	bool							Needs_Vertex_Normals();
@@ -251,7 +247,7 @@ public:
 	void							Init_For_NPatch_Rendering();
 	const GapFillerClass*	Get_Gap_Filler() const { return GapFiller; }
 
-	bool							Has_Polygon_Renderers() { return !PolygonRendererList.Is_Empty(); }
+	bool Is_Registered_For_Rendering() const { return RendererRegistered; }
 
 protected:
 
@@ -337,17 +333,15 @@ protected:
 	// Collection of the unique materials in the mesh
 	MaterialInfoClass	*									MatInfo;
 
-	// DX8 Mesh rendering system data
-	DX8PolygonRendererList								PolygonRendererList;
+	// Runtime-only registration; never persisted or included in asset CRC.
+	bool RendererRegistered = false;
 
 	friend class MeshClass;
+	friend class MeshRendererClass;
 	friend class MeshDeformSetClass;
 	friend class MeshDeformClass;
 	friend class MeshLoadContextClass;
-	friend class DX8SkinFVFCategoryContainer;
-	friend class DX8MeshRendererClass;
-	friend class DX8PolygonRendererClass;
-};
+	};
 
 
 

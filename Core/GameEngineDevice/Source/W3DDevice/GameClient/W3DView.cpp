@@ -89,7 +89,7 @@
 #include "W3DDevice/GameClient/Module/W3DModelDraw.h"
 #include "W3DDevice/GameClient/W3DCustomScene.h"
 
-#include "WW3D2/dx8renderer.h"
+#include "WW3D2/meshrenderer.h"
 #include "WW3D2/light.h"
 #include "WW3D2/predlod.h"
 #include "WW3D2/ww3d.h"
@@ -1891,7 +1891,7 @@ void W3DView::draw()
 				RenderInfoClass rinfo(*m_3DCamera);
 				// Apply the camera and viewport (including depth range)
 				m_3DCamera->Apply();
-				TheDX8MeshRenderer.Set_Camera(&rinfo.Camera);
+				TheMeshRenderer.Set_Camera(&rinfo.Camera);
 				W3DDisplay::m_3DScene->renderSpecificDrawables(rinfo, 1, &drawable);
 				WW3D::Flush(rinfo);
 			}

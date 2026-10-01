@@ -71,12 +71,13 @@ struct RenderBackendTexturedVertex
     float a;
     float u;
     float v;
+    float q = 1.0f; // Undivided projected coordinate; ordinary UVs use q=1.
 
     bool operator == (const RenderBackendTexturedVertex &other) const
     {
         return x == other.x && y == other.y && z == other.z &&
                r == other.r && g == other.g && b == other.b && a == other.a &&
-               u == other.u && v == other.v;
+               u == other.u && v == other.v && q == other.q;
     }
 
     bool operator != (const RenderBackendTexturedVertex &other) const
@@ -112,7 +113,7 @@ enum class RenderBackendDecalBlendMode
 // Explicit draw state for migrated W3D material passes. This is runtime-only;
 // the asset's fixed-width ShaderClass representation remains above the backend.
 enum class RenderBackendDepthTest { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always, Disabled };
-enum class RenderBackendBlendFactor { Zero, One, SourceColor, InverseSourceColor, SourceAlpha, InverseSourceAlpha };
+enum class RenderBackendBlendFactor { Zero, One, SourceColor, InverseSourceColor, SourceAlpha, InverseSourceAlpha, DestinationColor };
 enum class RenderBackendCullMode { None, Clockwise, CounterClockwise };
 enum class RenderBackendTextureCombine { Replace, Modulate, Add, Modulate2X };
 enum class RenderBackendAlphaTest { Disabled, GreaterEqual, LessEqual };
@@ -151,6 +152,15 @@ struct RenderBackendTextureHandle
     RenderBackendTextureHandle(unsigned int slot_value, unsigned int generation_value)
         : slot(slot_value), generation(generation_value) {}
     bool Is_Valid() const { return slot != 0 && generation != 0; }
+};
+
+// Non-owning CPU views valid for the duration of texture creation.
+struct RenderBackendTextureMipLevel
+{
+    unsigned int width;
+    unsigned int height;
+    unsigned int row_pitch;
+    const unsigned char *pixels;
 };
 
 // A method appears here once a caller routes through it, not in anticipation of
@@ -319,6 +329,9 @@ public:
         (void)texture;
         return false;
     }
+
+    virtual RenderBackendTextureHandle Create_Static_RGBA8_Texture(
+        const RenderBackendTextureMipLevel *levels, unsigned int level_count) = 0;
 
     virtual bool Is_Texture_Valid(RenderBackendTextureHandle texture) const = 0;
     // World-space decal batches: texture * diffuse, clamp/no mipmaps, LEQUAL,

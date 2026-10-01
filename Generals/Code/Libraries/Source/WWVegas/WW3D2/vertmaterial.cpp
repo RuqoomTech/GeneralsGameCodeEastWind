@@ -38,6 +38,8 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "vertmaterial.h"
+#include <cstdint>
+#include <cstring>
 #include "WWLib/realcrc.h"
 #include "WWDebug/wwdebug.h"
 #include "w3d_util.h"
@@ -200,29 +202,64 @@ VertexMaterialClass & VertexMaterialClass::operator = (const VertexMaterialClass
 	return *this;
 }
 
+
+namespace {
+void Material_Components(const D3DMATERIAL8 &material, float (&values)[17])
+{
+    const D3DCOLORVALUE colors[] = {material.Diffuse, material.Ambient, material.Specular, material.Emissive};
+    for (unsigned int i = 0; i < 4; ++i) {
+        values[4*i] = colors[i].r; values[4*i+1] = colors[i].g;
+        values[4*i+2] = colors[i].b; values[4*i+3] = colors[i].a;
+    }
+    values[16] = material.Power;
+}
+}
+
 unsigned long VertexMaterialClass::Compute_CRC() const
 {
-	unsigned long crc = 0;
+    // This is a renderer asset lookup key, not the simulation or wire CRC.
+    // Explicit fixed-width fields keep addresses and native layout out of it.
+    unsigned long crc = 0;
+    auto append = [&crc](std::uint32_t value) {
+        const unsigned char bytes[] = {static_cast<unsigned char>(value),
+            static_cast<unsigned char>(value >> 8), static_cast<unsigned char>(value >> 16),
+            static_cast<unsigned char>(value >> 24)};
+        crc = CRC_Memory(bytes, 4, crc);
+    };
+    float components[17];
+    Material_Components(*Material, components);
+    for (float value : components) {
+        std::uint32_t bits;
+        static_assert(sizeof(value) == sizeof(bits), "W3D material scalar must remain float32");
+        std::memcpy(&bits, &value, sizeof(bits));
+        append(bits);
+    }
+    append(Flags); append(DiffuseColorSource); append(AmbientColorSource); append(EmissiveColorSource);
+    for (int source : UVSource) append(source);
+    append(UseLighting ? 1u : 0u); append(UniqueID);
+    for (int i = 0; i < MeshBuilderClass::MAX_STAGES; ++i) {
+        append(Mapper[i] ? 1u : 0u);
+        if (Mapper[i]) append(Mapper[i]->Mapper_ID());
+    }
+    return crc;
+}
 
-// don't include the name when determining whether two vertex materials match
-//	crc = CRC_Memory(reinterpret_cast<const unsigned char *>(Name.Peek_Buffer()),sizeof(char)*strlen(Name),crc);
-
-	crc = CRC_Memory(reinterpret_cast<const unsigned char *>(Material),sizeof(D3DMATERIAL8),crc);
-	crc = CRC_Memory(reinterpret_cast<const unsigned char *>(&Flags),sizeof(Flags),crc);
-	crc = CRC_Memory(reinterpret_cast<const unsigned char *>(&DiffuseColorSource),sizeof(DiffuseColorSource),crc);
-	crc = CRC_Memory(reinterpret_cast<const unsigned char *>(&AmbientColorSource),sizeof(AmbientColorSource),crc);
-	crc = CRC_Memory(reinterpret_cast<const unsigned char *>(&EmissiveColorSource),sizeof(EmissiveColorSource),crc);
-	crc = CRC_Memory(reinterpret_cast<const unsigned char *>(&UVSource),sizeof(UVSource),crc);
-	crc = CRC_Memory(reinterpret_cast<const unsigned char *>(&UseLighting),sizeof(UseLighting),crc);
-	crc = CRC_Memory(reinterpret_cast<const unsigned char *>(&UniqueID),sizeof(UniqueID),crc);
-
-	int i;
-	for (i=0; i<MeshBuilderClass::MAX_STAGES; i++)
-	{
-		if (Mapper[i]) crc = CRC_Memory(reinterpret_cast<const unsigned char *>(&(Mapper[i])),sizeof(TextureMapperClass*),crc);
-	}
-
-	return crc;
+bool VertexMaterialClass::Equals_Render_Material(const VertexMaterialClass &other) const
+{
+    float left[17], right[17];
+    Material_Components(*Material, left);
+    Material_Components(*SRCMATPTR(&other), right);
+    for (unsigned int i = 0; i < 17; ++i)
+        if (std::memcmp(&left[i], &right[i], sizeof(float)) != 0) return false;
+    if (Flags != other.Flags || DiffuseColorSource != other.DiffuseColorSource ||
+        AmbientColorSource != other.AmbientColorSource || EmissiveColorSource != other.EmissiveColorSource ||
+        UseLighting != other.UseLighting || UniqueID != other.UniqueID) return false;
+    for (int i = 0; i < MeshBuilderClass::MAX_STAGES; ++i) {
+        // Identity comparison preserves existing ownership and independent mapper animation.
+        // Equal mapper IDs alone cannot merge different offsets, scales, or time state.
+        if (UVSource[i] != other.UVSource[i] || Mapper[i] != other.Mapper[i]) return false;
+    }
+    return true;
 }
 
 // Ambient Get and Sets

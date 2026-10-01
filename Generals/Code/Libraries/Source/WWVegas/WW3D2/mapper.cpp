@@ -36,6 +36,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "mapper.h"
+#include "camera.h"
 #include "ww3d.h"
 #include "WWLib/INI.h"
 #include "WWLib/chunkio.h"
@@ -96,36 +97,17 @@ LinearOffsetTextureMapperClass::LinearOffsetTextureMapperClass(const LinearOffse
 
 void LinearOffsetTextureMapperClass::Apply(int uv_array_index)
 {
-	unsigned int delta = WW3D::Get_Sync_Time() - LastUsedSyncTime;
-	float del = (float)delta;
-	float offset_u = CurrentUVOffset.X + UVOffsetDeltaPerMS.X * del;
-	float offset_v = CurrentUVOffset.Y + UVOffsetDeltaPerMS.Y * del;
-
-	// ensure both coordinates of offset are in [0, 1] range:
-	offset_u = offset_u - WWMath::Floor(offset_u);
-	offset_v = offset_v - WWMath::Floor(offset_v);
-
-	// Set up the offset matrix
-	Matrix3D m(true);
-
-	// According to the docs this should work since its 2D
-	// otherwise change to translate
-	m[0].Z=offset_u;
-	m[0].X=Scale.X;
-	m[1].Z=offset_v;
-	m[1].Y=Scale.Y;
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Disable Texgen
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | uv_array_index);
-
-	// Tell rasterizer to expect 2D texture coordinates
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-
-	// Update state
-	CurrentUVOffset.X = offset_u;
-	CurrentUVOffset.Y = offset_v;
-	LastUsedSyncTime = WW3D::Get_Sync_Time();
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 // Scale mapper
@@ -157,18 +139,17 @@ ScaleTextureMapperClass::ScaleTextureMapperClass(const ScaleTextureMapperClass &
 
 void ScaleTextureMapperClass::Apply(int uv_array_index)
 {
-	// Set up the scale matrix
-	Matrix3D m(true);
-
-	m[0].X=Scale.U;
-	m[1].Y=Scale.V;
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Disable Texgen
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | uv_array_index);
-
-	// Tell rasterizer to expect 2D texture coordinates
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 // Grid Mapper
@@ -202,25 +183,17 @@ GridTextureMapperClass::GridTextureMapperClass(const GridTextureMapperClass & sr
 
 void GridTextureMapperClass::Apply(int uv_array_index)
 {
-	update_temporal_state();
-
-	float u_offset, v_offset;
-	calculate_uv_offset(&u_offset, &v_offset);
-
-	// Set up the offset matrix
-	Matrix3D m(true);
-
-	// According to the docs this should work since its 2D
-	// otherwise change to translate
-	m[0].Z = u_offset;
-	m[1].Z = v_offset;
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage), m);
-
-	// Disable Texgen
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_PASSTHRU | uv_array_index);
-
-	// Tell rasterizer to expect 2D texture coordinates
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT2);
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 void GridTextureMapperClass::Reset()
@@ -316,34 +289,17 @@ RotateTextureMapperClass::RotateTextureMapperClass(const RotateTextureMapperClas
 
 void RotateTextureMapperClass::Apply(int uv_array_index)
 {
-	unsigned int now = WW3D::Get_Sync_Time();
-	unsigned int delta =  now - LastUsedSyncTime;
-	LastUsedSyncTime=now;
-
-	CurrentAngle+=RadiansPerSec * delta / 1000.0f;
-	CurrentAngle=fmodf(CurrentAngle,2*WWMATH_PI);
-	if (CurrentAngle<0.0f) CurrentAngle+=2*WWMATH_PI;
-
-	// Set up the rotation matrix
-	float c,s;
-	c=WWMath::Cos(CurrentAngle);
-	s=WWMath::Sin(CurrentAngle);
-	Matrix4x4 m(true);
-
-	// subtract center
-	// rotate
-	// add center
-	// then scale
-	m[0].Set(Scale.X*c,-Scale.X*s,-Scale.X*(c*Center.U-s*Center.V-Center.U),0.0f);
-	m[1].Set(Scale.Y*s,Scale.Y*c,-Scale.Y*(s*Center.U+c*Center.V-Center.V),0.0f);
-
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Disable Texgen
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | uv_array_index);
-
-	// Tell rasterizer to expect 2D texture coordinates
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 // SineLinearOffset Mapper
@@ -382,34 +338,17 @@ SineLinearOffsetTextureMapperClass::SineLinearOffsetTextureMapperClass(const Sin
 
 void SineLinearOffsetTextureMapperClass::Apply(int uv_array_index)
 {
-	unsigned int now = WW3D::Get_Sync_Time();
-	unsigned int delta =  now - LastUsedSyncTime;
-	LastUsedSyncTime=now;
-
-	CurrentAngle+=(delta / 1000.0f)*WWMATH_PI*2;
-
-	float offset_u=UAFP.X*sin(UAFP.Y*CurrentAngle+UAFP.Z*WWMATH_PI);
-	float offset_v=VAFP.X*sin(VAFP.Y*CurrentAngle+VAFP.Z*WWMATH_PI);
-
-	// ensure both coordinates of offset are in [0, 1] range:
-	offset_u = offset_u - WWMath::Floor(offset_u);
-	offset_v = offset_v - WWMath::Floor(offset_v);
-
-	// Set up the offset matrix
-	Matrix3D m(true);
-
-	// According to the docs this should work since its 2D
-	// otherwise change to translate
-	m[0].Z=offset_u;
-	m[1].Z=offset_v;
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Disable Texgen
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | uv_array_index);
-
-	// Tell rasterizer to expect 2D texture coordinates
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 // StepLinearOffset Mapper
@@ -444,35 +383,17 @@ StepLinearOffsetTextureMapperClass::StepLinearOffsetTextureMapperClass(const Ste
 
 void StepLinearOffsetTextureMapperClass::Apply(int uv_array_index)
 {
-	unsigned int now = WW3D::Get_Sync_Time();
-	unsigned int delta =  now - LastUsedSyncTime;
-	float ms_per_step=1000.0f / StepsPerSec;
-
-	if (delta>ms_per_step)
-	{
-		LastUsedSyncTime=now;
-		CurrentStep+=Step*StepsPerSec;
-	}
-
-	// ensure both coordinates of offset are in [0, 1] range:
-	CurrentStep.U -= WWMath::Floor(CurrentStep.U);
-	CurrentStep.V -= WWMath::Floor(CurrentStep.V);
-
-	// Set up the offset matrix
-	Matrix3D m(true);
-
-	// According to the docs this should work since its 2D
-	// otherwise change to translate
-	m[0].Z=CurrentStep.U;
-	m[1].Z=CurrentStep.V;
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Disable Texgen
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | uv_array_index);
-
-	// Tell rasterizer to expect 2D texture coordinates
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 void StepLinearOffsetTextureMapperClass::Reset()
@@ -510,47 +431,17 @@ ZigZagLinearOffsetTextureMapperClass::ZigZagLinearOffsetTextureMapperClass(const
 
 void ZigZagLinearOffsetTextureMapperClass::Apply(int uv_array_index)
 {
-	unsigned int now = WW3D::Get_Sync_Time();
-	unsigned int delta =  now - LastUsedSyncTime;
-	float time=delta/1000.0f;
-
-	if (time>Period)
-	{
-		LastUsedSyncTime=now;
-	}
-
-	float offset_u,offset_v;
-
-	float half_period=0.5f*Period;
-	if (time<half_period)
-	{
-		offset_u=Speed.U * time;
-		offset_v=Speed.V * time;
-	} else
-	{
-		offset_u=Speed.U * (Period - time);
-		offset_v=Speed.V * (Period - time);
-	}
-
-	// ensure both coordinates of offset are in [0, 1] range:
-	offset_u = offset_u - WWMath::Floor(offset_u);
-	offset_v = offset_v - WWMath::Floor(offset_v);
-
-	// Set up the offset matrix
-	Matrix3D m(true);
-
-	// According to the docs this should work since its 2D
-	// otherwise change to translate
-	m[0].Z=offset_u;
-	m[1].Z=offset_v;
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Disable Texgen
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | uv_array_index);
-
-	// Tell rasterizer to expect 2D texture coordinates
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 void ZigZagLinearOffsetTextureMapperClass::Reset()
@@ -567,41 +458,32 @@ void ZigZagLinearOffsetTextureMapperClass::Reset()
 
 void ClassicEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// The canonical environment map
-	// scale the normal by (.5,.5) and add (.5,.5) to move it to (0,1) range
-	// and ignore the Z component
-	Matrix3D matenv(	0.5f, 0.0f, 0.0f, 0.5f,
-							0.0f, 0.5f, 0.0f, 0.5f,
-							0.0f, 0.0f, 1.0f, 0.0f );
-
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),matenv);
-
-	// Get camera normals
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACENORMAL);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 void EnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// The canonical environment map
-	// scale the normal by (.25,.25) and add (.5,.5) to move it to (0,1) range
-	// the additional half is to fudge the 1+z normalization factor
-	// and ignore the Z component
-	Matrix3D matenv(	0.25f, 0.0f, 0.0f, 0.5f,
-							0.0f, 0.25f, 0.0f, 0.5f,
-							0.0f, 0.0f, 1.0f, 0.0f );
-
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),matenv);
-
-	// Get camera reflection vector
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 EdgeMapperClass::EdgeMapperClass(unsigned int stage) :
@@ -636,31 +518,17 @@ EdgeMapperClass::EdgeMapperClass(const EdgeMapperClass & src):
 
 void EdgeMapperClass::Apply(int uv_array_index)
 {
-	unsigned int now=WW3D::Get_Sync_Time();
-
-	float delta=(now-LastUsedSyncTime)*0.001f;
-	LastUsedSyncTime=now;
-
-	VOffset+=delta*VSpeed;
-	VOffset-=WWMath::Floor(VOffset);
-
-	// takes the Z component and
-	// uses it to index the texture
-	Matrix3D matenv(	0.0f, 0.0f, 0.5f, 0.5f,
-							0.0f, 0.0f, 0.0f, VOffset,
-							0.0f, 0.0f, 1.0f, 0.0f );
-
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),matenv);
-
-	// Get camera reflection vector
-	if (UseReflect)
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
-	else
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACENORMAL);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 void EdgeMapperClass::Reset()
@@ -671,156 +539,80 @@ void EdgeMapperClass::Reset()
 
 void WSClassicEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// The canonical environment map
-	// scale the normal by (.5,.5) and add (.5,.5) to move it to (0,1) range
-	// and ignore the Z component
-	Matrix3D matenv(	0.5f, 0.0f, 0.0f, 0.5f,
-							0.0f, 0.5f, 0.0f, 0.5f,
-							0.0f, 0.0f, 1.0f, 0.0f );
-
-	// multiply by inverse of view transform
-	Matrix4x4 mat;
-	DX8Wrapper::Get_Transform(D3DTS_VIEW,mat);
-	Matrix3D mat2(mat[0].X,mat[1].X,mat[2].X,0.0f,
-					  mat[0].Y,mat[1].Y,mat[2].Y,0.0f,
-					  mat[0].Z,mat[1].Z,mat[2].Z,0.0f);
-#ifdef ALLOW_TEMPORARIES
-	matenv=matenv*mat2;
-#else
-	matenv.postMul(mat2);
-#endif
-
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),matenv);
-
-	// Get camera normals
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACENORMAL);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-
+    Matrix4x4 view(true), projection(true);
+	DX8Wrapper::Get_Transform(D3DTS_VIEW, view);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 void WSEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// The canonical environment map
-	// scale the normal by (.25,.25) and add (.5,.5) to move it to (0,1) range
-	// the additional half is to fudge the 1+z normalization factor
-	// and ignore the Z component
-	Matrix3D matenv(	0.25f, 0.0f, 0.0f, 0.5f,
-							0.0f, 0.25f, 0.0f, 0.5f,
-							0.0f, 0.0f, 1.0f, 0.0f );
-
-	// multiply by inverse of view transform
-	Matrix4x4 mat;
-	DX8Wrapper::Get_Transform(D3DTS_VIEW,mat);
-	Matrix3D mat2(mat[0].X,mat[1].X,mat[2].X,0.0f,
-					  mat[0].Y,mat[1].Y,mat[2].Y,0.0f,
-					  mat[0].Z,mat[1].Z,mat[2].Z,0.0f);
-#ifdef ALLOW_TEMPORARIES
-	matenv=matenv*mat2;
-#else
-	matenv.postMul(mat2);
-#endif
-
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),matenv);
-
-	// Get camera reflection
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-
+    Matrix4x4 view(true), projection(true);
+	DX8Wrapper::Get_Transform(D3DTS_VIEW, view);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 void ScreenMapperClass::Apply(int uv_array_index)
 {
-	unsigned int delta = WW3D::Get_Sync_Time() - LastUsedSyncTime;
-	float del = (float)delta;
-	float offset_u = CurrentUVOffset.X + UVOffsetDeltaPerMS.X * del;
-	float offset_v = CurrentUVOffset.Y + UVOffsetDeltaPerMS.Y * del;
-
-	// ensure both coordinates of offset are in [0, 1] range:
-	offset_u = offset_u - WWMath::Floor(offset_u);
-	offset_v = offset_v - WWMath::Floor(offset_v);
-
-	// multiply by projection matrix
-	// followed by scale and translation
-	Matrix4x4 mat;
-	DX8Wrapper::Get_Transform(D3DTS_PROJECTION,mat);
-	mat[0]*=Scale.X; // entire row since we're pre-multiplying
-	mat[1]*=Scale.Y;
-	Vector4 last(mat[3]); // this gets the w
-	last*=offset_u; // multiply by w because the projected flag will divide by w
-	mat[0]+=last;
-	last=mat[3];
-	last*=offset_v;
-	mat[1]+=last;
-
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),mat);
-
-	// Get camera space position
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEPOSITION);
-
-	// Tell rasterizer what to expect
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_PROJECTED | D3DTTFF_COUNT3);
-
-	// Update state
-	CurrentUVOffset.X = offset_u;
-	CurrentUVOffset.Y = offset_v;
-	LastUsedSyncTime = WW3D::Get_Sync_Time();
-
+    Matrix4x4 view(true), projection(true);
+	DX8Wrapper::Get_Transform(D3DTS_PROJECTION, projection);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 void GridClassicEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	update_temporal_state();
-
-	float u_offset, v_offset;
-	calculate_uv_offset(&u_offset, &v_offset);
-
-	float del = 0.5f * OOGridWidth;
-	// Set up the offset matrix
-	Matrix3D tform(	del,	0.0f,	0.0f,	u_offset + del,
-							0.0f,	del,	0.0f,	v_offset + del,
-							0.0f,	0.0f,	1.0f,	0.0f				);
-
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),tform);
-
-	// Get camera normals
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACENORMAL);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 void GridEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	update_temporal_state();
-
-	float u_offset, v_offset;
-	calculate_uv_offset(&u_offset, &v_offset);
-
-	// Set up the offset matrix
-	Matrix3D m(true);
-
-	// According to the docs this should work since its 2D
-	// otherwise change to translate
-	m[0].Z = u_offset;
-	m[1].Z = v_offset;
-
-	float del=0.5f * OOGridWidth;
-	// Set up the offset matrix
-	Matrix3D tform(	del,	0.0f,	0.0f,	u_offset + del,
-							0.0f,	del,	0.0f,	v_offset + del,
-							0.0f,	0.0f,	1.0f,	0.0f				);
-
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),tform);
-
-	// Get camera space reflection
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 RandomTextureMapperClass::RandomTextureMapperClass(float fps, unsigned int stage):
@@ -860,40 +652,17 @@ RandomTextureMapperClass::RandomTextureMapperClass(const RandomTextureMapperClas
 
 void RandomTextureMapperClass::Apply(int uv_array_index)
 {
-	// Set up the random matrix
-	Matrix3D m(true);
-
-	unsigned int delta=0;
-
-	if (FPS!=0.0f)
-	{
-		float ms_per_frame=1000/FPS;
-		unsigned int now = WW3D::Get_Sync_Time();
-		delta =  now - LastUsedSyncTime;
-		if (delta>ms_per_frame)
-		{
-			LastUsedSyncTime=now;
-			CurrentAngle=WWMATH_PI*(rand() & 2047)/1024.0f;
-			Center.U=(rand() & 2047)/2048.0f;
-			Center.V=(rand() & 2047)/2048.0f;
-		}
-	}
-
-	m.Rotate_Z(CurrentAngle);
-	float uoff=Center.U + delta*Speed.U*0.001f;
-	float voff=Center.V + delta*Speed.V*0.001f;
-	uoff=fmodf(uoff,1.0f);
-	voff=fmodf(voff,1.0f);
-	m[0].Z=uoff;
-	m[1].Z=voff;
-
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Disable Texgen
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | uv_array_index);
-
-	// Tell rasterizer to expect 2D texture coordinates
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+    Matrix4x4 view(true), projection(true);
+	TextureMapperRenderMapping mapping;
+    if (!Prepare_Render_Mapping(mapping, view, projection)) return;
+    DX8Wrapper::Set_Transform(static_cast<D3DTRANSFORMSTATETYPE>(D3DTS_TEXTURE0+Stage), mapping.matrix);
+    DWORD source = D3DTSS_TCI_PASSTHRU | uv_array_index;
+    if (mapping.input == TextureMapperRenderMapping::CameraPosition) source = D3DTSS_TCI_CAMERASPACEPOSITION;
+    if (mapping.input == TextureMapperRenderMapping::CameraNormal) source = D3DTSS_TCI_CAMERASPACENORMAL;
+    if (mapping.input == TextureMapperRenderMapping::CameraReflection) source = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, source);
+    DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS,
+        mapping.projected ? D3DTTFF_PROJECTED | D3DTTFF_COUNT3 : D3DTTFF_COUNT2);
 }
 
 // BumpEnv Mapper
@@ -982,4 +751,578 @@ void Reset_All_Texture_Mappers(RenderObjClass *robj, bool make_unique)
 			}
 		}
 	}
+}
+
+Vector3 TextureMapperRenderMapping::Map_Coordinate(const Vector2 &uv,
+    const Vector3 &camera_position, const Vector3 &camera_normal) const
+{
+	Vector3 value(uv.X, uv.Y, 1.0f);
+	if (input == CameraPosition) value = camera_position;
+	else if (input == CameraNormal) value = camera_normal;
+	else if (input == CameraReflection) {
+	    Vector3 incident = camera_position;
+	    incident.Normalize();
+	    value = incident - camera_normal * (2.0f * Vector3::Dot_Product(incident, camera_normal));
+	}
+	Vector4 coordinate(value.X, value.Y, value.Z, 1.0f);
+	return Vector3(Vector4::Dot_Product(matrix[0], coordinate),
+	               Vector4::Dot_Product(matrix[1], coordinate),
+	               projected ? Vector4::Dot_Product(matrix[2], coordinate) : 1.0f);
+}
+
+bool TextureMapperClass::Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera)
+{
+    Matrix4x4 projection;
+    camera.Get_Zero_To_One_Projection_Matrix(&projection);
+    return Prepare_Render_Mapping(mapping, Matrix4x4(camera.Get_View_Matrix()), projection);
+}
+
+bool TextureMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &, const Matrix4x4 &, const Matrix4x4 &)
+{
+    return false;
+}
+
+bool LinearOffsetTextureMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	unsigned int delta = WW3D::Get_Sync_Time() - LastUsedSyncTime;
+	float del = (float)delta;
+	float offset_u = CurrentUVOffset.X + UVOffsetDeltaPerMS.X * del;
+	float offset_v = CurrentUVOffset.Y + UVOffsetDeltaPerMS.Y * del;
+
+	// ensure both coordinates of offset are in [0, 1] range:
+	offset_u = offset_u - WWMath::Floor(offset_u);
+	offset_v = offset_v - WWMath::Floor(offset_v);
+
+	// Set up the offset matrix
+	Matrix3D m(true);
+
+	// According to the docs this should work since its 2D
+	// otherwise change to translate
+	m[0].Z=offset_u;
+	m[0].X=Scale.X;
+	m[1].Z=offset_v;
+	m[1].Y=Scale.Y;
+
+
+	// Disable Texgen
+
+
+	// Tell rasterizer to expect 2D texture coordinates
+
+
+	// Update state
+	CurrentUVOffset.X = offset_u;
+	CurrentUVOffset.Y = offset_v;
+	LastUsedSyncTime = WW3D::Get_Sync_Time();
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(m);
+	mapping = result;
+	return true;
+}
+
+bool ScaleTextureMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	// Set up the scale matrix
+	Matrix3D m(true);
+
+	m[0].X=Scale.U;
+	m[1].Y=Scale.V;
+
+
+	// Disable Texgen
+
+
+	// Tell rasterizer to expect 2D texture coordinates
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(m);
+	mapping = result;
+	return true;
+}
+
+bool GridTextureMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	update_temporal_state();
+
+	float u_offset, v_offset;
+	calculate_uv_offset(&u_offset, &v_offset);
+
+	// Set up the offset matrix
+	Matrix3D m(true);
+
+	// According to the docs this should work since its 2D
+	// otherwise change to translate
+	m[0].Z = u_offset;
+	m[1].Z = v_offset;
+
+
+	// Disable Texgen
+
+
+	// Tell rasterizer to expect 2D texture coordinates
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(m);
+	mapping = result;
+	return true;
+}
+
+bool RotateTextureMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	unsigned int now = WW3D::Get_Sync_Time();
+	unsigned int delta =  now - LastUsedSyncTime;
+	LastUsedSyncTime=now;
+
+	CurrentAngle+=RadiansPerSec * delta / 1000.0f;
+	CurrentAngle=fmodf(CurrentAngle,2*WWMATH_PI);
+	if (CurrentAngle<0.0f) CurrentAngle+=2*WWMATH_PI;
+
+	// Set up the rotation matrix
+	float c,s;
+	c=WWMath::Cos(CurrentAngle);
+	s=WWMath::Sin(CurrentAngle);
+	Matrix4x4 m(true);
+
+	// subtract center
+	// rotate
+	// add center
+	// then scale
+	m[0].Set(Scale.X*c,-Scale.X*s,-Scale.X*(c*Center.U-s*Center.V-Center.U),0.0f);
+	m[1].Set(Scale.Y*s,Scale.Y*c,-Scale.Y*(s*Center.U+c*Center.V-Center.V),0.0f);
+
+
+
+	// Disable Texgen
+
+
+	// Tell rasterizer to expect 2D texture coordinates
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(m);
+	mapping = result;
+	return true;
+}
+
+bool SineLinearOffsetTextureMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	unsigned int now = WW3D::Get_Sync_Time();
+	unsigned int delta =  now - LastUsedSyncTime;
+	LastUsedSyncTime=now;
+
+	CurrentAngle+=(delta / 1000.0f)*WWMATH_PI*2;
+
+	float offset_u=UAFP.X*sin(UAFP.Y*CurrentAngle+UAFP.Z*WWMATH_PI);
+	float offset_v=VAFP.X*sin(VAFP.Y*CurrentAngle+VAFP.Z*WWMATH_PI);
+
+	// ensure both coordinates of offset are in [0, 1] range:
+	offset_u = offset_u - WWMath::Floor(offset_u);
+	offset_v = offset_v - WWMath::Floor(offset_v);
+
+	// Set up the offset matrix
+	Matrix3D m(true);
+
+	// According to the docs this should work since its 2D
+	// otherwise change to translate
+	m[0].Z=offset_u;
+	m[1].Z=offset_v;
+
+
+	// Disable Texgen
+
+
+	// Tell rasterizer to expect 2D texture coordinates
+
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(m);
+	mapping = result;
+	return true;
+}
+
+bool StepLinearOffsetTextureMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	unsigned int now = WW3D::Get_Sync_Time();
+	unsigned int delta =  now - LastUsedSyncTime;
+	float ms_per_step=1000.0f / StepsPerSec;
+
+	if (delta>ms_per_step)
+	{
+		LastUsedSyncTime=now;
+		CurrentStep+=Step*StepsPerSec;
+	}
+
+	// ensure both coordinates of offset are in [0, 1] range:
+	CurrentStep.U -= WWMath::Floor(CurrentStep.U);
+	CurrentStep.V -= WWMath::Floor(CurrentStep.V);
+
+	// Set up the offset matrix
+	Matrix3D m(true);
+
+	// According to the docs this should work since its 2D
+	// otherwise change to translate
+	m[0].Z=CurrentStep.U;
+	m[1].Z=CurrentStep.V;
+
+
+	// Disable Texgen
+
+
+	// Tell rasterizer to expect 2D texture coordinates
+
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(m);
+	mapping = result;
+	return true;
+}
+
+bool ZigZagLinearOffsetTextureMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	unsigned int now = WW3D::Get_Sync_Time();
+	unsigned int delta =  now - LastUsedSyncTime;
+	float time=delta/1000.0f;
+
+	if (time>Period)
+	{
+		LastUsedSyncTime=now;
+	}
+
+	float offset_u,offset_v;
+
+	float half_period=0.5f*Period;
+	if (time<half_period)
+	{
+		offset_u=Speed.U * time;
+		offset_v=Speed.V * time;
+	} else
+	{
+		offset_u=Speed.U * (Period - time);
+		offset_v=Speed.V * (Period - time);
+	}
+
+	// ensure both coordinates of offset are in [0, 1] range:
+	offset_u = offset_u - WWMath::Floor(offset_u);
+	offset_v = offset_v - WWMath::Floor(offset_v);
+
+	// Set up the offset matrix
+	Matrix3D m(true);
+
+	// According to the docs this should work since its 2D
+	// otherwise change to translate
+	m[0].Z=offset_u;
+	m[1].Z=offset_v;
+
+
+	// Disable Texgen
+
+
+	// Tell rasterizer to expect 2D texture coordinates
+
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(m);
+	mapping = result;
+	return true;
+}
+
+bool ClassicEnvironmentMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	// The canonical environment map
+	// scale the normal by (.5,.5) and add (.5,.5) to move it to (0,1) range
+	// and ignore the Z component
+	Matrix3D matenv(	0.5f, 0.0f, 0.0f, 0.5f,
+							0.0f, 0.5f, 0.0f, 0.5f,
+							0.0f, 0.0f, 1.0f, 0.0f );
+
+
+
+	// Get camera normals
+
+
+	// Tell rasterizer to expect 2D matrices
+
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(matenv);
+	result.input = TextureMapperRenderMapping::CameraNormal;
+	mapping = result;
+	return true;
+}
+
+bool EnvironmentMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	// The canonical environment map
+	// scale the normal by (.25,.25) and add (.5,.5) to move it to (0,1) range
+	// the additional half is to fudge the 1+z normalization factor
+	// and ignore the Z component
+	Matrix3D matenv(	0.25f, 0.0f, 0.0f, 0.5f,
+							0.0f, 0.25f, 0.0f, 0.5f,
+							0.0f, 0.0f, 1.0f, 0.0f );
+
+
+
+	// Get camera reflection vector
+
+
+	// Tell rasterizer to expect 2D matrices
+
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(matenv);
+	result.input = TextureMapperRenderMapping::CameraReflection;
+	mapping = result;
+	return true;
+}
+
+bool EdgeMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	unsigned int now=WW3D::Get_Sync_Time();
+
+	float delta=(now-LastUsedSyncTime)*0.001f;
+	LastUsedSyncTime=now;
+
+	VOffset+=delta*VSpeed;
+	VOffset-=WWMath::Floor(VOffset);
+
+	// takes the Z component and
+	// uses it to index the texture
+	Matrix3D matenv(	0.0f, 0.0f, 0.5f, 0.5f,
+							0.0f, 0.0f, 0.0f, VOffset,
+							0.0f, 0.0f, 1.0f, 0.0f );
+
+
+
+	// Get camera reflection vector
+
+
+	// Tell rasterizer to expect 2D matrices
+
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(matenv);
+	result.input = UseReflect ? TextureMapperRenderMapping::CameraReflection : TextureMapperRenderMapping::CameraNormal;
+	mapping = result;
+	return true;
+}
+
+bool WSClassicEnvironmentMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	// The canonical environment map
+	// scale the normal by (.5,.5) and add (.5,.5) to move it to (0,1) range
+	// and ignore the Z component
+	Matrix3D matenv(	0.5f, 0.0f, 0.0f, 0.5f,
+							0.0f, 0.5f, 0.0f, 0.5f,
+							0.0f, 0.0f, 1.0f, 0.0f );
+
+	// multiply by inverse of view transform
+	Matrix4x4 mat;
+	mat = view;
+	Matrix3D mat2(mat[0].X,mat[1].X,mat[2].X,0.0f,
+					  mat[0].Y,mat[1].Y,mat[2].Y,0.0f,
+					  mat[0].Z,mat[1].Z,mat[2].Z,0.0f);
+#ifdef ALLOW_TEMPORARIES
+	matenv=matenv*mat2;
+#else
+	matenv.postMul(mat2);
+#endif
+
+
+
+	// Get camera normals
+
+
+	// Tell rasterizer to expect 2D matrices
+
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(matenv);
+	result.input = TextureMapperRenderMapping::CameraNormal;
+	mapping = result;
+	return true;
+}
+
+bool WSEnvironmentMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	// The canonical environment map
+	// scale the normal by (.25,.25) and add (.5,.5) to move it to (0,1) range
+	// the additional half is to fudge the 1+z normalization factor
+	// and ignore the Z component
+	Matrix3D matenv(	0.25f, 0.0f, 0.0f, 0.5f,
+							0.0f, 0.25f, 0.0f, 0.5f,
+							0.0f, 0.0f, 1.0f, 0.0f );
+
+	// multiply by inverse of view transform
+	Matrix4x4 mat;
+	mat = view;
+	Matrix3D mat2(mat[0].X,mat[1].X,mat[2].X,0.0f,
+					  mat[0].Y,mat[1].Y,mat[2].Y,0.0f,
+					  mat[0].Z,mat[1].Z,mat[2].Z,0.0f);
+#ifdef ALLOW_TEMPORARIES
+	matenv=matenv*mat2;
+#else
+	matenv.postMul(mat2);
+#endif
+
+
+
+	// Get camera reflection
+
+
+	// Tell rasterizer to expect 2D matrices
+
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(matenv);
+	result.input = TextureMapperRenderMapping::CameraReflection;
+	mapping = result;
+	return true;
+}
+
+bool ScreenMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	unsigned int delta = WW3D::Get_Sync_Time() - LastUsedSyncTime;
+	float del = (float)delta;
+	float offset_u = CurrentUVOffset.X + UVOffsetDeltaPerMS.X * del;
+	float offset_v = CurrentUVOffset.Y + UVOffsetDeltaPerMS.Y * del;
+
+	// ensure both coordinates of offset are in [0, 1] range:
+	offset_u = offset_u - WWMath::Floor(offset_u);
+	offset_v = offset_v - WWMath::Floor(offset_v);
+
+	// multiply by projection matrix
+	// followed by scale and translation
+	Matrix4x4 mat;
+	mat = projection;
+	mat[0]*=Scale.X; // entire row since we're pre-multiplying
+	mat[1]*=Scale.Y;
+	Vector4 last(mat[3]); // this gets the w
+	last*=offset_u; // multiply by w because the projected flag will divide by w
+	mat[0]+=last;
+	last=mat[3];
+	last*=offset_v;
+	mat[1]+=last;
+
+
+
+	// Get camera space position
+
+
+	// Tell rasterizer what to expect
+
+
+	// Update state
+	CurrentUVOffset.X = offset_u;
+	CurrentUVOffset.Y = offset_v;
+	LastUsedSyncTime = WW3D::Get_Sync_Time();
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(mat);
+	result.input = TextureMapperRenderMapping::CameraPosition;
+	result.projected = true;
+	mapping = result;
+	return true;
+}
+
+bool GridClassicEnvironmentMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	update_temporal_state();
+
+	float u_offset, v_offset;
+	calculate_uv_offset(&u_offset, &v_offset);
+
+	float del = 0.5f * OOGridWidth;
+	// Set up the offset matrix
+	Matrix3D tform(	del,	0.0f,	0.0f,	u_offset + del,
+							0.0f,	del,	0.0f,	v_offset + del,
+							0.0f,	0.0f,	1.0f,	0.0f				);
+
+
+
+	// Get camera normals
+
+
+	// Tell rasterizer to expect 2D matrices
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(tform);
+	result.input = TextureMapperRenderMapping::CameraNormal;
+	mapping = result;
+	return true;
+}
+
+bool GridEnvironmentMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	update_temporal_state();
+
+	float u_offset, v_offset;
+	calculate_uv_offset(&u_offset, &v_offset);
+
+	// Set up the offset matrix
+	Matrix3D m(true);
+
+	// According to the docs this should work since its 2D
+	// otherwise change to translate
+	m[0].Z = u_offset;
+	m[1].Z = v_offset;
+
+	float del=0.5f * OOGridWidth;
+	// Set up the offset matrix
+	Matrix3D tform(	del,	0.0f,	0.0f,	u_offset + del,
+							0.0f,	del,	0.0f,	v_offset + del,
+							0.0f,	0.0f,	1.0f,	0.0f				);
+
+
+
+	// Get camera space reflection
+
+
+	// Tell rasterizer to expect 2D matrices
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(tform);
+	result.input = TextureMapperRenderMapping::CameraReflection;
+	mapping = result;
+	return true;
+}
+
+bool RandomTextureMapperClass::Prepare_Render_Mapping(TextureMapperRenderMapping &mapping, const Matrix4x4 &view, const Matrix4x4 &projection)
+{
+	// Set up the random matrix
+	Matrix3D m(true);
+
+	unsigned int delta=0;
+
+	if (FPS!=0.0f)
+	{
+		float ms_per_frame=1000/FPS;
+		unsigned int now = WW3D::Get_Sync_Time();
+		delta =  now - LastUsedSyncTime;
+		if (delta>ms_per_frame)
+		{
+			LastUsedSyncTime=now;
+			CurrentAngle=WWMATH_PI*(rand() & 2047)/1024.0f;
+			Center.U=(rand() & 2047)/2048.0f;
+			Center.V=(rand() & 2047)/2048.0f;
+		}
+	}
+
+	m.Rotate_Z(CurrentAngle);
+	float uoff=Center.U + delta*Speed.U*0.001f;
+	float voff=Center.V + delta*Speed.V*0.001f;
+	uoff=fmodf(uoff,1.0f);
+	voff=fmodf(voff,1.0f);
+	m[0].Z=uoff;
+	m[1].Z=voff;
+
+
+
+	// Disable Texgen
+
+
+	// Tell rasterizer to expect 2D texture coordinates
+
+	TextureMapperRenderMapping result;
+	result.matrix = Matrix4x4(m);
+	mapping = result;
+	return true;
 }

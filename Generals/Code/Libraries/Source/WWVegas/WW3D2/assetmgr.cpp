@@ -106,7 +106,7 @@
 #include "WWDebug/wwmemlog.h"
 #include "dazzle.h"
 #include "dx8wrapper.h"
-#include "dx8renderer.h"
+#include "meshrenderer.h"
 #include "metalmap.h"
 #include "w3dexclusionlist.h"
 #include <WWLib/INI.h>
@@ -511,7 +511,7 @@ void WW3DAssetManager::Release_Unused_Assets()
 void WW3DAssetManager::Free_Assets_With_Exclusion_List(const DynamicVectorClass<StringClass> & exclusion_names)
 {
 	// Reset the dx8 mesh renderer
-	TheDX8MeshRenderer.Invalidate();
+	TheMeshRenderer.Invalidate();
 
 	// Build an exclusion list object that will do the real filtering work for us
 	W3DExclusionListClass exclusion_list(exclusion_names);

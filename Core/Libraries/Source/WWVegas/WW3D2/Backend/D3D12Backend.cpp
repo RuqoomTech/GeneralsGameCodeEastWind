@@ -226,6 +226,16 @@ ID3D12Resource *createDefaultBuffer(ID3D12Device *device, std::size_t byte_count
     return resource;
 }
 
+void createTextureView(ID3D12Device *device, ID3D12Resource *texture, D3D12_CPU_DESCRIPTOR_HANDLE destination)
+{
+    D3D12_SHADER_RESOURCE_VIEW_DESC view{};
+    view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    view.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    view.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    view.Texture2D.MipLevels = texture->GetDesc().MipLevels;
+    device->CreateShaderResourceView(texture, &view, destination);
+}
+
 ID3D12Resource *createUploadBuffer(ID3D12Device *device, std::size_t byte_count)
 {
     D3D12_HEAP_PROPERTIES heap_properties{};
@@ -556,7 +566,7 @@ void D3D12Backend::createPrimitivePipeline()
              D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
             {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,
              D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28,
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28,
              D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         };
         pipeline.VS = {textured_vertex_shader->GetBufferPointer(), textured_vertex_shader->GetBufferSize()};
@@ -590,9 +600,9 @@ void D3D12Backend::ensureTextureDescriptorCapacity(std::size_t required_capacity
     {
         return;
     }
-    if (m_scene_open || required_capacity > std::numeric_limits<UINT>::max())
+    if (required_capacity > std::numeric_limits<UINT>::max())
     {
-        throw std::runtime_error("D3D12 texture descriptor heap cannot grow during an open scene");
+        throw std::runtime_error("D3D12 texture descriptor capacity exceeds UINT");
     }
 
     std::size_t new_capacity = m_texture_descriptor_capacity == 0 ? 64u : m_texture_descriptor_capacity;
@@ -608,7 +618,15 @@ void D3D12Backend::ensureTextureDescriptorCapacity(std::size_t required_capacity
 
     if (m_texture_srv_heap != nullptr)
     {
-        waitForGpu();
+        if (m_scene_open)
+        {
+            // Submitted and currently recorded lists can reference this heap.
+            // The current frame's later fence covers both on the same queue.
+            auto &retired = m_frame_retired_texture_heaps[m_frame_index];
+            retired.reserve(retired.size() + 1);
+        }
+        else
+            waitForGpu();
     }
 
     D3D12_DESCRIPTOR_HEAP_DESC heap_desc{};
@@ -628,7 +646,6 @@ void D3D12Backend::ensureTextureDescriptorCapacity(std::size_t required_capacity
 
     if (m_texture_srv_heap != nullptr)
     {
-        const D3D12_CPU_DESCRIPTOR_HANDLE old_start = m_texture_srv_heap->GetCPUDescriptorHandleForHeapStart();
         const D3D12_CPU_DESCRIPTOR_HANDLE new_start = new_heap->GetCPUDescriptorHandleForHeapStart();
         for (std::size_t index = 0; index < m_textures.size(); ++index)
         {
@@ -636,19 +653,18 @@ void D3D12Backend::ensureTextureDescriptorCapacity(std::size_t required_capacity
             {
                 continue;
             }
-            D3D12_CPU_DESCRIPTOR_HANDLE source = old_start;
-            source.ptr += index * m_srv_descriptor_size;
             D3D12_CPU_DESCRIPTOR_HANDLE destination = new_start;
             destination.ptr += index * m_srv_descriptor_size;
-            m_device->CopyDescriptorsSimple(
-                1,
-                destination,
-                source,
-                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+            // Shader-visible heaps cannot be descriptor-copy sources. Rebuild
+            // the SRV from the resource owned by this same texture slot.
+            createTextureView(m_device, m_textures[index].texture, destination);
         }
     }
 
-    releaseCom(m_texture_srv_heap);
+    if (m_scene_open && m_texture_srv_heap != nullptr)
+        m_frame_retired_texture_heaps[m_frame_index].push_back(m_texture_srv_heap);
+    else
+        releaseCom(m_texture_srv_heap);
     m_texture_srv_heap = new_heap;
     m_texture_descriptor_capacity = static_cast<std::uint32_t>(new_capacity);
 }
@@ -987,14 +1003,9 @@ RenderBackendTextureHandle D3D12Backend::Create_Render_Texture(unsigned int widt
         checkHresult("CreateDescriptorHeap(render texture RTV)",
             m_device->CreateDescriptorHeap(&rtv_desc, IID_PPV_ARGS(&rtv)));
         m_device->CreateRenderTargetView(texture, nullptr, rtv->GetCPUDescriptorHandleForHeapStart());
-        D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
-        srv_desc.Format = desc.Format;
-        srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srv_desc.Texture2D.MipLevels = 1;
         D3D12_CPU_DESCRIPTOR_HANDLE srv = m_texture_srv_heap->GetCPUDescriptorHandleForHeapStart();
         srv.ptr += slot * m_srv_descriptor_size;
-        m_device->CreateShaderResourceView(texture, &srv_desc, srv);
+        createTextureView(m_device, texture, srv);
         if (slot == m_textures.size()) m_textures.push_back(TextureResource{});
         TextureResource &stored = m_textures[slot];
         stored.texture = texture;
@@ -1711,18 +1722,28 @@ void D3D12Backend::Release_Static_Geometry(RenderBackendGeometryHandle geometry_
 }
 
 RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
-    unsigned int width,
-    unsigned int height,
-    const unsigned char *pixels,
-    unsigned int row_pitch)
+    unsigned int width, unsigned int height, const unsigned char *pixels, unsigned int row_pitch)
 {
-    if (m_scene_open || width == 0 || height == 0 || pixels == nullptr ||
-        width > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION ||
-        height > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION ||
-        width > (std::numeric_limits<unsigned int>::max() / 4u) ||
-        row_pitch < width * 4u)
+    const RenderBackendTextureMipLevel level{width,height,row_pitch,pixels};
+    return Create_Static_RGBA8_Texture(&level,1);
+}
+
+RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
+    const RenderBackendTextureMipLevel *levels, unsigned int level_count)
+{
+    if (levels == nullptr || level_count == 0 || level_count > 15) return {};
+    const unsigned int width = levels[0].width, height = levels[0].height;
+    if (width == 0 || height == 0 || width > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION ||
+        height > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION) return {};
+    unsigned int expected_width = width, expected_height = height;
+    for (unsigned int index=0; index<level_count; ++index)
     {
-        return RenderBackendTextureHandle();
+        const auto &level = levels[index];
+        if (level.width != expected_width || level.height != expected_height || level.pixels == nullptr ||
+            level.row_pitch < expected_width*4u) return {};
+        if (index+1 < level_count && expected_width == 1 && expected_height == 1) return {};
+        expected_width = std::max(1u,expected_width/2);
+        expected_height = std::max(1u,expected_height/2);
     }
 
     std::size_t slot = 0;
@@ -1756,7 +1777,7 @@ RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
         texture_desc.Width = width;
         texture_desc.Height = height;
         texture_desc.DepthOrArraySize = 1;
-        texture_desc.MipLevels = 1;
+        texture_desc.MipLevels = static_cast<UINT16>(level_count);
         texture_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         texture_desc.SampleDesc.Count = 1;
         texture_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
@@ -1771,39 +1792,32 @@ RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
                 nullptr,
                 IID_PPV_ARGS(&texture)));
 
-        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
-        UINT row_count = 0;
-        UINT64 row_size = 0;
+        std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> footprints(level_count);
+        std::vector<UINT> row_counts(level_count);
+        std::vector<UINT64> row_sizes(level_count);
         UINT64 upload_size = 0;
-        m_device->GetCopyableFootprints(
-            &texture_desc,
-            0,
-            1,
-            0,
-            &footprint,
-            &row_count,
-            &row_size,
-            &upload_size);
-        if (row_count != height || row_size < static_cast<UINT64>(width) * 4u ||
-            upload_size > std::numeric_limits<std::size_t>::max())
-        {
-            throw std::runtime_error("unexpected D3D12 RGBA8 upload footprint");
-        }
+        m_device->GetCopyableFootprints(&texture_desc,0,level_count,0,
+            footprints.data(),row_counts.data(),row_sizes.data(),&upload_size);
+        if (upload_size > std::numeric_limits<std::size_t>::max())
+            throw std::runtime_error("D3D12 mip-chain upload exceeds addressable memory");
+        for (unsigned int index=0; index<level_count; ++index)
+            if (row_counts[index] != levels[index].height || row_sizes[index] < levels[index].width*4u)
+                throw std::runtime_error("unexpected D3D12 RGBA8 mip footprint");
 
-        upload = createUploadBuffer(m_device, static_cast<std::size_t>(upload_size));
-        D3D12_RANGE no_read{0, 0};
+        upload = createUploadBuffer(m_device,static_cast<std::size_t>(upload_size));
+        D3D12_RANGE no_read{0,0};
         void *mapped = nullptr;
-        checkHresult("ID3D12Resource::Map(texture upload)", upload->Map(0, &no_read, &mapped));
-        auto *destination = static_cast<unsigned char *>(mapped) + static_cast<std::size_t>(footprint.Offset);
-        const std::size_t copy_bytes = static_cast<std::size_t>(width) * 4u;
-        for (unsigned int row = 0; row < height; ++row)
+        checkHresult("ID3D12Resource::Map(texture upload)",upload->Map(0,&no_read,&mapped));
+        for (unsigned int index=0; index<level_count; ++index)
         {
-            std::memcpy(
-                destination + static_cast<std::size_t>(row) * footprint.Footprint.RowPitch,
-                pixels + static_cast<std::size_t>(row) * row_pitch,
-                copy_bytes);
+            const auto &level = levels[index];
+            const auto &footprint = footprints[index];
+            auto *destination = static_cast<unsigned char *>(mapped) + static_cast<std::size_t>(footprint.Offset);
+            for (unsigned int row=0; row<level.height; ++row)
+                std::memcpy(destination + static_cast<std::size_t>(row)*footprint.Footprint.RowPitch,
+                    level.pixels + static_cast<std::size_t>(row)*level.row_pitch,static_cast<std::size_t>(level.width)*4);
         }
-        upload->Unmap(0, nullptr);
+        upload->Unmap(0,nullptr);
 
         checkHresult(
             "ID3D12Device::CreateCommandAllocator(texture upload)",
@@ -1817,21 +1831,18 @@ RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
                 nullptr,
                 IID_PPV_ARGS(&upload_list)));
 
-        D3D12_TEXTURE_COPY_LOCATION destination_location{};
-        destination_location.pResource = texture;
-        destination_location.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-        destination_location.SubresourceIndex = 0;
-        D3D12_TEXTURE_COPY_LOCATION source_location{};
-        source_location.pResource = upload;
-        source_location.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-        source_location.PlacedFootprint = footprint;
-        upload_list->CopyTextureRegion(
-            &destination_location,
-            0,
-            0,
-            0,
-            &source_location,
-            nullptr);
+        for (unsigned int index=0; index<level_count; ++index)
+        {
+            D3D12_TEXTURE_COPY_LOCATION destination_location{};
+            destination_location.pResource = texture;
+            destination_location.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            destination_location.SubresourceIndex = index;
+            D3D12_TEXTURE_COPY_LOCATION source_location{};
+            source_location.pResource = upload;
+            source_location.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+            source_location.PlacedFootprint = footprints[index];
+            upload_list->CopyTextureRegion(&destination_location,0,0,0,&source_location,nullptr);
+        }
 
         D3D12_RESOURCE_BARRIER barrier{};
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -1857,16 +1868,9 @@ RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
             }
         }
 
-        D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
-        srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srv_desc.Texture2D.MostDetailedMip = 0;
-        srv_desc.Texture2D.MipLevels = 1;
-        srv_desc.Texture2D.ResourceMinLODClamp = 0.0f;
         D3D12_CPU_DESCRIPTOR_HANDLE srv = m_texture_srv_heap->GetCPUDescriptorHandleForHeapStart();
         srv.ptr += slot * m_srv_descriptor_size;
-        m_device->CreateShaderResourceView(texture, &srv_desc, srv);
+        createTextureView(m_device, texture, srv);
 
         releaseCom(upload_list);
         releaseCom(upload_allocator);
@@ -1971,9 +1975,9 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
         if (entry.key == key) return entry.pipeline;
 
     static const D3D12_BLEND factors[] = {D3D12_BLEND_ZERO, D3D12_BLEND_ONE,
-        D3D12_BLEND_SRC_COLOR, D3D12_BLEND_INV_SRC_COLOR, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA};
+        D3D12_BLEND_SRC_COLOR, D3D12_BLEND_INV_SRC_COLOR, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_COLOR};
     static const D3D12_BLEND alpha_factors[] = {D3D12_BLEND_ZERO, D3D12_BLEND_ONE,
-        D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA};
+        D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA};
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline{};
     pipeline.pRootSignature = m_primitive_root_signature;
     pipeline.VS = {m_material_vertex_shader->GetBufferPointer(), m_material_vertex_shader->GetBufferSize()};
@@ -1982,7 +1986,7 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
     const D3D12_INPUT_ELEMENT_DESC elements[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
     pipeline.InputLayout = {elements, 3};
     auto &blend = pipeline.BlendState.RenderTarget[0];
     blend.BlendEnable = source != 1 || destination != 0;
@@ -2024,8 +2028,8 @@ bool D3D12Backend::Draw_Indexed_Material_Triangles(
     RenderBackendTextureHandle texture, const RenderBackendMaterialState &material)
 {
     if (!m_scene_open || static_cast<unsigned int>(material.depth_test) > 8 ||
-        static_cast<unsigned int>(material.source_blend) > 5 ||
-        static_cast<unsigned int>(material.destination_blend) > 5 ||
+        static_cast<unsigned int>(material.source_blend) > 6 ||
+        static_cast<unsigned int>(material.destination_blend) > 6 ||
         static_cast<unsigned int>(material.cull) > 2 ||
         static_cast<unsigned int>(material.texture_combine) > 3 ||
         static_cast<unsigned int>(material.alpha_test) > 2 ||
@@ -2186,6 +2190,8 @@ void D3D12Backend::releaseFrameUploads(std::uint32_t frame_index) noexcept
         }
     }
     m_frame_uploads[frame_index].clear();
+    for (auto *heap : m_frame_retired_texture_heaps[frame_index]) heap->Release();
+    m_frame_retired_texture_heaps[frame_index].clear();
 }
 
 void D3D12Backend::releaseStaticGeometry(StaticGeometryResource &geometry) noexcept

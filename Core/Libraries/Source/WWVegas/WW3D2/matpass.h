@@ -46,6 +46,7 @@ class TextureClass;
 class VertexMaterialClass;
 class MeshModelClass;
 class OBBoxClass;
+struct RenderBackendMaterialState;
 
 /**
 ** MaterialPassClass
@@ -69,6 +70,9 @@ public:
 
 	/// MW: Had to make this virtual so app can perform direct/custom D3D setup.
 	virtual void	Install_Materials() const;
+	// Custom passes must expose their complete draw behavior at this seam before
+	// the neutral mesh renderer can use them.
+	virtual bool Prepare_Render_Material(RenderBackendMaterialState &state) const;
 	virtual void	UnInstall_Materials() const { };	///< reset/cleanup D3D states
 
 	void							Set_Texture(TextureClass * Texture,int stage = 0);

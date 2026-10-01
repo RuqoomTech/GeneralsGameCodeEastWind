@@ -147,6 +147,7 @@ TextureClass::TextureClass(unsigned width, unsigned height, RenderBackendTexture
 {
 	RendererTexture = texture;
 	RendererOwner = owner;
+	RendererMipLevelCount = 1;
 	Initialized = IsProcedural = true;
 	LastAccessed = WW3D::Get_Sync_Time();
 }
@@ -156,14 +157,21 @@ bool TextureClass::Ensure_Renderer_Texture()
 	if (Get_Renderer_Texture().Is_Valid()) return true;
 	IRenderBackend *backend = WW3D::Get_Render_Backend();
 	if (backend == nullptr || !TextureLoader::Is_Render_Thread() || Get_Texture_Name().Is_Empty()) return false;
-	unsigned width = 0, height = 0;
-	std::vector<unsigned char> pixels;
-	const bool missing = !TextureLoader::Load_RGBA8_Image(Get_Full_Path(), width, height, pixels, HSVShift);
-	if (missing) MissingTexture::Create_RGBA8_Image(width, height, pixels);
-	const auto handle = backend->Create_Static_RGBA8_Texture(width, height, pixels.data(), width*4);
+	std::vector<TextureLoader::RGBA8MipLevel> images;
+	const bool missing = !TextureLoader::Load_RGBA8_Mip_Chain(Get_Full_Path(), MipLevelCount,
+		IsReducible, IsCompressionAllowed, HSVShift, images);
+	if (missing) {
+		images.resize(1);
+		MissingTexture::Create_RGBA8_Image(images[0].width, images[0].height, images[0].pixels);
+	}
+	std::vector<RenderBackendTextureMipLevel> levels;
+	levels.reserve(images.size());
+	for (const auto &image : images) levels.push_back({image.width, image.height, image.width*4, image.pixels.data()});
+	const auto handle = backend->Create_Static_RGBA8_Texture(levels.data(), static_cast<unsigned>(levels.size()));
 	if (!handle.Is_Valid()) return false;
 	RendererOwner = backend; RendererTexture = handle; RendererTextureMissing = missing;
-	Width = width; Height = height; TextureFormat = WW3D_FORMAT_A8R8G8B8;
+	RendererMipLevelCount = static_cast<unsigned>(images.size());
+	Width = images[0].width; Height = images[0].height; TextureFormat = WW3D_FORMAT_A8R8G8B8;
 	Initialized = true; LastAccessed = WW3D::Get_Sync_Time();
 	return true;
 }
@@ -254,6 +262,10 @@ void TextureBaseClass::Invalidate()
 		D3DTexture = nullptr;
 	}
 
+	if (RendererTexture.Is_Valid()) {
+		if (RendererOwner == WW3D::Get_Render_Backend()) RendererOwner->Release_Texture(RendererTexture);
+		RendererTexture = {}; RendererOwner = nullptr; RendererMipLevelCount = 0;
+	}
 	Initialized=false;
 
 	LastAccessed=WW3D::Get_Sync_Time();
@@ -289,6 +301,10 @@ void TextureBaseClass::Invalidate()
 		D3DTexture = nullptr;
 	}
 
+	if (RendererTexture.Is_Valid()) {
+		if (RendererOwner == WW3D::Get_Render_Backend()) RendererOwner->Release_Texture(RendererTexture);
+		RendererTexture = {}; RendererOwner = nullptr; RendererMipLevelCount = 0;
+	}
 	Initialized=false;
 
 	LastAccessed=WW3D::Get_Sync_Time();*/
@@ -780,9 +796,7 @@ TextureClass::TextureClass
 	{
 		Width=thumb->Get_Original_Texture_Width();
 		Height=thumb->Get_Original_Texture_Height();
- 		if (MipLevelCount!=MIP_LEVELS_1) {
- 			MipLevelCount=(MipCountType)thumb->Get_Original_Texture_Mip_Level_Count();
- 		}
+
 	}
 
 	LastAccessed=WW3D::Get_Sync_Time();
@@ -883,7 +897,7 @@ TextureClass::TextureClass(IDirect3DBaseTexture8* d3d_texture)
 */
 void TextureClass::Init()
 {
-	if (MipLevelCount == MIP_LEVELS_1 && WW3D::Get_Render_Backend() != nullptr) {
+	if (WW3D::Get_Render_Backend() != nullptr && !IsProcedural && !Get_Texture_Name().Is_Empty()) {
 		Ensure_Renderer_Texture();
 		return;
 	}

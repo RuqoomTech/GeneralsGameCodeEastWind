@@ -63,7 +63,7 @@
 #include "ww3d.h"
 #include "rinfo.h"
 #include "WWLib/chunkio.h"
-#include "dx8renderer.h"
+#include "meshrenderer.h"
 #include "dx8wrapper.h"
 #include "sortingrenderer.h"
 #include "coltest.h"

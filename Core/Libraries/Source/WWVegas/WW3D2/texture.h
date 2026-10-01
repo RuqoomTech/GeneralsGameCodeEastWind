@@ -112,7 +112,7 @@ public:
 	// The number of Mip levels in the texture
 	unsigned int Get_Mip_Level_Count() const
 	{
-		return MipLevelCount;
+		return RendererTexture.Is_Valid() ? RendererMipLevelCount : MipLevelCount;
 	}
 
 	// Note! Width and Height may be zero and may change if texture uses mipmaps
@@ -210,6 +210,7 @@ protected:
 	void Poke_Texture(IDirect3DBaseTexture8* tex) { D3DTexture = tex; }
 
 	RenderBackendTextureHandle RendererTexture;
+	unsigned RendererMipLevelCount = 0;
 	IRenderBackend *RendererOwner = nullptr;
 	bool RendererTextureMissing = false;
 	bool Initialized;

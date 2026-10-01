@@ -43,10 +43,12 @@
 #include "texture.h"
 #include "dx8wrapper.h"
 #include "ww3dformat.h"
-#include "dx8list.h"
 #include "WWLib/multilist.h"
 
 class DX8TextureManagerClass;
+class TextureTrackerClass;
+typedef MultiListClass<TextureTrackerClass> TextureTrackerList;
+typedef MultiListIterator<TextureTrackerClass> TextureTrackerListIterator;
 
 class TextureTrackerClass : public MultiListObjectClass
 {

@@ -29,7 +29,7 @@
 
 // ----------------------------------------------------------------------------
 
-DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor)
+DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor,bool retain_authored_mips)
 	:
 	DDSMemory(nullptr),
 	Width(0),
@@ -103,13 +103,22 @@ DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor)
 
 	MipLevels=SurfaceDesc.MipMapCount;
 	if (MipLevels==0) MipLevels=1;
+	unsigned maximum_mips=1;
+	for (unsigned dim=max(SurfaceDesc.Width,SurfaceDesc.Height); dim>1; dim>>=1) ++maximum_mips;
+	if (MipLevels>maximum_mips) { MipLevels=0; return; }
+	// Neutral 2D callers must not reinterpret cube or volume payloads as one face.
+	if (retain_authored_mips && (SurfaceDesc.Caps.Caps2&(DDSCAPS2_CUBEMAP|DDSCAPS2_VOLUME))) {
+		MipLevels=0; return;
+	}
 
 	if (ReductionFactor >= MipLevels) ReductionFactor = MipLevels-1;
 	MipLevels -= ReductionFactor;
 
-	// Drop the two lowest miplevels!
-	if (MipLevels>2) MipLevels-=2;
-	else MipLevels=1;
+	// Archival native callers omit the last two levels. Neutral callers preserve authored data.
+	if (!retain_authored_mips) {
+		if (MipLevels>2) MipLevels-=2;
+		else MipLevels=1;
+	}
 
 	// check texture type, normal, cube or volume
 	if (SurfaceDesc.Caps.Caps2&DDSCAPS2_CUBEMAP)

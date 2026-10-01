@@ -203,6 +203,8 @@ public:
 	/*
 	** CRC, used by the loading code to build a list of the unique materials
 	*/
+	bool Equals_Render_Material(const VertexMaterialClass &other) const;
+
 	unsigned long Get_CRC() const
 	{
 		if (CRCDirty) {

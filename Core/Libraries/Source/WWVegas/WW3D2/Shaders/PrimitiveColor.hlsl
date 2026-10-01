@@ -39,14 +39,14 @@ struct TexturedVSInput
 {
     float3 position : POSITION;
     float4 color : COLOR0;
-    float2 texcoord : TEXCOORD0;
+    float3 texcoord : TEXCOORD0;
 };
 
 struct TexturedPSInput
 {
     float4 position : SV_POSITION;
     float4 color : COLOR0;
-    float2 texcoord : TEXCOORD0;
+    float3 texcoord : TEXCOORD0;
 };
 
 Texture2D PrimitiveTexture : register(t0);
@@ -63,7 +63,7 @@ TexturedPSInput VSTextured(TexturedVSInput input)
 
 float4 PSTextured(TexturedPSInput input) : SV_TARGET
 {
-    return PrimitiveTexture.Sample(PrimitiveSampler, input.texcoord) * input.color;
+    return PrimitiveTexture.Sample(PrimitiveSampler, input.texcoord.xy) * input.color;
 }
 
 // The real decal caller clamps to its edge and explicitly disables mipmaps.
@@ -92,10 +92,11 @@ float4 PSMaterialColor(TexturedPSInput input) : SV_TARGET
 float4 PSMaterialTexture(TexturedPSInput input) : SV_TARGET
 {
     float4 textureColor;
+    float2 coordinates = input.texcoord.xy / input.texcoord.z;
     if (ClampTexture != 0)
-        textureColor = PrimitiveTexture.SampleLevel(DecalSampler, input.texcoord, 0.0f);
+        textureColor = PrimitiveTexture.SampleLevel(DecalSampler, coordinates, 0.0f);
     else
-        textureColor = PrimitiveTexture.Sample(PrimitiveSampler, input.texcoord);
+        textureColor = PrimitiveTexture.Sample(PrimitiveSampler, coordinates);
 
     float4 color = textureColor;
     if (TextureCombine == 1) color *= input.color;

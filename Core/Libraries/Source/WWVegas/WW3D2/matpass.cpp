@@ -47,6 +47,19 @@
 
 
 #include "matpass.h"
+#include "IRenderBackend.h"
+#include <typeinfo>
+
+bool MaterialPassClass::Prepare_Render_Material(RenderBackendMaterialState &state) const
+{
+	// A derived Install_Materials may contain shader constants, extra textures,
+	// stencil state, or geometry behavior. Never bypass that behavior silently.
+	if (typeid(*this) != typeid(MaterialPassClass)) return false;
+	for (int stage = 1; stage < MAX_TEX_STAGES; ++stage) {
+		if (Texture[stage] != nullptr) return false;
+	}
+	return Shader.Get_Render_Backend_State(state);
+}
 #include "vertmaterial.h"
 #include "shader.h"
 #include "texture.h"

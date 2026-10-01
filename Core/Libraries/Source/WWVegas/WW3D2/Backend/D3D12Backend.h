@@ -95,6 +95,8 @@ public:
     bool Draw_Static_Indexed_Textured_Geometry(
         RenderBackendGeometryHandle geometry,
         RenderBackendTextureHandle texture) override;
+    RenderBackendTextureHandle Create_Static_RGBA8_Texture(
+        const RenderBackendTextureMipLevel *levels, unsigned int level_count) override;
     bool Is_Texture_Valid(RenderBackendTextureHandle texture) const override;
     bool Draw_Indexed_Decal_Triangles(
         const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
@@ -240,6 +242,7 @@ private:
     std::uint64_t m_next_fence_value = 1;
     std::uint64_t m_frame_fence_values[FrameCount]{};
     std::vector<ID3D12Resource *> m_frame_uploads[FrameCount];
+    std::vector<ID3D12DescriptorHeap *> m_frame_retired_texture_heaps[FrameCount];
     std::vector<StaticGeometryResource> m_static_geometry;
     std::vector<TextureResource> m_textures;
 };

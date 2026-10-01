@@ -55,7 +55,7 @@
 #include "dx8fvf.h"
 #include "dx8vertexbuffer.h"
 #include "dx8indexbuffer.h"
-#include "dx8renderer.h"
+#include "meshrenderer.h"
 #include "ww3d.h"
 #include "camera.h"
 #include "WWLib/wwstring.h"
@@ -381,7 +381,7 @@ void DX8Wrapper::Do_Onetime_Device_Dependent_Inits()
 		(TextureFilterClass::TextureFilterMode)WW3D::Get_Texture_Filter(),
 		(TextureFilterClass::AnisotropicFilterMode)WW3D::Get_Anisotropy_Level()
 	);
-	TheDX8MeshRenderer.Init();
+	TheMeshRenderer.Init();
 	SHD_INIT;
 	BoxRenderObjClass::Init();
 	VertexMaterialClass::Init();
@@ -473,7 +473,7 @@ void DX8Wrapper::Do_Onetime_Device_Dependent_Shutdowns()
 	VertexMaterialClass::Shutdown();
 	BoxRenderObjClass::Shutdown();
 	SHD_SHUTDOWN;
-	TheDX8MeshRenderer.Shutdown();
+	TheMeshRenderer.Shutdown();
 	MissingTexture::_Deinit();
 
 	delete CurrentCaps;

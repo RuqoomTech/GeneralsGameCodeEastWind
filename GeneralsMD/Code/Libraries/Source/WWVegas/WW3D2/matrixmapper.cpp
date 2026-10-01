@@ -452,3 +452,44 @@ void CompositeMatrixMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
 		MatrixMapperClass::Calculate_Texture_Matrix(tex_matrix);
 	}
 }
+
+bool MatrixMapperClass::Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &)
+{
+    TextureMapperRenderMapping result;
+    result.input = TextureMapperRenderMapping::CameraPosition;
+    result.matrix = ViewToPixel;
+    switch (Type) {
+    case ORTHO_PROJECTION: break;
+    case PERSPECTIVE_PROJECTION:
+        result.matrix[2] = ViewToPixel[3];
+        result.projected = true;
+        break;
+    case DEPTH_GRADIENT:
+        result.matrix[0].Set(0,0,0,GradientUCoord);
+        result.matrix[1] = ViewToPixel[2];
+        break;
+    case NORMAL_GRADIENT:
+        result.input = TextureMapperRenderMapping::CameraNormal;
+        result.matrix[0].Set(0,0,0,GradientUCoord);
+        result.matrix[1].Set(ViewSpaceProjectionNormal.X,ViewSpaceProjectionNormal.Y,ViewSpaceProjectionNormal.Z,0);
+        break;
+    default: return false;
+    }
+    mapping = result;
+    return true;
+}
+
+bool CompositeMatrixMapperClass::Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera)
+{
+    if (!InternalMapper) return MatrixMapperClass::Get_Render_Mapping(mapping, camera);
+    TextureMapperRenderMapping internal;
+    if (!InternalMapper->Get_Render_Mapping(internal, camera) ||
+        internal.input != TextureMapperRenderMapping::UV || internal.projected) return false;
+    Matrix4x4 saved = ViewToPixel;
+    Matrix4x4 input = ViewToPixel;
+    input[2] = input[3];
+    Matrix4x4::Multiply(internal.matrix, input, &ViewToPixel);
+    bool success = MatrixMapperClass::Get_Render_Mapping(mapping, camera);
+    ViewToPixel = saved;
+    return success;
+}

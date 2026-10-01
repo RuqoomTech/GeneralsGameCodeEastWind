@@ -96,6 +96,7 @@ public:
 
 	virtual TextureMapperClass*	Clone() const override { 	WWASSERT(0);	return nullptr; }
 
+	virtual bool Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera) override;
 	virtual void			Apply(int uv_array_index) override;
 
 protected:

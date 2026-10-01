@@ -41,6 +41,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "shader.h"
+#include "IRenderBackend.h"
 #include "w3d_file.h"
 #include "WWDebug/wwdebug.h"
 #include "dx8wrapper.h"
@@ -1260,3 +1261,43 @@ const StringClass& ShaderClass::Get_Description(StringClass& str) const
 	return str;
 }
 
+
+bool ShaderClass::Get_Render_Backend_State(RenderBackendMaterialState &state) const
+{
+	// Preserve asset bits; unsupported effects must migrate with their callers.
+	if (Get_Fog_Func() != FOG_DISABLE ||
+	    Get_Secondary_Gradient() != SECONDARY_GRADIENT_DISABLE ||
+	    Uses_Post_Detail_Texture() || Get_NPatch_Enable() != NPATCH_DISABLE) return false;
+	RenderBackendMaterialState result;
+	result.depth_test = static_cast<RenderBackendDepthTest>(Get_Depth_Compare());
+	result.depth_write = Get_Depth_Mask() == DEPTH_WRITE_ENABLE;
+	result.color_write = Get_Color_Mask() == COLOR_WRITE_ENABLE;
+	result.cull = Get_Cull_Mode() == CULL_MODE_DISABLE ? RenderBackendCullMode::None :
+	    (Is_Backface_Culling_Inverted() ? RenderBackendCullMode::CounterClockwise : RenderBackendCullMode::Clockwise);
+	static const RenderBackendBlendFactor source[] = {
+	    RenderBackendBlendFactor::Zero, RenderBackendBlendFactor::One,
+	    RenderBackendBlendFactor::SourceAlpha, RenderBackendBlendFactor::InverseSourceAlpha};
+	static const RenderBackendBlendFactor destination[] = {
+	    RenderBackendBlendFactor::Zero, RenderBackendBlendFactor::One,
+	    RenderBackendBlendFactor::SourceColor, RenderBackendBlendFactor::InverseSourceColor,
+	    RenderBackendBlendFactor::SourceAlpha, RenderBackendBlendFactor::InverseSourceAlpha};
+	if (Get_Src_Blend_Func() >= SRCBLEND_MAX || Get_Dst_Blend_Func() >= DSTBLEND_MAX) return false;
+	result.source_blend = source[Get_Src_Blend_Func()];
+	result.destination_blend = destination[Get_Dst_Blend_Func()];
+	if (Uses_Texture()) {
+	    switch (Get_Primary_Gradient()) {
+	    case GRADIENT_DISABLE: result.texture_combine = RenderBackendTextureCombine::Replace; break;
+	    case GRADIENT_MODULATE: result.texture_combine = RenderBackendTextureCombine::Modulate; break;
+	    case GRADIENT_ADD: result.texture_combine = RenderBackendTextureCombine::Add; break;
+	    case GRADIENT_MODULATE2X: result.texture_combine = RenderBackendTextureCombine::Modulate2X; break;
+	    default: return false;
+	    }
+	}
+	if (Get_Alpha_Test() == ALPHATEST_ENABLE) {
+	    bool inverse = Get_Src_Blend_Func() == SRCBLEND_ONE_MINUS_SRC_ALPHA;
+	    result.alpha_test = inverse ? RenderBackendAlphaTest::LessEqual : RenderBackendAlphaTest::GreaterEqual;
+	    result.alpha_reference = (inverse ? 159.0f : 96.0f) / 255.0f;
+	}
+	state = result;
+	return true;
+}
