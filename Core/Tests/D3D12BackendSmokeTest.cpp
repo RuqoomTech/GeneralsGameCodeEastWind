@@ -8,6 +8,8 @@
 #include <windows.h>
 
 #include <iostream>
+#include <algorithm>
+#include <cmath>
 
 namespace
 {
@@ -48,6 +50,89 @@ HWND createHiddenWindow(HINSTANCE instance)
         nullptr,
         instance,
         nullptr);
+}
+bool verifyDecals(IRenderBackend &backend)
+{
+    const unsigned char rgba[] = {128,64,192,128};
+    const auto texture = backend.Create_Static_RGBA8_Texture(1, 1, rgba, 4);
+    const unsigned char edge_rgba[] = {255,0,0,255, 0,255,0,255};
+    const auto edge = backend.Create_Static_RGBA8_Texture(2, 1, edge_rgba, 8);
+    RenderBackendTexturedVertex quad[] = {
+        {-0.8f,-0.8f,0.5f, .5f,.5f,.5f,.5f, 0,0},
+        {-0.8f, 0.8f,0.5f, .5f,.5f,.5f,.5f, 0,0},
+        { 0.8f, 0.8f,0.5f, .5f,.5f,.5f,.5f, 0,0},
+        { 0.8f,-0.8f,0.5f, .5f,.5f,.5f,.5f, 0,0},
+    };
+    const unsigned short front[] = {0,2,1,0,3,2};
+    const unsigned short back[] = {0,1,2,0,2,3};
+    const unsigned short invalid[] = {0,1,4};
+    unsigned width = 0, height = 0;
+    std::vector<unsigned char> pixels;
+    auto pixelMatches = [](unsigned char value, float expected) {
+        return std::abs(int(value) - int(std::lround(std::clamp(expected, 0.0f, 1.0f)*255))) <= 2;
+    };
+    auto capture = [&]() {
+        backend.End_Scene(false);
+        return backend.Read_Output_RGBA8(width, height, pixels) && width == 640 && height == 480;
+    };
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Set_View_Projection(Matrix4x4(true));
+    bool ok = texture.Is_Valid() && edge.Is_Valid() && backend.Is_Texture_Valid(texture);
+    for (const auto blend : {RenderBackendDecalBlendMode::Multiply, RenderBackendDecalBlendMode::Alpha, RenderBackendDecalBlendMode::Additive}) {
+        backend.Clear(true, true, Vector3(.2f,.4f,.6f), 1, 1, 0);
+        backend.Begin_Scene();
+        ok = !backend.Draw_Indexed_Decal_Triangles(quad,4,front,6,{},blend) &&
+             !backend.Draw_Indexed_Decal_Triangles(quad,4,invalid,3,texture,blend) &&
+             !backend.Draw_Indexed_Decal_Triangles(quad,4,front,6,texture,static_cast<RenderBackendDecalBlendMode>(3)) && ok;
+        ok = backend.Draw_Indexed_Decal_Triangles(quad,4,front,6,texture,blend) && ok;
+        const bool read = capture(); ok = read && ok;
+        if (read) {
+            const float source[] = {128.f/510,64.f/510,192.f/510,128.f/510};
+            const float destination[] = {.2f,.4f,.6f,1};
+            for (unsigned channel = 0; channel < 4; ++channel) {
+                const float expected = blend == RenderBackendDecalBlendMode::Multiply ? destination[channel]*source[channel] :
+                    blend == RenderBackendDecalBlendMode::Alpha ? source[channel]*source[3]+destination[channel]*(1-source[3]) :
+                    source[channel]+destination[channel];
+                ok = pixelMatches(pixels[(240*640+320)*4+channel], expected) && ok;
+            }
+        }
+        backend.Flip_To_Primary();
+    }
+    for (auto &v : quad) { v.r=v.g=v.b=v.a=1; v.u=2.0f; v.v=.5f; }
+    // Outside UV range clamps to green. The opposite winding is culled.
+    for (unsigned winding = 0; winding < 2; ++winding) {
+        backend.Clear(true,true,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
+        ok = backend.Draw_Indexed_Decal_Triangles(quad,4,winding ? back : front,6,edge,RenderBackendDecalBlendMode::Alpha) && ok;
+        const bool read = capture(); ok = read && ok;
+        if (read) ok = pixels[(240*640+320)*4] == 0 && pixels[(240*640+320)*4+1] == (winding ? 0 : 255) && ok;
+        backend.Flip_To_Primary();
+    }
+    RenderBackendColorVertex base[4], probe[4];
+    for (unsigned i = 0; i < 4; ++i) {
+        base[i] = {quad[i].x,quad[i].y,.6f,1,0,0,1};
+        probe[i] = {quad[i].x,quad[i].y,.55f,0,0,1,1};
+    }
+    for (unsigned depth_case = 0; depth_case < 3; ++depth_case) {
+        for (auto &v : quad) v.z = depth_case == 1 ? .7f : depth_case == 2 ? .6f : .5f;
+        backend.Clear(true,true,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
+        ok = backend.Draw_Indexed_Triangles(base,4,front,6) && ok;
+        ok = backend.Draw_Indexed_Decal_Triangles(quad,4,front,6,edge,RenderBackendDecalBlendMode::Alpha) && ok;
+        if (depth_case == 0) ok = backend.Draw_Indexed_Triangles(probe,4,front,6) && ok;
+        const bool read = capture(); ok = read && ok;
+        if (read) {
+            const auto center = (240*640+320)*4;
+            // Blue proves no depth write; red proves depth rejection; green proves LEQUAL.
+            ok = pixels[center+(depth_case == 0 ? 2 : depth_case == 1 ? 0 : 1)] == 255 && ok;
+        }
+        backend.Flip_To_Primary();
+    }
+    const auto offscreen = backend.Create_Render_Texture(8,8);
+    ok = backend.Set_Render_Texture(offscreen) && ok;
+    backend.Clear(true,false,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
+    ok = !backend.Draw_Indexed_Decal_Triangles(quad,4,front,6,texture,RenderBackendDecalBlendMode::Alpha) && ok;
+    backend.End_Scene(false); ok = backend.Set_Render_Texture({}) && ok;
+    backend.Release_Texture(offscreen); backend.Release_Texture(edge); backend.Release_Texture(texture);
+    return !backend.Is_Texture_Valid(texture) && ok;
 }
 } // namespace
 
@@ -378,6 +463,11 @@ int main()
         UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 backend smoke failed: camera transform or screen-space isolation is incorrect.\n";
         return 15;
+    }
+    if (!verifyDecals(*backend)) {
+        delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
+        std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
+        return 18;
     }
     // A width not divisible by the GPU row alignment catches padding leaks;
     // an asymmetric draw catches vertical inversion and RGBA channel swaps.

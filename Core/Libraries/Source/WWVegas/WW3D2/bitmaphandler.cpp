@@ -497,3 +497,52 @@ void BitmapHandlerClass::Copy_Image(
 		}
 	}
 }
+
+bool BitmapHandlerClass::Decode_DXT_Block_RGBA8(WW3DFormat format, const unsigned char *block, unsigned char *pixels)
+{
+    if (block == nullptr || pixels == nullptr || format < WW3D_FORMAT_DXT1 || format > WW3D_FORMAT_DXT5) return false;
+    const bool bc1 = format == WW3D_FORMAT_DXT1;
+    const unsigned char *color = block + (bc1 ? 0 : 8);
+    const unsigned c0 = color[0] | (unsigned(color[1]) << 8);
+    const unsigned c1 = color[2] | (unsigned(color[3]) << 8);
+    unsigned colors[4][4]{};
+    for (unsigned endpoint = 0; endpoint < 2; ++endpoint) {
+        const unsigned value = endpoint == 0 ? c0 : c1;
+        const unsigned r = (value >> 11) & 31, g = (value >> 5) & 63, b = value & 31;
+        colors[endpoint][0] = (r << 3) | (r >> 2);
+        colors[endpoint][1] = (g << 2) | (g >> 4);
+        colors[endpoint][2] = (b << 3) | (b >> 2);
+        colors[endpoint][3] = 255;
+    }
+    for (unsigned channel = 0; channel < 3; ++channel) {
+        if (!bc1 || c0 > c1) {
+            colors[2][channel] = (2 * colors[0][channel] + colors[1][channel]) / 3;
+            colors[3][channel] = (colors[0][channel] + 2 * colors[1][channel]) / 3;
+        } else colors[2][channel] = (colors[0][channel] + colors[1][channel]) / 2;
+    }
+    colors[2][3] = 255;
+    colors[3][3] = !bc1 || c0 > c1 ? 255 : 0;
+    unsigned alphas[8]{block[0], block[1]};
+    if (!bc1 && format != WW3D_FORMAT_DXT2 && format != WW3D_FORMAT_DXT3) {
+        if (alphas[0] > alphas[1]) {
+            for (unsigned i = 2; i < 8; ++i) alphas[i] = ((8-i)*alphas[0] + (i-1)*alphas[1]) / 7;
+        } else {
+            for (unsigned i = 2; i < 6; ++i) alphas[i] = ((6-i)*alphas[0] + (i-1)*alphas[1]) / 5;
+            alphas[6] = 0; alphas[7] = 255;
+        }
+    }
+    for (unsigned pixel = 0; pixel < 16; ++pixel) {
+        const unsigned index = (color[4 + pixel/4] >> ((pixel%4)*2)) & 3;
+        for (unsigned channel = 0; channel < 4; ++channel) pixels[pixel*4+channel] = static_cast<unsigned char>(colors[index][channel]);
+        if (format == WW3D_FORMAT_DXT2 || format == WW3D_FORMAT_DXT3)
+            pixels[pixel*4+3] = static_cast<unsigned char>(((block[pixel/2] >> ((pixel%2)*4)) & 15) * 17);
+        else if (!bc1) {
+            const unsigned bit = pixel*3, byte = 2+bit/8, shift = bit%8;
+            unsigned code = block[byte] >> shift;
+            if (shift > 5) code |= unsigned(block[byte+1]) << (8-shift);
+            pixels[pixel*4+3] = static_cast<unsigned char>(alphas[code & 7]);
+        }
+    }
+    return true;
+}
+

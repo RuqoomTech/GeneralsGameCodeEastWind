@@ -20,7 +20,7 @@
  ***              C O N F I D E N T I A L  ---  W E S T W O O D  S T U D I O S               ***
  ***********************************************************************************************
  *                                                                                             *
- *                 Project Name : DX8 Texture Manager                                          *
+ *                 Project Name : Texture Loader                                          *
  *                                                                                             *
  *                     $Archive:: /Commando/Code/ww3d2/textureloader.h                            $*
  *                                                                                             *
@@ -50,6 +50,9 @@ class TextureLoadTaskListClass;
 class TextureLoader
 {
 public:
+	// CPU-side top-level image read through the existing game file factory.
+	static bool Load_RGBA8_Image(const StringClass &filename, unsigned &width, unsigned &height,
+		std::vector<unsigned char> &pixels, const Vector3 &hsv_shift);
 	static void Init();
 	static void Deinit();
 
@@ -81,8 +84,8 @@ public:
 	static void	Flush_Pending_Load_Tasks();
 	static void Update(void(*network_callback)() = nullptr);
 
-	// returns true if current thread of execution is allowed to make DX8 calls.
-	static bool Is_DX8_Thread();
+	// Returns true on the thread that owns texture uploads.
+	static bool Is_Render_Thread();
 
 	static void Suspend_Texture_Load();
 	static void Continue_Texture_Load();

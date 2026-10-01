@@ -211,6 +211,7 @@ protected:
 
 	RenderBackendTextureHandle RendererTexture;
 	IRenderBackend *RendererOwner = nullptr;
+	bool RendererTextureMissing = false;
 	bool Initialized;
 
 	// For debug purposes the texture sets this true if it is a lightmap texture
@@ -331,6 +332,7 @@ public:
 	// Get the surface of one of the mipmap levels (defaults to highest-resolution one)
 	SurfaceClass *Get_Surface_Level(unsigned int level = 0);
 	IDirect3DSurface8 *Get_D3D_Surface_Level(unsigned int level = 0);
+	bool Ensure_Renderer_Texture();
 	bool Copy_From(const TextureClass &source);
 	void Get_Level_Description( SurfaceClass::SurfaceDescription & desc, unsigned int level = 0 );
 

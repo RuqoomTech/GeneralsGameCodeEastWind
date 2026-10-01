@@ -19,6 +19,7 @@
 #pragma once
 
 #include "WWLib/always.h"
+#include <vector>
 
 struct IDirect3DTexture8;
 struct IDirect3DSurface8;
@@ -26,6 +27,7 @@ struct IDirect3DSurface8;
 class MissingTexture
 {
 public:
+	static void Create_RGBA8_Image(unsigned &width, unsigned &height, std::vector<unsigned char> &pixels);
 	static void _Init();
 	static void _Deinit();
 

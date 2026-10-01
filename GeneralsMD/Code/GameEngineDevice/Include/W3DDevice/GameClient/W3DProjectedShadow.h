@@ -33,6 +33,9 @@
 
 #pragma once
 
+#include "WW3D2/IRenderBackend.h"
+#include <vector>
+
 #include "GameClient/Shadow.h"
 
 class W3DShadowTexture;	//forward reference
@@ -72,9 +75,12 @@ class W3DProjectedShadowManager	: public ProjectedShadowManager
 		void updateRenderTargetTextures();	///<render into any textures that need updating.
 		void queueDecal(W3DProjectedShadow *shadow);	///<add shadow decal to render list - decal conforms to terrain.
 		void queueSimpleDecal(W3DProjectedShadow *shadow);	///< add shadow decal to render list - decal floats on terrain.
-		void flushDecals(W3DShadowTexture *texture, ShadowType type);	///<empty queue by rendering all decals with given texture
+		bool flushDecals(W3DShadowTexture *texture, ShadowType type);	///<empty queue by rendering all decals with given texture
 
 	private:
+		bool reserveDecalBatch(unsigned vertices, unsigned indices, W3DShadowTexture *texture, ShadowType type);
+		std::vector<RenderBackendTexturedVertex> m_decalVertices;
+		std::vector<unsigned short> m_decalIndices;
 		Int renderProjectedTerrainShadow(W3DProjectedShadow *shadow, AABoxClass &box);	///<render shadow on map terrain.
 		void updateShadowNumbers(ShadowType shadowType, Int addNum);
 

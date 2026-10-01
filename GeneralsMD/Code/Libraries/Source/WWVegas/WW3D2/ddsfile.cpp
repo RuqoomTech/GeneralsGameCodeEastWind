@@ -50,6 +50,7 @@ DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor)
 	strlcpy(Name,name,sizeof(Name));
 	// The name could be given in .tga or .dds format, so ensure we're opening .dds...
 	int len=strlen(Name);
+	if (len < 4) return;
 	Name[len-3]='d';
 	Name[len-2]='d';
 	Name[len-1]='s';
@@ -71,7 +72,7 @@ DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor)
 	char header[4];
 
 	unsigned read_bytes=file->Read(header,4);
-	if (!read_bytes)
+	if (read_bytes != 4 || memcmp(header, "DDS ", 4) != 0)
 	{
 		WWASSERT("File loading failed trying to read header");
 		return;
@@ -79,7 +80,7 @@ DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor)
 	// Now, we read DDSURFACEDESC2 defining the compressed data
 	read_bytes=file->Read(&SurfaceDesc,sizeof(LegacyDDSURFACEDESC2));
 	// Verify the structure size matches the read size
-	if (read_bytes==0 || read_bytes!=SurfaceDesc.Size)
+	if (read_bytes!=124 || SurfaceDesc.Size!=124)
 	{
 		StringClass tmp(0,true);
 		tmp.Format("File %s loading failed.\nTried to read %d bytes, got %d. (SurfDesc.size=%d)",name,sizeof(LegacyDDSURFACEDESC2),read_bytes,SurfaceDesc.Size);
@@ -95,14 +96,16 @@ DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor)
 		Format==WW3D_FORMAT_DXT4 ||
 		Format==WW3D_FORMAT_DXT5);
 
+	if (SurfaceDesc.Width == 0 || SurfaceDesc.Height == 0 ||
+		SurfaceDesc.Width > 16384 || SurfaceDesc.Height > 16384 ||
+		SurfaceDesc.MipMapCount > 15 || SurfaceDesc.Depth > 16384 ||
+		(Format < WW3D_FORMAT_DXT1 || Format > WW3D_FORMAT_DXT5)) return;
+
 	MipLevels=SurfaceDesc.MipMapCount;
 	if (MipLevels==0) MipLevels=1;
 
-	if (MipLevels>ReductionFactor) MipLevels-=ReductionFactor;
-	else {
-		MipLevels=1;
-		ReductionFactor=ReductionFactor-MipLevels;
-	}
+	if (ReductionFactor >= MipLevels) ReductionFactor = MipLevels-1;
+	MipLevels -= ReductionFactor;
 
 	// Drop the two lowest miplevels!
 	if (MipLevels>2) MipLevels-=2;
@@ -126,46 +129,31 @@ DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor)
 	Height=SurfaceDesc.Height>>ReductionFactor;
 	Depth=SurfaceDesc.Depth;
 
-	unsigned level_size=Calculate_DXTC_Surface_Size
-	(
-		SurfaceDesc.Width,
-		SurfaceDesc.Height,
-		Format
-	);
 	unsigned level_offset=0;
-
-	unsigned level_mip_dec=4;
-	if (Type==DDS_VOLUME)
-	{
-		// add slices to level data size
-		level_size*=SurfaceDesc.Depth;
-		level_mip_dec=8;
-	}
-
 	LevelSizes=W3DNEWARRAY unsigned[MipLevels];
 	LevelOffsets=W3DNEWARRAY unsigned[MipLevels];
-	unsigned level=0;
-	for (;level<ReductionFactor;++level)
+	for (unsigned level=0; level<MipLevels; ++level)
 	{
-		if (level_size>16)
-		{	// If surface is bigger than one block (8 or 16 bytes)...
-			level_size/=level_mip_dec;
+		const unsigned source_level=level+ReductionFactor;
+		unsigned w=FullWidth>>source_level, h=FullHeight>>source_level;
+		if (w==0) w=1;
+		if (h==0) h=1;
+		unsigned level_size=Calculate_DXTC_Surface_Size(w,h,Format);
+		if (Type==DDS_VOLUME) {
+			unsigned d=FullDepth>>source_level;
+			if (d==0) d=1;
+			if (level_size > 0xffffffffu/d) { MipLevels=0; return; }
+			level_size*=d;
 		}
-	}
-	for (level=0;level<MipLevels;++level)
-	{
+		if (level_offset > 0xffffffffu-level_size) { MipLevels=0; return; }
 		LevelSizes[level]=level_size;
 		LevelOffsets[level]=level_offset;
 		level_offset+=level_size;
-		if (level_size>16)
-		{	// If surface is bigger than one block (8 or 16 bytes)...
-			level_size/=level_mip_dec;
-		}
 	}
 
 	if (Type==DDS_CUBEMAP)
 	{
-		for (level=0; level<MipLevels;++level)
+		for (unsigned level=0; level<MipLevels;++level)
 		{
 			CubeFaceSize+=LevelSizes[level];
 		}
@@ -230,7 +218,7 @@ unsigned DDSFileClass::Calculate_DXTC_Surface_Size
 	WW3DFormat format
 )
 {
-	unsigned level_size=(width/4)*(height/4);
+	unsigned level_size=((width+3)/4)*((height+3)/4);
 	switch (format)
 	{
 	case WW3D_FORMAT_DXT1:
@@ -252,7 +240,7 @@ unsigned DDSFileClass::Calculate_DXTC_Surface_Size
 bool DDSFileClass::Load()
 {
 	if (DDSMemory) return false;
-	if (!LevelSizes || !LevelOffsets) return false;
+	if (!LevelSizes || !LevelOffsets || MipLevels==0) return false;
 
 	file_auto_ptr file(_TheFileFactory,Name);
 	if (!file->Is_Available())
@@ -262,7 +250,11 @@ bool DDSFileClass::Load()
 
 	file->Open();
 	// Data size is file size minus the header and info block
-	unsigned size=file->Size()-SurfaceDesc.Size-4;
+	const int file_size = file->Size();
+	if (file_size < 128) return false;
+	unsigned size = static_cast<unsigned>(file_size) - 128;
+	unsigned required_size = LevelOffsets[MipLevels-1] + LevelSizes[MipLevels-1];
+	if (size < required_size) return false;
 
 	if (!size)
 	{
@@ -270,23 +262,25 @@ bool DDSFileClass::Load()
 	}
 
 	// Skip mip levels if reduction factor is not zero
-	unsigned level_size=Calculate_DXTC_Surface_Size
-	(
-		SurfaceDesc.Width,
-		SurfaceDesc.Height,
-		Format
-	);
-
 	unsigned skipped_offset=0;
 	for (unsigned i=0;i<ReductionFactor;++i)
 	{
+		unsigned w=FullWidth>>i, h=FullHeight>>i;
+		if (w==0) w=1;
+		if (h==0) h=1;
+		unsigned level_size=Calculate_DXTC_Surface_Size(w,h,Format);
+		if (Type==DDS_VOLUME) {
+			unsigned d=FullDepth>>i;
+			if (d==0) d=1;
+			if (level_size > 0xffffffffu/d) return false;
+			level_size*=d;
+		}
+		if (size < level_size) return false;
 		skipped_offset+=level_size;
 		size-=level_size;
-		if (level_size>16)
-		{	// If surface is bigger than one block (8 or 16 bytes)...
-			level_size/=4;
-		}
 	}
+
+	if (size < required_size) return false;
 
 	// Skip the header and info block and possible unused mip levels
 	unsigned seek_size=file->Seek(SurfaceDesc.Size+4+skipped_offset);
@@ -299,7 +293,7 @@ bool DDSFileClass::Load()
 		// Read data
 		unsigned read_size=file->Read(DDSMemory,size);
 		// Verify we got all the data
-		WWASSERT(read_size==size);
+		if (read_size != size) { delete[] DDSMemory; DDSMemory = nullptr; return false; }
 	}
 	file->Close();
 	return true;
@@ -1255,4 +1249,24 @@ bool DDSFileClass::Get_4x4_Block(
 	}
 	return false;
 
+}
+
+bool DDSFileClass::Copy_Level_RGBA8(unsigned level, unsigned char *pixels, unsigned pitch) const
+{
+    if (DDSMemory == nullptr || pixels == nullptr || Type != DDS_TEXTURE || level >= MipLevels) return false;
+    const unsigned width = Width>>level ? Width>>level : 1;
+    const unsigned height = Height>>level ? Height>>level : 1;
+    if (pitch < width*4) return false;
+    const unsigned block_size = Format == WW3D_FORMAT_DXT1 ? 8 : 16;
+    if (Get_Level_Size(level) < ((width+3)/4)*((height+3)/4)*block_size) return false;
+    unsigned char decoded[64];
+    for (unsigned y = 0; y < height; y += 4) {
+        for (unsigned x = 0; x < width; x += 4) {
+            const auto *block = Get_Memory_Pointer(level) + ((y/4)*((width+3)/4)+x/4)*block_size;
+            if (!BitmapHandlerClass::Decode_DXT_Block_RGBA8(Format, block, decoded)) return false;
+            for (unsigned row = 0; row < 4 && y+row < height; ++row)
+                memcpy(pixels+(y+row)*pitch+x*4, decoded+row*16, (width-x < 4 ? width-x : 4)*4);
+        }
+    }
+    return true;
 }

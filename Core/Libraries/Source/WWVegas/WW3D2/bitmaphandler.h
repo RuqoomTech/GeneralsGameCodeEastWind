@@ -28,6 +28,8 @@ void Bitmap_Assert(bool condition);
 class BitmapHandlerClass
 {
 public:
+	// CPU-only BC1/2/3 decoding, shared by both game DDS loaders.
+	static bool Decode_DXT_Block_RGBA8(WW3DFormat format, const unsigned char *block, unsigned char *pixels);
 	// Read pixel at given address
 	WWINLINE static void Read_B8G8R8A8(
 		unsigned char* argb,

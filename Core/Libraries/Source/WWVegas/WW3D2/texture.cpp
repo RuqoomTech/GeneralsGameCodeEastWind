@@ -136,7 +136,9 @@ TextureBaseClass::~TextureBaseClass()
 
 RenderBackendTextureHandle TextureBaseClass::Get_Renderer_Texture() const
 {
-	return RendererOwner == WW3D::Get_Render_Backend() ? RendererTexture : RenderBackendTextureHandle{};
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	return backend != nullptr && RendererOwner == backend && backend->Is_Texture_Valid(RendererTexture)
+		? RendererTexture : RenderBackendTextureHandle{};
 }
 
 TextureClass::TextureClass(unsigned width, unsigned height, RenderBackendTextureHandle texture, IRenderBackend *owner)
@@ -147,6 +149,23 @@ TextureClass::TextureClass(unsigned width, unsigned height, RenderBackendTexture
 	RendererOwner = owner;
 	Initialized = IsProcedural = true;
 	LastAccessed = WW3D::Get_Sync_Time();
+}
+
+bool TextureClass::Ensure_Renderer_Texture()
+{
+	if (Get_Renderer_Texture().Is_Valid()) return true;
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr || Get_Texture_Name().Is_Empty()) return false;
+	unsigned width = 0, height = 0;
+	std::vector<unsigned char> pixels;
+	const bool missing = !TextureLoader::Load_RGBA8_Image(Get_Full_Path(), width, height, pixels, HSVShift);
+	if (missing) MissingTexture::Create_RGBA8_Image(width, height, pixels);
+	const auto handle = backend->Create_Static_RGBA8_Texture(width, height, pixels.data(), width*4);
+	if (!handle.Is_Valid()) return false;
+	RendererOwner = backend; RendererTexture = handle; RendererTextureMissing = missing;
+	Width = width; Height = height; TextureFormat = WW3D_FORMAT_A8R8G8B8;
+	Initialized = true; LastAccessed = WW3D::Get_Sync_Time();
+	return true;
 }
 
 bool TextureClass::Copy_From(const TextureClass &source)
@@ -325,6 +344,7 @@ void TextureBaseClass::Load_Locked_Surface()
 */
 bool TextureBaseClass::Is_Missing_Texture()
 {
+	if (RendererTexture.Is_Valid()) return RendererTextureMissing;
 	bool flag = false;
 	IDirect3DBaseTexture8 *missing_texture = MissingTexture::_Get_Missing_Texture();
 
@@ -771,7 +791,7 @@ TextureClass::TextureClass
 	// mesh is rendered.
 	if (!WW3D::Get_Thumbnail_Enabled())
 	{
-		if (TextureLoader::Is_DX8_Thread())
+		if (TextureLoader::Is_Render_Thread())
 		{
 			Init();
 		}
@@ -863,6 +883,10 @@ TextureClass::TextureClass(IDirect3DBaseTexture8* d3d_texture)
 */
 void TextureClass::Init()
 {
+	if (MipLevelCount == MIP_LEVELS_1 && WW3D::Get_Render_Backend() != nullptr) {
+		Ensure_Renderer_Texture();
+		return;
+	}
 	// If the texture has already been initialised we should exit now
 	if (Initialized) return;
 
@@ -1599,7 +1623,7 @@ CubeTextureClass::CubeTextureClass
 	// mesh is rendered.
 	if (!WW3D::Get_Thumbnail_Enabled())
 	{
-		if (TextureLoader::Is_DX8_Thread())
+		if (TextureLoader::Is_Render_Thread())
 		{
 			Init();
 		}
@@ -1884,7 +1908,7 @@ VolumeTextureClass::VolumeTextureClass
 	// mesh is rendered.
 	if (!WW3D::Get_Thumbnail_Enabled())
 	{
-		if (TextureLoader::Is_DX8_Thread())
+		if (TextureLoader::Is_Render_Thread())
 		{
 			Init();
 		}

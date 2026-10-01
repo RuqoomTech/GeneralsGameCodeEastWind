@@ -138,7 +138,7 @@ struct LegacyDDSURFACEDESC2 {
 	};
 	unsigned AlphaBitDepth;
 	unsigned Reserved;
-	void* Surface;
+	unsigned ReservedSurface; // Fixed 32-bit DDS header field, never a native pointer.
 	union
 	{
 		LegacyDDCOLORKEY CKDestOverlay;
@@ -152,6 +152,8 @@ struct LegacyDDSURFACEDESC2 {
 	unsigned TextureStage;
 };
 
+
+static_assert(sizeof(LegacyDDSURFACEDESC2) == 124, "DDS header must remain 124 bytes on x64");
 
 enum DDSType
 {
@@ -213,6 +215,9 @@ public:
 	WW3DFormat Get_Format() const { return Format; }
 
 	DDSType Get_Type() const { return Type; }
+
+	// CPU decoding used by renderer-neutral level-zero texture uploads.
+	bool Copy_Level_RGBA8(unsigned level, unsigned char *pixels, unsigned pitch) const;
 
 	// Copy pixels to the destination surface.
 	void Copy_Level_To_Surface(unsigned level,IDirect3DSurface8* d3d_surface,const Vector3& hsv_shift=Vector3(0.0f,0.0f,0.0f));

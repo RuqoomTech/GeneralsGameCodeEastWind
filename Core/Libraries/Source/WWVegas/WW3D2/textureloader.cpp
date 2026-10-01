@@ -20,7 +20,7 @@
  ***              C O N F I D E N T I A L  ---  W E S T W O O D  S T U D I O S               ***
  ***********************************************************************************************
  *                                                                                             *
- *                 Project Name : DX8 Texture Manager                                          *
+ *                 Project Name : Texture Loader                                          *
  *                                                                                             *
  *                     $Archive:: /Commando/Code/ww3d2/textureloader.h                            $*
  *                                                                                             *
@@ -57,6 +57,8 @@
 #include "texturethumbnail.h"
 #include "ddsfile.h"
 #include "bitmaphandler.h"
+#include "colorspace.h"
+#include <algorithm>
 #include "WWDebug/wwprofile.h"
 
 bool TextureLoader::TextureLoadSuspended;
@@ -316,8 +318,11 @@ static bool Is_Format_Compressed(WW3DFormat texture_format,bool allow_compressio
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+static unsigned RendererThreadId = 0;
+
 void TextureLoader::Init()
 {
+	RendererThreadId = ThreadClass::_Get_Current_Thread_ID();
 	WWASSERT(!_TextureLoadThread.Is_Running());
 
 	ThumbnailManagerClass::Init();
@@ -338,9 +343,9 @@ void TextureLoader::Deinit()
 }
 
 
-bool TextureLoader::Is_DX8_Thread()
+bool TextureLoader::Is_Render_Thread()
 {
-	return (ThreadClass::_Get_Current_Thread_ID() == DX8Wrapper::_Get_Main_Thread_ID());
+	return (ThreadClass::_Get_Current_Thread_ID() == RendererThreadId);
 }
 
 
@@ -416,7 +421,7 @@ void TextureLoader::Validate_Texture_Size
 
 IDirect3DTexture8* TextureLoader::Load_Thumbnail(const StringClass& filename, const Vector3& hsv_shift)//,WW3DFormat texture_format)
 {
-	WWASSERT(Is_DX8_Thread());
+	WWASSERT(Is_Render_Thread());
 
 	ThumbnailClass* thumb=nullptr;
 	thumb=ThumbnailManagerClass::Peek_Thumbnail_Instance_From_Any_Manager(filename);
@@ -520,12 +525,57 @@ IDirect3DTexture8* TextureLoader::Load_Thumbnail(const StringClass& filename, co
 // format and performs color space conversion.
 //
 // ----------------------------------------------------------------------------
+bool TextureLoader::Load_RGBA8_Image(const StringClass &filename, unsigned &width, unsigned &height,
+    std::vector<unsigned char> &pixels, const Vector3 &hsv_shift)
+{
+    width = height = 0;
+    pixels.clear();
+    DDSFileClass dds(filename, 0);
+    if (dds.Get_Type() == DDS_TEXTURE && dds.Get_Mip_Level_Count() != 0 && dds.Load()) {
+        width = dds.Get_Full_Width(); height = dds.Get_Full_Height();
+        pixels.resize(static_cast<std::size_t>(width)*height*4);
+        if (dds.Copy_Level_RGBA8(0, pixels.data(), width*4)) {
+            if (hsv_shift != Vector3(0.0f, 0.0f, 0.0f)) {
+                for (std::size_t i = 0; i < pixels.size(); i += 4) {
+                    unsigned argb = (unsigned(pixels[i+3])<<24) | (unsigned(pixels[i])<<16) | (unsigned(pixels[i+1])<<8) | pixels[i+2];
+                    Recolor(argb, hsv_shift);
+                    pixels[i] = static_cast<unsigned char>(argb>>16);
+                    pixels[i+1] = static_cast<unsigned char>(argb>>8);
+                    pixels[i+2] = static_cast<unsigned char>(argb);
+                }
+            }
+            return true;
+        }
+    }
+    Targa targa;
+    if (targa.Open(filename, TGA_READMODE) != 0) { width = height = 0; pixels.clear(); return false; }
+    // Preserve the established game texture orientation; RGBA readback is top-down.
+    targa.Header.ImageDescriptor ^= TGAIDF_YORIGIN;
+    WW3DFormat format; unsigned bpp = 0;
+    Get_WW3D_Format(format, bpp, targa);
+    width = targa.Header.Width; height = targa.Header.Height;
+    if (format == WW3D_FORMAT_UNKNOWN || width == 0 || height == 0 || width > 16384 || height > 16384) {
+        width = height = 0; pixels.clear(); return false;
+    }
+    char palette[256*4]{};
+    targa.SetPalette(palette);
+    if (targa.Load(filename, TGAF_IMAGE, false) != 0 || targa.GetImage() == nullptr) {
+        width = height = 0; pixels.clear(); return false;
+    }
+    pixels.resize(static_cast<std::size_t>(width)*height*4);
+    BitmapHandlerClass::Copy_Image(pixels.data(), width, height, width*4, WW3D_FORMAT_A8R8G8B8,
+        reinterpret_cast<unsigned char *>(targa.GetImage()), width, height, width*bpp, format,
+        reinterpret_cast<const unsigned char *>(targa.GetPalette()), targa.Header.CMapDepth>>3, false, hsv_shift);
+    for (std::size_t i = 0; i < pixels.size(); i += 4) std::swap(pixels[i], pixels[i+2]);
+    return true;
+}
+
 IDirect3DSurface8* TextureLoader::Load_Surface_Immediate(
 	const StringClass& filename,
 	WW3DFormat texture_format,
 	bool allow_compression)
 {
-	WWASSERT(Is_DX8_Thread());
+	WWASSERT(Is_Render_Thread());
 
 	bool compressed=Is_Format_Compressed(texture_format,allow_compression);
 
@@ -643,7 +693,7 @@ void TextureLoader::Request_Thumbnail(TextureBaseClass *tc)
 
 	TextureLoadTaskClass *task = tc->ThumbnailLoadTask;
 
-	if (Is_DX8_Thread()) {
+	if (Is_Render_Thread()) {
 		// load the thumbnail immediately
 		TextureLoader::Load_Thumbnail(tc);
 
@@ -693,7 +743,7 @@ void TextureLoader::Request_Background_Loading(TextureBaseClass *tc)
 
 	task = TextureLoadTaskClass::Create(tc, TextureLoadTaskClass::TASK_LOAD, TextureLoadTaskClass::PRIORITY_LOW);
 
-	if (Is_DX8_Thread()) {
+	if (Is_Render_Thread()) {
 		Begin_Load_And_Queue(task);
 	} else {
 		_ForegroundQueue.Push_Back(task);
@@ -718,7 +768,7 @@ void TextureLoader::Request_Foreground_Loading(TextureBaseClass *tc)
 	TextureLoadTaskClass *task			= tc->TextureLoadTask;
 	TextureLoadTaskClass *task_thumb = tc->ThumbnailLoadTask;
 
-	if (Is_DX8_Thread()) {
+	if (Is_Render_Thread()) {
 
 		// since we're in the DX8 thread, we can load the entire
 		// texture right now.
@@ -798,7 +848,7 @@ void TextureLoader::Flush_Pending_Load_Tasks()
 	// to complete texture loading. If we wanted to flush
 	// the pending tasks from another thread, we'd probably
 	// want to set a bool that is checked by Update().
-	WWASSERT(Is_DX8_Thread());
+	WWASSERT(Is_Render_Thread());
 
 	for (;;) {
 		bool done = false;
@@ -846,7 +896,7 @@ void TextureLoader::Flush_Pending_Load_Tasks()
 
 void TextureLoader::Update(void (*network_callback)())
 {
-	WWASSERT_PRINT(Is_DX8_Thread(), "TextureLoader::Update must be called from the main thread!");
+	WWASSERT_PRINT(Is_Render_Thread(), "TextureLoader::Update must be called from the main thread!");
 
 	if (TextureLoadSuspended) {
 		return;
@@ -878,13 +928,13 @@ void TextureLoader::Update(void (*network_callback)())
 
 void TextureLoader::Suspend_Texture_Load()
 {
-	WWASSERT_PRINT(Is_DX8_Thread(),"TextureLoader::Suspend_Texture_Load must be called from the main thread!");
+	WWASSERT_PRINT(Is_Render_Thread(),"TextureLoader::Suspend_Texture_Load must be called from the main thread!");
 	TextureLoadSuspended=true;
 }
 
 void TextureLoader::Continue_Texture_Load()
 {
-	WWASSERT_PRINT(Is_DX8_Thread(),"TextureLoader::Continue_Texture_Load must be called from the main thread!");
+	WWASSERT_PRINT(Is_Render_Thread(),"TextureLoader::Continue_Texture_Load must be called from the main thread!");
 	TextureLoadSuspended=false;
 }
 
@@ -929,7 +979,7 @@ void TextureLoader::Process_Foreground_Load(TextureLoadTaskClass *task)
 void TextureLoader::Begin_Load_And_Queue(TextureLoadTaskClass *task)
 {
 	// should only be called from the DX8 thread.
-	WWASSERT(Is_DX8_Thread());
+	WWASSERT(Is_Render_Thread());
 
 	if (task->Begin_Load()) {
 		// add to front of background queue. This means the
@@ -953,7 +1003,7 @@ void TextureLoader::Begin_Load_And_Queue(TextureLoadTaskClass *task)
 void TextureLoader::Load_Thumbnail(TextureBaseClass *tc)
 {
 	// All D3D operations must run from main thread
-	WWASSERT(Is_DX8_Thread());
+	WWASSERT(Is_Render_Thread());
 
 	// load thumbnail texture
 	IDirect3DTexture8 *d3d_texture = Load_Thumbnail(tc->Get_Full_Path(),tc->Get_HSV_Shift());
@@ -1094,7 +1144,7 @@ void TextureLoadTaskClass::Init(TextureBaseClass* tc, TaskType type, PriorityTyp
 	WWASSERT(tc);
 
 	// NOTE: we must be in the main thread to avoid corrupting the texture's refcount.
-	WWASSERT(TextureLoader::Is_DX8_Thread());
+	WWASSERT(TextureLoader::Is_Render_Thread());
 	REF_PTR_SET(Texture, tc);
 
 	// Make sure texture has a filename.
@@ -1171,7 +1221,7 @@ void TextureLoadTaskClass::Deinit()
 		}
 
 		// NOTE: we must be in main thread to avoid corrupting Texture's refcount.
-		WWASSERT(TextureLoader::Is_DX8_Thread());
+		WWASSERT(TextureLoader::Is_Render_Thread());
 		REF_PTR_RELEASE(Texture);
 	}
 }
@@ -1179,7 +1229,7 @@ void TextureLoadTaskClass::Deinit()
 
 bool TextureLoadTaskClass::Begin_Load()
 {
-	WWASSERT(TextureLoader::Is_DX8_Thread());
+	WWASSERT(TextureLoader::Is_Render_Thread());
 
 	bool loaded = false;
 
@@ -1239,7 +1289,7 @@ bool TextureLoadTaskClass::Load()
 
 void TextureLoadTaskClass::End_Load()
 {
-	WWASSERT(TextureLoader::Is_DX8_Thread());
+	WWASSERT(TextureLoader::Is_Render_Thread());
 
 	Unlock_Surfaces();
 	Apply(true);
@@ -1276,7 +1326,7 @@ void TextureLoadTaskClass::Finish_Load()
 
 void TextureLoadTaskClass::Apply_Missing_Texture()
 {
-	WWASSERT(TextureLoader::Is_DX8_Thread());
+	WWASSERT(TextureLoader::Is_Render_Thread());
 	WWASSERT(!D3DTexture);
 
 	D3DTexture = MissingTexture::_Get_Missing_Texture();
@@ -1656,7 +1706,7 @@ void TextureLoadTaskClass::Unlock_Surfaces()
 	{
 		if (LockedSurfacePtr[i])
 		{
-			WWASSERT(ThreadClass::_Get_Current_Thread_ID() == DX8Wrapper::_Get_Main_Thread_ID());
+			WWASSERT(ThreadClass::_Get_Current_Thread_ID() == RendererThreadId);
 			DX8_ErrorCode(Peek_D3D_Texture()->UnlockRect(i));
 		}
 		LockedSurfacePtr[i] = nullptr;
@@ -1909,7 +1959,7 @@ void CubeTextureLoadTaskClass::Init(TextureBaseClass* tc, TaskType type, Priorit
 	WWASSERT(tc);
 
 	// NOTE: we must be in the main thread to avoid corrupting the texture's refcount.
-	WWASSERT(TextureLoader::Is_DX8_Thread());
+	WWASSERT(TextureLoader::Is_Render_Thread());
 	REF_PTR_SET(Texture, tc);
 
 	// Make sure texture has a filename.
@@ -1995,7 +2045,7 @@ void CubeTextureLoadTaskClass::Deinit()
 		}
 
 		// NOTE: we must be in main thread to avoid corrupting Texture's refcount.
-		WWASSERT(TextureLoader::Is_DX8_Thread());
+		WWASSERT(TextureLoader::Is_Render_Thread());
 		REF_PTR_RELEASE(Texture);
 	}
 }
@@ -2032,7 +2082,7 @@ void CubeTextureLoadTaskClass::Unlock_Surfaces()
 		{
 			if (LockedCubeSurfacePtr[f][i])
 			{
-				WWASSERT(ThreadClass::_Get_Current_Thread_ID() == DX8Wrapper::_Get_Main_Thread_ID());
+				WWASSERT(ThreadClass::_Get_Current_Thread_ID() == RendererThreadId);
 				DX8_ErrorCode
 				(
 					Peek_D3D_Cube_Texture()->UnlockRect((D3DCUBEMAP_FACES)f,i)
@@ -2266,7 +2316,7 @@ void VolumeTextureLoadTaskClass::Init(TextureBaseClass* tc, TaskType type, Prior
 	WWASSERT(tc);
 
 	// NOTE: we must be in the main thread to avoid corrupting the texture's refcount.
-	WWASSERT(TextureLoader::Is_DX8_Thread());
+	WWASSERT(TextureLoader::Is_Render_Thread());
 	REF_PTR_SET(Texture, tc);
 
 	// Make sure texture has a filename.
@@ -2346,7 +2396,7 @@ void VolumeTextureLoadTaskClass::Unlock_Surfaces()
 	{
 		if (LockedSurfacePtr[i])
 		{
-			WWASSERT(ThreadClass::_Get_Current_Thread_ID() == DX8Wrapper::_Get_Main_Thread_ID());
+			WWASSERT(ThreadClass::_Get_Current_Thread_ID() == RendererThreadId);
 			DX8_ErrorCode
 			(
 				Peek_D3D_Volume_Texture()->UnlockBox(i)

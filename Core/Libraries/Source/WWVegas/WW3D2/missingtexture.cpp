@@ -57,6 +57,15 @@ IDirect3DSurface8* MissingTexture::_Create_Missing_Surface()
 	return surface;
 }
 
+void MissingTexture::Create_RGBA8_Image(unsigned &width, unsigned &height, std::vector<unsigned char> &pixels)
+{
+    width = missing_image_width; height = missing_image_height;
+    pixels.resize(static_cast<std::size_t>(width)*height*4);
+    for (std::size_t i = 0; i < pixels.size(); i += 4) {
+        pixels[i] = 255; pixels[i+1] = 0; pixels[i+2] = 255; pixels[i+3] = 127;
+    }
+}
+
 void MissingTexture::_Init()
 {
 	WWASSERT(!_MissingTexture);
@@ -82,18 +91,11 @@ void MissingTexture::_Init()
 			&rect,
 			0));
 
-	unsigned *buffer=(unsigned*)locked_rect.pBits;
-	unsigned char *pixels=(unsigned char *)missing_image_pixels;
-	for (unsigned y=0;y<missing_image_height;y++)
-	{
-		for (unsigned x=0; x<missing_image_width; x++)
-		{
-			//*buffer++=missing_image_palette[*pixels++];
-			*buffer++=0x7FFF00FF;
-		}
-		buffer=(unsigned*)locked_rect.pBits;
-		buffer+=locked_rect.Pitch/sizeof(unsigned)*y;
-	}
+	std::vector<unsigned char> pixels;
+	unsigned width, height;
+	Create_RGBA8_Image(width, height, pixels);
+	for (unsigned y = 0; y < height; ++y)
+		memcpy(static_cast<unsigned char *>(locked_rect.pBits)+y*locked_rect.Pitch, pixels.data()+y*width*4, width*4);
 
 	DX8_ErrorCode(tex->UnlockRect(0));
 
