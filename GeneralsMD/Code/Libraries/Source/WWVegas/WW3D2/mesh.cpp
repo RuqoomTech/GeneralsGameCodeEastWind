@@ -117,7 +117,7 @@
 #include "dx8renderer.h"
 #include "visrasterizer.h"
 #include "WWDebug/wwmemlog.h"
-#include "dx8rendererdebugger.h"
+#include "meshdebugger.h"
 #include <WWDebug/wwprofile.h>
 
 static unsigned MeshDebugIdCount;
@@ -801,7 +801,7 @@ void MeshClass::Render(RenderInfoClass & rinfo)
 				}
 			}
 
-			DX8RendererDebugger::Add_Mesh(this);
+			MeshRendererDebugger::Add_Mesh(this);
 		}
 	}
 }

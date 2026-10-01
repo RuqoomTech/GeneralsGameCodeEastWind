@@ -1079,12 +1079,12 @@ void WW3D::Flip_To_Primary()
  *=============================================================================================*/
 unsigned int WW3D::Get_Last_Frame_Poly_Count()
 {
-	return Debug_Statistics::Get_DX8_Polygons();
+	return Debug_Statistics::Get_Rendered_Polygons();
 }
 
 unsigned int WW3D::Get_Last_Frame_Vertex_Count()
 {
-	return Debug_Statistics::Get_DX8_Vertices();
+	return Debug_Statistics::Get_Rendered_Vertices();
 }
 
 void WW3D::Update_Logic_Frame_Time(float milliseconds)

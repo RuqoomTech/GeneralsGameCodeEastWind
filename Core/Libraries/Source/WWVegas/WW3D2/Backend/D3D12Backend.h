@@ -47,6 +47,7 @@ public:
                const Vector3 &color,
                float dest_alpha, float z, unsigned int stencil) override;
     void Set_Viewport(const RenderBackendViewport &viewport) override;
+    void Set_View_Projection(const Matrix4x4 &view_projection) override;
     void Invalidate_Cached_Render_States() override;
     bool Is_Device_Ready() const override;
     bool Has_Stencil() const override;
@@ -135,7 +136,8 @@ private:
         unsigned int vertex_count,
         const unsigned short *indices,
         unsigned int index_count,
-        ID3D12PipelineState *pipeline);
+        ID3D12PipelineState *pipeline,
+        bool screen_space);
     RenderBackendGeometryHandle createStaticGeometry(
         const void *vertices,
         unsigned int vertex_count,
@@ -184,6 +186,11 @@ private:
     void *m_fence_event = nullptr;
 
     RenderBackendViewport m_viewport{};
+    float m_view_projection[16]{
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f};
     float m_clear_color[4]{0.0f, 0.0f, 0.0f, 1.0f};
     float m_clear_depth = 1.0f;
     unsigned int m_clear_stencil = 0;

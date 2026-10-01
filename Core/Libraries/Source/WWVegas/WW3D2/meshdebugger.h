@@ -22,7 +22,7 @@
  *                                                                                             *
  *                 Project Name : ww3d                                                         *
  *                                                                                             *
- *                     $Archive:: /Commando/Code/ww3d2/dx8rendererdebugger.h                  $*
+ *                     $Archive:: /Commando/Code/ww3d2/meshdebugger.h                  $*
  *                                                                                             *
  *              Original Author:: Jani Penttinen                                               *
  *                                                                                             *
@@ -43,10 +43,10 @@
 class StringClass;
 class MeshClass;
 
-// Note! For the debugger to be usable, the application must call DX8RendererDebugger::Update() once
+// Note! For the debugger to be usable, the application must call MeshRendererDebugger::Update() once
 // each frame.
 
-class DX8RendererDebugger
+class MeshRendererDebugger
 {
 	static bool Enabled;
 public:
@@ -57,7 +57,7 @@ public:
 #ifdef WWDEBUG
 	static void Add_Mesh(MeshClass* mesh);
 #else
-	static void Add_Mesh(MeshClass* mesh) {}
+	static void Add_Mesh(MeshClass*) {}
 #endif
 
 	static void Disable_Mesh(unsigned id);

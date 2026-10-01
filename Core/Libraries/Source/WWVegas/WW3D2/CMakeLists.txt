@@ -98,6 +98,8 @@ set(WW3D2_SRC
     #mesh.h
     #meshbuild.cpp
     #meshbuild.h
+    meshdebugger.cpp
+    meshdebugger.h
     meshdam.cpp
     meshdam.h
     #meshgeometry.cpp

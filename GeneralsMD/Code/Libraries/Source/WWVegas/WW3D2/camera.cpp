@@ -67,14 +67,14 @@
  *   CameraClass::Camera_Push -- pushes the camera's parameters into the given GERD            *
  *   CameraClass::Camera_Pop -- pops the camera's parameters from the given GERD               *
  *   CameraClass::Set_Aspect_Ratio -- sets the aspect ratio of the camera                      *
- *   CameraClass::Apply_D3D_State -- sets the D3D states controlled by the camera              *
+ *   CameraClass::Apply -- applies the camera viewport and transforms              *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 
 #include "camera.h"
 #include "ww3d.h"
 #include "WWMath/matrix4.h"
-#include "dx8wrapper.h"
+#include "IRenderBackend.h"
 
 
 /***********************************************************************************************
@@ -719,7 +719,7 @@ void CameraClass::Device_To_World_Space(const Vector2 & device_coord,Vector3 * w
 
 
 /***********************************************************************************************
- * CameraClass::Apply -- sets the D3D states controlled by the camera                          *
+ * CameraClass::Apply -- applies the camera viewport and transforms                          *
  *                                                                                             *
  * INPUT:                                                                                      *
  *                                                                                             *
@@ -733,24 +733,33 @@ void CameraClass::Device_To_World_Space(const Vector2 & device_coord,Vector3 * w
 void CameraClass::Apply()
 {
 	Update_Frustum();
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr) return;
 
 	int width,height,bits;
 	bool windowed;
 	WW3D::Get_Render_Target_Resolution(width,height,bits,windowed);
+	if (width <= 0 || height <= 0) return;
 
-	D3DVIEWPORT8 vp;
-	vp.X = (DWORD)(Viewport.Min.X * (float)width);
-	vp.Y = (DWORD)(Viewport.Min.Y * (float)height);
-	vp.Width = (DWORD)((Viewport.Max.X - Viewport.Min.X) * (float)width);
-	vp.Height = (DWORD)((Viewport.Max.Y - Viewport.Min.Y) * (float)height);
-	vp.MinZ = ZBufferMin;
-	vp.MaxZ = ZBufferMax;
-	DX8Wrapper::Set_Viewport(&vp);
+	// Validate normalized bounds before converting to unsigned pixel extents.
+	if (!(Viewport.Min.X >= 0.0f && Viewport.Min.Y >= 0.0f &&
+	      Viewport.Max.X <= 1.0f && Viewport.Max.Y <= 1.0f &&
+	      Viewport.Max.X > Viewport.Min.X && Viewport.Max.Y > Viewport.Min.Y)) return;
+	RenderBackendViewport viewport;
+	viewport.x = static_cast<unsigned int>(Viewport.Min.X * width);
+	viewport.y = static_cast<unsigned int>(Viewport.Min.Y * height);
+	viewport.width = static_cast<unsigned int>((Viewport.Max.X - Viewport.Min.X) * width);
+	viewport.height = static_cast<unsigned int>((Viewport.Max.Y - Viewport.Min.Y) * height);
+	viewport.min_z = ZBufferMin;
+	viewport.max_z = ZBufferMax;
+	if (viewport.width == 0 || viewport.height == 0) return;
+	backend->Set_Viewport(viewport);
 
-	Matrix4x4 d3dprojection;
-	Get_D3D_Projection_Matrix(&d3dprojection);
-	DX8Wrapper::Set_Projection_Transform_With_Z_Bias(d3dprojection,ZNear,ZFar);
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,CameraInvTransform);
+	Matrix4x4 depth_projection;
+	Get_Zero_To_One_Projection_Matrix(&depth_projection);
+	Matrix4x4 view_projection;
+	Matrix4x4::Multiply(depth_projection, CameraInvTransform, &view_projection);
+	backend->Set_View_Projection(view_projection);
 }
 
 void CameraClass::Set_Clip_Planes(float znear,float zfar)
@@ -791,7 +800,7 @@ void CameraClass::Get_Projection_Matrix(Matrix4x4 * set_tm)
 	*set_tm = ProjectionTransform;
 }
 
-void CameraClass::Get_D3D_Projection_Matrix(Matrix4x4 * set_tm)
+void CameraClass::Get_Zero_To_One_Projection_Matrix(Matrix4x4 * set_tm)
 {
 	WWASSERT(set_tm != nullptr);
 	Update_Frustum();

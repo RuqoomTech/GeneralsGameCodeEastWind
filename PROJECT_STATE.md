@@ -26,6 +26,14 @@ Local GCC 16.2 compilation passes for these changes. All 27 focused tests pass, 
 
 Fresh patch reconstruction from baseline `6d6b94e9e` compares 4555 candidate files with 4555 reconstructed files: zero missing, extra, or byte differences. `git diff --check` passes.
 
+## Step 05H1V candidate - camera transforms and neutral names
+
+Both game cameras now apply their pixel viewport and zero-to-one-depth view/projection through `WW3D -> IRenderBackend`. `Get_D3D_Projection_Matrix` is renamed `Get_Zero_To_One_Projection_Matrix`; neither camera includes or calls the old wrapper. WWMath still computes the existing perspective/orthographic projection and view matrices. D3D12 packs their values explicitly into vertex-visible root constants and applies them to dynamic, persistent color, and persistent textured geometry. Screen-space UI binds identity independently of the active camera. Per-material/shadow depth bias, object transforms, lighting and offscreen targets remain separate unfinished draw responsibilities.
+
+Renderer statistics functions/macros and telemetry members use responsibility-based names. CSV schema v3 replaces `dx8_triangles`/`dx8_vertices` with `submitted_triangles`/`submitted_vertices`; totals no longer add skin/sorted subsets twice. The summary tool accepts both historical v2 and new v3 captures. CPU mesh diagnostics are renamed from `dx8rendererdebugger.*`/`DX8RendererDebugger` to `meshdebugger.*`/`MeshRendererDebugger`, registered under Core WW3D, and `Enable(false)` now actually disables them. Three old renderer notes move out of the active code directory into `Modernization/History/LEGACY_RENDERER_*.txt`, preserving their historical contents.
+
+All 27 focused tests pass, including production GPU pixel checks for non-symmetric camera transforms, transform changes within an open scene, all three 3D geometry paths, and interleaved 2D isolation. The summary tool accepts v2/v3 samples. The real serial game build is still under validation. This does not establish full source retirement, a linked/booted game, a visible frame, or user Windows sign-off.
+
 ## Locked architecture
 
 - Evolution runtime is x64-only.

@@ -9,6 +9,22 @@ foreach(retired_file IN ITEMS
     endif()
 endforeach()
 
+foreach(game IN ITEMS Generals GeneralsMD)
+    rts_policy_require_absent(
+        "${game}/Code/Libraries/Source/WWVegas/WW3D2/camera.cpp"
+        "DX8Wrapper"
+        "the migrated camera must apply viewport/transforms through the renderer-neutral seam")
+    rts_policy_require_absent(
+        "${game}/Code/Libraries/Source/WWVegas/WW3D2/camera.h"
+        "Get_D3D_Projection_Matrix"
+        "camera projection names must describe the depth range, not a retired API")
+endforeach()
+foreach(retired_debugger_file IN ITEMS dx8rendererdebugger.cpp dx8rendererdebugger.h)
+    if(EXISTS "${RTS_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/${retired_debugger_file}")
+        message(FATAL_ERROR "Policy regression: mesh debugging belongs to meshdebugger, not ${retired_debugger_file}")
+    endif()
+endforeach()
+
 rts_policy_require_absent(
     "Core/Libraries/Source/WWVegas/WW3D2/ww3d.cpp"
     "#if !defined(RTS_EVOLUTION_X64)"

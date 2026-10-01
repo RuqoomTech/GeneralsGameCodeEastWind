@@ -20,6 +20,12 @@ ctest --preset mingw64-tests --output-on-failure
 
 The preset is x64-only and does not require the Visual Studio IDE.
 
+## Camera and naming continuation
+
+H1V extends the production D3D12 smoke test with non-symmetric view/projection transforms on dynamic, persistent color and persistent textured geometry, changes between draws within one command list, and 2D isolation from camera state. The 27-test graph passes locally. Telemetry schema v3 uses `submitted_triangles` and `submitted_vertices`; skin/sorted values are subsets of the submitted totals. `scripts/perf-summary.py` accepts v2 and v3 captures.
+
+The real serial game command remains the migration queue. Its final result and patch reconstruction are recorded in `PROJECT_STATE.md`; focused GPU tests are not normal-game boot/frame evidence.
+
 ## Focused test inventory
 
 The host-portable focused graph contains 26 tests. On Windows x64 it contains one additional real GPU/backend smoke test (`d3d12_backend_smoke`), for 27 tests total. Names describe permanent responsibilities rather than the milestone in which each test was introduced.

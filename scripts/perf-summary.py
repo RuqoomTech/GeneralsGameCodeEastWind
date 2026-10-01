@@ -10,7 +10,7 @@ import math
 import statistics
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = {2, 3}
 TIMING_FIELDS = (
     "update_cpu_us",
     "client_cpu_us",
@@ -67,8 +67,8 @@ def load_capture(path: Path) -> list[dict[str, str]]:
     if not rows:
         raise ValueError("capture contains no samples")
     versions = {int(row["schema_version"]) for row in rows}
-    if versions != {SCHEMA_VERSION}:
-        raise ValueError(f"expected schema version {SCHEMA_VERSION}, found {sorted(versions)}")
+    if len(versions) != 1 or not versions <= SUPPORTED_SCHEMA_VERSIONS:
+        raise ValueError(f"expected one supported schema version (2 or 3), found {sorted(versions)}")
     return rows
 
 
@@ -81,7 +81,7 @@ def build_summary(path: Path, rows: list[dict[str, str]]) -> dict[str, object]:
     logic_updates = sum(int(row["logic_updated"]) != 0 for row in rows)
     return {
         "capture": str(path),
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": int(rows[0]["schema_version"]),
         "samples": len(rows),
         "rendered_samples": rendered,
         "logic_update_samples": logic_updates,
@@ -118,7 +118,7 @@ def print_text(summary: dict[str, object]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("capture", type=Path, help="Step 03 schema-v2 CSV capture")
+    parser.add_argument("capture", type=Path, help="WW3D schema-v2/v3 CSV capture")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     args = parser.parse_args()
 

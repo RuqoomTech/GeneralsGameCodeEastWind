@@ -53,7 +53,7 @@ namespace
 	bool s_phaseActive[UPDATE_PHASE_COUNT] = { false };
 	FrameSample s_sample;
 
-	const unsigned int CAPTURE_SCHEMA_VERSION = 2;
+	const unsigned int CAPTURE_SCHEMA_VERSION = 3;
 	const unsigned int FLUSH_INTERVAL = 120;
 
 	TelemetryTime Get_Time_Microseconds()
@@ -94,7 +94,7 @@ namespace
 			"schema_version,capture_index,render_frame,logic_frame,sync_time_ms,rendered,logic_updated,"
 			"update_cpu_us,client_cpu_us,logic_cpu_us,network_cpu_us,message_cpu_us,render_cpu_us,"
 			"drawable_total,drawable_visible,drawable_shrouded,"
-			"draw_calls,triangles,vertices,dx8_triangles,dx8_vertices,skin_draws,"
+			"draw_calls,triangles,vertices,submitted_triangles,submitted_vertices,skin_draws,"
 			"skin_triangles,skin_vertices,sorted_triangles,sorted_vertices,"
 			"texture_bytes,texture_count,texture_changes,lightmap_texture_bytes,"
 			"lightmap_texture_count,procedural_texture_bytes,procedural_texture_count,"
@@ -103,10 +103,8 @@ namespace
 
 	void Publish_Plots()
 	{
-		const unsigned int triangles = s_sample.render.dx8Triangles
-			+ s_sample.render.skinTriangles + s_sample.render.sortedTriangles;
-		const unsigned int vertices = s_sample.render.dx8Vertices
-			+ s_sample.render.skinVertices + s_sample.render.sortedVertices;
+		const unsigned int triangles = s_sample.render.submittedTriangles;
+		const unsigned int vertices = s_sample.render.submittedVertices;
 		// Non-Tracy builds compile PROFILER_PLOT to a no-op that does not consume
 		// macro arguments; keep the derived values warning-clean in that configuration.
 		(void)triangles;
@@ -131,10 +129,8 @@ namespace
 
 	void Publish_Sample()
 	{
-		const unsigned int triangles = s_sample.render.dx8Triangles
-			+ s_sample.render.skinTriangles + s_sample.render.sortedTriangles;
-		const unsigned int vertices = s_sample.render.dx8Vertices
-			+ s_sample.render.skinVertices + s_sample.render.sortedVertices;
+		const unsigned int triangles = s_sample.render.submittedTriangles;
+		const unsigned int vertices = s_sample.render.submittedVertices;
 
 		if (s_captureFile != 0) {
 			++s_captureIndex;
@@ -160,8 +156,8 @@ namespace
 				s_sample.render.drawCalls,
 				triangles,
 				vertices,
-				s_sample.render.dx8Triangles,
-				s_sample.render.dx8Vertices,
+				s_sample.render.submittedTriangles,
+				s_sample.render.submittedVertices,
 				s_sample.render.skinDraws,
 				s_sample.render.skinTriangles,
 				s_sample.render.skinVertices,

@@ -85,8 +85,9 @@ namespace PerformanceTelemetry
 	struct RenderFrameCounters
 	{
 		unsigned int drawCalls;
-		unsigned int dx8Triangles;
-		unsigned int dx8Vertices;
+		// Total submitted geometry; skin/sorted counters are subsets, not additions.
+		unsigned int submittedTriangles;
+		unsigned int submittedVertices;
 		unsigned int skinDraws;
 		unsigned int skinTriangles;
 		unsigned int skinVertices;

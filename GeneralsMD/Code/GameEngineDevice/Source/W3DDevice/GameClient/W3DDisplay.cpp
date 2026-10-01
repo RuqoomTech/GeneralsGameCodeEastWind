@@ -218,8 +218,8 @@ void StatDumpClass::dumpStats( Bool brief, Bool flagSpikes )
 
 	//Rendering stats
 	fprintf( m_fp, "Draws: %d \nSkins: %d \nSortedPolys: %d \nSkinPolys: %d\n",(Int)Debug_Statistics::Get_Draw_Calls(),
-		(Int)Debug_Statistics::Get_DX8_Skin_Renders(),
-		(Int)Debug_Statistics::Get_Sorting_Polygons(), (Int)Debug_Statistics::Get_DX8_Skin_Polygons());
+		(Int)Debug_Statistics::Get_Skin_Renders(),
+		(Int)Debug_Statistics::Get_Sorting_Polygons(), (Int)Debug_Statistics::Get_Skin_Polygons());
 
 	Int onScreenParticleCount = TheParticleSystemManager->getOnScreenParticleCount();
 
@@ -229,7 +229,7 @@ void StatDumpClass::dumpStats( Bool brief, Bool flagSpikes )
   	  fprintf( m_fp, "                                                                      DRAWS OUT OF TOLERANCE(2000)\n" );
     if ( Debug_Statistics::Get_Sorting_Polygons() > (onScreenParticleCount*2) + 300 )
   	  fprintf( m_fp, "                                                                      NON-PARTICLE-SORTS OUT OF TOLERANCE(300)\n" );
-    if ( Debug_Statistics::Get_DX8_Skin_Renders()>100 )
+    if ( Debug_Statistics::Get_Skin_Renders()>100 )
   	  fprintf( m_fp, "                                                                      SKINS OUT OF TOLERANCE(100)\n" );
   }
 
@@ -293,12 +293,12 @@ void StatDumpClass::dumpStats( Bool brief, Bool flagSpikes )
 
 
 	// polygons this frame
-	Int polyPerFrame = Debug_Statistics::Get_DX8_Polygons();
+	Int polyPerFrame = Debug_Statistics::Get_Rendered_Polygons();
 	Int polyPerSecond = (Int)(polyPerFrame * fps);
 	fprintf( m_fp, "  Polygons: %d per frame (%d per second)\n", polyPerFrame, polyPerSecond );
 
 	// vertices this frame
-	fprintf( m_fp, "  Vertices: %d\n", Debug_Statistics::Get_DX8_Vertices() );
+	fprintf( m_fp, "  Vertices: %d\n", Debug_Statistics::Get_Rendered_Vertices() );
 
 	//
 	// I'm adjusting the texture memory usage counter by subtracting
@@ -1239,7 +1239,7 @@ void W3DDisplay::gatherDebugStats()
 		double fps = (Real)s_framesRenderedSinceLastUpdate / s_timeSinceLastUpdateInSecs;
 		double drawsPerFrame = Debug_Statistics::Get_Draw_Calls(); //(Real)s_drawCallsSinceLastUpdate / (Real)s_framesRenderedSinceLastUpdate;
 		double sortPolysPerFrame = Debug_Statistics::Get_Sorting_Polygons();  //(Real)s_sortedPolysSinceLastUpdate / (Real)s_framesRenderedSinceLastUpdate;
-		double skinDrawsPerFrame = Debug_Statistics::Get_DX8_Skin_Renders();
+		double skinDrawsPerFrame = Debug_Statistics::Get_Skin_Renders();
 
 		if (fps<0.1) fps = 0.1;
 
@@ -1251,7 +1251,7 @@ void W3DDisplay::gatherDebugStats()
 		if (cumuTime < 0.0) cumuTime = 0.0;
 		Int numFrames = (Int)TheGameLogic->getFrame() - (Int)START_CUMU_FRAME;
 		double cumuFPS = (numFrames > 0 && cumuTime > 0.0) ? (numFrames / cumuTime) : 0.0;
-		double skinPolysPerFrame = Debug_Statistics::Get_DX8_Skin_Polygons();
+		double skinPolysPerFrame = Debug_Statistics::Get_Skin_Polygons();
 
 		Int LOD = TheGlobalData->m_terrainLOD;
 		//unibuffer.format( L"FPS: %.2f, %.2fms mapLOD=%d [cumu FPS=%.2f] draws: %.2f sort: %.2f", fps, ms, LOD, cumuFPS, drawsPerFrame,sortPolysPerFrame);
@@ -1276,7 +1276,7 @@ void W3DDisplay::gatherDebugStats()
 		fpsString.format( L"FPS: %.2f", fps);
 		m_benchmarkDisplayString->setText( fpsString );
 
-		Int polyPerFrame = Debug_Statistics::Get_DX8_Polygons();
+		Int polyPerFrame = Debug_Statistics::Get_Rendered_Polygons();
 
 #ifdef EXTENDED_STATS
 		static float gameOverheadMS = 0.0f;
@@ -1433,7 +1433,7 @@ void W3DDisplay::gatherDebugStats()
 		m_displayStrings[Polygons]->setText( unibuffer );
 
 		// vertices this frame
-		unibuffer.format( L"Vertices: %d", Debug_Statistics::Get_DX8_Vertices() );
+		unibuffer.format( L"Vertices: %d", Debug_Statistics::Get_Rendered_Vertices() );
 		m_displayStrings[Vertices]->setText( unibuffer );
 
 		//
@@ -2076,8 +2076,8 @@ AGAIN:
 		Debug_Statistics::End_Statistics();	//record number of polygons rendered in RenderTargetTextures.
 
 		//Store number of polygons rendered in renderTargetTextures.
-		Int numRenderTargetPolygons=Debug_Statistics::Get_DX8_Polygons();
-		Int numRenderTargetVertices=Debug_Statistics::Get_DX8_Vertices();
+		Int numRenderTargetPolygons=Debug_Statistics::Get_Rendered_Polygons();
+		Int numRenderTargetVertices=Debug_Statistics::Get_Rendered_Vertices();
 
 		// start render block
 		#if defined(_ALLOW_DEBUG_CHEATS_IN_RELEASE)
@@ -2102,7 +2102,7 @@ AGAIN:
 				couldRender = true;
 				// add the number of verts/polygons drawn before the main scene
 				if (numRenderTargetPolygons || numRenderTargetVertices)
-					Debug_Statistics::Record_DX8_Polys_And_Vertices(numRenderTargetPolygons,numRenderTargetVertices,ShaderClass::_PresetOpaqueShader);
+					Debug_Statistics::Record_Rendered_Polys_And_Vertices(numRenderTargetPolygons,numRenderTargetVertices,ShaderClass::_PresetOpaqueShader);
 
 				// draw all views of the world
 				drawViews();

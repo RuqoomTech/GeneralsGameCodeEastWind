@@ -28,6 +28,7 @@
 // WW3D2 header graph. All W3D types below are passed by pointer or reference.
 
 class LightEnvironmentClass;
+class Matrix4x4;
 class Vector3;
 
 struct RenderBackendFrameStatistics
@@ -146,6 +147,9 @@ public:
                        const Vector3 & color,
                        float dest_alpha = 0.0f, float z = 1.0f, unsigned int stencil = 0) = 0;
     virtual void Set_Viewport(const RenderBackendViewport & viewport) = 0;
+    // World-space primitive draws use WWMath column-vector math and a 0..1
+    // clip-depth projection. Screen-space draws remain independent of camera.
+    virtual void Set_View_Projection(const Matrix4x4 &view_projection) = 0;
     virtual void Invalidate_Cached_Render_States() = 0;
 
     // Device availability is renderer-owned. Frame callers use this before

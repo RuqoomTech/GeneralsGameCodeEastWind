@@ -35,9 +35,9 @@ This intentionally does **not** treat `TextureClass` as a D3D8 texture on x64. T
 
 The archival DX8 backend adapter and SDK build lane are removed. D3D12/DXGI is the only renderer selected by CMake. Unmigrated DX8 declarations/callers remain a failing migration queue; they do not provide a supported fallback. Full source retirement is incomplete until those callers have equivalent D3D12 behavior and the normal game links and renders.
 
-Output ownership now includes presentation intervals, stencil capability, and synchronous top-down RGBA8 readback for WW3D screenshots/movie capture and the existing PNG/JPEG screenshot worker. The output is retained before Present because [flip-discard does not guarantee preservation of presented back-buffer contents](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/ne-dxgi-dxgi_swap_effect). This uses one additional GPU image/copy per submitted scene; readback waits only on demand. The existing statistics owner reads actual D3D12 submissions through a small neutral counter value, preserving historical telemetry field names.
+Output ownership now includes presentation intervals, stencil capability, and synchronous top-down RGBA8 readback for WW3D screenshots/movie capture and the existing PNG/JPEG screenshot worker. The output is retained before Present because [flip-discard does not guarantee preservation of presented back-buffer contents](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/ne-dxgi-dxgi_swap_effect). This uses one additional GPU image/copy per submitted scene; readback waits only on demand. The existing statistics owner reads actual D3D12 submissions through a small neutral counter value, using submitted geometry totals. CSV schema v3 uses renderer-neutral names; the summary tool also reads historical v2.
 
-The next actual link error is projected-shadow render-target allocation. Off-screen targets must migrate with their mesh/material draw and texture sampling lifecycle. Camera transforms, real CPU texture loading/upload, mesh batches, shadows, terrain, water, and effects still need migration. The normal game has not linked, booted, or shown a frame.
+The next actual link error is projected-shadow render-target allocation. Off-screen targets must migrate with their mesh/material draw and texture sampling lifecycle. Base camera viewport/view/projection now crosses the neutral seam. Real CPU texture loading/upload, object transforms, material/depth bias, mesh batches, shadows, terrain, water, and effects still need migration. The normal game has not linked, booted, or shown a frame.
 
 Prefer the smallest existing abstraction that matches the real responsibility:
 
@@ -47,6 +47,14 @@ Prefer the smallest existing abstraction that matches the real responsibility:
 - asset parsing -> CPU-side W3D/W3X structures, never D3D12 objects.
 
 Do not mechanically add hundreds of DX8-style methods to `IRenderBackend`. Where DX8's fixed-function/state-machine model is the wrong abstraction, replace the caller with a higher-level D3D12-oriented concept.
+
+## Step 05H1V candidate - camera transforms and neutral names
+
+Both game cameras now apply their pixel viewport and zero-to-one-depth view/projection through `WW3D -> IRenderBackend`. `Get_D3D_Projection_Matrix` is renamed `Get_Zero_To_One_Projection_Matrix`; neither camera includes or calls the old wrapper. WWMath still computes the existing perspective/orthographic projection and view matrices. D3D12 packs their values explicitly into vertex-visible root constants and applies them to dynamic, persistent color, and persistent textured geometry. Screen-space UI binds identity independently of the active camera. Per-material/shadow depth bias, object transforms, lighting and offscreen targets remain separate unfinished draw responsibilities.
+
+Renderer statistics functions/macros and telemetry members use responsibility-based names. CSV schema v3 replaces `dx8_triangles`/`dx8_vertices` with `submitted_triangles`/`submitted_vertices`; totals no longer add skin/sorted subsets twice. The summary tool accepts both historical v2 and new v3 captures. CPU mesh diagnostics are renamed from `dx8rendererdebugger.*`/`DX8RendererDebugger` to `meshdebugger.*`/`MeshRendererDebugger`, registered under Core WW3D, and `Enable(false)` now actually disables them. Three old renderer notes move out of the active code directory into `Modernization/History/LEGACY_RENDERER_*.txt`, preserving their historical contents.
+
+All 27 focused tests pass, including production GPU pixel checks for non-symmetric camera transforms, transform changes within an open scene, all three 3D geometry paths, and interleaved 2D isolation. The summary tool accepts v2/v3 samples. The real serial game build is still under validation. This does not establish full source retirement, a linked/booted game, a visible frame, or user Windows sign-off.
 
 ## Target architecture
 

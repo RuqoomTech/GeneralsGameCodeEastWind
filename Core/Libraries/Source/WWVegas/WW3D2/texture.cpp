@@ -952,7 +952,7 @@ void TextureClass::Apply(unsigned int stage)
 	}
 	LastAccessed=WW3D::Get_Sync_Time();
 
-	DX8_RECORD_TEXTURE(this);
+	RENDER_RECORD_TEXTURE(this);
 
 	// Set texture itself
 	if (WW3D::Is_Texturing_Enabled())

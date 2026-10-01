@@ -14,6 +14,7 @@
 #include "RenderBackend.h"
 
 #include "WWMath/vector3.h"
+#include "WWMath/matrix4.h"
 
 #include <d3d12.h>
 #include <d3dcompiler.h>
@@ -30,6 +31,12 @@
 
 namespace
 {
+constexpr float IdentityTransform[16]{
+    1.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 1.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 1.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 1.0f};
+
 template <typename T>
 void releaseCom(T *&object) noexcept
 {
@@ -341,11 +348,18 @@ void D3D12Backend::createPrimitivePipeline()
     texture_range.RegisterSpace = 0;
     texture_range.OffsetInDescriptorsFromTableStart = 0;
 
-    D3D12_ROOT_PARAMETER texture_parameter{};
+    D3D12_ROOT_PARAMETER parameters[2]{};
+    D3D12_ROOT_PARAMETER &texture_parameter = parameters[0];
     texture_parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     texture_parameter.DescriptorTable.NumDescriptorRanges = 1;
     texture_parameter.DescriptorTable.pDescriptorRanges = &texture_range;
     texture_parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    D3D12_ROOT_PARAMETER &camera_parameter = parameters[1];
+    camera_parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    camera_parameter.Constants.ShaderRegister = 0;
+    camera_parameter.Constants.Num32BitValues = 16;
+    camera_parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -363,8 +377,8 @@ void D3D12Backend::createPrimitivePipeline()
     sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC root_desc{};
-    root_desc.NumParameters = 1;
-    root_desc.pParameters = &texture_parameter;
+    root_desc.NumParameters = 2;
+    root_desc.pParameters = parameters;
     root_desc.NumStaticSamplers = 1;
     root_desc.pStaticSamplers = &sampler;
     root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
@@ -887,6 +901,14 @@ void D3D12Backend::Set_Viewport(const RenderBackendViewport &viewport)
     }
 }
 
+void D3D12Backend::Set_View_Projection(const Matrix4x4 &view_projection)
+{
+    // Pack values explicitly; native WWMath layout never becomes a GPU ABI.
+    for (unsigned int row = 0; row < 4; ++row)
+        for (unsigned int column = 0; column < 4; ++column)
+            m_view_projection[row * 4 + column] = view_projection[row][column];
+}
+
 void D3D12Backend::Invalidate_Cached_Render_States()
 {
     // D3D12 state is explicit and command-list local. There is no DX8-style
@@ -1118,7 +1140,7 @@ bool D3D12Backend::Draw_Indexed_Triangles(
     const unsigned short *indices,
     unsigned int index_count)
 {
-    return drawDynamicColorGeometry(vertices, vertex_count, indices, index_count, m_primitive_pipeline);
+    return drawDynamicColorGeometry(vertices, vertex_count, indices, index_count, m_primitive_pipeline, false);
 }
 
 bool D3D12Backend::Draw_2D_Indexed_Triangles(
@@ -1142,7 +1164,7 @@ bool D3D12Backend::Draw_2D_Indexed_Triangles(
             break;
     }
 
-    return drawDynamicColorGeometry(vertices, vertex_count, indices, index_count, pipeline);
+    return drawDynamicColorGeometry(vertices, vertex_count, indices, index_count, pipeline, true);
 }
 
 bool D3D12Backend::drawDynamicColorGeometry(
@@ -1150,7 +1172,8 @@ bool D3D12Backend::drawDynamicColorGeometry(
     unsigned int vertex_count,
     const unsigned short *indices,
     unsigned int index_count,
-    ID3D12PipelineState *pipeline)
+    ID3D12PipelineState *pipeline,
+    bool screen_space)
 {
     if (!m_scene_open || pipeline == nullptr || vertices == nullptr || indices == nullptr ||
         vertex_count == 0 || index_count < 3 || (index_count % 3) != 0)
@@ -1208,6 +1231,8 @@ bool D3D12Backend::drawDynamicColorGeometry(
         index_upload = nullptr;
 
         m_command_list->SetGraphicsRootSignature(m_primitive_root_signature);
+        m_command_list->SetGraphicsRoot32BitConstants(
+            1, 16, screen_space ? IdentityTransform : m_view_projection, 0);
         m_command_list->SetPipelineState(pipeline);
         m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
@@ -1434,6 +1459,7 @@ bool D3D12Backend::drawStaticGeometry(RenderBackendGeometryHandle geometry_handl
     index_view.Format = DXGI_FORMAT_R16_UINT;
 
     m_command_list->SetGraphicsRootSignature(m_primitive_root_signature);
+    m_command_list->SetGraphicsRoot32BitConstants(1, 16, m_view_projection, 0);
     m_command_list->SetPipelineState(m_primitive_pipeline);
     m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
@@ -1703,6 +1729,7 @@ bool D3D12Backend::Draw_Static_Indexed_Textured_Geometry(
     m_command_list->SetDescriptorHeaps(1, heaps);
     m_command_list->SetGraphicsRootSignature(m_primitive_root_signature);
     m_command_list->SetPipelineState(m_textured_pipeline);
+    m_command_list->SetGraphicsRoot32BitConstants(1, 16, m_view_projection, 0);
     D3D12_GPU_DESCRIPTOR_HANDLE srv = m_texture_srv_heap->GetGPUDescriptorHandleForHeapStart();
     srv.ptr += texture_slot * m_srv_descriptor_size;
     m_command_list->SetGraphicsRootDescriptorTable(0, srv);

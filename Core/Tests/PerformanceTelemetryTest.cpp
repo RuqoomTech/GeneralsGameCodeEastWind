@@ -41,8 +41,8 @@ int main()
 
 	PerformanceTelemetry::RenderFrameCounters counters;
 	counters.drawCalls = 11;
-	counters.dx8Triangles = 37;
-	counters.dx8Vertices = 61;
+	counters.submittedTriangles = 37;
+	counters.submittedVertices = 61;
 	counters.skinDraws = 7;
 	counters.skinTriangles = 11;
 	counters.skinVertices = 13;
@@ -92,7 +92,7 @@ int main()
 		"schema_version,capture_index,render_frame,logic_frame,sync_time_ms,rendered,logic_updated,"
 		"update_cpu_us,client_cpu_us,logic_cpu_us,network_cpu_us,message_cpu_us,render_cpu_us,"
 		"drawable_total,drawable_visible,drawable_shrouded,"
-		"draw_calls,triangles,vertices,dx8_triangles,dx8_vertices,skin_draws,"
+		"draw_calls,triangles,vertices,submitted_triangles,submitted_vertices,skin_draws,"
 		"skin_triangles,skin_vertices,sorted_triangles,sorted_vertices,"
 		"texture_bytes,texture_count,texture_changes,lightmap_texture_bytes,"
 		"lightmap_texture_count,procedural_texture_bytes,procedural_texture_count,"
@@ -105,11 +105,11 @@ int main()
 		std::remove(path);
 		return Fail("sample column count is not stable");
 	}
-	if (std::strncmp(row, "2,1,42,77,1400,1,1,", std::strlen("2,1,42,77,1400,1,1,")) != 0) {
+	if (std::strncmp(row, "3,1,42,77,1400,1,1,", std::strlen("3,1,42,77,1400,1,1,")) != 0) {
 		std::remove(path);
 		return Fail("sample identity/update-state fields are incorrect");
 	}
-	const char *expectedCounters = ",10,6,3,11,65,93,37,61,7,11,13,17,19,23,29,31,43,47,53,59,61,67\n";
+	const char *expectedCounters = ",10,6,3,11,37,61,37,61,7,11,13,17,19,23,29,31,43,47,53,59,61,67\n";
 	const size_t rowLength = std::strlen(row);
 	const size_t countersLength = std::strlen(expectedCounters);
 	if (rowLength < countersLength || std::strcmp(row + rowLength - countersLength, expectedCounters) != 0) {

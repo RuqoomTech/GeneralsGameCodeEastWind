@@ -5,6 +5,11 @@
 // reference inputs until each real terrain/filter/tree/water path is moved
 // together with its resource bindings and render state.
 
+cbuffer CameraTransform : register(b0)
+{
+    row_major float4x4 ViewProjection;
+};
+
 struct VSInput
 {
     float3 position : POSITION;
@@ -20,7 +25,7 @@ struct PSInput
 PSInput VSMain(VSInput input)
 {
     PSInput output;
-    output.position = float4(input.position, 1.0f);
+    output.position = mul(ViewProjection, float4(input.position, 1.0f));
     output.color = input.color;
     return output;
 }
@@ -50,7 +55,7 @@ SamplerState PrimitiveSampler : register(s0);
 TexturedPSInput VSTextured(TexturedVSInput input)
 {
     TexturedPSInput output;
-    output.position = float4(input.position, 1.0f);
+    output.position = mul(ViewProjection, float4(input.position, 1.0f));
     output.color = input.color;
     output.texcoord = input.texcoord;
     return output;

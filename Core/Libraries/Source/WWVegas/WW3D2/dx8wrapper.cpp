@@ -1997,7 +1997,7 @@ void DX8Wrapper::Draw_Sorting_IB_VB(
 		dyn_ib_access.IndexBufferOffset,
 		polygon_count));
 
-	DX8_RECORD_RENDER(polygon_count,vertex_count,render_state.shader);
+	RENDER_RECORD_RENDER(polygon_count,vertex_count,render_state.shader);
 }
 
 // ----------------------------------------------------------------------------
@@ -2102,7 +2102,7 @@ void DX8Wrapper::Draw(
 					///@todo: MUST FIND OUT WHY THIS HAPPENS WITH LOTS OF PARTICLES ON BIG FIGHT!  -MW
 					break;
 				}*/
-				DX8_RECORD_RENDER(polygon_count,vertex_count,render_state.shader);
+				RENDER_RECORD_RENDER(polygon_count,vertex_count,render_state.shader);
 				DX8_RECORD_DRAW_CALLS();
 				DX8CALL(DrawIndexedPrimitive(
 					(D3DPRIMITIVETYPE)primitive_type,

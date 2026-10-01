@@ -95,7 +95,7 @@ static void Record_Texture_End()
 	if (record_texture_mode==Debug_Statistics::RECORD_TEXTURE_DETAILS) {
 		char tmp_text[1024];
 		snprintf(tmp_text,sizeof(tmp_text),
-			"Set_DX8_Texture count: %d\nactual changes: %d\n\n"
+			"Texture binding count: %d\nactual changes: %d\n\n"
 			"id      refs changes  size      name\n"
 			"--------------------------------------\n",
 
@@ -266,16 +266,16 @@ const StringClass& Debug_Statistics::Get_Record_Texture_String()
 
 // ----------------------------------------------------------------------------
 
-static int dx8_skin_renders;
-static int last_frame_dx8_skin_renders;
-static int dx8_skin_polygons;
-static int last_frame_dx8_skin_polygons;
-static int dx8_skin_vertices;
-static int last_frame_dx8_skin_vertices;
-static int dx8_polygons;
-static int last_frame_dx8_polygons;
-static int dx8_vertices;
-static int last_frame_dx8_vertices;
+static int skin_renders;
+static int last_frame_skin_renders;
+static int skin_polygons;
+static int last_frame_skin_polygons;
+static int skin_vertices;
+static int last_frame_skin_vertices;
+static int rendered_polygons;
+static int last_frame_rendered_polygons;
+static int rendered_vertices;
+static int last_frame_rendered_vertices;
 static int sorting_polygons;
 static int last_frame_sorting_polygons;
 static int sorting_vertices;
@@ -283,47 +283,47 @@ static int last_frame_sorting_vertices;
 static int draw_calls;
 static int last_frame_draw_calls;
 
-void Debug_Statistics::Record_DX8_Skin_Polys_And_Vertices(int pcount,int vcount)
+void Debug_Statistics::Record_Skin_Polys_And_Vertices(int pcount,int vcount)
 {
-	dx8_skin_polygons+=pcount;
-	dx8_skin_vertices+=vcount;
-	dx8_skin_renders++;
+	skin_polygons+=pcount;
+	skin_vertices+=vcount;
+	skin_renders++;
 	draw_calls++;
 }
 
-void Debug_Statistics::Record_DX8_Polys_And_Vertices(int pcount,int vcount,const ShaderClass& shader)
+void Debug_Statistics::Record_Rendered_Polys_And_Vertices(int pcount,int vcount,const ShaderClass& shader)
 {
 	// GPU totals come from the backend at End_Statistics. D3D12's current
 	// pipelines do not tessellate, so legacy N-patch flags cannot inflate them.
 	(void)shader;
-	dx8_polygons+=pcount;
-	dx8_vertices+=vcount;
+	rendered_polygons+=pcount;
+	rendered_vertices+=vcount;
 	draw_calls++;
 }
 
-int Debug_Statistics::Get_DX8_Skin_Renders()
+int Debug_Statistics::Get_Skin_Renders()
 {
-	return last_frame_dx8_skin_renders;
+	return last_frame_skin_renders;
 }
 
-int Debug_Statistics::Get_DX8_Skin_Polygons()
+int Debug_Statistics::Get_Skin_Polygons()
 {
-	return last_frame_dx8_skin_polygons;
+	return last_frame_skin_polygons;
 }
 
-int Debug_Statistics::Get_DX8_Skin_Vertices()
+int Debug_Statistics::Get_Skin_Vertices()
 {
-	return last_frame_dx8_skin_vertices;
+	return last_frame_skin_vertices;
 }
 
-int Debug_Statistics::Get_DX8_Polygons()
+int Debug_Statistics::Get_Rendered_Polygons()
 {
-	return last_frame_dx8_polygons;
+	return last_frame_rendered_polygons;
 }
 
-int Debug_Statistics::Get_DX8_Vertices()
+int Debug_Statistics::Get_Rendered_Vertices()
 {
-	return last_frame_dx8_vertices;
+	return last_frame_rendered_vertices;
 }
 
 void Debug_Statistics::Record_Sorting_Polys_And_Vertices(int pcount,int vcount)
@@ -356,11 +356,11 @@ int Debug_Statistics::Get_Draw_Calls()
 
 void Debug_Statistics::Begin_Statistics()
 {
-	dx8_polygons=0;
-	dx8_vertices=0;
-	dx8_skin_polygons=0;
-	dx8_skin_vertices=0;
-	dx8_skin_renders=0;
+	rendered_polygons=0;
+	rendered_vertices=0;
+	skin_polygons=0;
+	skin_vertices=0;
+	skin_renders=0;
 	sorting_polygons=0;
 	sorting_vertices=0;
 	draw_calls=0;
@@ -373,20 +373,20 @@ void Debug_Statistics::Begin_Statistics()
 void Debug_Statistics::End_Statistics()
 {
 	Record_Texture_End();
-	last_frame_dx8_skin_polygons=dx8_skin_polygons;
-	last_frame_dx8_skin_vertices=dx8_skin_vertices;
-	last_frame_dx8_skin_renders=dx8_skin_renders;
-	last_frame_dx8_polygons=dx8_polygons;
-	last_frame_dx8_vertices=dx8_vertices;
+	last_frame_skin_polygons=skin_polygons;
+	last_frame_skin_vertices=skin_vertices;
+	last_frame_skin_renders=skin_renders;
+	last_frame_rendered_polygons=rendered_polygons;
+	last_frame_rendered_vertices=rendered_vertices;
 	last_frame_sorting_polygons=sorting_polygons;
 	last_frame_sorting_vertices=sorting_vertices;
 	last_frame_draw_calls=draw_calls;
 	if (IRenderBackend *backend = WW3D::Get_Render_Backend()) {
 		const RenderBackendFrameStatistics counters = backend->Get_Frame_Statistics();
 		last_frame_draw_calls = static_cast<int>(counters.draw_calls);
-		// Preserve historical telemetry column names while recording real D3D12 draws.
-		last_frame_dx8_polygons = static_cast<int>(counters.triangles);
-		last_frame_dx8_vertices = static_cast<int>(counters.vertices);
+		// These are totals for all submitted backend geometry, including skin/sorted draws.
+		last_frame_rendered_polygons = static_cast<int>(counters.triangles);
+		last_frame_rendered_vertices = static_cast<int>(counters.vertices);
 	}
 }
 
@@ -405,11 +405,11 @@ void Debug_Statistics::End_Performance_Frame(int memoryAllocations, int memoryFr
 {
 	PerformanceTelemetry::RenderFrameCounters counters;
 	counters.drawCalls = (unsigned int)Get_Draw_Calls();
-	counters.dx8Triangles = (unsigned int)Get_DX8_Polygons();
-	counters.dx8Vertices = (unsigned int)Get_DX8_Vertices();
-	counters.skinDraws = (unsigned int)Get_DX8_Skin_Renders();
-	counters.skinTriangles = (unsigned int)Get_DX8_Skin_Polygons();
-	counters.skinVertices = (unsigned int)Get_DX8_Skin_Vertices();
+	counters.submittedTriangles = (unsigned int)Get_Rendered_Polygons();
+	counters.submittedVertices = (unsigned int)Get_Rendered_Vertices();
+	counters.skinDraws = (unsigned int)Get_Skin_Renders();
+	counters.skinTriangles = (unsigned int)Get_Skin_Polygons();
+	counters.skinVertices = (unsigned int)Get_Skin_Vertices();
 	counters.sortedTriangles = (unsigned int)Get_Sorting_Polygons();
 	counters.sortedVertices = (unsigned int)Get_Sorting_Vertices();
 	counters.textureBytes = (unsigned long)Get_Record_Texture_Size();

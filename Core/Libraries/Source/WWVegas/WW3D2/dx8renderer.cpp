@@ -47,7 +47,7 @@
 #include "dx8indexbuffer.h"
 #include "dx8fvf.h"
 #include "dx8caps.h"
-#include "dx8rendererdebugger.h"
+#include "meshdebugger.h"
 #include "WWDebug/wwdebug.h"
 #include "WWDebug/wwprofile.h"
 #include "WWDebug/wwmemlog.h"
@@ -1339,7 +1339,7 @@ void DX8SkinFVFCategoryContainer::Render()
 		// If this assert hits, a skinned mesh has probably been added to the scene more than once.
 		// Example: A skinned mesh was added to the scene then it was attached to a bone without being removed from the scene.
 		WWASSERT((vertex_offset+mesh_vertex_count)<=VisibleVertexCount);
-			DX8_RECORD_SKIN_RENDER(mesh->Get_Num_Polys(),mesh_vertex_count);
+			RENDER_RECORD_SKIN_RENDER(mesh->Get_Num_Polys(),mesh_vertex_count);
 
 				if (_TempVertexBuffer.Length() < mesh_vertex_count) _TempVertexBuffer.Resize(mesh_vertex_count);
 				if (_TempNormalBuffer.Length() < mesh_vertex_count) _TempNormalBuffer.Resize(mesh_vertex_count);
@@ -1866,7 +1866,7 @@ void DX8TextureCategoryClass::Render()
 		** Render mesh using either sorting or immediate pipeline
 		*/
 		//(gth) this if statement's contents are not tabbed to avoid perforce merge problems...
-		if (!DX8RendererDebugger::Is_Enabled() || !mesh->Is_Disabled_By_Debugger()) {
+		if (!MeshRendererDebugger::Is_Enabled() || !mesh->Is_Disabled_By_Debugger()) {
 
 		if ((!!mesh->Peek_Model()->Get_Flag(MeshGeometryClass::SORT)) && WW3D::Is_Sorting_Enabled()) {
 			renderer->Render_Sorted(mesh->Get_Base_Vertex_Offset(),mesh->Get_Bounding_Sphere());

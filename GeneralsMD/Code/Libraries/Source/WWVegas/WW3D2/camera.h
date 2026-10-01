@@ -180,7 +180,7 @@ public:
 
 	// Access to the projection matrices for this camera
 	void								Get_Projection_Matrix(Matrix4x4 * set_tm);
-	void								Get_D3D_Projection_Matrix(Matrix4x4 * set_tm);
+	void								Get_Zero_To_One_Projection_Matrix(Matrix4x4 * set_tm);
 	void								Get_View_Matrix(Matrix3D * set_tm);
 	const Matrix4x4 &				Get_Projection_Matrix();
 	const Matrix3D &				Get_View_Matrix();

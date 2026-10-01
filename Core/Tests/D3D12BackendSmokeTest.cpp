@@ -3,6 +3,7 @@
 #include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/IRenderBackend.h"
 #include "WWMath/vector3.h"
+#include "WWMath/matrix4.h"
 
 #include <windows.h>
 
@@ -221,9 +222,63 @@ int main()
         backend->End_Scene(true);
     }
 
+    // A non-symmetric transform catches row/column transposition. Change it
+    // within a scene and interleave UI to catch stale or shared root constants.
+    Matrix4x4 view_projection(true);
+    view_projection[0][0] = 0.25f;
+    view_projection[1][1] = 0.25f;
+    view_projection[0][3] = 0.55f;
+    view_projection[1][3] = -0.5f;
+    const RenderBackendColorVertex top_left_vertices[] = {
+        {-1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+        { 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+        {-1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+    };
+    bool camera_ok = true;
+    for (unsigned int path = 0; path < 3; ++path)
+    {
+        view_projection[0][3] = 0.55f;
+        backend->Set_View_Projection(view_projection);
+        backend->Clear(true, true, Vector3(0.0f, 0.0f, 0.0f), 1.0f, 1.0f, 0);
+        backend->Begin_Scene();
+        auto draw_world = [&]() {
+            if (path == 0) return backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3);
+            if (path == 1) return backend->Draw_Static_Indexed_Color_Geometry(static_triangle);
+            return backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, checker_texture);
+        };
+        camera_ok = draw_world() && camera_ok;
+        camera_ok = backend->Draw_2D_Indexed_Triangles(
+            top_left_vertices, 3, triangle_indices, 3, RenderBackend2DBlendMode::Opaque) && camera_ok;
+        view_projection[0][3] = -0.55f;
+        backend->Set_View_Projection(view_projection);
+        camera_ok = draw_world() && camera_ok;
+        backend->End_Scene(false);
+        camera_ok = backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) && camera_ok;
+        if (camera_ok)
+        {
+            auto colored_pixel = [&](unsigned int x, unsigned int y) {
+                const std::size_t offset = (y * captured_width + x) * 4u;
+                return captured_pixels[offset] || captured_pixels[offset + 1] || captured_pixels[offset + 2];
+            };
+            const std::size_t ui_pixel = (10u * captured_width + 10u) * 4u;
+            camera_ok = captured_width == 640 && captured_height == 480 &&
+                colored_pixel(496, 365) && colored_pixel(144, 365) && !colored_pixel(320, 240) &&
+                captured_pixels[ui_pixel] == 255 && captured_pixels[ui_pixel + 1] == 0 &&
+                captured_pixels[ui_pixel + 2] == 0;
+        }
+        backend->Flip_To_Primary();
+    }
     backend->Release_Static_Texture(checker_texture);
     backend->Release_Static_Geometry(textured_quad);
     backend->Release_Static_Geometry(static_triangle);
+    if (!camera_ok)
+    {
+        delete backend;
+        DestroyWindow(window);
+        UnregisterClassW(WindowClassName, instance);
+        std::cerr << "D3D12 backend smoke failed: camera transform or screen-space isolation is incorrect.\n";
+        return 15;
+    }
     // A width not divisible by the GPU row alignment catches padding leaks;
     // an asymmetric draw catches vertical inversion and RGBA channel swaps.
     bool capture_ok = backend->Configure_Output(643, 479, true);
@@ -232,11 +287,6 @@ int main()
     backend->Clear(true, true, Vector3(0.25f, 0.5f, 0.75f), 1.0f, 1.0f, 0);
     backend->Begin_Scene();
     capture_ok = capture_ok && !backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels);
-    const RenderBackendColorVertex top_left_vertices[] = {
-        {-1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
-        { 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
-        {-1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
-    };
     capture_ok = capture_ok && backend->Draw_2D_Indexed_Triangles(
         top_left_vertices, 3, triangle_indices, 3, RenderBackend2DBlendMode::Opaque);
     backend->End_Scene(false);
@@ -260,6 +310,6 @@ int main()
         std::cerr << "D3D12 backend smoke failed: resized/deferred output capture is incorrect.\n";
         return 14;
     }
-    std::cout << "D3D12 backend smoke passed: textured geometry, 2D blending, presentation intervals, and resized/deferred RGBA8 readback.\n";
+    std::cout << "D3D12 backend smoke passed: camera transforms, textured geometry, isolated 2D blending, presentation intervals, and resized/deferred RGBA8 readback.\n";
     return 0;
 }

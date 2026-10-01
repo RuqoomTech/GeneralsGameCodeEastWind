@@ -223,7 +223,7 @@ void SortingRendererClass::Insert_Triangles(
 		start_index,polygon_count,min_vertex_index,vertex_count));
 
 
-	DX8_RECORD_SORTING_RENDER(polygon_count,vertex_count);
+	RENDER_RECORD_SORTING_RENDER(polygon_count,vertex_count);
 
 	SortingNodeStruct* state=Get_Sorting_Struct();
 

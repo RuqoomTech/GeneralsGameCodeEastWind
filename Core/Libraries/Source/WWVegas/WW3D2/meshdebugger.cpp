@@ -16,21 +16,21 @@
 **	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "dx8rendererdebugger.h"
+#include "meshdebugger.h"
 #include "WWLib/hashtemplate.h"
 #include "mesh.h"
 #include "meshmdl.h"
 
 static HashTemplateClass<unsigned, MeshClass*> MeshHash;
 
-bool DX8RendererDebugger::Enabled;
+bool MeshRendererDebugger::Enabled;
 
-void DX8RendererDebugger::Enable(bool enable)
+void MeshRendererDebugger::Enable(bool enable)
 {
-	Enabled=true;
+	Enabled=enable;
 }
 
-void DX8RendererDebugger::Get_String(StringClass& s)
+void MeshRendererDebugger::Get_String(StringClass& s)
 {
 	if (!Enabled) {
 		s="";
@@ -51,7 +51,7 @@ void DX8RendererDebugger::Get_String(StringClass& s)
 			polys=mmc->Get_Polygon_Count();
 			verts=mmc->Get_Vertex_Count();
 		}
-		tmp.Format("id: %5.5d mesh: %s %d polys, %d verts",
+		tmp.Format("id: %5.5u mesh: %s %d polys, %d verts",
 			ite.Peek_Key(),
 			mesh->Get_Name(),
 			polys,
@@ -69,7 +69,7 @@ void DX8RendererDebugger::Get_String(StringClass& s)
 
 }
 
-void DX8RendererDebugger::Update()
+void MeshRendererDebugger::Update()
 {
 	// Release references to all meshes and empty the hash
 	HashTemplateIterator<unsigned,MeshClass*> ite(MeshHash);
@@ -82,7 +82,7 @@ void DX8RendererDebugger::Update()
 }
 
 #ifdef WWDEBUG
-void DX8RendererDebugger::Add_Mesh(MeshClass* mesh)
+void MeshRendererDebugger::Add_Mesh(MeshClass* mesh)
 {
 	if (!Enabled) return;
 
@@ -94,7 +94,7 @@ void DX8RendererDebugger::Add_Mesh(MeshClass* mesh)
 }
 #endif
 
-void DX8RendererDebugger::Disable_Mesh(unsigned id)
+void MeshRendererDebugger::Disable_Mesh(unsigned id)
 {
 	if (!Enabled) return;
 	MeshClass* mesh=MeshHash.Get(id);
@@ -102,7 +102,7 @@ void DX8RendererDebugger::Disable_Mesh(unsigned id)
 	mesh->Set_Debugger_Disable(true);
 }
 
-void DX8RendererDebugger::Enable_Mesh(unsigned id)
+void MeshRendererDebugger::Enable_Mesh(unsigned id)
 {
 	if (!Enabled) return;
 	MeshClass* mesh=MeshHash.Get(id);
@@ -110,7 +110,7 @@ void DX8RendererDebugger::Enable_Mesh(unsigned id)
 	mesh->Set_Debugger_Disable(false);
 }
 
-void DX8RendererDebugger::Disable_All()
+void MeshRendererDebugger::Disable_All()
 {
 	if (!Enabled) return;
 
@@ -120,7 +120,7 @@ void DX8RendererDebugger::Disable_All()
 	}
 }
 
-void DX8RendererDebugger::Enable_All()
+void MeshRendererDebugger::Enable_All()
 {
 	if (!Enabled) return;
 
