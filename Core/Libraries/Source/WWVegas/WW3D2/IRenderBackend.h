@@ -109,6 +109,28 @@ enum class RenderBackendDecalBlendMode
     Additive,
 };
 
+// Explicit draw state for migrated W3D material passes. This is runtime-only;
+// the asset's fixed-width ShaderClass representation remains above the backend.
+enum class RenderBackendDepthTest { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always, Disabled };
+enum class RenderBackendBlendFactor { Zero, One, SourceColor, InverseSourceColor, SourceAlpha, InverseSourceAlpha };
+enum class RenderBackendCullMode { None, Clockwise, CounterClockwise };
+enum class RenderBackendTextureCombine { Replace, Modulate, Add, Modulate2X };
+enum class RenderBackendAlphaTest { Disabled, GreaterEqual, LessEqual };
+
+struct RenderBackendMaterialState
+{
+    RenderBackendDepthTest depth_test = RenderBackendDepthTest::LessEqual;
+    RenderBackendBlendFactor source_blend = RenderBackendBlendFactor::One;
+    RenderBackendBlendFactor destination_blend = RenderBackendBlendFactor::Zero;
+    RenderBackendCullMode cull = RenderBackendCullMode::Clockwise;
+    RenderBackendTextureCombine texture_combine = RenderBackendTextureCombine::Modulate;
+    RenderBackendAlphaTest alpha_test = RenderBackendAlphaTest::Disabled;
+    float alpha_reference = 96.0f / 255.0f;
+    bool depth_write = true;
+    bool color_write = true;
+    bool clamp_texture = false;
+};
+
 struct RenderBackendGeometryHandle
 {
     unsigned int slot;
@@ -305,6 +327,10 @@ public:
         const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
         const unsigned short *indices, unsigned int index_count,
         RenderBackendTextureHandle texture, RenderBackendDecalBlendMode blend_mode) = 0;
+    virtual bool Draw_Indexed_Material_Triangles(
+        const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
+        const unsigned short *indices, unsigned int index_count,
+        RenderBackendTextureHandle texture, const RenderBackendMaterialState &material) = 0;
     virtual void Release_Texture(RenderBackendTextureHandle texture) = 0;
 
     virtual void Set_Ambient(const Vector3 & color) = 0;

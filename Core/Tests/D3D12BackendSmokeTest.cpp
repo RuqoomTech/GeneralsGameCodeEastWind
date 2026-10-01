@@ -51,6 +51,138 @@ HWND createHiddenWindow(HINSTANCE instance)
         instance,
         nullptr);
 }
+bool verifyMaterials(IRenderBackend &backend)
+{
+    const unsigned char rgba[] = {128,64,192,128};
+    const auto texture = backend.Create_Static_RGBA8_Texture(1,1,rgba,4);
+    RenderBackendTexturedVertex quad[] = {
+        {-.8f,-.8f,.5f,.25f,.5f,.75f,.5f,0,0},
+        {-.8f, .8f,.5f,.25f,.5f,.75f,.5f,0,0},
+        { .8f, .8f,.5f,.25f,.5f,.75f,.5f,0,0},
+        { .8f,-.8f,.5f,.25f,.5f,.75f,.5f,0,0}};
+    const unsigned short indices[] = {0,2,1,0,3,2};
+    RenderBackendMaterialState material;
+    material.depth_write = false;
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Set_View_Projection(Matrix4x4(true));
+    bool ok = texture.Is_Valid();
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    auto capture = [&]() {
+        backend.End_Scene(false);
+        const bool read = backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        backend.Flip_To_Primary();
+        return read;
+    };
+    auto matches = [&](unsigned channel, float expected) {
+        return std::abs(int(pixels[(240*640+320)*4+channel]) -
+            int(std::lround(std::clamp(expected,0.f,1.f)*255))) <= 2;
+    };
+    const float source[] = {.25f,.5f,.75f,.5f}, destination[] = {.2f,.4f,.6f,.8f};
+    auto factor = [&](unsigned mode,unsigned channel) {
+        return mode==0 ? 0.f : mode==1 ? 1.f : mode==2 ? source[channel] :
+            mode==3 ? 1-source[channel] : mode==4 ? source[3] : 1-source[3];
+    };
+    // Validate every supported RGBA blend equation, including RGB factors' alpha mapping.
+    for (unsigned src=0;src<6;++src) for (unsigned dst=0;dst<6;++dst) {
+        material.source_blend=static_cast<RenderBackendBlendFactor>(src);
+        material.destination_blend=static_cast<RenderBackendBlendFactor>(dst);
+        backend.Clear(true,true,Vector3(destination[0],destination[1],destination[2]),destination[3],1,0);
+        backend.Begin_Scene();
+        ok = backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material) && ok;
+        const bool read=capture(); ok=read && ok;
+        if (read) for (unsigned channel=0;channel<4;++channel)
+            ok=matches(channel,source[channel]*factor(src,channel)+destination[channel]*factor(dst,channel)) && ok;
+    }
+    material.source_blend=RenderBackendBlendFactor::One;
+    material.destination_blend=RenderBackendBlendFactor::Zero;
+    // The additive and 2X texture operations multiply alpha without adding/scaling it.
+    for (unsigned op=0;op<4;++op) {
+        material.texture_combine=static_cast<RenderBackendTextureCombine>(op);
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material) && ok;
+        const bool read=capture(); ok=read && ok;
+        if (read) for (unsigned channel=0;channel<4;++channel) {
+            const float t=rgba[channel]/255.f;
+            const float expected=op==0 ? t : channel==3 || op==1 ? t*source[channel] :
+                op==2 ? t+source[channel] : 2*t*source[channel];
+            ok=matches(channel,expected) && ok;
+        }
+    }
+    // Exactly representable alpha boundaries test both comparisons and inclusive equality.
+    for (unsigned comparison=1;comparison<=2;++comparison) for (unsigned reference=0;reference<3;++reference) {
+        material.alpha_test=static_cast<RenderBackendAlphaTest>(comparison);
+        material.alpha_reference=.25f*(reference+1);
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material) && ok;
+        const bool read=capture(); ok=read && ok;
+        const bool survives=comparison==1 ? reference<=1 : reference>=1;
+        if (read) ok=matches(0,survives ? source[0] : 0) && ok;
+    }
+    material.alpha_test=RenderBackendAlphaTest::Disabled;
+    // Exercise the full depth comparison domain against a known 0.5 depth clear.
+    for (unsigned depth=0;depth<9;++depth) for (unsigned position=0;position<3;++position) {
+        material.depth_test=static_cast<RenderBackendDepthTest>(depth);
+        for (auto &v:quad) v.z=.25f*(position+1);
+        backend.Clear(true,true,Vector3(0,0,0),0,.5f,0); backend.Begin_Scene();
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material) && ok;
+        const bool read=capture(); ok=read && ok;
+        const bool survives=depth==0 ? false : depth==1 ? position==0 : depth==2 ? position==1 :
+            depth==3 ? position<=1 : depth==4 ? position==2 : depth==5 ? position!=1 :
+            depth==6 ? position>=1 : true;
+        if (read) ok=matches(0,survives ? source[0] : 0) && ok;
+    }
+    // The cached PSO's culling and color-write state must change independently.
+    material.depth_test=RenderBackendDepthTest::Disabled;
+    for (unsigned cull=0;cull<3;++cull) for (unsigned color=0;color<2;++color) {
+        material.cull=static_cast<RenderBackendCullMode>(cull);
+        material.color_write=color!=0;
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material) && ok;
+        const bool read=capture(); ok=read && ok;
+        if (read) ok=matches(0,color && cull!=2 ? source[0] : 0) && ok;
+    }
+    material={};
+    for (unsigned write=0;write<2;++write) {
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        material.depth_write=write!=0;
+        for (auto &v:quad) { v.z=.25f; v.r=1; v.g=v.b=0; v.a=1; }
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material) && ok;
+        for (auto &v:quad) { v.z=.75f; v.b=1; v.r=0; }
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material) && ok;
+        const bool read=capture(); ok=read && ok;
+        if (read) ok=matches(write ? 0 : 2,1) && ok;
+    }
+    // Check the legacy 96/159 byte thresholds through the same float constants used by callers.
+    for (unsigned comparison=1;comparison<=2;++comparison) for (int offset=-1;offset<=1;++offset) {
+        const int threshold=comparison==1 ? 96 : 159;
+        material.alpha_test=static_cast<RenderBackendAlphaTest>(comparison);
+        material.alpha_reference=threshold/255.f;
+        for (auto &v:quad) { v.z=.5f; v.r=1; v.b=0; v.a=(threshold+offset)/255.f; }
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material) && ok;
+        const bool read=capture(); ok=read && ok;
+        if (read) ok=matches(0,(comparison==1 ? offset>=0 : offset<=0) ? 1 : 0) && ok;
+    }
+    material={};
+    backend.Begin_Scene();
+    auto rejected = [&](RenderBackendMaterialState bad) {
+        return !backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},bad);
+    };
+    material.depth_test=static_cast<RenderBackendDepthTest>(9); ok=rejected(material) && ok; material={};
+    material.source_blend=static_cast<RenderBackendBlendFactor>(6); ok=rejected(material) && ok; material={};
+    material.destination_blend=static_cast<RenderBackendBlendFactor>(6); ok=rejected(material) && ok; material={};
+    material.cull=static_cast<RenderBackendCullMode>(3); ok=rejected(material) && ok; material={};
+    material.texture_combine=static_cast<RenderBackendTextureCombine>(4); ok=rejected(material) && ok; material={};
+    material.alpha_test=static_cast<RenderBackendAlphaTest>(3); ok=rejected(material) && ok; material={};
+    material.alpha_reference=std::nanf(""); ok=rejected(material) && ok; material={};
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{0,1},material) && ok;
+    backend.End_Scene(false);
+    backend.Release_Texture(texture);
+    if (!ok) std::cerr << "W3D material pipeline pixel/state checks failed.\n";
+    return ok;
+}
+
 bool verifyDecals(IRenderBackend &backend)
 {
     const unsigned char rgba[] = {128,64,192,128};
@@ -464,7 +596,7 @@ int main()
         std::cerr << "D3D12 backend smoke failed: camera transform or screen-space isolation is incorrect.\n";
         return 15;
     }
-    if (!verifyDecals(*backend)) {
+    if (!verifyMaterials(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

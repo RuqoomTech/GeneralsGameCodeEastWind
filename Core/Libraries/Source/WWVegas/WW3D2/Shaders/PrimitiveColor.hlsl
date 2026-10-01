@@ -69,7 +69,40 @@ float4 PSTextured(TexturedPSInput input) : SV_TARGET
 // The real decal caller clamps to its edge and explicitly disables mipmaps.
 SamplerState DecalSampler : register(s1);
 
-float4 PSDecal(TexturedPSInput input) : SV_TARGET
+cbuffer MaterialParameters : register(b1)
 {
-    return PrimitiveTexture.SampleLevel(DecalSampler, input.texcoord, 0.0f) * input.color;
+    uint TextureCombine;
+    uint AlphaTest;
+    float AlphaReference;
+    uint ClampTexture;
+};
+
+float4 TestMaterialAlpha(float4 color)
+{
+    if (AlphaTest == 1) clip(color.a - AlphaReference);
+    if (AlphaTest == 2) clip(AlphaReference - color.a);
+    return color;
+}
+
+float4 PSMaterialColor(TexturedPSInput input) : SV_TARGET
+{
+    return TestMaterialAlpha(input.color);
+}
+
+float4 PSMaterialTexture(TexturedPSInput input) : SV_TARGET
+{
+    float4 textureColor;
+    if (ClampTexture != 0)
+        textureColor = PrimitiveTexture.SampleLevel(DecalSampler, input.texcoord, 0.0f);
+    else
+        textureColor = PrimitiveTexture.Sample(PrimitiveSampler, input.texcoord);
+
+    float4 color = textureColor;
+    if (TextureCombine == 1) color *= input.color;
+    // W3D additive and 2X color operations both multiply alpha normally.
+    if (TextureCombine == 2)
+        color = float4(saturate(textureColor.rgb + input.color.rgb), textureColor.a * input.color.a);
+    if (TextureCombine == 3)
+        color = float4(saturate(2.0f * textureColor.rgb * input.color.rgb), textureColor.a * input.color.a);
+    return TestMaterialAlpha(color);
 }

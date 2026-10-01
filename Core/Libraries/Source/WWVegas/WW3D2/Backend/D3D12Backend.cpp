@@ -359,7 +359,7 @@ void D3D12Backend::createPrimitivePipeline()
     texture_range.RegisterSpace = 0;
     texture_range.OffsetInDescriptorsFromTableStart = 0;
 
-    D3D12_ROOT_PARAMETER parameters[2]{};
+    D3D12_ROOT_PARAMETER parameters[3]{};
     D3D12_ROOT_PARAMETER &texture_parameter = parameters[0];
     texture_parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     texture_parameter.DescriptorTable.NumDescriptorRanges = 1;
@@ -371,6 +371,12 @@ void D3D12Backend::createPrimitivePipeline()
     camera_parameter.Constants.ShaderRegister = 0;
     camera_parameter.Constants.Num32BitValues = 16;
     camera_parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+
+    auto &material_parameter = parameters[2];
+    material_parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    material_parameter.Constants.ShaderRegister = 1;
+    material_parameter.Constants.Num32BitValues = 4;
+    material_parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -388,7 +394,7 @@ void D3D12Backend::createPrimitivePipeline()
     sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC root_desc{};
-    root_desc.NumParameters = 2;
+    root_desc.NumParameters = 3;
     root_desc.pParameters = parameters;
     D3D12_STATIC_SAMPLER_DESC samplers[2]{sampler, sampler};
     samplers[1].ShaderRegister = 1;
@@ -434,13 +440,15 @@ void D3D12Backend::createPrimitivePipeline()
     ID3DBlob *color_pixel_shader = nullptr;
     ID3DBlob *textured_vertex_shader = nullptr;
     ID3DBlob *textured_pixel_shader = nullptr;
-    ID3DBlob *decal_pixel_shader = nullptr;
     try
     {
         color_pixel_shader = compileShaderFromFile(shader_path.c_str(), "PSMain", "ps_5_1");
         textured_vertex_shader = compileShaderFromFile(shader_path.c_str(), "VSTextured", "vs_5_1");
         textured_pixel_shader = compileShaderFromFile(shader_path.c_str(), "PSTextured", "ps_5_1");
-        decal_pixel_shader = compileShaderFromFile(shader_path.c_str(), "PSDecal", "ps_5_1");
+        m_material_color_shader = compileShaderFromFile(shader_path.c_str(), "PSMaterialColor", "ps_5_1");
+        m_material_texture_shader = compileShaderFromFile(shader_path.c_str(), "PSMaterialTexture", "ps_5_1");
+        m_material_vertex_shader = textured_vertex_shader;
+        m_material_vertex_shader->AddRef();
 
         D3D12_BLEND_DESC blend{};
         blend.RenderTarget[0].BlendEnable = FALSE;
@@ -557,22 +565,6 @@ void D3D12Backend::createPrimitivePipeline()
         checkHresult(
             "ID3D12Device::CreateGraphicsPipelineState(textured)",
             m_device->CreateGraphicsPipelineState(&pipeline, IID_PPV_ARGS(&m_textured_pipeline)));
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC decal = pipeline;
-        decal.PS = {decal_pixel_shader->GetBufferPointer(), decal_pixel_shader->GetBufferSize()};
-        decal.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-        decal.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-        decal.RasterizerState.FrontCounterClockwise = TRUE; // Legacy presets cull clockwise faces.
-        auto &decal_blend = decal.BlendState.RenderTarget[0];
-        decal_blend.BlendEnable = TRUE;
-        for (unsigned int mode = 0; mode < 3; ++mode)
-        {
-            decal_blend.SrcBlend = mode == 0 ? D3D12_BLEND_ZERO : mode == 1 ? D3D12_BLEND_SRC_ALPHA : D3D12_BLEND_ONE;
-            decal_blend.DestBlend = mode == 0 ? D3D12_BLEND_SRC_COLOR : mode == 1 ? D3D12_BLEND_INV_SRC_ALPHA : D3D12_BLEND_ONE;
-            decal_blend.SrcBlendAlpha = decal_blend.SrcBlend;
-            decal_blend.DestBlendAlpha = mode == 0 ? D3D12_BLEND_SRC_ALPHA : decal_blend.DestBlend;
-            checkHresult("CreateGraphicsPipelineState(decal)",
-                m_device->CreateGraphicsPipelineState(&decal, IID_PPV_ARGS(&m_decal_pipelines[mode])));
-        }
         pipeline.DepthStencilState = color_only.DepthStencilState;
         pipeline.DSVFormat = DXGI_FORMAT_UNKNOWN;
         checkHresult("CreateGraphicsPipelineState(textured color-only target)",
@@ -580,15 +572,13 @@ void D3D12Backend::createPrimitivePipeline()
     }
     catch (...)
     {
-        releaseCom(decal_pixel_shader);
         releaseCom(textured_pixel_shader);
         releaseCom(textured_vertex_shader);
         releaseCom(color_pixel_shader);
         releaseCom(color_vertex_shader);
         throw;
     }
-    releaseCom(decal_pixel_shader);
-        releaseCom(textured_pixel_shader);
+    releaseCom(textured_pixel_shader);
     releaseCom(textured_vertex_shader);
     releaseCom(color_pixel_shader);
     releaseCom(color_vertex_shader);
@@ -1371,7 +1361,8 @@ bool D3D12Backend::drawDynamicGeometry(
     unsigned int index_count,
     ID3D12PipelineState *pipeline,
     bool screen_space,
-    RenderBackendTextureHandle texture_handle)
+    RenderBackendTextureHandle texture_handle,
+    const RenderBackendMaterialState *material)
 {
     if (!m_scene_open || pipeline == nullptr || vertices == nullptr || indices == nullptr ||
         vertex_count == 0 || vertex_stride == 0 || index_count < 3 || (index_count % 3) != 0)
@@ -1435,6 +1426,15 @@ bool D3D12Backend::drawDynamicGeometry(
         m_command_list->SetGraphicsRoot32BitConstants(
             1, 16, screen_space ? IdentityTransform : m_view_projection, 0);
         m_command_list->SetPipelineState(pipeline);
+        if (material != nullptr)
+        {
+            struct Constants { unsigned int combine, alpha_test; float alpha_reference; unsigned int clamp; };
+            const Constants constants{static_cast<unsigned int>(material->texture_combine),
+                static_cast<unsigned int>(material->alpha_test), material->alpha_reference,
+                material->clamp_texture ? 1u : 0u};
+            static_assert(sizeof(Constants) == 4 * sizeof(unsigned int), "Material root constants");
+            m_command_list->SetGraphicsRoot32BitConstants(2, 4, &constants, 0);
+        }
         if (texture_handle.Is_Valid())
         {
             ID3D12DescriptorHeap *heaps[] = {m_texture_srv_heap};
@@ -1956,6 +1956,93 @@ bool D3D12Backend::Is_Texture_Valid(RenderBackendTextureHandle handle) const
     return texture.occupied && texture.generation == handle.generation;
 }
 
+ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialState &material, bool textured)
+{
+    const unsigned int depth = static_cast<unsigned int>(material.depth_test);
+    const unsigned int source = static_cast<unsigned int>(material.source_blend);
+    const unsigned int destination = static_cast<unsigned int>(material.destination_blend);
+    const unsigned int cull = static_cast<unsigned int>(material.cull);
+    const bool color_only = m_selected_texture.Is_Valid();
+    const unsigned int key = depth | (source << 4) | (destination << 7) | (cull << 10) |
+        (static_cast<unsigned int>(material.depth_write) << 12) |
+        (static_cast<unsigned int>(material.color_write) << 13) |
+        (static_cast<unsigned int>(textured) << 14) | (static_cast<unsigned int>(color_only) << 15);
+    for (const auto &entry : m_material_pipelines)
+        if (entry.key == key) return entry.pipeline;
+
+    static const D3D12_BLEND factors[] = {D3D12_BLEND_ZERO, D3D12_BLEND_ONE,
+        D3D12_BLEND_SRC_COLOR, D3D12_BLEND_INV_SRC_COLOR, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA};
+    static const D3D12_BLEND alpha_factors[] = {D3D12_BLEND_ZERO, D3D12_BLEND_ONE,
+        D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA};
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline{};
+    pipeline.pRootSignature = m_primitive_root_signature;
+    pipeline.VS = {m_material_vertex_shader->GetBufferPointer(), m_material_vertex_shader->GetBufferSize()};
+    auto *pixel_shader = textured ? m_material_texture_shader : m_material_color_shader;
+    pipeline.PS = {pixel_shader->GetBufferPointer(), pixel_shader->GetBufferSize()};
+    const D3D12_INPUT_ELEMENT_DESC elements[] = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+    pipeline.InputLayout = {elements, 3};
+    auto &blend = pipeline.BlendState.RenderTarget[0];
+    blend.BlendEnable = source != 1 || destination != 0;
+    blend.SrcBlend = factors[source];
+    blend.DestBlend = factors[destination];
+    blend.SrcBlendAlpha = alpha_factors[source];
+    blend.DestBlendAlpha = alpha_factors[destination];
+    blend.BlendOp = blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    blend.LogicOp = D3D12_LOGIC_OP_NOOP;
+    blend.RenderTargetWriteMask = material.color_write ? D3D12_COLOR_WRITE_ENABLE_ALL : 0;
+    pipeline.SampleMask = std::numeric_limits<UINT>::max();
+    pipeline.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    pipeline.RasterizerState.CullMode = cull == 0 ? D3D12_CULL_MODE_NONE : D3D12_CULL_MODE_BACK;
+    pipeline.RasterizerState.FrontCounterClockwise = cull == 1;
+    pipeline.RasterizerState.DepthClipEnable = TRUE;
+    pipeline.DepthStencilState.DepthEnable = material.depth_test != RenderBackendDepthTest::Disabled;
+    pipeline.DepthStencilState.DepthWriteMask = material.depth_write ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
+    pipeline.DepthStencilState.DepthFunc = depth < 8 ? static_cast<D3D12_COMPARISON_FUNC>(depth + 1) : D3D12_COMPARISON_FUNC_ALWAYS;
+    pipeline.DepthStencilState.StencilReadMask = pipeline.DepthStencilState.StencilWriteMask = 0xff;
+    pipeline.DepthStencilState.FrontFace = {D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP,
+        D3D12_STENCIL_OP_KEEP, D3D12_COMPARISON_FUNC_ALWAYS};
+    pipeline.DepthStencilState.BackFace = pipeline.DepthStencilState.FrontFace;
+    pipeline.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pipeline.NumRenderTargets = 1;
+    pipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    pipeline.DSVFormat = color_only ? DXGI_FORMAT_UNKNOWN : DXGI_FORMAT_D24_UNORM_S8_UINT;
+    pipeline.SampleDesc.Count = 1;
+    m_material_pipelines.reserve(m_material_pipelines.size() + 1);
+    ID3D12PipelineState *created = nullptr;
+    checkHresult("CreateGraphicsPipelineState(W3D material)",
+        m_device->CreateGraphicsPipelineState(&pipeline, IID_PPV_ARGS(&created)));
+    m_material_pipelines.push_back({key, created});
+    return created;
+}
+
+bool D3D12Backend::Draw_Indexed_Material_Triangles(
+    const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
+    const unsigned short *indices, unsigned int index_count,
+    RenderBackendTextureHandle texture, const RenderBackendMaterialState &material)
+{
+    if (!m_scene_open || static_cast<unsigned int>(material.depth_test) > 8 ||
+        static_cast<unsigned int>(material.source_blend) > 5 ||
+        static_cast<unsigned int>(material.destination_blend) > 5 ||
+        static_cast<unsigned int>(material.cull) > 2 ||
+        static_cast<unsigned int>(material.texture_combine) > 3 ||
+        static_cast<unsigned int>(material.alpha_test) > 2 ||
+        !(material.alpha_reference >= 0.0f && material.alpha_reference <= 1.0f) ||
+        ((texture.slot != 0 || texture.generation != 0) && !texture.Is_Valid()) ||
+        (m_selected_texture.Is_Valid() && material.depth_test != RenderBackendDepthTest::Disabled) ||
+        (texture.Is_Valid() && (!Is_Texture_Valid(texture) ||
+            (texture.slot == m_selected_texture.slot && texture.generation == m_selected_texture.generation))))
+        return false;
+    try
+    {
+        return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendTexturedVertex),
+            indices, index_count, materialPipeline(material, texture.Is_Valid()), false, texture, &material);
+    }
+    catch (...) { return false; }
+}
+
 bool D3D12Backend::Draw_Indexed_Decal_Triangles(
     const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
     const unsigned short *indices, unsigned int index_count,
@@ -1963,8 +2050,14 @@ bool D3D12Backend::Draw_Indexed_Decal_Triangles(
 {
     const auto mode = static_cast<unsigned int>(blend_mode);
     if (m_selected_texture.Is_Valid() || !Is_Texture_Valid(texture) || mode >= 3) return false;
-    return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendTexturedVertex),
-        indices, index_count, m_decal_pipelines[mode], false, texture);
+    RenderBackendMaterialState material;
+    material.depth_write = false;
+    material.clamp_texture = true;
+    material.source_blend = mode == 0 ? RenderBackendBlendFactor::Zero :
+        mode == 1 ? RenderBackendBlendFactor::SourceAlpha : RenderBackendBlendFactor::One;
+    material.destination_blend = mode == 0 ? RenderBackendBlendFactor::SourceColor :
+        mode == 1 ? RenderBackendBlendFactor::InverseSourceAlpha : RenderBackendBlendFactor::One;
+    return Draw_Indexed_Material_Triangles(vertices, vertex_count, indices, index_count, texture, material);
 }
 
 void D3D12Backend::Release_Texture(RenderBackendTextureHandle texture_handle)
@@ -2161,7 +2254,11 @@ void D3D12Backend::releaseObjects() noexcept
     releaseCom(m_color_only_pipeline);
     releaseCom(m_color_only_alpha_pipeline);
     releaseCom(m_color_only_additive_pipeline);
-    for (auto &pipeline : m_decal_pipelines) releaseCom(pipeline);
+    for (auto &entry : m_material_pipelines) releaseCom(entry.pipeline);
+    m_material_pipelines.clear();
+    releaseCom(m_material_texture_shader);
+    releaseCom(m_material_color_shader);
+    releaseCom(m_material_vertex_shader);
     releaseCom(m_textured_pipeline);
     releaseCom(m_2d_additive_pipeline);
     releaseCom(m_2d_alpha_pipeline);

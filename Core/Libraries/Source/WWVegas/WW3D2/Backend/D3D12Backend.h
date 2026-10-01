@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <vector>
 
+struct ID3D10Blob;
 struct IDXGIFactory4;
 struct IDXGISwapChain3;
 struct ID3D12CommandAllocator;
@@ -99,6 +100,10 @@ public:
         const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
         const unsigned short *indices, unsigned int index_count,
         RenderBackendTextureHandle texture, RenderBackendDecalBlendMode blend_mode) override;
+    bool Draw_Indexed_Material_Triangles(
+        const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
+        const unsigned short *indices, unsigned int index_count,
+        RenderBackendTextureHandle texture, const RenderBackendMaterialState &material) override;
     void Release_Texture(RenderBackendTextureHandle texture) override;
 
     void Set_Ambient(const Vector3 &color) override;
@@ -149,7 +154,9 @@ private:
         unsigned int index_count,
         ID3D12PipelineState *pipeline,
         bool screen_space,
-        RenderBackendTextureHandle texture = {});
+        RenderBackendTextureHandle texture = {},
+        const RenderBackendMaterialState *material = nullptr);
+    ID3D12PipelineState *materialPipeline(const RenderBackendMaterialState &material, bool textured);
     RenderBackendGeometryHandle createStaticGeometry(
         const void *vertices,
         unsigned int vertex_count,
@@ -199,7 +206,11 @@ private:
     ID3D12PipelineState *m_2d_opaque_pipeline = nullptr;
     ID3D12PipelineState *m_2d_alpha_pipeline = nullptr;
     ID3D12PipelineState *m_2d_additive_pipeline = nullptr;
-    ID3D12PipelineState *m_decal_pipelines[3]{};
+    struct MaterialPipeline { unsigned int key; ID3D12PipelineState *pipeline; };
+    std::vector<MaterialPipeline> m_material_pipelines;
+    ID3D10Blob *m_material_vertex_shader = nullptr;
+    ID3D10Blob *m_material_color_shader = nullptr;
+    ID3D10Blob *m_material_texture_shader = nullptr;
     ID3D12PipelineState *m_textured_pipeline = nullptr;
     ID3D12PipelineState *m_textured_color_only_pipeline = nullptr;
     ID3D12Fence *m_fence = nullptr;
