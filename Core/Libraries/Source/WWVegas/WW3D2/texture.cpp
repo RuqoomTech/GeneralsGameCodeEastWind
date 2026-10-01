@@ -155,7 +155,7 @@ bool TextureClass::Ensure_Renderer_Texture()
 {
 	if (Get_Renderer_Texture().Is_Valid()) return true;
 	IRenderBackend *backend = WW3D::Get_Render_Backend();
-	if (backend == nullptr || Get_Texture_Name().Is_Empty()) return false;
+	if (backend == nullptr || !TextureLoader::Is_Render_Thread() || Get_Texture_Name().Is_Empty()) return false;
 	unsigned width = 0, height = 0;
 	std::vector<unsigned char> pixels;
 	const bool missing = !TextureLoader::Load_RGBA8_Image(Get_Full_Path(), width, height, pixels, HSVShift);

@@ -322,6 +322,7 @@ static unsigned RendererThreadId = 0;
 
 void TextureLoader::Init()
 {
+	WWASSERT(RendererThreadId == 0);
 	RendererThreadId = ThreadClass::_Get_Current_Thread_ID();
 	WWASSERT(!_TextureLoadThread.Is_Running());
 
@@ -340,12 +341,13 @@ void TextureLoader::Deinit()
 
 	ThumbnailManagerClass::Deinit();
 	TextureLoadTaskClass::Delete_Free_Pool();
+	RendererThreadId = 0;
 }
 
 
 bool TextureLoader::Is_Render_Thread()
 {
-	return (ThreadClass::_Get_Current_Thread_ID() == RendererThreadId);
+	return RendererThreadId != 0 && ThreadClass::_Get_Current_Thread_ID() == RendererThreadId;
 }
 
 

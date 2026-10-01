@@ -280,6 +280,7 @@ WW3DErrorType WW3D::Init(void *hwnd, char *defaultpal, bool lite)
 	{
 		return(WW3D_ERROR_INITIALIZATION_FAILED);
 	}
+	if (!lite) TextureLoader::Init();
 
 	WWDEBUG_SAY(("Allocate Debug Resources"));
 	Allocate_Debug_Resources();
@@ -334,6 +335,8 @@ WW3DErrorType WW3D::Init(void *hwnd, char *defaultpal, bool lite)
 WW3DErrorType WW3D::Shutdown()
 {
 	assert(Lite || IsInitted == true);
+	// Stop texture work before releasing the assets and their GPU owner.
+	if (!Lite) TextureLoader::Deinit();
 //	WWDEBUG_SAY(("WW3D::Shutdown"));
 
 
