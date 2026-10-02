@@ -169,6 +169,98 @@ bool verifySceneTextureLoading(IRenderBackend &backend)
     return ok;
 }
 
+bool verifyStencil(IRenderBackend &backend)
+{
+    RenderBackendTexturedVertex quad[] = {
+        {-.8f,-.8f,.7f,1,0,0,1,0,0}, {-.8f,.8f,.7f,1,0,0,1,0,0},
+        {.8f,.8f,.7f,1,0,0,1,0,0}, {.8f,-.8f,.7f,1,0,0,1,0,0}};
+    const unsigned short indices[]={0,2,1,0,3,2};
+    const unsigned short reverse[]={0,1,2,0,2,3};
+    backend.Set_View_Projection(Matrix4x4(true));
+    backend.Set_Viewport({0,0,640,480,0,1});
+    bool ok=true;
+    auto verify=[&](unsigned initial, unsigned expected, RenderBackendMaterialState write,
+                    const unsigned short *triangles=nullptr, unsigned read_mask=255) {
+        if (triangles == nullptr) triangles=indices;
+        backend.Clear(true,true,Vector3(0,0,0),1,.5f,initial);
+        backend.Begin_Scene();
+        write.color_write=false; write.depth_write=false; write.stencil.enabled=true;
+        write.cull=RenderBackendCullMode::None;
+        bool drew=backend.Draw_Indexed_Material_Triangles(quad,4,triangles,6,{},write);
+        RenderBackendMaterialState read;
+        read.depth_test=RenderBackendDepthTest::Disabled; read.depth_write=false;
+        read.cull=RenderBackendCullMode::None;
+        read.stencil.enabled=true; read.stencil.reference=expected;
+        read.stencil.read_mask=read_mask; read.stencil.write_mask=0;
+        read.stencil.front.comparison=read.stencil.back.comparison=RenderBackendStencilCompare::Equal;
+        drew=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},read) && drew;
+        backend.End_Scene(false);
+        unsigned width=0,height=0; std::vector<unsigned char> pixels;
+        const bool captured=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        const bool red=captured && pixels[(240*640+320)*4]==255 && pixels[(240*640+320)*4+1]==0;
+        backend.Flip_To_Primary();
+        if (!drew || !red) std::cerr << "Stencil fixture initial=" << initial << " expected=" << expected <<
+            " failed, drew=" << drew << " captured=" << captured << ".\n";
+        return drew && red;
+    };
+    RenderBackendMaterialState write;
+    write.depth_test=RenderBackendDepthTest::Disabled;
+    write.stencil.reference=0xa5; write.stencil.write_mask=0x0f;
+    write.stencil.front.pass=write.stencil.back.pass=RenderBackendStencilOperation::Replace;
+    ok=verify(0xc0,0xc5,write) && ok;
+    ok=verify(0xc0,5,write,indices,0x0f) && ok;
+    write.stencil.write_mask=255;
+    const RenderBackendStencilOperation operations[]={RenderBackendStencilOperation::Increment,
+        RenderBackendStencilOperation::IncrementSaturate,RenderBackendStencilOperation::Decrement,
+        RenderBackendStencilOperation::DecrementSaturate,RenderBackendStencilOperation::Invert,
+        RenderBackendStencilOperation::Zero,RenderBackendStencilOperation::Keep};
+    const unsigned initial[]={255,255,0,0,0x35,71,71};
+    const unsigned expected[]={0,255,255,0,0xca,0,71};
+    for (unsigned i=0;i<7;++i) {
+        write.stencil.front.pass=write.stencil.back.pass=operations[i];
+        ok=verify(initial[i],expected[i],write) && ok;
+    }
+    write.stencil.front.pass=write.stencil.back.pass=RenderBackendStencilOperation::Keep;
+    write.depth_test=RenderBackendDepthTest::Less;
+    write.stencil.front.depth_fail=write.stencil.back.depth_fail=RenderBackendStencilOperation::Increment;
+    ok=verify(9,10,write) && ok;
+    write.depth_test=RenderBackendDepthTest::Disabled;
+    write.stencil.front.comparison=write.stencil.back.comparison=RenderBackendStencilCompare::Never;
+    write.stencil.front.stencil_fail=write.stencil.back.stencil_fail=RenderBackendStencilOperation::Zero;
+    ok=verify(9,0,write) && ok;
+    write={}; write.depth_test=RenderBackendDepthTest::Disabled; write.stencil.reference=17;
+    write.stencil.front.pass=RenderBackendStencilOperation::Replace;
+    write.stencil.back.pass=RenderBackendStencilOperation::Increment;
+    // NDC CCW becomes clockwise in the render target; reversed triangles select BackFace.
+    ok=verify(2,17,write) && ok;
+    ok=verify(2,3,write,reverse) && ok;
+
+    // A screen-space overlay uses the entire output, bypasses the camera, and
+    // restores the tactical viewport for subsequent world geometry.
+    Matrix4x4 translated(true); translated[0][3]=10.f;
+    backend.Set_View_Projection(translated); backend.Set_Viewport({0,0,160,120,0,1});
+    backend.Clear(true,true,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
+    RenderBackendMaterialState overlay; overlay.screen_space=true; overlay.depth_write=false;
+    overlay.depth_test=RenderBackendDepthTest::Disabled;
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},overlay) && ok;
+    backend.Set_View_Projection(Matrix4x4(true));
+    for (auto &v:quad) {v.r=0; v.g=1;}
+    overlay.screen_space=false;
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},overlay) && ok;
+    overlay.stencil.enabled=true; overlay.stencil.reference=256;
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},overlay) && ok;
+    overlay.stencil.reference=0; overlay.stencil.back.pass=static_cast<RenderBackendStencilOperation>(8);
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},overlay) && ok;
+    backend.End_Scene(false);
+    unsigned width=0,height=0; std::vector<unsigned char> pixels;
+    const bool captured=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    ok=captured && ok;
+    if (captured) ok=pixels[(240*640+320)*4]==255 && pixels[(60*640+80)*4+1]==255 && ok;
+    backend.Flip_To_Primary(); backend.Set_Viewport({0,0,640,480,0,1});
+    if (!ok) std::cerr << "Stencil or screen-space material checks failed.\n";
+    return ok;
+}
+
 bool verifyMaterials(IRenderBackend &backend)
 {
     const unsigned char rgba[] = {128,64,192,128};
@@ -715,7 +807,7 @@ int main()
         return 15;
     }
     if (!verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

@@ -58,11 +58,38 @@
 #include "meshmdl.h"
 #include "WWMath/plane.h"
 #include "statistics.h"
-#include "dx8vertexbuffer.h"
-#include "dx8indexbuffer.h"
 #include "WWLib/simplevec.h"
 #include "texture.h"
-#include "dx8wrapper.h"
+#include "meshrenderer.h"
+#include <cstdio>
+#include <vector>
+
+namespace {
+bool Decal_Render_Failure(const MeshClass *mesh, const char *reason)
+{
+	std::fprintf(stderr, "DecalMesh: cannot draw %s: %s\n", mesh->Get_Name(), reason);
+	return false;
+}
+
+bool Validate_Decal_Geometry(MeshClass *mesh, const SimpleDynVecClass<TriIndex> &polygons,
+    const SimpleDynVecClass<TextureClass *> &textures, const SimpleDynVecClass<ShaderClass> &shaders,
+    const SimpleDynVecClass<VertexMaterialClass *> &materials, int vertex_count)
+{
+	if (vertex_count <= 0 || materials.Count() != vertex_count ||
+	    textures.Count() != polygons.Count() || shaders.Count() != polygons.Count()) return false;
+	for (int p = 0; p < polygons.Count(); ++p) {
+		const TriIndex &triangle = polygons[p];
+		for (int corner = 0; corner < 3; ++corner)
+            if (static_cast<unsigned int>(triangle[corner]) >= static_cast<unsigned int>(vertex_count))
+                return Decal_Render_Failure(mesh, "invalid decal vertex index");
+		// Generated decal triangles have one shared material on all three vertices.
+		if (!materials[triangle.I] || materials[triangle.J] != materials[triangle.I] ||
+		    materials[triangle.K] != materials[triangle.I])
+			return Decal_Render_Failure(mesh, "inconsistent decal triangle vertex materials");
+	}
+	return true;
+}
+}
 
 #define DISABLE_CLIPPING	0
 
@@ -288,87 +315,28 @@ RigidDecalMeshClass::~RigidDecalMeshClass()
  * HISTORY:                                                                                    *
  *   1/26/00    gth : Created.                                                                 *
  *=============================================================================================*/
-void RigidDecalMeshClass::Render()
+bool RigidDecalMeshClass::Render()
 {
-	if ((Decals.Count() == 0) || (WW3D::Are_Decals_Enabled() == false)) return;
-
-	/*
-	** Install the mesh'es transform.  NOTE, this could go wrong if someone changes the
-	** transform between the time that the mesh is rendered and the time that the decal
-	** mesh is rendered...  It shouldn't happen though.
-	*/
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Parent->Get_Transform());
-
-	/*
-	** Copy the vertices into the dynamic vb
-	*/
-	DynamicVBAccessClass dynamic_vb(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,Verts.Count());
-	{
-		DynamicVBAccessClass::WriteLockClass lock(&dynamic_vb);
-		VertexFormatXYZNDUV2 * vertex = lock.Get_Formatted_Vertex_Array();
-
-		for (int i=0; i<Verts.Count(); i++) {
-
-			vertex->x = Verts[i].X;
-			vertex->y = Verts[i].Y;
-			vertex->z = Verts[i].Z;
-
-			vertex->nx = VertNorms[i].X;
-			vertex->ny = VertNorms[i].Y;
-			vertex->nz = VertNorms[i].Z;
-
-			vertex->diffuse = 0xFFFFFFFF;
-
-			vertex->u1 = TexCoords[i].X;
-			vertex->v1 = TexCoords[i].Y;
-
-			vertex->u2 = 0.0f;
-			vertex->v2 = 0.0f;
-
-			vertex++;
-		}
+	if (Decals.Count() == 0 || !WW3D::Are_Decals_Enabled() || Polys.Count() == 0) return true;
+	if (VertNorms.Count() != Verts.Count() || TexCoords.Count() != Verts.Count() ||
+	    !Validate_Decal_Geometry(Parent, Polys, Textures, Shaders, VertexMaterials, Verts.Count()))
+		return Decal_Render_Failure(Parent, "incomplete rigid decal geometry");
+	for (int first = 0; first < Polys.Count();) {
+		const int next = Process_Material_Run(first);
+		if (!TheMeshRenderer.Draw_Decal_Run(Parent, Parent->Get_Transform(),
+		        &Verts[0], &VertNorms[0], &TexCoords[0], Verts.Count(),
+		        &Polys[first], next - first, Textures[first], VertexMaterials[Polys[first].I], Shaders[first]))
+			return false;
+		first = next;
 	}
-
-	/*
-	** Copy the indices into the dynamic ib
-	*/
-	DynamicIBAccessClass dynamic_ib(BUFFER_TYPE_DYNAMIC_DX8,Polys.Count() * 3);
-	{
-		DynamicIBAccessClass::WriteLockClass lock(&dynamic_ib);
-		unsigned short * indices = lock.Get_Index_Array();
-		for (int i=0; i < Polys.Count(); i++)
-		{
-			indices[i*3 + 0] = (unsigned short)Polys[i].I;
-			indices[i*3 + 1] = (unsigned short)Polys[i].J;
-			indices[i*3 + 2] = (unsigned short)Polys[i].K;
-		}
-	}
-
-	/*
-	** Render in runs of constant material settings
-	*/
-	int cur_poly_index = 0;
-	int next_poly_index = 0;
-
-	while (next_poly_index < Polys.Count()) {
-		next_poly_index = Process_Material_Run(cur_poly_index);
-
-		DX8Wrapper::Set_Index_Buffer(dynamic_ib,0);
-		DX8Wrapper::Set_Vertex_Buffer(dynamic_vb);
-		DX8Wrapper::Draw_Triangles(	3*cur_poly_index,
-												(next_poly_index - cur_poly_index), // poly count
-												Polys[cur_poly_index].I,
-												1 + Polys[next_poly_index-1].K - Polys[cur_poly_index].I);
-		cur_poly_index = next_poly_index;
-	}
-
+	return true;
 }
 
 
 /***********************************************************************************************
  * RigidDecalMeshClass::Process_Material_Run -- scans the mesh for material runs               *
  *                                                                                             *
- *    This function will install the materials for poly[start_index] and scan forward for      *
+ *    This function will scan CPU material identities for poly[start_index] and find      *
  *    the next material change.  It will return the start index for the next material change   *
  *                                                                                             *
  * INPUT:                                                                                      *
@@ -382,18 +350,13 @@ void RigidDecalMeshClass::Render()
  *=============================================================================================*/
 int RigidDecalMeshClass::Process_Material_Run(int start_index)
 {
-	DX8Wrapper::Set_Texture(0,Textures[start_index]);
-	DX8Wrapper::Set_Material(VertexMaterials[Polys[start_index].I]);
-	DX8Wrapper::Set_Shader(Shaders[start_index]);
-
-	int next_index = start_index;
-	while (	(next_index < Polys.Count()) &&
-				(Textures[next_index] == Textures[start_index]) &&
-				(Shaders[next_index] == Shaders[start_index]) &&
-				(VertexMaterials[next_index] == VertexMaterials[start_index]))
-	{
-		next_index++;
-	}
+	VertexMaterialClass *material = VertexMaterials[Polys[start_index].I];
+	int next_index = start_index + 1;
+	while (next_index < Polys.Count() &&
+	       Textures[next_index] == Textures[start_index] &&
+	       Shaders[next_index] == Shaders[start_index] &&
+	       VertexMaterials[Polys[next_index].I] == material)
+		++next_index;
 	return next_index;
 }
 
@@ -770,102 +733,47 @@ SkinDecalMeshClass::~SkinDecalMeshClass()
  * HISTORY:                                                                                    *
  *   1/31/00    NH : Created.                                                                  *
  *=============================================================================================*/
-void SkinDecalMeshClass::Render()
+bool SkinDecalMeshClass::Render()
 {
-	if ((Decals.Count() == 0) || (WW3D::Are_Decals_Enabled() == false)) return;
+	if (Decals.Count() == 0 || !WW3D::Are_Decals_Enabled() || Polys.Count() == 0) return true;
+	MeshModelClass *model = Parent->Peek_Model();
+	if (!model || model->Get_Vertex_Count() <= 0)
+		return Decal_Render_Failure(Parent, "missing skin geometry");
+	if (model->Get_Flag(MeshModelClass::SORT))
+		return Decal_Render_Failure(Parent, "decals on sorted skin meshes are unsupported");
+	const int vertex_count = ParentVertexIndices.Count();
+	if (TexCoords.Count() != vertex_count ||
+	    !Validate_Decal_Geometry(Parent, Polys, Textures, Shaders, VertexMaterials, vertex_count))
+		return Decal_Render_Failure(Parent, "incomplete skin decal geometry");
+	for (int i = 0; i < vertex_count; ++i)
+		if (ParentVertexIndices[i] >= static_cast<uint32>(model->Get_Vertex_Count()))
+			return Decal_Render_Failure(Parent, "invalid skin decal parent vertex index");
 
-	/*
-	** Don't allow decals on sorted meshes
-	*/
-	MeshModelClass * model = Parent->Peek_Model();
-	if (model->Get_Flag(MeshModelClass::SORT)) {
-		WWDEBUG_SAY(("ERROR: decals applied to a sorted mesh!"));
-		return;
-	}
-
-	/*
-	** Skin decals coordinates are in world space
-	*/
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Matrix3D::Identity);
-
-	/*
-	** Skin decals have to get the deformed vertices of their parent meshes.  For this
-	** reason, decals on skins is not a very good idea...
-	*/
 	_TempVertexBuffer.Uninitialised_Grow(model->Get_Vertex_Count());
 	_TempNormalBuffer.Uninitialised_Grow(model->Get_Vertex_Count());
-	Parent->Get_Deformed_Vertices(&(_TempVertexBuffer[0]),&(_TempNormalBuffer[0]));
-
-	/*
-	** Copy the vertices into the dynamic vb
-	*/
-	DynamicVBAccessClass dynamic_vb(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,ParentVertexIndices.Count());
-	{
-		DynamicVBAccessClass::WriteLockClass lock(&dynamic_vb);
-		VertexFormatXYZNDUV2 * vertex = lock.Get_Formatted_Vertex_Array();
-
-		for (int i=0; i<ParentVertexIndices.Count(); i++) {
-			int src_i = ParentVertexIndices[i];
-			vertex->x = _TempVertexBuffer[src_i].X;
-			vertex->y = _TempVertexBuffer[src_i].Y;
-			vertex->z = _TempVertexBuffer[src_i].Z;
-
-			vertex->nx = _TempNormalBuffer[src_i].X;
-			vertex->ny = _TempNormalBuffer[src_i].Y;
-			vertex->nz = _TempNormalBuffer[src_i].Z;
-
-			vertex->diffuse = 0xFFFFFFFF;
-
-			vertex->u1 = TexCoords[i].X;
-			vertex->v1 = TexCoords[i].Y;
-
-			vertex->u2 = 0.0f;
-			vertex->v2 = 0.0f;
-
-			vertex++;
-		}
+	Parent->Get_Deformed_Vertices(&_TempVertexBuffer[0], &_TempNormalBuffer[0]);
+	std::vector<Vector3> positions(vertex_count), normals(vertex_count);
+	for (int i = 0; i < vertex_count; ++i) {
+		positions[i] = _TempVertexBuffer[ParentVertexIndices[i]];
+		normals[i] = _TempNormalBuffer[ParentVertexIndices[i]];
 	}
-
-	/*
-	** Copy the indices into the dynamic ib
-	*/
-	DynamicIBAccessClass dynamic_ib(BUFFER_TYPE_DYNAMIC_DX8,Polys.Count() * 3);
-	{
-		DynamicIBAccessClass::WriteLockClass lock(&dynamic_ib);
-		unsigned short * indices = lock.Get_Index_Array();
-		for (int i=0; i < Polys.Count(); i++)
-		{
-			indices[i*3 + 0] = (unsigned short)Polys[i].I;
-			indices[i*3 + 1] = (unsigned short)Polys[i].J;
-			indices[i*3 + 2] = (unsigned short)Polys[i].K;
-		}
+	// The existing CPU skin deformation produces world-space data.
+	for (int first = 0; first < Polys.Count();) {
+		const int next = Process_Material_Run(first);
+		if (!TheMeshRenderer.Draw_Decal_Run(Parent, Matrix3D::Identity,
+		        positions.data(), normals.data(), &TexCoords[0], vertex_count,
+		        &Polys[first], next - first, Textures[first], VertexMaterials[Polys[first].I], Shaders[first]))
+			return false;
+		first = next;
 	}
-
-	/*
-	** Render in runs of constant material settings
-	*/
-	int cur_poly_index = 0;
-	int next_poly_index = 0;
-
-	while (next_poly_index < Polys.Count()) {
-		next_poly_index = Process_Material_Run(cur_poly_index);
-
-		DX8Wrapper::Set_Index_Buffer(dynamic_ib,0);
-		DX8Wrapper::Set_Vertex_Buffer(dynamic_vb);
-		DX8Wrapper::Draw_Triangles(3*cur_poly_index,
-											(next_poly_index - cur_poly_index), // poly count
-											Polys[cur_poly_index].I,
-											1 + Polys[next_poly_index-1].K - Polys[cur_poly_index].I);
-
-		cur_poly_index = next_poly_index;
-	}
+	return true;
 }
 
 
 /***********************************************************************************************
  * SkinDecalMeshClass::Process_Material_Run -- scans the mesh for material runs                *
  *                                                                                             *
- *    This function will install the materials for poly[start_index] and scan forward for      *
+ *    This function will scan CPU material identities for poly[start_index] and find      *
  *    the next material change.  It will return the start index for the next material change   *
  *                                                                                             *
  * INPUT:                                                                                      *
@@ -879,18 +787,13 @@ void SkinDecalMeshClass::Render()
  *=============================================================================================*/
 int SkinDecalMeshClass::Process_Material_Run(int start_index)
 {
-	DX8Wrapper::Set_Texture(0,Textures[start_index]);
-	DX8Wrapper::Set_Material(VertexMaterials[Polys[start_index].I]);
-	DX8Wrapper::Set_Shader(Shaders[start_index]);
-
-	int next_index = start_index;
-	while (	(next_index < Polys.Count()) &&
-				(Textures[next_index] == Textures[start_index]) &&
-				(Shaders[next_index] == Shaders[start_index]) &&
-				(VertexMaterials[next_index] == VertexMaterials[start_index]))
-	{
-		next_index++;
-	}
+	VertexMaterialClass *material = VertexMaterials[Polys[start_index].I];
+	int next_index = start_index + 1;
+	while (next_index < Polys.Count() &&
+	       Textures[next_index] == Textures[start_index] &&
+	       Shaders[next_index] == Shaders[start_index] &&
+	       VertexMaterials[Polys[next_index].I] == material)
+		++next_index;
 	return next_index;
 }
 

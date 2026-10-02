@@ -134,6 +134,7 @@ private:
         unsigned int width = 0;
         unsigned int height = 0;
         unsigned int generation = 0;
+        std::uint32_t release_frame = FrameCount;
         bool occupied = false;
     };
 
@@ -208,7 +209,7 @@ private:
     ID3D12PipelineState *m_2d_opaque_pipeline = nullptr;
     ID3D12PipelineState *m_2d_alpha_pipeline = nullptr;
     ID3D12PipelineState *m_2d_additive_pipeline = nullptr;
-    struct MaterialPipeline { unsigned int key; ID3D12PipelineState *pipeline; };
+    struct MaterialPipeline { std::uint64_t key; ID3D12PipelineState *pipeline; };
     std::vector<MaterialPipeline> m_material_pipelines;
     ID3D10Blob *m_material_vertex_shader = nullptr;
     ID3D10Blob *m_material_color_shader = nullptr;

@@ -25,7 +25,7 @@
 #pragma once
 
 #include "WWMath/matrix4.h"
-#include "W3DDevice/GameClient/W3DBufferManager.h"
+
 #include "GameClient/Shadow.h"
 
 ///@todo Make the 100 below a 'better' number. Was 32, increased because of overcomplex models.
@@ -38,8 +38,9 @@ struct PolyNeighbor;	//forward reference
 class W3DVolumetricShadow;	//forward reference
 class Drawable;	//forward reference
 
-struct W3DVolumetricShadowRenderTask : public W3DBufferManager::W3DRenderTask
+struct W3DVolumetricShadowRenderTask
 {
+	W3DVolumetricShadowRenderTask *m_nextTask = nullptr;
 	W3DVolumetricShadow	*m_parentShadow;		///<main casting object to which this volume belongs.
 	UnsignedByte		m_meshIndex;		///<mesh index of volume within parent to render.
 	UnsignedByte		m_lightIndex;		///<light index of volume within parent to render.
@@ -53,7 +54,7 @@ public:
 
 	W3DVolumetricShadowManager();
 	~W3DVolumetricShadowManager();
-	Bool init();	///<initialize resources used by manager, must have valid D3D device.
+	Bool init();	///<initialize renderer-local shadow state.
 	// shadow list management
 	void reset();
 	W3DVolumetricShadow* addShadow( RenderObjClass *robj, Shadow::ShadowTypeInfo *shadowInfo, Drawable *draw);	///< adds shadow caster to rendering system.
@@ -61,10 +62,13 @@ public:
 	void removeAllShadows(); ///< Remove all shadows.
 	/// queues up a dynamic shadow caster for rendering - only used internally by shadow system.
 	void addDynamicShadowTask(W3DVolumetricShadowRenderTask *task)
-	{	W3DBufferManager::W3DRenderTask *oldTask=m_dynamicShadowVolumesToRender;
+	{	W3DVolumetricShadowRenderTask *oldTask=m_dynamicShadowVolumesToRender;
 		m_dynamicShadowVolumesToRender=task;
 		m_dynamicShadowVolumesToRender->m_nextTask=oldTask;
 	}
+	void addStaticShadowTask(W3DVolumetricShadowRenderTask *task)
+	{ task->m_nextTask=m_staticShadowVolumesToRender; m_staticShadowVolumesToRender=task; }
+	bool Is_Decrement_Volume_Pass() const { return m_decrementVolumePass; }
 	void invalidateCachedLightPositions();	///<forces shadow volumes to update regardless of last lightposition
 	void loadTerrainShadows();
 
@@ -79,7 +83,9 @@ protected:
 		void renderStencilShadows();
 
 		W3DVolumetricShadow *m_shadowList;
-		W3DVolumetricShadowRenderTask *m_dynamicShadowVolumesToRender;
+		W3DVolumetricShadowRenderTask *m_dynamicShadowVolumesToRender = nullptr;
+		W3DVolumetricShadowRenderTask *m_staticShadowVolumesToRender = nullptr;
+		bool m_decrementVolumePass = false;
 		W3DShadowGeometryManager *m_W3DShadowGeometryManager;
 };
 
@@ -145,7 +151,7 @@ class W3DVolumetricShadow	: public Shadow
 
 		// shadow volume access
 		void constructVolume( Vector3 *lightPos, Real shadowExtrudeDistance, Int volumeIndex, Int meshIndex );
-		void constructVolumeVB( Vector3 *lightPosObject,Real shadowExtrudeDistance, Int volumeIndex, Int meshIndex );
+		void constructStaticVolume( Vector3 *lightPosObject,Real shadowExtrudeDistance, Int volumeIndex, Int meshIndex );
 		Bool allocateShadowVolume( Int volumeIndex, Int meshIndex );  // allocate mem
 		void deleteShadowVolume( Int volumeIndex );  // delete all volume data
 		void resetShadowVolume( Int volumeIndex, Int meshIndex );  // reset shadow volume
@@ -167,8 +173,6 @@ class W3DVolumetricShadow	: public Shadow
 
 		static Geometry m_tempShadowVolume;	//scratch buffer to use by all shadows during volume construction.
 		Geometry *m_shadowVolume[ MAX_SHADOW_LIGHTS ][MAX_SHADOW_CASTER_MESHES];
-		W3DBufferManager::W3DVertexBufferSlot *m_shadowVolumeVB[ MAX_SHADOW_LIGHTS ][MAX_SHADOW_CASTER_MESHES];
-		W3DBufferManager::W3DIndexBufferSlot *m_shadowVolumeIB[ MAX_SHADOW_LIGHTS ][MAX_SHADOW_CASTER_MESHES];
 		W3DVolumetricShadowRenderTask m_shadowVolumeRenderTask[ MAX_SHADOW_LIGHTS ][MAX_SHADOW_CASTER_MESHES];
 		Int m_shadowVolumeCount[MAX_SHADOW_CASTER_MESHES];  // how man shadows are valid in m_shadowVolume
 		Vector3 m_lightPosHistory[ MAX_SHADOW_LIGHTS ][MAX_SHADOW_CASTER_MESHES];

@@ -951,7 +951,8 @@ D3D12Backend::TextureResource *D3D12Backend::findTexture(RenderBackendTextureHan
 {
     if (!handle.Is_Valid() || handle.slot > m_textures.size()) return nullptr;
     TextureResource &texture = m_textures[handle.slot - 1];
-    return texture.occupied && texture.generation == handle.generation ? &texture : nullptr;
+    return texture.occupied && texture.release_frame == FrameCount &&
+        texture.generation == handle.generation ? &texture : nullptr;
 }
 
 ID3D12Resource *D3D12Backend::activeColorTarget() const
@@ -1445,6 +1446,7 @@ bool D3D12Backend::drawDynamicGeometry(
                 material->clamp_texture ? 1u : 0u};
             static_assert(sizeof(Constants) == 4 * sizeof(unsigned int), "Material root constants");
             m_command_list->SetGraphicsRoot32BitConstants(2, 4, &constants, 0);
+            m_command_list->OMSetStencilRef(material->stencil.reference);
         }
         if (texture_handle.Is_Valid())
         {
@@ -1457,7 +1459,14 @@ bool D3D12Backend::drawDynamicGeometry(
         m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
         m_command_list->IASetIndexBuffer(&index_view);
+        const RenderBackendViewport saved_viewport = m_viewport;
+        if (material != nullptr && material->screen_space)
+        {
+            const auto target = activeColorTarget()->GetDesc();
+            Set_Viewport({0, 0, static_cast<unsigned int>(target.Width), target.Height, 0.0f, 1.0f});
+        }
         m_command_list->DrawIndexedInstanced(index_count, 1, 0, 0, 0);
+        if (material != nullptr && material->screen_space) Set_Viewport(saved_viewport);
         ++m_frame_statistics.draw_calls;
         m_frame_statistics.triangles += index_count / 3;
         m_frame_statistics.vertices += vertex_count;
@@ -1921,7 +1930,8 @@ bool D3D12Backend::Draw_Static_Indexed_Textured_Geometry(
     const TextureResource &texture = m_textures[texture_slot];
     if (!geometry.occupied || geometry.generation != geometry_handle.generation || !geometry.textured ||
         geometry.vertex_buffer == nullptr || geometry.index_buffer == nullptr ||
-        !texture.occupied || texture.generation != texture_handle.generation || texture.texture == nullptr)
+        !texture.occupied || texture.release_frame != FrameCount ||
+        texture.generation != texture_handle.generation || texture.texture == nullptr)
     {
         return false;
     }
@@ -1957,7 +1967,7 @@ bool D3D12Backend::Is_Texture_Valid(RenderBackendTextureHandle handle) const
 {
     if (!handle.Is_Valid() || handle.slot > m_textures.size()) return false;
     const auto &texture = m_textures[handle.slot - 1];
-    return texture.occupied && texture.generation == handle.generation;
+    return texture.occupied && texture.release_frame == FrameCount && texture.generation == handle.generation;
 }
 
 ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialState &material, bool textured)
@@ -1967,10 +1977,20 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
     const unsigned int destination = static_cast<unsigned int>(material.destination_blend);
     const unsigned int cull = static_cast<unsigned int>(material.cull);
     const bool color_only = m_selected_texture.Is_Valid();
-    const unsigned int key = depth | (source << 4) | (destination << 7) | (cull << 10) |
+    auto face_key = [](const RenderBackendStencilFace &face) {
+        return static_cast<std::uint64_t>(face.comparison) |
+            (static_cast<std::uint64_t>(face.stencil_fail) << 3) |
+            (static_cast<std::uint64_t>(face.depth_fail) << 6) |
+            (static_cast<std::uint64_t>(face.pass) << 9);
+    };
+    const std::uint64_t key = depth | (source << 4) | (destination << 7) | (cull << 10) |
         (static_cast<unsigned int>(material.depth_write) << 12) |
         (static_cast<unsigned int>(material.color_write) << 13) |
-        (static_cast<unsigned int>(textured) << 14) | (static_cast<unsigned int>(color_only) << 15);
+        (static_cast<unsigned int>(textured) << 14) | (static_cast<unsigned int>(color_only) << 15) |
+        (static_cast<std::uint64_t>(material.stencil.enabled) << 16) |
+        (static_cast<std::uint64_t>(material.stencil.read_mask) << 17) |
+        (static_cast<std::uint64_t>(material.stencil.write_mask) << 25) |
+        (face_key(material.stencil.front) << 33) | (face_key(material.stencil.back) << 45);
     for (const auto &entry : m_material_pipelines)
         if (entry.key == key) return entry.pipeline;
 
@@ -2005,10 +2025,18 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
     pipeline.DepthStencilState.DepthEnable = material.depth_test != RenderBackendDepthTest::Disabled;
     pipeline.DepthStencilState.DepthWriteMask = material.depth_write ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
     pipeline.DepthStencilState.DepthFunc = depth < 8 ? static_cast<D3D12_COMPARISON_FUNC>(depth + 1) : D3D12_COMPARISON_FUNC_ALWAYS;
-    pipeline.DepthStencilState.StencilReadMask = pipeline.DepthStencilState.StencilWriteMask = 0xff;
-    pipeline.DepthStencilState.FrontFace = {D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP,
-        D3D12_STENCIL_OP_KEEP, D3D12_COMPARISON_FUNC_ALWAYS};
-    pipeline.DepthStencilState.BackFace = pipeline.DepthStencilState.FrontFace;
+    pipeline.DepthStencilState.StencilEnable = material.stencil.enabled;
+    pipeline.DepthStencilState.StencilReadMask = static_cast<UINT8>(material.stencil.read_mask);
+    pipeline.DepthStencilState.StencilWriteMask = static_cast<UINT8>(material.stencil.write_mask);
+    auto stencil_face = [](const RenderBackendStencilFace &face) {
+        return D3D12_DEPTH_STENCILOP_DESC{
+            static_cast<D3D12_STENCIL_OP>(static_cast<unsigned int>(face.stencil_fail)+1),
+            static_cast<D3D12_STENCIL_OP>(static_cast<unsigned int>(face.depth_fail)+1),
+            static_cast<D3D12_STENCIL_OP>(static_cast<unsigned int>(face.pass)+1),
+            static_cast<D3D12_COMPARISON_FUNC>(static_cast<unsigned int>(face.comparison)+1)};
+    };
+    pipeline.DepthStencilState.FrontFace = stencil_face(material.stencil.front);
+    pipeline.DepthStencilState.BackFace = stencil_face(material.stencil.back);
     pipeline.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     pipeline.NumRenderTargets = 1;
     pipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -2027,6 +2055,12 @@ bool D3D12Backend::Draw_Indexed_Material_Triangles(
     const unsigned short *indices, unsigned int index_count,
     RenderBackendTextureHandle texture, const RenderBackendMaterialState &material)
 {
+    auto valid_face = [](const RenderBackendStencilFace &face) {
+        return static_cast<unsigned int>(face.comparison) < 8 &&
+            static_cast<unsigned int>(face.stencil_fail) < 8 &&
+            static_cast<unsigned int>(face.depth_fail) < 8 &&
+            static_cast<unsigned int>(face.pass) < 8;
+    };
     if (!m_scene_open || static_cast<unsigned int>(material.depth_test) > 8 ||
         static_cast<unsigned int>(material.source_blend) > 6 ||
         static_cast<unsigned int>(material.destination_blend) > 6 ||
@@ -2034,15 +2068,17 @@ bool D3D12Backend::Draw_Indexed_Material_Triangles(
         static_cast<unsigned int>(material.texture_combine) > 3 ||
         static_cast<unsigned int>(material.alpha_test) > 2 ||
         !(material.alpha_reference >= 0.0f && material.alpha_reference <= 1.0f) ||
+        material.stencil.reference > 255 || material.stencil.read_mask > 255 || material.stencil.write_mask > 255 ||
+        !valid_face(material.stencil.front) || !valid_face(material.stencil.back) ||
         ((texture.slot != 0 || texture.generation != 0) && !texture.Is_Valid()) ||
-        (m_selected_texture.Is_Valid() && material.depth_test != RenderBackendDepthTest::Disabled) ||
+        (m_selected_texture.Is_Valid() && (material.depth_test != RenderBackendDepthTest::Disabled || material.stencil.enabled)) ||
         (texture.Is_Valid() && (!Is_Texture_Valid(texture) ||
             (texture.slot == m_selected_texture.slot && texture.generation == m_selected_texture.generation))))
         return false;
     try
     {
         return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendTexturedVertex),
-            indices, index_count, materialPipeline(material, texture.Is_Valid()), false, texture, &material);
+            indices, index_count, materialPipeline(material, texture.Is_Valid()), material.screen_space, texture, &material);
     }
     catch (...) { return false; }
 }
@@ -2066,14 +2102,21 @@ bool D3D12Backend::Draw_Indexed_Decal_Triangles(
 
 void D3D12Backend::Release_Texture(RenderBackendTextureHandle texture_handle)
 {
-    if (!texture_handle.Is_Valid() || m_scene_open)
+    if (!texture_handle.Is_Valid())
     {
         return;
     }
     const std::size_t slot = static_cast<std::size_t>(texture_handle.slot - 1);
     if (slot >= m_textures.size() || !m_textures[slot].occupied ||
-        m_textures[slot].generation != texture_handle.generation)
+        m_textures[slot].generation != texture_handle.generation || m_textures[slot].release_frame != FrameCount)
     {
+        return;
+    }
+    if (m_scene_open)
+    {
+        // Keep the resource and its occupied descriptor slot alive until every
+        // command recorded in this frame has passed its fence.
+        m_textures[slot].release_frame = m_frame_index;
         return;
     }
     if (texture_handle.slot == m_selected_texture.slot && texture_handle.generation == m_selected_texture.generation)
@@ -2142,6 +2185,8 @@ void D3D12Backend::submitScene(bool present)
     m_frame_fence_values[submitted_frame] = signal_value;
 
     m_scene_open = false;
+    if (offscreen && m_textures[m_selected_texture.slot - 1].release_frame != FrameCount)
+        Set_Render_Texture({});
     if (!offscreen)
     {
         m_present_pending = true;
@@ -2192,6 +2237,8 @@ void D3D12Backend::releaseFrameUploads(std::uint32_t frame_index) noexcept
     m_frame_uploads[frame_index].clear();
     for (auto *heap : m_frame_retired_texture_heaps[frame_index]) heap->Release();
     m_frame_retired_texture_heaps[frame_index].clear();
+    for (auto &texture : m_textures)
+        if (texture.occupied && texture.release_frame == frame_index) releaseTexture(texture);
 }
 
 void D3D12Backend::releaseStaticGeometry(StaticGeometryResource &geometry) noexcept
@@ -2213,6 +2260,7 @@ void D3D12Backend::releaseTexture(TextureResource &texture) noexcept
     texture.width = 0;
     texture.height = 0;
     texture.occupied = false;
+    texture.release_frame = FrameCount;
 }
 
 void D3D12Backend::waitForGpu()

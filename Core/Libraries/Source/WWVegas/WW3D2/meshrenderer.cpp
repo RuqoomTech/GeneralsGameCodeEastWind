@@ -319,9 +319,10 @@ struct MeshRendererClass::Impl
         return flush();
     }
 
+    template<class Triangle>
     bool drawDecalRun(MeshClass *mesh, const Matrix3D &world,
         const Vector3 *positions, const Vector3 *normals, const Vector2 *uv,
-        unsigned int vertex_count, const TriIndex *polygons, unsigned int polygon_count,
+        unsigned int vertex_count, const Triangle *polygons, unsigned int polygon_count,
         TextureClass *texture, VertexMaterialClass *material, ShaderClass shader)
     {
         auto *backend = WW3D::Get_Render_Backend();
@@ -435,6 +436,22 @@ void MeshRendererClass::Add_To_Render_List(DecalMeshClass *mesh)
 {
     if (mesh) { mesh->Add_Ref(); implementation->decals.push_back(mesh); }
 }
+bool MeshRendererClass::Draw_Decal_Run(MeshClass *mesh, const Matrix3D &world,
+    const Vector3 *positions, const Vector3 *normals, const Vector2 *uv,
+    unsigned int vertex_count, const Vector3i16 *polygons, unsigned int polygon_count,
+    TextureClass *texture, VertexMaterialClass *material, ShaderClass shader)
+{
+    return implementation->drawDecalRun(mesh, world, positions, normals, uv,
+        vertex_count, polygons, polygon_count, texture, material, shader);
+}
+bool MeshRendererClass::Draw_Decal_Run(MeshClass *mesh, const Matrix3D &world,
+    const Vector3 *positions, const Vector3 *normals, const Vector2 *uv,
+    unsigned int vertex_count, const Vector3i *polygons, unsigned int polygon_count,
+    TextureClass *texture, VertexMaterialClass *material, ShaderClass shader)
+{
+    return implementation->drawDecalRun(mesh, world, positions, normals, uv,
+        vertex_count, polygons, polygon_count, texture, material, shader);
+}
 bool MeshRendererClass::Flush()
 {
     if (!implementation->camera) return implementation->tasks.empty() && implementation->decals.empty();
@@ -450,9 +467,8 @@ bool MeshRendererClass::Flush()
             if (task->pass && !task->delayed && !!task->mesh->Peek_Model()->Get_Flag(MeshGeometryClass::SKIN) == !!skin)
                 success = implementation->draw(*task, 0) && success;
     }
-    // Decal geometry is a separate real caller whose renderer is still pending.
     for (auto *decal : implementation->decals) {
-        success = failure(decal->Peek_Parent(), "mesh decal material draw is not migrated") && success;
+        success = decal->Render() && success;
     }
     for (auto &task : implementation->tasks)
         if (task->delayed) success = implementation->draw(*task, 0) && success;

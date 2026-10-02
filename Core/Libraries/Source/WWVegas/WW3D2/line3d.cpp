@@ -48,15 +48,14 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "line3d.h"
-#include "vertmaterial.h"
 #include "shader.h"
 #include "WWDebug/wwdebug.h"
 #include "ww3d.h"
 #include "rinfo.h"
-#include "dx8wrapper.h"
-#include "dx8vertexbuffer.h"
-#include "dx8indexbuffer.h"
-#include "dx8fvf.h"
+#include "w3d_file.h"
+#include "camera.h"
+#include "IRenderBackend.h"
+#include <cstdio>
 
 // 12 Triangles for index buffer
 const unsigned short Indices[]=
@@ -267,41 +266,28 @@ void Line3DClass::Render(RenderInfoClass & rinfo)
 		return;
 	}
 
-	DX8Wrapper::Set_Shader(Shader);
-	DX8Wrapper::Set_Texture(0,nullptr);
-	VertexMaterialClass *vm=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vm);
-	REF_PTR_RELEASE(vm);
-
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Transform);
-
-	DynamicVBAccessClass vb(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,8);
-	{
-		DynamicVBAccessClass::WriteLockClass Lock(&vb);
-		const FVFInfoClass &fi=vb.FVF_Info();
-		unsigned char *vb=(unsigned char*)Lock.Get_Formatted_Vertex_Array();
-		int i;
-		unsigned int color=DX8Wrapper::Convert_Color(Color);
-
-		for (i=0; i<8; i++)
-		{
-			*(Vector3*)(vb+fi.Get_Location_Offset())=vert[i];
-			*(unsigned int*)(vb+fi.Get_Diffuse_Offset())=color;
-			vb+=fi.Get_FVF_Size();
-		}
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	RenderBackendMaterialState material;
+	if (!backend || !Shader.Get_Render_Backend_State(material)) {
+		std::fprintf(stderr, "Line3D: cannot draw %s: missing backend or unsupported shader\n", Get_Name());
+		return;
 	}
 
-	DynamicIBAccessClass ib(BUFFER_TYPE_DYNAMIC_DX8,36);
-	{
-		DynamicIBAccessClass::WriteLockClass Lock(&ib);
-		unsigned short *mem=Lock.Get_Index_Array();
-		for (int i=0; i<36; i++)
-			mem[i]=Indices[i];
+	// Retain the packed diffuse precision of the original prelit vertices.
+	const unsigned int color = Vector3(Color.X, Color.Y, Color.Z).Convert_To_ARGB(Color.W);
+	const float red = ((color >> 16) & 255) / 255.0f;
+	const float green = ((color >> 8) & 255) / 255.0f;
+	const float blue = (color & 255) / 255.0f;
+	const float alpha = ((color >> 24) & 255) / 255.0f;
+	RenderBackendTexturedVertex vertices[8];
+	for (int i = 0; i < 8; ++i) {
+		Vector3 position;
+		Matrix3D::Transform_Vector(Transform, vert[i], &position);
+		vertices[i] = {position.X, position.Y, position.Z, red, green, blue, alpha, 0.0f, 0.0f};
 	}
-
-	DX8Wrapper::Set_Vertex_Buffer(vb);
-	DX8Wrapper::Set_Index_Buffer(ib,0);
-	DX8Wrapper::Draw_Triangles(0,36/3,0,8);
+	rinfo.Camera.Apply();
+	if (!backend->Draw_Indexed_Material_Triangles(vertices, 8, Indices, 36, {}, material))
+		std::fprintf(stderr, "Line3D: D3D12 material submission rejected for %s\n", Get_Name());
 }
 
 /**************************************************************************

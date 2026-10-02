@@ -117,6 +117,26 @@ enum class RenderBackendBlendFactor { Zero, One, SourceColor, InverseSourceColor
 enum class RenderBackendCullMode { None, Clockwise, CounterClockwise };
 enum class RenderBackendTextureCombine { Replace, Modulate, Add, Modulate2X };
 enum class RenderBackendAlphaTest { Disabled, GreaterEqual, LessEqual };
+enum class RenderBackendStencilCompare { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always };
+enum class RenderBackendStencilOperation { Keep, Zero, Replace, IncrementSaturate, DecrementSaturate, Invert, Increment, Decrement };
+
+struct RenderBackendStencilFace
+{
+    RenderBackendStencilCompare comparison = RenderBackendStencilCompare::Always;
+    RenderBackendStencilOperation stencil_fail = RenderBackendStencilOperation::Keep;
+    RenderBackendStencilOperation depth_fail = RenderBackendStencilOperation::Keep;
+    RenderBackendStencilOperation pass = RenderBackendStencilOperation::Keep;
+};
+
+struct RenderBackendStencilState
+{
+    bool enabled = false;
+    unsigned int reference = 0;
+    unsigned int read_mask = 255;
+    unsigned int write_mask = 255;
+    RenderBackendStencilFace front;
+    RenderBackendStencilFace back;
+};
 
 struct RenderBackendMaterialState
 {
@@ -130,6 +150,8 @@ struct RenderBackendMaterialState
     bool depth_write = true;
     bool color_write = true;
     bool clamp_texture = false;
+    bool screen_space = false; // Caller supplies clip/NDC coordinates, bypassing the camera.
+    RenderBackendStencilState stencil;
 };
 
 struct RenderBackendGeometryHandle

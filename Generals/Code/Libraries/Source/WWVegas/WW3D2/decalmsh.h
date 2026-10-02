@@ -82,7 +82,7 @@ public:
 	// which are used by some decal types which cannot use static object geometry (such as decals
 	// for skins, procedurally generated meshes, etc.)
 
-	virtual void											Render() = 0;
+	virtual bool											Render() = 0;
 
 	virtual bool											Create_Decal(	DecalGeneratorClass * generator,
 																					const OBBoxClass & localbox,
@@ -125,7 +125,7 @@ public:
 
 	// Rigid decal meshes have static geometry so they do not use world_vertex_locs/norms
 
-	virtual void											Render() override;
+	virtual bool											Render() override;
 
 	virtual bool											Create_Decal(	DecalGeneratorClass * generator,
 																					const OBBoxClass & localbox,
@@ -190,7 +190,7 @@ public:
 
 	// Skin decals use world_vertex_locs/norms since they cannot use static geometry
 
-	virtual void											Render() override;
+	virtual bool											Render() override;
 
 	virtual bool											Create_Decal(	DecalGeneratorClass * generator,
 																					const OBBoxClass & localbox,

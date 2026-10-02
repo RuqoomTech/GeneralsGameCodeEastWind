@@ -1,13 +1,22 @@
-#include "Utility/CppMacros.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/IRenderBackend.h"
 
+#include <array>
+#include <cstdint>
 #include <iostream>
+
+static_assert(sizeof(unsigned int) == sizeof(std::uint32_t));
+static_assert(sizeof(ShaderClass) == sizeof(std::uint32_t));
+static_assert(SHIFT_DEPTHCOMPARE == 0 && SHIFT_DEPTHMASK == 3 && SHIFT_COLORMASK == 4);
+static_assert(SHIFT_DSTBLEND == 5 && SHIFT_FOG == 8 && SHIFT_PRIGRADIENT == 10);
+static_assert(SHIFT_SECGRADIENT == 13 && SHIFT_SRCBLEND == 14 && SHIFT_TEXTURING == 16);
+static_assert(SHIFT_NPATCHENABLE == 17 && SHIFT_ALPHATEST == 18 && SHIFT_CULLMODE == 19);
+static_assert(SHIFT_POSTDETAILCOLORFUNC == 20 && SHIFT_POSTDETAILALPHAFUNC == 24);
 
 namespace {
 int failures = 0;
 
-void require(bool condition, const char *description)
+void Check(bool condition, const char *description)
 {
     if (!condition) {
         std::cerr << description << '\n';
@@ -15,142 +24,219 @@ void require(bool condition, const char *description)
     }
 }
 
-void rejects(const ShaderClass &shader, const char *description)
+bool Equal(const RenderBackendMaterialState &a, const RenderBackendMaterialState &b)
 {
-    RenderBackendMaterialState state;
-    state.alpha_reference = 0.314f;
-    state.depth_write = false;
-    state.source_blend = RenderBackendBlendFactor::SourceColor;
-    require(!shader.Get_Render_Backend_State(state), description);
-    require(state.alpha_reference == 0.314f && !state.depth_write &&
-        state.source_blend == RenderBackendBlendFactor::SourceColor,
-        "Rejected material must retain the caller's state");
-}
+    return a.depth_test == b.depth_test && a.source_blend == b.source_blend &&
+        a.destination_blend == b.destination_blend && a.cull == b.cull &&
+        a.texture_combine == b.texture_combine && a.alpha_test == b.alpha_test &&
+        a.alpha_reference == b.alpha_reference && a.depth_write == b.depth_write &&
+        a.color_write == b.color_write && a.clamp_texture == b.clamp_texture;
 }
 
-// The W3D asset representation remains fixed while runtime draw state changes.
-static_assert(SHIFT_DEPTHCOMPARE == 0 && SHIFT_DEPTHMASK == 3 && SHIFT_COLORMASK == 4);
-static_assert(SHIFT_DSTBLEND == 5 && SHIFT_FOG == 8 && SHIFT_PRIGRADIENT == 10);
-static_assert(SHIFT_SECGRADIENT == 13 && SHIFT_SRCBLEND == 14 && SHIFT_TEXTURING == 16);
-static_assert(SHIFT_NPATCHENABLE == 17 && SHIFT_ALPHATEST == 18 && SHIFT_CULLMODE == 19);
-static_assert(SHIFT_POSTDETAILCOLORFUNC == 20 && SHIFT_POSTDETAILALPHAFUNC == 24);
+void Reject(const ShaderClass &shader, const char *description)
+{
+    RenderBackendMaterialState state;
+    state.depth_test = RenderBackendDepthTest::Greater;
+    state.source_blend = RenderBackendBlendFactor::SourceColor;
+    state.destination_blend = RenderBackendBlendFactor::InverseSourceAlpha;
+    state.cull = RenderBackendCullMode::None;
+    state.texture_combine = RenderBackendTextureCombine::Add;
+    state.alpha_test = RenderBackendAlphaTest::LessEqual;
+    state.alpha_reference = 0.25f;
+    state.depth_write = false;
+    state.color_write = false;
+    state.clamp_texture = true;
+    const auto original = state;
+    const auto bits = shader.Get_Bits();
+    Check(!shader.Get_Render_Backend_State(state), description);
+    Check(Equal(state, original), "Rejected shader changed the caller's draw state");
+    Check(shader.Get_Bits() == bits, "Rejected shader changed fixed asset bits");
+}
+
+void Test_Depth_And_Blending()
+{
+    const std::array depths = {
+        RenderBackendDepthTest::Never, RenderBackendDepthTest::Less,
+        RenderBackendDepthTest::Equal, RenderBackendDepthTest::LessEqual,
+        RenderBackendDepthTest::Greater, RenderBackendDepthTest::NotEqual,
+        RenderBackendDepthTest::GreaterEqual, RenderBackendDepthTest::Always};
+    const std::array sources = {
+        RenderBackendBlendFactor::Zero, RenderBackendBlendFactor::One,
+        RenderBackendBlendFactor::SourceAlpha, RenderBackendBlendFactor::InverseSourceAlpha};
+    const std::array destinations = {
+        RenderBackendBlendFactor::Zero, RenderBackendBlendFactor::One,
+        RenderBackendBlendFactor::SourceColor, RenderBackendBlendFactor::InverseSourceColor,
+        RenderBackendBlendFactor::SourceAlpha, RenderBackendBlendFactor::InverseSourceAlpha};
+    for (unsigned depth = 0; depth < depths.size(); ++depth) {
+        for (unsigned source = 0; source < sources.size(); ++source) {
+            for (unsigned destination = 0; destination < destinations.size(); ++destination) {
+                ShaderClass shader;
+                shader.Set_Depth_Compare(static_cast<ShaderClass::DepthCompareType>(depth));
+                shader.Set_Src_Blend_Func(static_cast<ShaderClass::SrcBlendFuncType>(source));
+                shader.Set_Dst_Blend_Func(static_cast<ShaderClass::DstBlendFuncType>(destination));
+                const auto bits = shader.Get_Bits();
+                RenderBackendMaterialState state;
+                Check(shader.Get_Render_Backend_State(state), "Valid depth/blend combination rejected");
+                Check(state.depth_test == depths[depth], "Depth comparison changed");
+                Check(state.source_blend == sources[source], "Source blend changed");
+                Check(state.destination_blend == destinations[destination], "Destination blend changed");
+                Check(shader.Get_Bits() == bits, "Translation changed fixed shader asset bits");
+            }
+        }
+    }
+    for (unsigned destination = 6; destination < 8; ++destination) {
+        ShaderClass shader;
+        shader.Set_Dst_Blend_Func(static_cast<ShaderClass::DstBlendFuncType>(destination));
+        Reject(shader, "Reserved destination blend accepted");
+    }
+}
+
+void Test_Alpha_And_Writes()
+{
+    for (unsigned source = 0; source < ShaderClass::SRCBLEND_MAX; ++source) {
+        ShaderClass shader;
+        shader.Set_Src_Blend_Func(static_cast<ShaderClass::SrcBlendFuncType>(source));
+        RenderBackendMaterialState state;
+        Check(shader.Get_Render_Backend_State(state), "Alpha-disabled shader rejected");
+        Check(state.alpha_test == RenderBackendAlphaTest::Disabled, "Disabled alpha test enabled");
+        shader.Set_Alpha_Test(ShaderClass::ALPHATEST_ENABLE);
+        Check(shader.Get_Render_Backend_State(state), "Alpha-tested shader rejected");
+        const bool inverse = source == ShaderClass::SRCBLEND_ONE_MINUS_SRC_ALPHA;
+        Check(state.alpha_test == (inverse ? RenderBackendAlphaTest::LessEqual :
+            RenderBackendAlphaTest::GreaterEqual), "Alpha comparison direction changed");
+        Check(state.alpha_reference == (inverse ? 159.0f : 96.0f) / 255.0f,
+            "Historical alpha-test reference changed");
+        shader.Set_Alpha_Test(ShaderClass::ALPHATEST_DISABLE);
+        Check(shader.Get_Render_Backend_State(state) && state.alpha_test == RenderBackendAlphaTest::Disabled,
+            "Disabling alpha testing retained a previous comparison");
+    }
+    for (unsigned depth_write = 0; depth_write < 2; ++depth_write) {
+        for (unsigned color_write = 0; color_write < 2; ++color_write) {
+            ShaderClass shader;
+            shader.Set_Depth_Mask(static_cast<ShaderClass::DepthMaskType>(depth_write));
+            shader.Set_Color_Mask(static_cast<ShaderClass::ColorMaskType>(color_write));
+            RenderBackendMaterialState state;
+            Check(shader.Get_Render_Backend_State(state), "Write-mask shader rejected");
+            Check(state.depth_write == bool(depth_write) && state.color_write == bool(color_write),
+                "Depth/color write masks changed");
+        }
+    }
+}
+
+void Test_Culling_And_Primary_Texture()
+{
+    struct RestoreCulling {
+        bool inverted = ShaderClass::Is_Backface_Culling_Inverted();
+        ~RestoreCulling() { ShaderClass::Invert_Backface_Culling(inverted); }
+    } restore;
+    for (bool inverted : {false, true}) {
+        ShaderClass::Invert_Backface_Culling(inverted);
+        for (bool enabled : {false, true}) {
+            ShaderClass shader;
+            shader.Set_Cull_Mode(enabled ? ShaderClass::CULL_MODE_ENABLE : ShaderClass::CULL_MODE_DISABLE);
+            RenderBackendMaterialState state;
+            Check(shader.Get_Render_Backend_State(state), "Culling shader rejected");
+            const auto expected = !enabled ? RenderBackendCullMode::None :
+                (inverted ? RenderBackendCullMode::CounterClockwise : RenderBackendCullMode::Clockwise);
+            Check(state.cull == expected, "Global cull inversion or disabled culling changed");
+        }
+    }
+    const ShaderClass::PriGradientType modes[] = {
+        ShaderClass::GRADIENT_DISABLE, ShaderClass::GRADIENT_MODULATE,
+        ShaderClass::GRADIENT_ADD, ShaderClass::GRADIENT_MODULATE2X};
+    const RenderBackendTextureCombine expected[] = {
+        RenderBackendTextureCombine::Replace, RenderBackendTextureCombine::Modulate,
+        RenderBackendTextureCombine::Add, RenderBackendTextureCombine::Modulate2X};
+    for (unsigned i = 0; i < 4; ++i) {
+        ShaderClass shader;
+        shader.Set_Texturing(ShaderClass::TEXTURING_ENABLE);
+        shader.Set_Primary_Gradient(modes[i]);
+        RenderBackendMaterialState state;
+        Check(shader.Get_Render_Backend_State(state), "Supported primary texture gradient rejected");
+        Check(state.texture_combine == expected[i], "Primary gradient operation collapsed or changed");
+        Check(!state.clamp_texture, "Asset shader unexpectedly imposed a clamp sampler");
+        const ShaderClass reloaded(shader.Get_Bits());
+        RenderBackendMaterialState reloaded_state;
+        Check(reloaded.Get_Render_Backend_State(reloaded_state) && Equal(state, reloaded_state),
+            "Reloading fixed shader bits changed material state");
+    }
+    // Disabled texturing ignores primary/detail operations in the old stage-zero path.
+    ShaderClass untextured;
+    untextured.Set_Texturing(ShaderClass::TEXTURING_DISABLE);
+    untextured.Set_Primary_Gradient(ShaderClass::GRADIENT_BUMPENVMAP);
+    untextured.Set_Post_Detail_Color_Func(ShaderClass::DETAILCOLOR_ADD);
+    untextured.Set_Post_Detail_Alpha_Func(ShaderClass::DETAILALPHA_SCALE);
+    RenderBackendMaterialState state;
+    Check(untextured.Get_Render_Backend_State(state), "Inactive texture operations rejected an untextured shader");
+}
+
+void Test_Unsupported_Effects()
+{
+    for (unsigned fog = ShaderClass::FOG_ENABLE; fog <= ShaderClass::FOG_WHITE; ++fog) {
+        ShaderClass shader;
+        shader.Set_Fog_Func(static_cast<ShaderClass::FogFuncType>(fog));
+        Reject(shader, "Unmigrated fog accepted");
+    }
+    // Include the paired game's additional operations and reserved asset codes.
+    for (unsigned detail = ShaderClass::DETAILCOLOR_DETAIL; detail < 16; ++detail) {
+        ShaderClass shader;
+        shader.Set_Texturing(ShaderClass::TEXTURING_ENABLE);
+        shader.Set_Post_Detail_Color_Func(static_cast<ShaderClass::DetailColorFuncType>(detail));
+        Reject(shader, "Unmigrated detail-color effect accepted");
+    }
+    for (unsigned detail = ShaderClass::DETAILALPHA_DETAIL; detail <= ShaderClass::DETAILALPHA_INVSCALE; ++detail) {
+        ShaderClass shader;
+        shader.Set_Texturing(ShaderClass::TEXTURING_ENABLE);
+        shader.Set_Post_Detail_Alpha_Func(static_cast<ShaderClass::DetailAlphaFuncType>(detail));
+        Reject(shader, "Unmigrated detail-alpha effect accepted");
+    }
+    for (unsigned gradient : {3u, 4u, 6u, 7u}) {
+        ShaderClass shader;
+        shader.Set_Texturing(ShaderClass::TEXTURING_ENABLE);
+        shader.Set_Primary_Gradient(static_cast<ShaderClass::PriGradientType>(gradient));
+        Reject(shader, "Bump or reserved primary gradient accepted");
+    }
+    ShaderClass secondary;
+    secondary.Set_Secondary_Gradient(ShaderClass::SECONDARY_GRADIENT_ENABLE);
+    Reject(secondary, "Unmigrated secondary gradient accepted");
+    ShaderClass npatch;
+    npatch.Set_NPatch_Enable(ShaderClass::NPATCH_ENABLE);
+    Reject(npatch, "Unmigrated N-patch effect accepted");
+}
+
+void Test_Fixed_Asset_Value()
+{
+    ShaderClass::Invert_Backface_Culling(false);
+    ShaderClass default_shader;
+    RenderBackendMaterialState default_state;
+    Check(default_shader.Get_Render_Backend_State(default_state) &&
+        Equal(default_state, RenderBackendMaterialState{}), "Default W3D material draw state changed");
+    constexpr unsigned bits = SHADE_CNST(ShaderClass::PASS_GEQUAL, ShaderClass::DEPTH_WRITE_DISABLE,
+        ShaderClass::COLOR_WRITE_ENABLE, ShaderClass::SRCBLEND_SRC_ALPHA,
+        ShaderClass::DSTBLEND_ONE_MINUS_SRC_ALPHA, ShaderClass::FOG_DISABLE,
+        ShaderClass::GRADIENT_ADD, ShaderClass::SECONDARY_GRADIENT_DISABLE,
+        ShaderClass::TEXTURING_ENABLE, ShaderClass::ALPHATEST_ENABLE,
+        ShaderClass::CULL_MODE_ENABLE, ShaderClass::DETAILCOLOR_DISABLE, ShaderClass::DETAILALPHA_DISABLE);
+    static_assert(bits == 0x000D88B6u);
+    ShaderClass shader(bits);
+    ShaderClass copy(shader);
+    Check(shader == copy && !(shader != copy), "Shader asset value copy/equality changed");
+    RenderBackendMaterialState state;
+    Check(shader.Get_Render_Backend_State(state) && shader.Get_Bits() == bits,
+        "Fixed shader schema changed during translation");
+    copy.Set_Color_Mask(ShaderClass::COLOR_WRITE_DISABLE);
+    Check(shader != copy && shader.Get_Bits() == bits && copy.Get_Bits() == (bits & ~0x10u),
+        "Shader field mutation changed another asset bit or copy");
+}
+} // namespace
 
 int main()
 {
-    ShaderClass::Invert_Backface_Culling(false);
-    ShaderClass shader;
-    RenderBackendMaterialState state;
-    require(shader.Get_Render_Backend_State(state), "Default vertex-color material must be supported");
-    require(state.depth_test == RenderBackendDepthTest::LessEqual && state.depth_write && state.color_write &&
-        state.source_blend == RenderBackendBlendFactor::One && state.destination_blend == RenderBackendBlendFactor::Zero &&
-        state.cull == RenderBackendCullMode::Clockwise && state.alpha_test == RenderBackendAlphaTest::Disabled,
-        "Default W3D draw state must remain opaque, depth-writing and clockwise-culled");
-
-    const ShaderClass::DepthCompareType legacy_depths[] = {
-        ShaderClass::PASS_NEVER, ShaderClass::PASS_LESS, ShaderClass::PASS_EQUAL, ShaderClass::PASS_LEQUAL,
-        ShaderClass::PASS_GREATER, ShaderClass::PASS_NOTEQUAL, ShaderClass::PASS_GEQUAL, ShaderClass::PASS_ALWAYS};
-    const RenderBackendDepthTest depths[] = {
-        RenderBackendDepthTest::Never, RenderBackendDepthTest::Less, RenderBackendDepthTest::Equal, RenderBackendDepthTest::LessEqual,
-        RenderBackendDepthTest::Greater, RenderBackendDepthTest::NotEqual, RenderBackendDepthTest::GreaterEqual, RenderBackendDepthTest::Always};
-    for (unsigned int i = 0; i < 8; ++i) {
-        shader.Set_Depth_Compare(legacy_depths[i]);
-        require(shader.Get_Render_Backend_State(state) && state.depth_test == depths[i], "W3D depth comparison changed");
-    }
-    for (unsigned int write = 0; write < 2; ++write) {
-        shader.Set_Depth_Mask(write ? ShaderClass::DEPTH_WRITE_ENABLE : ShaderClass::DEPTH_WRITE_DISABLE);
-        shader.Set_Color_Mask(write ? ShaderClass::COLOR_WRITE_ENABLE : ShaderClass::COLOR_WRITE_DISABLE);
-        require(shader.Get_Render_Backend_State(state) && state.depth_write == bool(write) && state.color_write == bool(write),
-            "Depth and color write masks must survive material translation");
-    }
-
-    const ShaderClass::SrcBlendFuncType legacy_sources[] = {
-        ShaderClass::SRCBLEND_ZERO, ShaderClass::SRCBLEND_ONE, ShaderClass::SRCBLEND_SRC_ALPHA, ShaderClass::SRCBLEND_ONE_MINUS_SRC_ALPHA};
-    const RenderBackendBlendFactor sources[] = {
-        RenderBackendBlendFactor::Zero, RenderBackendBlendFactor::One, RenderBackendBlendFactor::SourceAlpha, RenderBackendBlendFactor::InverseSourceAlpha};
-    const ShaderClass::DstBlendFuncType legacy_destinations[] = {
-        ShaderClass::DSTBLEND_ZERO, ShaderClass::DSTBLEND_ONE, ShaderClass::DSTBLEND_SRC_COLOR,
-        ShaderClass::DSTBLEND_ONE_MINUS_SRC_COLOR, ShaderClass::DSTBLEND_SRC_ALPHA, ShaderClass::DSTBLEND_ONE_MINUS_SRC_ALPHA};
-    const RenderBackendBlendFactor destinations[] = {
-        RenderBackendBlendFactor::Zero, RenderBackendBlendFactor::One, RenderBackendBlendFactor::SourceColor,
-        RenderBackendBlendFactor::InverseSourceColor, RenderBackendBlendFactor::SourceAlpha, RenderBackendBlendFactor::InverseSourceAlpha};
-    for (unsigned int source = 0; source < 4; ++source) {
-        for (unsigned int destination = 0; destination < 6; ++destination) {
-            shader.Set_Src_Blend_Func(legacy_sources[source]);
-            shader.Set_Dst_Blend_Func(legacy_destinations[destination]);
-            require(shader.Get_Render_Backend_State(state) && state.source_blend == sources[source] &&
-                state.destination_blend == destinations[destination], "W3D blend pair changed");
-        }
-        shader.Set_Alpha_Test(ShaderClass::ALPHATEST_ENABLE);
-        require(shader.Get_Render_Backend_State(state), "Alpha testing must be supported with every W3D source blend");
-        const bool inverse = legacy_sources[source] == ShaderClass::SRCBLEND_ONE_MINUS_SRC_ALPHA;
-        require(state.alpha_test == (inverse ? RenderBackendAlphaTest::LessEqual : RenderBackendAlphaTest::GreaterEqual) &&
-            state.alpha_reference == (inverse ? 159.0f : 96.0f) / 255.0f,
-            "Alpha comparison must retain the inclusive 96/159 thresholds and inverse-source convention");
-        shader.Set_Alpha_Test(ShaderClass::ALPHATEST_DISABLE);
-        require(shader.Get_Render_Backend_State(state) && state.alpha_test == RenderBackendAlphaTest::Disabled,
-            "Disabling alpha testing must clear its prior draw state");
-    }
-
-    shader.Reset();
-    for (bool inverted : {false, true}) {
-        ShaderClass::Invert_Backface_Culling(inverted);
-        shader.Set_Cull_Mode(ShaderClass::CULL_MODE_ENABLE);
-        require(shader.Get_Render_Backend_State(state) && state.cull ==
-            (inverted ? RenderBackendCullMode::CounterClockwise : RenderBackendCullMode::Clockwise),
-            "Global backface inversion must affect subsequent material draws");
-        shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
-        require(shader.Get_Render_Backend_State(state) && state.cull == RenderBackendCullMode::None,
-            "Disabled culling must remain disabled under global inversion");
-    }
-    ShaderClass::Invert_Backface_Culling(false);
-    shader.Reset();
-    shader.Set_Texturing(ShaderClass::TEXTURING_ENABLE);
-    const ShaderClass::PriGradientType gradients[] = {
-        ShaderClass::GRADIENT_DISABLE, ShaderClass::GRADIENT_MODULATE, ShaderClass::GRADIENT_ADD, ShaderClass::GRADIENT_MODULATE2X};
-    const RenderBackendTextureCombine combines[] = {
-        RenderBackendTextureCombine::Replace, RenderBackendTextureCombine::Modulate, RenderBackendTextureCombine::Add, RenderBackendTextureCombine::Modulate2X};
-    for (unsigned int i = 0; i < 4; ++i) {
-        shader.Set_Primary_Gradient(gradients[i]);
-        const unsigned int bits = shader.Get_Bits();
-        require(shader.Get_Render_Backend_State(state) && state.texture_combine == combines[i], "Primary texture combination changed");
-        require(shader.Get_Bits() == bits, "Runtime translation must not modify W3D asset bits");
-        ShaderClass reloaded(bits);
-        require(reloaded.Get_Render_Backend_State(state) && state.texture_combine == combines[i],
-            "Loaded W3D shader bits must produce the same material state");
-    }
-    // Full shader color/alpha equations are verified in the D3D12 pixel tests.
-    for (auto bump : {ShaderClass::GRADIENT_BUMPENVMAP, ShaderClass::GRADIENT_BUMPENVMAPLUMINANCE}) {
-        shader.Set_Primary_Gradient(bump);
-        rejects(shader, "Unmigrated bump behavior must not become a successful RGBA draw");
-    }
-    shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
-    for (auto fog : {ShaderClass::FOG_ENABLE, ShaderClass::FOG_SCALE_FRAGMENT, ShaderClass::FOG_WHITE}) {
-        shader.Set_Fog_Func(fog);
-        rejects(shader, "Unmigrated fog behavior must be explicit");
-    }
-    shader.Set_Fog_Func(ShaderClass::FOG_DISABLE);
-    shader.Set_Secondary_Gradient(ShaderClass::SECONDARY_GRADIENT_ENABLE);
-    rejects(shader, "Unmigrated secondary gradient must be explicit");
-    shader.Set_Secondary_Gradient(ShaderClass::SECONDARY_GRADIENT_DISABLE);
-    for (unsigned int detail = ShaderClass::DETAILCOLOR_DETAIL; detail <= 12; ++detail) {
-        shader.Set_Post_Detail_Color_Func(static_cast<ShaderClass::DetailColorFuncType>(detail));
-        rejects(shader, "Unmigrated second-texture color operation must be explicit");
-    }
-    shader.Set_Post_Detail_Color_Func(ShaderClass::DETAILCOLOR_DISABLE);
-    for (auto detail : {ShaderClass::DETAILALPHA_DETAIL, ShaderClass::DETAILALPHA_SCALE, ShaderClass::DETAILALPHA_INVSCALE}) {
-        shader.Set_Post_Detail_Alpha_Func(detail);
-        rejects(shader, "Unmigrated second-texture alpha operation must be explicit");
-    }
-    shader.Set_Post_Detail_Alpha_Func(ShaderClass::DETAILALPHA_DISABLE);
-    shader.Set_NPatch_Enable(ShaderClass::NPATCH_ENABLE);
-    rejects(shader, "Unmigrated patch tessellation must be explicit");
-    shader.Set_NPatch_Enable(ShaderClass::NPATCH_DISABLE);
-    shader.Set_Dst_Blend_Func(static_cast<ShaderClass::DstBlendFuncType>(6));
-    rejects(shader, "Invalid destination blend asset bits must be rejected");
-    shader.Set_Dst_Blend_Func(ShaderClass::DSTBLEND_ZERO);
-    shader.Set_Primary_Gradient(static_cast<ShaderClass::PriGradientType>(6));
-    rejects(shader, "Invalid primary gradient asset bits must be rejected");
-
+    Test_Depth_And_Blending();
+    Test_Alpha_And_Writes();
+    Test_Culling_And_Primary_Texture();
+    Test_Unsupported_Effects();
+    Test_Fixed_Asset_Value();
     std::cout << "W3D shader material contract: " << (failures ? "FAIL" : "PASS") << '\n';
     return failures ? 1 : 0;
 }

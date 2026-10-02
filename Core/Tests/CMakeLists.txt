@@ -522,6 +522,35 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
         target_link_options(dds_texture_decode_test PRIVATE -Wl,--gc-sections)
         set_target_properties(dds_texture_decode_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
         add_test(NAME dds_texture_decode COMMAND dds_texture_decode_test)
+
+        # Exercise each game's production asset-state translation without
+        # linking the retired device state machine into this CPU-only test.
+        foreach(shader_game IN ITEMS Generals GeneralsMD)
+            if(shader_game STREQUAL "Generals")
+                set(shader_test shader_material_state_generals_test)
+                set(shader_test_name shader_material_state_generals)
+            else()
+                set(shader_test shader_material_state_test)
+                set(shader_test_name shader_material_state)
+            endif()
+            add_executable(${shader_test}
+                ${CMAKE_CURRENT_SOURCE_DIR}/ShaderMaterialStateTest.cpp
+                ${CMAKE_SOURCE_DIR}/${shader_game}/Code/Libraries/Source/WWVegas/WW3D2/shader.cpp
+            )
+            target_include_directories(${shader_test} PRIVATE
+                ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+                ${CMAKE_SOURCE_DIR}/${shader_game}/Code/Libraries/Source/WWVegas
+                ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
+                ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2
+            )
+            target_link_libraries(${shader_test} PRIVATE core_config core_utility_no_pch)
+            target_compile_options(${shader_test} PRIVATE
+                -ffunction-sections -fdata-sections -fno-exceptions -fno-asynchronous-unwind-tables
+                -fno-unwind-tables -fno-jump-tables -include Utility/CppMacros.h)
+            target_link_options(${shader_test} PRIVATE -Wl,--gc-sections)
+            set_target_properties(${shader_test} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
+            add_test(NAME ${shader_test_name} COMMAND ${shader_test})
+        endforeach()
     endif()
     set(RTS_D3D12_PRIMITIVE_SHADER
         "${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl")
