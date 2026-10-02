@@ -13,8 +13,10 @@
 #include "WW3D2/meshdebugger.h"
 #include "WWMath/obbox.h"
 #include "WWDebug/wwdebug.h"
+#include "WWLib/win.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <set>
 #include <vector>
@@ -42,7 +44,11 @@ Vector3 materialColor(VertexMaterialClass::ColorSourceType source,
 // Renderer diagnostic state is never part of asset CRC or deterministic state.
 bool failure(const MeshClass *mesh, const char *reason)
 {
-    WWDEBUG_SAY(("MeshRenderer: cannot draw %s: %s\n", mesh->Get_Name(), reason));
+    char message[1024];
+    std::snprintf(message, sizeof(message), "MeshRenderer: cannot draw %s: %s\n", mesh->Get_Name(), reason);
+    // Keep migration failures observable in the Release executable too.
+    std::fputs(message, stderr);
+    OutputDebugStringA(message);
     return false;
 }
 }
@@ -93,6 +99,45 @@ struct MeshRendererClass::Impl
         tasks.clear();
         for (auto *decal : decals) decal->Release_Ref();
         decals.clear();
+    }
+
+    bool shade(Task &task, VertexMaterialClass *material, const Vector3 &position,
+        const Vector3 &normal, unsigned int diffuse_color, unsigned int specular_color,
+        Vector3 &color, float &alpha)
+    {
+        color = rgb(diffuse_color);
+        alpha = ((diffuse_color >> 24) & 255) / 255.0f;
+        if (material->Get_Lighting() && lighting_enabled) {
+            if (!task.has_lighting) return failure(task.mesh, "global light state without a mesh light environment is not migrated");
+            Vector3 ambient, diffuse, emissive;
+            material->Get_Ambient(&ambient); material->Get_Diffuse(&diffuse); material->Get_Emissive(&emissive);
+            ambient = materialColor(material->Get_Ambient_Color_Source(), ambient, diffuse_color, specular_color);
+            diffuse = materialColor(material->Get_Diffuse_Color_Source(), diffuse, diffuse_color, specular_color);
+            emissive = materialColor(material->Get_Emissive_Color_Source(), emissive, diffuse_color, specular_color);
+            if (!task.pass && task.alpha != 1.0f && task.mesh->Is_Additive()) diffuse.Set(task.alpha, task.alpha, task.alpha);
+            color = multiply(ambient, task.lighting.Get_Equivalent_Ambient()) + emissive * task.emissive;
+            for (int light = 0; light < task.lighting.Get_Light_Count(); ++light) {
+                Vector3 direction = task.lighting.Get_Light_Direction(light);
+                Vector3 illumination = task.lighting.Get_Light_Diffuse(light);
+                float attenuation = 1.0f;
+                if (task.lighting.isPointLight(light)) {
+                    direction = task.lighting.getPointCenter(light) - position;
+                    const float distance = direction.Length();
+                    const float outer = task.lighting.getPointOrad(light);
+                    const float inner = task.lighting.getPointIrad(light);
+                    if (distance > outer || outer <= 0.0f) continue;
+                    const float linear = std::fabs(inner - outer) < 1.0e-5f ? 0.0f : 0.1f / inner;
+                    attenuation = 1.0f / (1.0f + linear * distance + 8.0f * distance * distance / (outer * outer));
+                    direction.Normalize();
+                    illumination = task.lighting.getPointDiffuse(light);
+                    color += multiply(ambient, task.lighting.getPointAmbient(light)) * attenuation;
+                }
+                color += multiply(diffuse, illumination) * (std::max(0.0f, Vector3::Dot_Product(normal, direction)) * attenuation);
+            }
+            alpha = material->Get_Diffuse_Color_Source() == VertexMaterialClass::COLOR1 ? alpha : material->Get_Opacity();
+        }
+        if (task.alpha != 1.0f) alpha = task.alpha;
+        return true;
     }
 
     bool draw(Task &task, int pass_index)
@@ -196,8 +241,10 @@ struct MeshRendererClass::Impl
                 } else if (!shader.Get_Render_Backend_State(batch_state)) {
                     return failure(mesh, "unsupported W3D material shader behavior");
                 }
-                if (force_multiply && batch_state.destination_blend == RenderBackendBlendFactor::Zero)
-                    return failure(mesh, "forced multiply requires destination-color blend support");
+                if (force_multiply && batch_state.destination_blend == RenderBackendBlendFactor::Zero) {
+                    batch_state.source_blend = RenderBackendBlendFactor::DestinationColor;
+                    batch_state.destination_blend = RenderBackendBlendFactor::SourceColor;
+                }
                 if (!task.pass && task.alpha != 1.0f && !mesh->Is_Additive()) {
                     batch_state.source_blend = RenderBackendBlendFactor::SourceAlpha;
                     batch_state.destination_blend = RenderBackendBlendFactor::InverseSourceAlpha;
@@ -255,44 +302,86 @@ struct MeshRendererClass::Impl
                 normal.Normalize();
                 const unsigned int diffuse_color = dcg ? dcg[index] : 0xffffffff;
                 const unsigned int specular_color = dig ? dig[index] : 0xffffffff;
-                Vector3 color = rgb(diffuse_color);
-                float alpha = ((diffuse_color >> 24) & 255) / 255.0f;
-                if (material->Get_Lighting() && lighting_enabled) {
-                    if (!task.has_lighting) return failure(mesh, "global light state without a mesh light environment is not migrated");
-                    Vector3 ambient, diffuse, emissive;
-                    material->Get_Ambient(&ambient); material->Get_Diffuse(&diffuse); material->Get_Emissive(&emissive);
-                    ambient = materialColor(material->Get_Ambient_Color_Source(), ambient, diffuse_color, specular_color);
-                    diffuse = materialColor(material->Get_Diffuse_Color_Source(), diffuse, diffuse_color, specular_color);
-                    emissive = materialColor(material->Get_Emissive_Color_Source(), emissive, diffuse_color, specular_color);
-                    if (!task.pass && task.alpha != 1.0f && mesh->Is_Additive()) diffuse.Set(task.alpha, task.alpha, task.alpha);
-                    color = multiply(ambient, task.lighting.Get_Equivalent_Ambient()) + emissive * task.emissive;
-                    for (int light = 0; light < task.lighting.Get_Light_Count(); ++light) {
-                        Vector3 direction = task.lighting.Get_Light_Direction(light);
-                        Vector3 illumination = task.lighting.Get_Light_Diffuse(light);
-                        float attenuation = 1.0f;
-                        if (task.lighting.isPointLight(light)) {
-                            direction = task.lighting.getPointCenter(light) - position;
-                            const float distance = direction.Length();
-                            const float outer = task.lighting.getPointOrad(light);
-                            const float inner = task.lighting.getPointIrad(light);
-                            if (distance > outer || outer <= 0.0f) continue;
-                            const float linear = std::fabs(inner - outer) < 1.0e-5f ? 0.0f : 0.1f / inner;
-                            attenuation = 1.0f / (1.0f + linear * distance + 8.0f * distance * distance / (outer * outer));
-                            direction.Normalize();
-                            illumination = task.lighting.getPointDiffuse(light);
-                            color += multiply(ambient, task.lighting.getPointAmbient(light)) * attenuation;
-                        }
-                        color += multiply(diffuse, illumination) * (std::max(0.0f, Vector3::Dot_Product(normal, direction)) * attenuation);
-                    }
-                    alpha = material->Get_Diffuse_Color_Source() == VertexMaterialClass::COLOR1 ? alpha : material->Get_Opacity();
-                }
-                if (task.alpha != 1.0f) alpha = task.alpha;
+                Vector3 color;
+                float alpha;
+                if (!shade(task, material, position, normal, diffuse_color, specular_color, color, alpha)) return false;
                 Vector3 camera_position, camera_normal;
                 Matrix3D::Transform_Vector(view, position, &camera_position);
                 camera_normal = view.Rotate_Vector(normal);
                 Vector3 coordinate = mapping.Map_Coordinate(uv ? uv[index] : Vector2(0, 0), camera_position, camera_normal);
                 RenderBackendTexturedVertex vertex = { position.X, position.Y, position.Z,
                     saturate(color.X), saturate(color.Y), saturate(color.Z), saturate(alpha), coordinate.X, coordinate.Y };
+                vertex.q = coordinate.Z;
+                indices.push_back(static_cast<unsigned short>(vertices.size()));
+                vertices.push_back(vertex);
+            }
+        }
+        return flush();
+    }
+
+    bool drawDecalRun(MeshClass *mesh, const Matrix3D &world,
+        const Vector3 *positions, const Vector3 *normals, const Vector2 *uv,
+        unsigned int vertex_count, const TriIndex *polygons, unsigned int polygon_count,
+        TextureClass *texture, VertexMaterialClass *material, ShaderClass shader)
+    {
+        auto *backend = WW3D::Get_Render_Backend();
+        if (!mesh || !camera || !backend || !material || !positions || !normals || !uv || !polygons)
+            return mesh ? failure(mesh, "incomplete mesh-decal submission") : false;
+        if (!polygon_count) return true;
+        Task task(mesh, nullptr, false, 1.0f, 1.0f);
+        RenderBackendMaterialState state;
+        if (!shader.Get_Render_Backend_State(state)) return failure(mesh, "unsupported mesh-decal shader");
+        if (material->Get_Flag(VertexMaterialClass::DEPTH_CUE) ||
+            material->Get_Flag(VertexMaterialClass::DEPTH_CUE_TO_ALPHA) ||
+            material->Get_Flag(VertexMaterialClass::COPY_SPECULAR_TO_DIFFUSE))
+            return failure(mesh, "unsupported mesh-decal vertex-material effect");
+        TextureMapperRenderMapping mapping;
+        if (auto *mapper = material->Peek_Mapper())
+            if (!mapper->Get_Render_Mapping(mapping, *camera)) return failure(mesh, "unsupported mesh-decal mapper");
+        RenderBackendTextureHandle handle;
+        if (shader.Uses_Texture() && texture) {
+            const auto &filter = texture->Get_Filter();
+            if (filter.Get_U_Addr_Mode() != filter.Get_V_Addr_Mode())
+                return failure(mesh, "independent mesh-decal texture address modes");
+            if (filter.Get_Min_Filter() == TextureFilterClass::FILTER_TYPE_FAST ||
+                filter.Get_Mag_Filter() == TextureFilterClass::FILTER_TYPE_FAST)
+                return failure(mesh, "point-filtered mesh-decal sampling");
+            state.clamp_texture = filter.Get_U_Addr_Mode() == TextureFilterClass::TEXTURE_ADDRESS_CLAMP;
+            if (!texture->Ensure_Renderer_Texture()) return failure(mesh, "mesh-decal texture upload failed");
+            handle = texture->Get_Renderer_Texture();
+        }
+        Matrix3D inverse, view;
+        world.Get_Inverse(inverse);
+        camera->Get_Transform().Get_Orthogonal_Inverse(view);
+        std::vector<RenderBackendTexturedVertex> vertices;
+        std::vector<unsigned short> indices;
+        const auto flush = [&]() {
+            if (vertices.empty()) return true;
+            if (!backend->Draw_Indexed_Material_Triangles(vertices.data(),
+                    static_cast<unsigned int>(vertices.size()), indices.data(),
+                    static_cast<unsigned int>(indices.size()), handle, state))
+                return failure(mesh, "D3D12 mesh-decal submission rejected");
+            ++draws;
+            vertices.clear(); indices.clear();
+            return true;
+        };
+        for (unsigned int polygon = 0; polygon < polygon_count; ++polygon) {
+            if (vertices.size() + 3 > 65535 && !flush()) return false;
+            for (int corner = 0; corner < 3; ++corner) {
+                const unsigned int index = polygons[polygon][corner];
+                if (index >= vertex_count) return failure(mesh, "invalid mesh-decal vertex index");
+                Vector3 position;
+                Matrix3D::Transform_Vector(world, positions[index], &position);
+                Vector3 normal = inverse.Inverse_Rotate_Vector(normals[index]);
+                normal.Normalize();
+                Vector3 color;
+                float alpha;
+                if (!shade(task, material, position, normal, 0xffffffff, 0xff000000, color, alpha)) return false;
+                Vector3 camera_position;
+                Matrix3D::Transform_Vector(view, position, &camera_position);
+                const Vector3 coordinate = mapping.Map_Coordinate(uv[index], camera_position, view.Rotate_Vector(normal));
+                RenderBackendTexturedVertex vertex = {position.X, position.Y, position.Z,
+                    saturate(color.X), saturate(color.Y), saturate(color.Z), saturate(alpha), coordinate.X, coordinate.Y};
                 vertex.q = coordinate.Z;
                 indices.push_back(static_cast<unsigned short>(vertices.size()));
                 vertices.push_back(vertex);

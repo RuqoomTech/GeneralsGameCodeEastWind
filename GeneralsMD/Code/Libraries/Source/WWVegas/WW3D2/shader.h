@@ -78,7 +78,6 @@ enum ShaderShiftConstants
 class ShaderClass
 {
 	friend class DX8Wrapper;
-struct RenderBackendMaterialState;
 
 	void	Apply();
 public:

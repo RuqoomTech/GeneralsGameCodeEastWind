@@ -51,6 +51,66 @@ HWND createHiddenWindow(HINSTANCE instance)
         instance,
         nullptr);
 }
+bool verifyProjectedTextureAndMips(IRenderBackend &backend)
+{
+    std::vector<unsigned char> red(4*4*4),green(2*2*4),blue(4);
+    for (unsigned i=0;i<red.size();i+=4) { red[i]=255; red[i+3]=255; }
+    for (unsigned i=0;i<green.size();i+=4) { green[i+1]=255; green[i+3]=255; }
+    blue[2]=blue[3]=255;
+    const RenderBackendTextureMipLevel levels[]={{4,4,16,red.data()},{2,2,8,green.data()},{1,1,4,blue.data()}};
+    const auto mip_texture=backend.Create_Static_RGBA8_Texture(levels,3);
+    const unsigned char edge[]={255,0,0,255,0,255,0,255};
+    const auto projected_texture=backend.Create_Static_RGBA8_Texture(2,1,edge,8);
+    RenderBackendTexturedVertex quad[] = {
+        {-.8f,-.8f,.5f,1,1,1,1,1,.5f,1}, {-.8f,.8f,.5f,1,1,1,1,1,.5f,1},
+        {.8f,.8f,.5f,1,1,1,1,1,1,2}, {.8f,-.8f,.5f,1,1,1,1,1,1,2}};
+    const unsigned short indices[]={0,2,1,0,3,2};
+    RenderBackendMaterialState material;
+    material.clamp_texture=true;
+    material.depth_write=false;
+    backend.Set_Viewport({0,0,640,480,0,1}); backend.Set_View_Projection(Matrix4x4(true));
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    auto capture=[&]() {
+        backend.End_Scene(false);
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        backend.Flip_To_Primary(); return read;
+    };
+    bool ok=mip_texture.Is_Valid() && projected_texture.Is_Valid();
+    backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,projected_texture,material) && ok;
+    const bool projected_read=capture(); ok=projected_read && ok;
+    if (projected_read) {
+        // Interpolate (s,t,q) first, then divide. CPU s/q at the vertices would
+        // produce a different center color for this varying-q fixture.
+        const float q=1.5f+(.5f*(2.f*(320.5f/640.f)-1.f)/.8f);
+        const float weight=2.f/q-.5f;
+        const auto center=(240*640+320)*4;
+        ok=std::abs(int(pixels[center])-int(std::lround(255*(1-weight))))<=2 &&
+            std::abs(int(pixels[center+1])-int(std::lround(255*weight)))<=2 &&
+            pixels[center+2]==0 && pixels[center+3]==255 && ok;
+    }
+    material.clamp_texture=false;
+    for (unsigned minify=0;minify<2;++minify) {
+        for (unsigned i=0;i<4;++i) {
+            quad[i].q=1;
+            quad[i].u=(i>=2 ? 1.f : 0.f)*(minify ? 1024.f : 1.f);
+            quad[i].v=(i==1 || i==2 ? 1.f : 0.f)*(minify ? 1024.f : 1.f);
+        }
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,mip_texture,material) && ok;
+        const bool read=capture(); ok=read && ok;
+        if (read) for (unsigned channel=0;channel<4;++channel)
+            ok=pixels[(240*640+320)*4+channel]==(channel==3 || channel==(minify ? 2u : 0u) ? 255 : 0) && ok;
+    }
+    const RenderBackendTextureMipLevel bad[]={{4,4,16,red.data()},{3,2,12,green.data()}};
+    ok=!backend.Create_Static_RGBA8_Texture(bad,2).Is_Valid() &&
+        !backend.Create_Static_RGBA8_Texture(levels,0).Is_Valid() && ok;
+    backend.Release_Texture(mip_texture); backend.Release_Texture(projected_texture);
+    if (!ok) std::cerr << "Projected texture or authored mip sampling failed.\n";
+    return ok;
+}
+
 bool verifySceneTextureLoading(IRenderBackend &backend)
 {
     const unsigned char red[] = {255,0,0,255}, green[] = {0,255,0,255}, blue[] = {0,0,255,255};
@@ -654,7 +714,8 @@ int main()
         std::cerr << "D3D12 backend smoke failed: camera transform or screen-space isolation is incorrect.\n";
         return 15;
     }
-    if (!verifySceneTextureLoading(*backend) || !verifyMaterials(*backend) || !verifyDecals(*backend)) {
+    if (!verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
+        !verifyMaterials(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

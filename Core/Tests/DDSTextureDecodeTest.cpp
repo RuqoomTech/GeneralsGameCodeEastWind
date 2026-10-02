@@ -5,10 +5,100 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <vector>
 
 static_assert(sizeof(LegacyDDSURFACEDESC2) == 124);
 static_assert(offsetof(LegacyDDSURFACEDESC2, PixelFormat) == 72);
 static_assert(offsetof(LegacyDDSURFACEDESC2, Caps) == 104);
+
+static bool Test_Authored_DDS_Mips()
+{
+    const auto path = std::filesystem::temp_directory_path() /
+        ("evolution-dds-mips-" + std::to_string(GetCurrentProcessId()) + ".dds");
+    struct RemoveFixture {
+        std::filesystem::path path;
+        ~RemoveFixture() { std::error_code error; std::filesystem::remove(path, error); }
+    } cleanup{path};
+    LegacyDDSURFACEDESC2 header{};
+    header.Size = 124; header.Width = 8; header.Height = 4; header.MipMapCount = 4;
+    header.PixelFormat.Size = 32;
+    header.PixelFormat.FourCC = unsigned('D') | (unsigned('X')<<8) | (unsigned('T')<<16) | (unsigned('1')<<24);
+    std::vector<unsigned char> payload;
+    const unsigned short colors[] = {0xf800, 0x001f, 0x07e0, 0xffff};
+    for (unsigned level = 0; level < 4; ++level) {
+        const unsigned blocks = level == 0 ? 2 : 1;
+        for (unsigned block = 0; block < blocks; ++block) {
+            const std::size_t offset = payload.size(); payload.resize(offset+8, 0);
+            payload[offset] = static_cast<unsigned char>(colors[level]);
+            payload[offset+1] = static_cast<unsigned char>(colors[level]>>8);
+        }
+    }
+    const auto write = [&]() {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output.write("DDS ", 4);
+        output.write(reinterpret_cast<const char *>(&header), sizeof(header));
+        output.write(reinterpret_cast<const char *>(payload.data()), payload.size());
+        return bool(output);
+    };
+    if (!write()) return false;
+    const auto name = path.string();
+    DDSFileClass authored(name.c_str(), 0, true);
+    bool ok = authored.Get_Mip_Level_Count() == 4 && authored.Load();
+    const unsigned expected[][4] = {{255,0,0,255},{0,0,255,255},{0,255,0,255},{255,255,255,255}};
+    for (unsigned level = 0; level < 4 && ok; ++level) {
+        const unsigned width = 8>>level ? 8>>level : 1;
+        const unsigned height = 4>>level ? 4>>level : 1;
+        std::vector<unsigned char> pixels(static_cast<std::size_t>(width)*height*4);
+        ok = authored.Copy_Level_RGBA8(level, pixels.data(), width*4) && ok;
+        for (std::size_t offset = 0; offset < pixels.size(); ++offset)
+            ok = pixels[offset] == expected[level][offset%4] && ok;
+    }
+    DDSFileClass reduced(name.c_str(), 3, true);
+    std::array<unsigned char, 4> last{};
+    ok = reduced.Get_Mip_Level_Count() == 1 && reduced.Load() &&
+        reduced.Copy_Level_RGBA8(0, last.data(), 4) && last == std::array<unsigned char,4>{255,255,255,255} && ok;
+    DDSFileClass archival(name.c_str(), 0);
+    ok = archival.Get_Mip_Level_Count() == 2 && ok;
+    std::array<unsigned char, 4> invalid{};
+    ok = !authored.Copy_Level_RGBA8(4, invalid.data(), 4) &&
+        !authored.Copy_Level_RGBA8(0, invalid.data(), 4) && ok;
+
+    // A malformed chain or truncated final authored level must not be accepted.
+    header.MipMapCount = 5;
+    if (!write()) return false;
+    DDSFileClass overdeclared(name.c_str(), 0, true);
+    ok = overdeclared.Get_Mip_Level_Count() == 0 && !overdeclared.Load() && ok;
+    header.MipMapCount = 4; payload.pop_back();
+    if (!write()) return false;
+    DDSFileClass truncated(name.c_str(), 0, true);
+    ok = !truncated.Load() && ok;
+    payload.push_back(0);
+    for (const unsigned caps : {0x200u, 0x200000u}) {
+        header.Caps.Caps2 = caps;
+        if (!write()) return false;
+        DDSFileClass unsupported(name.c_str(), 0, true);
+        ok = unsupported.Get_Mip_Level_Count() == 0 && !unsupported.Load() && ok;
+    }
+    // Partial 4x4 blocks must clip to 3x5 pixels and preserve destination row padding.
+    header.Caps.Caps2 = 0; header.Width = 3; header.Height = 5; header.MipMapCount = 1;
+    payload.resize(16, 0);
+    payload[0] = 0; payload[1] = 0xf8; payload[8] = 0x1f; payload[9] = 0;
+    if (!write()) return false;
+    DDSFileClass odd(name.c_str(), 0, true);
+    std::array<unsigned char, 80> clipped;
+    clipped.fill(0xab);
+    ok = odd.Load() && odd.Copy_Level_RGBA8(0, clipped.data(), 16) && ok;
+    for (unsigned y = 0; y < 5; ++y) {
+        for (unsigned x = 0; x < 3; ++x)
+            for (unsigned channel = 0; channel < 4; ++channel)
+                ok = clipped[y*16+x*4+channel] == expected[y == 4 ? 1 : 0][channel] && ok;
+        for (unsigned channel = 12; channel < 16; ++channel) ok = clipped[y*16+channel] == 0xab && ok;
+    }
+    return ok;
+}
 
 int main()
 {
@@ -17,7 +107,8 @@ int main()
     // Red/blue endpoints with each of the four color codes in every row.
     block[1] = 0xf8; block[2] = 0x1f;
     for (unsigned i = 4; i < 8; ++i) block[i] = 0xe4;
-    bool ok = BitmapHandlerClass::Decode_DXT_Block_RGBA8(WW3D_FORMAT_DXT1, block.data(), pixels.data());
+    bool ok = Test_Authored_DDS_Mips();
+    ok = BitmapHandlerClass::Decode_DXT_Block_RGBA8(WW3D_FORMAT_DXT1, block.data(), pixels.data()) && ok;
     const unsigned expected[4][4] = {{255,0,0,255},{0,0,255,255},{170,0,85,255},{85,0,170,255}};
     for (unsigned i = 0; i < 16; ++i)
         for (unsigned channel = 0; channel < 4; ++channel)
@@ -58,7 +149,41 @@ int main()
     ok = !BitmapHandlerClass::Decode_DXT_Block_RGBA8(WW3D_FORMAT_UNKNOWN, block.data(), pixels.data()) &&
          !BitmapHandlerClass::Decode_DXT_Block_RGBA8(WW3D_FORMAT_DXT1, nullptr, pixels.data()) &&
          !BitmapHandlerClass::Decode_DXT_Block_RGBA8(WW3D_FORMAT_DXT1, block.data(), nullptr) && pixels == retained && ok;
+    // CPU mip generation must honor row pitches and remain in bounds for one-axis/odd images.
+    std::array<unsigned char, 40> tall{};
+    for (unsigned row = 0; row < 5; ++row) {
+        tall[row*8] = static_cast<unsigned char>(row*20+3);
+        tall[row*8+1] = static_cast<unsigned char>(row*12+2);
+        tall[row*8+2] = static_cast<unsigned char>(row*4+1);
+        tall[row*8+3] = 255;
+    }
+    std::array<unsigned char, 16> tall_mip;
+    tall_mip.fill(0xab);
+    BitmapHandlerClass::Create_Mipmap(tall_mip.data(), 8, WW3D_FORMAT_A8R8G8B8,
+        tall.data(), 8, WW3D_FORMAT_A8R8G8B8, 1, 5);
+    const unsigned expected_mip[2][4] = {{10,6,2,252},{50,30,10,252}};
+    for (unsigned row = 0; row < 2; ++row) {
+        for (unsigned channel = 0; channel < 4; ++channel)
+            ok = tall_mip[row*8+channel] == expected_mip[row][channel] && ok;
+        for (unsigned channel = 4; channel < 8; ++channel)
+            ok = tall_mip[row*8+channel] == 0xab && ok;
+    }
+    std::array<unsigned char, 20> wide{};
+    for (unsigned col = 0; col < 5; ++col)
+        for (unsigned channel = 0; channel < 4; ++channel) wide[col*4+channel] = tall[col*8+channel];
+    std::array<unsigned char, 12> wide_mip;
+    wide_mip.fill(0xab);
+    BitmapHandlerClass::Create_Mipmap(wide_mip.data(), 12, WW3D_FORMAT_A8R8G8B8,
+        wide.data(), 20, WW3D_FORMAT_A8R8G8B8, 5, 1);
+    for (unsigned col = 0; col < 2; ++col)
+        for (unsigned channel = 0; channel < 4; ++channel)
+            ok = wide_mip[col*4+channel] == expected_mip[col][channel] && ok;
+    for (unsigned channel = 8; channel < 12; ++channel) ok = wide_mip[channel] == 0xab && ok;
+    std::array<unsigned char, 4> last_mip{};
+    BitmapHandlerClass::Create_Mipmap(last_mip.data(), 4, WW3D_FORMAT_A8R8G8B8,
+        wide_mip.data(), 12, WW3D_FORMAT_A8R8G8B8, 2, 1);
+    ok = last_mip[0] == 28 && last_mip[1] == 16 && last_mip[2] == 4 && last_mip[3] == 252 && ok;
     if (!ok) { std::cerr << "DDS fixed-width header or BC1/2/3 decoding failed.\n"; return 1; }
-    std::cout << "DDS header and DXT1-5 RGBA decoding passed.\n";
+    std::cout << "DDS header, DXT1-5 RGBA decoding, and CPU mip generation passed.\n";
     return 0;
 }

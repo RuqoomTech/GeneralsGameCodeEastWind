@@ -136,6 +136,7 @@ TextureBaseClass::~TextureBaseClass()
 
 RenderBackendTextureHandle TextureBaseClass::Get_Renderer_Texture() const
 {
+	LastAccessed = WW3D::Get_Sync_Time();
 	IRenderBackend *backend = WW3D::Get_Render_Backend();
 	return backend != nullptr && RendererOwner == backend && backend->Is_Texture_Valid(RendererTexture)
 		? RendererTexture : RenderBackendTextureHandle{};
@@ -157,6 +158,9 @@ bool TextureClass::Ensure_Renderer_Texture()
 	if (Get_Renderer_Texture().Is_Valid()) return true;
 	IRenderBackend *backend = WW3D::Get_Render_Backend();
 	if (backend == nullptr || !TextureLoader::Is_Render_Thread() || Get_Texture_Name().Is_Empty()) return false;
+	// Signed bump data needs its actual caller/shader migration; it is not a color image.
+	if (TextureFormat == WW3D_FORMAT_U8V8 || TextureFormat == WW3D_FORMAT_L6V5U5 ||
+		TextureFormat == WW3D_FORMAT_X8L8V8U8) return false;
 	std::vector<TextureLoader::RGBA8MipLevel> images;
 	const bool missing = !TextureLoader::Load_RGBA8_Mip_Chain(Get_Full_Path(), MipLevelCount,
 		IsReducible, IsCompressionAllowed, HSVShift, images);
@@ -746,21 +750,10 @@ TextureClass::TextureClass
 	case WW3D_FORMAT_U8V8:		// Bumpmap
 	case WW3D_FORMAT_L6V5U5:	// Bumpmap
 	case WW3D_FORMAT_X8L8V8U8:	// Bumpmap
-		// If requesting bumpmap format that isn't available we'll just return the surface in whatever color
-		// format the texture file is in. (This is illegal case, the format support should always be queried
-		// before creating a bump texture!)
-		if (!DX8Wrapper::Is_Initted() || !DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(TextureFormat))
-		{
-			TextureFormat=WW3D_FORMAT_UNKNOWN;
-		}
-		// If bump format is valid, make sure compression is not allowed so that we don't even attempt to load
-		// from a compressed file (quality isn't good enough for bump map). Also disable mipmapping.
-		else
-		{
-			IsCompressionAllowed=false;
-			MipLevelCount=MIP_LEVELS_1;
-			Filter.Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
-		}
+		// Retain the signed format so an unported bump caller cannot become a color texture.
+		IsCompressionAllowed=false;
+		MipLevelCount=MIP_LEVELS_1;
+		Filter.Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
 		break;
 	default:	break;
 	}
@@ -1267,15 +1260,9 @@ TextureClass* Load_Texture(ChunkLoadClass & cload)
 
 				case W3DTEXTURE_TYPE_BUMPMAP:
 				{
-					if (DX8Wrapper::Is_Initted() && DX8Wrapper::Get_Current_Caps()->Support_Bump_Envmap())
-					{
-						// No mipmaps to bumpmap for now
-						mipcount=MIP_LEVELS_1;
-
-						if (DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(WW3D_FORMAT_U8V8)) format=WW3D_FORMAT_U8V8;
-						else if (DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(WW3D_FORMAT_X8L8V8U8)) format=WW3D_FORMAT_X8L8V8U8;
-						else if (DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(WW3D_FORMAT_L6V5U5)) format=WW3D_FORMAT_L6V5U5;
-					}
+					// Preserve the W3D bump request; signed resource conversion migrates with its shader.
+					mipcount=MIP_LEVELS_1;
+					format=WW3D_FORMAT_U8V8;
 					break;
 				}
 

@@ -499,8 +499,15 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     if(MINGW)
         add_executable(dds_texture_decode_test
             ${CMAKE_CURRENT_SOURCE_DIR}/DDSTextureDecodeTest.cpp
+            ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/ddsfile.cpp
+            ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/formconv.cpp
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/bitmaphandler.cpp
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3dformat.cpp
+            ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/ffactory.cpp
+            ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/bufffile.cpp
+            ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/rawfile.cpp
+            ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/wwstring.cpp
+            ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/mutex.cpp
         )
         target_include_directories(dds_texture_decode_test PRIVATE
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
