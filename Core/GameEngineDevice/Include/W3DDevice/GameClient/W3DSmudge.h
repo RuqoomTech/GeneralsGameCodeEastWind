@@ -22,13 +22,13 @@
 
 #include "GameClient/Smudge.h"
 #include "WWLib/sharebuf.h"
+#include <vector>
 
 class SmudgeGroupClass;	//forward reference.
 class Vector3;
 class Vector4;
 class TextureClass;
 class RenderInfoClass;
-class DX8IndexBufferClass;
 
 //#define USE_COPY_RECTS	1	//this was the old method that didn't render to texture. Just copied backbuffer into texture. Slow on Nvidia.
 
@@ -56,7 +56,9 @@ private:
 	ShareBufferClass<float> *m_sizeBuffer;			///< array of particle sizes
 
 	TextureClass *m_backgroundTexture;
-	DX8IndexBufferClass	*m_indexBuffer;
+	// D3D12: smudge quads are CPU vectors submitted via Draw_Indexed_Material_Triangles.
+	// The legacy DX8 index buffer is replaced by a CPU index list rebuilt per batch.
+	std::vector<unsigned short> m_smudgeIndices;
 	Int m_backBufferWidth;
 	Int m_backBufferHeight;
 };

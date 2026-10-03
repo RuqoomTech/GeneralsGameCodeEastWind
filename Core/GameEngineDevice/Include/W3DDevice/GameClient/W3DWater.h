@@ -29,14 +29,14 @@
 #include "WWLib/always.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
 #include "WW3D2/light.h"
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
 #include "Common/Snapshot.h"
+#include <vector>
 
 #define INVALID_WATER_HEIGHT 0.0f	///water height guaranteed to be below all terrain.
 
@@ -125,7 +125,9 @@ public:
 	void replaceSkyboxTexture(const AsciiString& oldTexName, const AsciiString& newTextName);
 
 protected:
-	DX8IndexBufferClass			*m_indexBuffer;	///<indices defining quad
+	// D3D12: quad indices for flat/river water live on the CPU and are submitted
+	// via Draw_Indexed_Material_Triangles. Replaces DX8IndexBufferClass.
+	std::vector<unsigned short> m_quadIndices;	///<indices defining quad
 	SceneClass							*m_parentScene;	///<scene to be reflected
 	ShaderClass m_shaderClass; ///<shader or rendering state for heightmap
 	VertexMaterialClass	  		*m_vertexMaterialClass;	///<vertex lighting material
@@ -148,6 +150,13 @@ protected:
 
 	//Data used in GeForce3 bump-mapped water (uses direct D3D resources for better
 	//performance and compatibility (most of these featues are not supported by W3D).
+	// D3D12: bump/mirror/sky use material state + 256px reflection RT via
+	// Create_Render_Texture/Set_Render_Texture/Copy_Texture. U8V8 bump uploads
+	// become RGBA8 neutral uploads. Inline .pso/.vso asm stays as reference but
+	// the active path uses material state; pixel-shader constants (c0 river
+	// REFLECTION_FACTOR, wave sway) have no backend equivalent yet, so the CPU
+	// computation is preserved and base geometry is submitted with the closest
+	// material (no fake perturb/mirror).
 	struct SEA_PATCH_VERTEX	//vertex structure passed to D3D
 	{
 		float x,y,z;
@@ -155,16 +164,17 @@ protected:
 		float tu, tv;
 	};
 
-	LPDIRECT3DDEVICE8 m_pDev;						///<pointer to D3D Device
-	LPDIRECT3DVERTEXBUFFER8 m_vertexBufferD3D;		///<D3D vertex buffer
-	LPDIRECT3DINDEXBUFFER8	m_indexBufferD3D;	///<D3D index buffer
-	Int						m_vertexBufferD3DOffset;	///<location to start writing vertices
-	DWORD					m_dwWavePixelShader;	///<handle to D3D pixel shader
-	DWORD					m_dwWaveVertexShader;	///<handle to D3D vertex shader
-	Int	m_numVertices;				///<number of vertices in D3D vertex buffer
-	Int m_numIndices;				///<number of indices in D3D index buffer
-	LPDIRECT3DTEXTURE8 m_pBumpTexture[NUM_BUMP_FRAMES]; ///<animation frames
-	LPDIRECT3DTEXTURE8 m_pBumpTexture2[NUM_BUMP_FRAMES]; ///<animation frames
+	// Renderer-neutral water resources. Null backend handles mean "not allocated".
+	std::vector<RenderBackendTexturedVertex> m_patchVertices;	///<CPU patch grid (replaces D3D VB).
+	std::vector<unsigned short> m_patchIndices;	///<CPU patch indices (replaces D3D IB).
+	std::vector<unsigned char> m_bumpNeutralRGBA;	///<RGBA8 neutral bump upload (replaces U8V8).
+	unsigned int m_bumpNeutralWidth;	///<width of neutral bump image.
+	unsigned int m_bumpNeutralHeight;	///<height of neutral bump image.
+	RenderBackendTextureHandle m_bumpNeutralTexture;	///<uploaded neutral bump texture.
+	unsigned int m_wavePixelShader;	///<retired D3D pixel-shader handle (reference only, always 0).
+	unsigned int m_waveVertexShader;	///<retired D3D vertex-shader handle (reference only, always 0).
+	Int	m_numVertices;				///<number of vertices in CPU patch grid
+	Int m_numIndices;				///<number of indices in CPU patch grid
 	Real				m_fBumpFrame;	///<current animation frame
 	Real				m_fBumpScale;	///<scales bump map uv perturbation
 	TextureClass * m_pReflectionTexture;	///<render target for reflection
@@ -207,9 +217,9 @@ protected:
 	TextureClass *m_riverTexture;
 	TextureClass *m_whiteTexture;		///< a texture containing only white used for null pixel shader stages.
 	TextureClass *m_waterNoiseTexture;
-	DWORD	m_waterPixelShader;		///<D3D handle to pixel shader.
-	DWORD	m_riverWaterPixelShader;		///<D3D handle to pixel shader.
-	DWORD	m_trapezoidWaterPixelShader;	///<handle to D3D vertex shader
+	unsigned int m_waterPixelShader;		///<retired D3D pixel-shader handle (reference only, always 0).
+	unsigned int m_riverWaterPixelShader;		///<retired D3D pixel-shader handle (reference only, always 0).
+	unsigned int m_trapezoidWaterPixelShader;	///<retired D3D pixel-shader handle (reference only, always 0).
 	TextureClass *m_waterSparklesTexture;
 	Real m_riverXOffset;
 	Real m_riverYOffset;
@@ -225,12 +235,12 @@ protected:
 		TextureClass	*waterTexture;
 		Int				waterRepeatCount;
 		Real			skyTexelsPerUnit;	//texel density of sky plane (higher value repeats texture more).
-		DWORD			vertex00Diffuse;
-		DWORD			vertex10Diffuse;
-		DWORD			vertex11Diffuse;
-		DWORD			vertex01Diffuse;
-		DWORD			waterDiffuse;
-		DWORD			transparentWaterDiffuse;
+		UnsignedInt			vertex00Diffuse;
+		UnsignedInt			vertex10Diffuse;
+		UnsignedInt			vertex11Diffuse;
+		UnsignedInt			vertex01Diffuse;
+		UnsignedInt			waterDiffuse;
+		UnsignedInt			transparentWaterDiffuse;
 		Real			uScrollPerMs;
 		Real			vScrollPerMs;
 	};
@@ -243,7 +253,8 @@ protected:
 	void testCurvedWater();	///<draw the sky layer (clouds, stars, etc.)
 	void renderSkyBody(Matrix3D *mat);	///<draw the sky body (sun, moon, etc.)
 	void renderWaterMesh();			///<draw the water surface mesh (deformed 3d mesh).
-	HRESULT initBumpMap(LPDIRECT3DTEXTURE8 *pTex, TextureClass *pBumpSource);	///<copies data into bump-map format.
+	// D3D12: bump source is uploaded as RGBA8 neutral; U8V8 no longer exists.
+	HRESULT initBumpMap(TextureClass *pBumpSource);	///<copies data into neutral RGBA8 upload.
 	void renderMirror(CameraClass *cam);	///< Draw reflected scene into texture
 	void drawSea(RenderInfoClass & rinfo);	///< Draw the surface of the water
 	///bounding box of frustum clipped polygon plane

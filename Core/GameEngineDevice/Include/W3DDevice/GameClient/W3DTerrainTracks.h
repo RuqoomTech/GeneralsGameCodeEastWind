@@ -27,11 +27,11 @@
 #include "WWLib/always.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
+#include "WW3D2/IRenderBackend.h"
 #include "Lib/BaseType.h"
+#include <vector>
 
 #define MAX_TRACK_EDGE_COUNT	100	//maximum number of edges or divisions in track mark
 #define MAX_TRACK_OPAQUE_EDGE	25	//linear fade of edges will begin at this edge
@@ -132,9 +132,12 @@ public:
 	void unbindTrack( TerrainTracksRenderObjClass *mod );	///<releases control of track object
 
 protected:
-	DX8VertexBufferClass		*m_vertexBuffer;	///<vertex buffer used to draw all tracks
-	DX8IndexBufferClass			*m_indexBuffer;	///<indices defining triangles in maximum length track
-	VertexMaterialClass	  	  *m_vertexMaterialClass;	///< vertex lighting material
+	// D3D12 migration: CPU staging vectors replace DX8VertexBufferClass/DX8IndexBufferClass.
+	// Index pattern and draw order match the legacy static index buffer; flush()
+	// submits one backend batch per track module to replace Set_Index_Buffer_Index_Offset.
+	std::vector<RenderBackendTexturedVertex> m_trackVertices;	///<CPU staging for all track verts
+	std::vector<UnsignedShort> m_trackIndices;	///<CPU staging for track indices (fixed-width)
+	VertexMaterialClass	  	  *m_vertexMaterialClass;	///< vertex lighting material (lifetime only; colors are baked into vertices)
 	ShaderClass m_shaderClass; ///<shader or rendering state for heightmap
 
 	TerrainTracksRenderObjClass *m_usedModules;	///<active objects being rendered in the scene

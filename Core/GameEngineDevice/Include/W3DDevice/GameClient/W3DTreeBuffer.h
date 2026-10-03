@@ -51,14 +51,14 @@
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
 #include "WW3D2/texture.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
 #include "Common/AsciiString.h"
 #include "Common/GlobalData.h"
+#include <vector>
 
 //-----------------------------------------------------------------------------
 //           Forward References
@@ -220,10 +220,19 @@ private:
 				MAX_BUFFERS = 1,
 				SORT_ITERATIONS_PER_FRAME=10};
 	enum {PARTITION_WIDTH_HEIGHT = 100};
-	DX8VertexBufferClass	*m_vertexTree[MAX_BUFFERS];	///<Tree vertex buffer.
-	DX8IndexBufferClass			*m_indexTree[MAX_BUFFERS];	///<indices defining a triangles for the tree drawing.
-	DWORD					m_dwTreePixelShader;	///<handle to D3D pixel shader
-	DWORD					m_dwTreeVertexShader;	///<handle to D3D vertex shader
+	// D3D12: XYZNDUV1 static + XYZNDUV2 dynamic batches are CPU vectors submitted
+	// via Draw_Indexed_Material_Triangles with SC_ALPHA_DETAIL. Sway constants
+	// (Trees.vso/pso c4/c8/c9/c32-33) have no backend equivalent yet; the CPU
+	// sway/topple/push-aside computation is preserved and documented in the .cpp.
+	// The legacy DX8 vertex/index buffers and D3D shader handles are retired.
+	struct TreeCpuBatch
+	{
+		std::vector<RenderBackendTexturedVertex> vertices;
+		std::vector<unsigned short> indices;
+	};
+	TreeCpuBatch m_treeBatch[MAX_BUFFERS];	///<CPU batches replacing DX8 buffers.
+	unsigned int m_treePixelShader;	///<retired D3D pixel-shader handle (kept for reference, always 0).
+	unsigned int m_treeVertexShader;	///<retired D3D vertex-shader handle (kept for reference, always 0).
 
 	Short		m_areaPartition[PARTITION_WIDTH_HEIGHT*PARTITION_WIDTH_HEIGHT];
 	Region2D m_bounds;

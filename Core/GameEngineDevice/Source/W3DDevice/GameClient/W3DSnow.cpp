@@ -17,31 +17,45 @@
 */
 
 // FILE: W3DSnow.h /////////////////////////////////////////////////////////
+// D3D12 migration (x64-only, WW3D -> IRenderBackend -> D3D12Backend):
+// - Removed d3d8/dx8wrapper includes and D3D point-vertex buffer management.
+// - The backend exposes no point-list/point-sprite path, so ALL snow (including
+//   the former hardware point-sprite path) is submitted as indexed triangles
+//   (quads). Positions/colors from the CPU simulation are preserved; the
+//   point-sprite size attenuation (POINTSIZE/POINTSCALE) has no backend
+//   equivalent and is documented here rather than faked. Quad size comes from
+//   m_quadSize exactly as the legacy quad fallback did.
+// - View-aligned billboarding is preserved by building offsets in view space
+//   and inverse-transforming back to world space for backend submission
+//   (backend draws are world-space; the legacy VIEW-identity trick is retired).
 
 #include "W3DDevice/GameClient/W3DSnow.h"
 #include "W3DDevice/GameClient/HeightMap.h"
 #include "GameClient/View.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/rinfo.h"
 #include "WW3D2/camera.h"
 #include "WW3D2/assetmgr.h"
+#include "WW3D2/texture.h"
+#include "WW3D2/shader.h"
 
-
-
-#define D3DFVF_POINTVERTEX (D3DFVF_XYZ)
-#define SNOW_BUFFER_SIZE 4096	//size of vertex buffer holding particles.
-#define SNOW_BATCH_SIZE	2048	//we render at most this many particles per drawprimitive call.  This number * 6 must be less than 65536 to fit into index buffer.
-
-struct POINTVERTEX
-{
-    Vector3 v;	//center of particle.
-};
+#define SNOW_BUFFER_SIZE 4096	//retained as batch-size reference (CPU batches, not a D3D VB).
+#define SNOW_BATCH_SIZE	2048	//we render at most this many particles per material draw. This number * 4 must fit in 16-bit indices.
 
 W3DSnowManager::W3DSnowManager()
 {
-	m_indexBuffer=nullptr;
 	m_snowTexture=nullptr;
-	m_VertexBufferD3D=nullptr;
+	m_snowIndices.clear();
+	m_snowPoints.clear();
+	m_dwBase = 0;
+	m_dwFlush = SNOW_BATCH_SIZE;
+	m_dwDiscard = SNOW_BUFFER_SIZE;
+	m_leafDim = 45;
+	m_totalRendered = 0;
+	m_snowCeiling = 0.0f;
+	m_heightTraveled = 0.0f;
+	m_cullOverscan = 0.0f;
 }
 
 W3DSnowManager::~W3DSnowManager()
@@ -55,20 +69,15 @@ void W3DSnowManager::init()
 	ReAcquireResources();
 }
 
-/** Releases all W3D/D3D assets before a reset.. */
+/** Releases all renderer-neutral assets. */
 void W3DSnowManager::ReleaseResources()
 {
 	REF_PTR_RELEASE(m_snowTexture);
-
-	if (m_VertexBufferD3D)
-		m_VertexBufferD3D->Release();
-
-	m_VertexBufferD3D=nullptr;
-
-	REF_PTR_RELEASE(m_indexBuffer);
+	m_snowIndices.clear();
+	m_snowPoints.clear();
 }
 
-/** (Re)allocates all W3D/D3D assets after a reset.. */
+/** (Re)allocates all renderer-neutral assets. */
 Bool W3DSnowManager::ReAcquireResources()
 {
 	ReleaseResources();
@@ -76,61 +85,14 @@ Bool W3DSnowManager::ReAcquireResources()
 	if (!TheWeatherSetting->m_snowEnabled)
 		return TRUE;	//no need for resources if snow is disabled.
 
-	if (TheWeatherSetting->m_usePointSprites && DX8Wrapper::Get_Current_Caps()->Support_PointSprites())
-	{
-		LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
-
-		DEBUG_ASSERTCRASH(m_pDev, ("Trying to ReAcquireResources on W3DSnowManager without device"));
-
-		if (m_VertexBufferD3D == nullptr)
-		{	// Create vertex buffer
-
-			if (FAILED(m_pDev->CreateVertexBuffer
-			(
-				SNOW_BUFFER_SIZE*sizeof(POINTVERTEX),
-				D3DUSAGE_WRITEONLY|D3DUSAGE_DYNAMIC|D3DUSAGE_POINTS,
-				D3DFVF_POINTVERTEX,
-				D3DPOOL_DEFAULT,
-				&m_VertexBufferD3D
-			)))
-				return FALSE;
-		}
-	}
-	else
-	{
-		m_indexBuffer=NEW_REF(DX8IndexBufferClass,(SNOW_BATCH_SIZE *6));	//allocate 2 triangles per flake, each with 3 indices.
-
-		// Fill up the IB with static vertex indices that will be used for all smudges.
-		{
-			DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBuffer);
-			UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
-			//quad of 4 triangles:
-			//	0-----3
-			//  |\   /|
-			//  |  X  |
-			//	|/   \|
-			//  1-----2
-			Int vbCount=0;
-			for (Int i=0; i<SNOW_BATCH_SIZE; i++)
-			{
-				//Top
-				ib[0]=vbCount+3;
-				ib[1]=vbCount;
-				ib[2]=vbCount+2;
-				//Bottom
-				ib[3]=vbCount+2;
-				ib[4]=vbCount;
-				ib[5]=vbCount+1;
-
-				vbCount += 4;
-				ib+=6;
-			}
-		}
-	}
+	// CPU batches replace both the D3D point-vertex buffer and the DX8 index
+	// buffer. Reserve one batch worth; renderAsQuads resizes per batch.
+	m_snowIndices.reserve(static_cast<size_t>(SNOW_BATCH_SIZE) * 6);
+	m_snowPoints.reserve(static_cast<size_t>(SNOW_BATCH_SIZE));
 
 	m_snowTexture = WW3DAssetManager::Get_Instance()->Get_Texture(TheWeatherSetting->m_snowTexture.str());
 
-	m_dwBase = SNOW_BUFFER_SIZE;
+	m_dwBase = 0;
 	m_dwDiscard = SNOW_BUFFER_SIZE;
 	m_dwFlush = SNOW_BATCH_SIZE;
 
@@ -166,9 +128,6 @@ void W3DSnowManager::update()
 #define MAXIMUM_CAMERA_DISTANCE 100000	//maximum distance of camera position from world origin.
 #define ISPOW2(x)  (x && (x & (x-1)) == 0)	//is a number a power of 2?
 #define MODPOW2(x,y) ((x) & (y-1))		//mod '%' operator for powers of 2.
-
-// Helper function to stuff a FLOAT into a DWORD argument
-inline DWORD FtoDW( FLOAT f ) { return *((DWORD*)&f); }
 
 /*Recursively subdivide the large snow box enclosing the camera until we reach some predefined leaf size.  This
 method is used so that very few off-screen particles end up getting rendered.  Culling them individually would
@@ -241,83 +200,11 @@ void W3DSnowManager::renderSubBox(RenderInfoClass &rinfo, Int originX, Int origi
 		return;
 	}
 
-	//Box too small to subdivide so render it.
-
-	//Find total number of particles that need rendering.
-	Int totalPart=(cubeDimY-originY)*(cubeDimX-originX);
-
-	if (!totalPart)
-		return;	//nothing to render.
-
-	Int y=originY;	//loop counter.
-	Int cubeOriginXRemainder = originX;	//loop counter - adjusted when not all particles fit into render buffer.
-	Vector3 snowCenter;
-
-	m_totalRendered += totalPart;
-
-	while (totalPart)
-	{
-		Int batchSize=totalPart;
-
-		if (batchSize > m_dwFlush)
-			batchSize = m_dwFlush;
-
-		if((m_dwBase + batchSize) > m_dwDiscard)
-			m_dwBase = 0;
-
-		POINTVERTEX* verts;
-
-		if(m_VertexBufferD3D->Lock(m_dwBase * sizeof(POINTVERTEX), batchSize * sizeof(POINTVERTEX),
-			(unsigned char **) &verts, m_dwBase ? D3DLOCK_NOOVERWRITE : D3DLOCK_DISCARD) != D3D_OK )
-			return;	//couldn't lock buffer.
-
-		Int numberInBatch=0;
-
-		for (;y<cubeDimY; y++)
-		{
-			for (Int x=cubeOriginXRemainder; x<cubeDimX; x++)
-			{
-				if (numberInBatch >= batchSize)
-				{	cubeOriginXRemainder = x;
-					goto flush_particles;
-				}
-
-				//Get initial height from noise table.  We add a large value to make sure it's positive.  Then
-				//modulate by table dimensions to find a value.
-				Int noiseOffset=MODPOW2(x+MAXIMUM_CAMERA_DISTANCE,SNOW_NOISE_X)+MODPOW2(y+MAXIMUM_CAMERA_DISTANCE,SNOW_NOISE_Y)*SNOW_NOISE_X;
-				if (noiseOffset > (SNOW_NOISE_X * SNOW_NOISE_Y))
-					noiseOffset = 0;	//this should never happen but check to prevent buffer over/under flow.
-
-				//find current height
-				Real h0=m_snowCeiling-fmod(m_heightTraveled+m_startingHeights[noiseOffset],m_boxDimensions);
-
-				//find world-space position of snow flake
-				snowCenter.Set(x*m_emitterSpacing,y*m_emitterSpacing,h0);
-
-				//Adjust position so snow flakes don't fall straight down.
-				snowCenter.X += m_amplitude * WWMath::Fast_Sin( h0 * m_frequencyScaleX + (Real)x);
-				snowCenter.Y += m_amplitude * WWMath::Fast_Sin( h0 * m_frequencyScaleY + (Real)y);
-
-				*(Vector3 *)verts=snowCenter;
-				verts++;
-
-				numberInBatch++;
-			}
-			//getting here means we did not overflow the render buffer, so reset x origin to normal.
-			cubeOriginXRemainder = originX;	//reset to normal amount
-		}
-
-flush_particles:
-		m_VertexBufferD3D->Unlock();
-		//Render any particles that may be queued up.
-		if (numberInBatch)
-		{
-			Debug_Statistics::Record_Rendered_Polys_And_Vertices(numberInBatch*2,numberInBatch*4,ShaderClass::_PresetOpaqueShader);
-			DX8Wrapper::_Get_D3D_Device8()->DrawPrimitive( D3DPT_POINTLIST, m_dwBase, numberInBatch);
-			totalPart -= numberInBatch;
-			m_dwBase += numberInBatch;
-		}
-	}
+	//Box too small to subdivide so render it as quads.
+	// GAP (documented): the legacy D3DPT_POINTLIST path with point-sprite size
+	// attenuation no longer exists. Leaf boxes are forwarded to the quad path
+	// which preserves flake positions/colors with m_quadSize quads.
+	renderAsQuads(rinfo, originX, originY, cubeDimX, cubeDimY);
 }
 
 void W3DSnowManager::render(RenderInfoClass &rinfo)
@@ -325,12 +212,11 @@ void W3DSnowManager::render(RenderInfoClass &rinfo)
 	if (!TheWeatherSetting->m_snowEnabled || !m_isVisible)
 		return;
 
-	Int usePointSprites = DX8Wrapper::Get_Current_Caps()->Support_PointSprites() && TheWeatherSetting->m_usePointSprites;
+	// D3D12: point-sprite capability no longer exists; always use quads.
+	// m_usePointSprites is preserved for INI compatibility but ignored.
 
 	//make sure the noise table is powers of 2 in dimensions.
 	WWASSERT(ISPOW2(SNOW_NOISE_X) && ISPOW2(SNOW_NOISE_Y));
-
-	//CameraClass &camera=rinfo.Camera;
 
 	const Coord3D &cPos=TheTacticalView->get3DCameraPosition();
 	Vector3 camPos(cPos.x,cPos.y,cPos.z);
@@ -348,14 +234,17 @@ void W3DSnowManager::render(RenderInfoClass &rinfo)
 	Int cubeDimX=cubeCenterX + mumEmittersInHalf;		//bottom/right extents.
 	Int cubeDimY=cubeCenterY + mumEmittersInHalf;
 
- 	const FrustumClass & frustum = rinfo.Camera.Get_Frustum();
+  	const FrustumClass & frustum = rinfo.Camera.Get_Frustum();
 	AABoxClass bbox;
 
 	//Get a bounding box around our visible universe.  Bounded by terrain and the sky
 	//so much tighter fitting volume than what's actually visible.  This will cull
 	//particles falling under the ground.
 
- 	TheTerrainRenderObject->getMaximumVisibleBox(frustum, &bbox, TRUE);
+	if (TheTerrainRenderObject != nullptr)
+		TheTerrainRenderObject->getMaximumVisibleBox(frustum, &bbox, TRUE);
+	else
+		return; // Boot/menu has no terrain; snow requires a terrain box. Null-checked.
 
 	//Particles move outside the visible box as a result of local sine movement
 	//so adjust bounding box to include them.
@@ -391,47 +280,11 @@ void W3DSnowManager::render(RenderInfoClass &rinfo)
 	Real cameraOffset = fmod (camPos.Z,m_boxDimensions);
 	m_heightTraveled=m_time*m_velocity+cameraOffset;	//height that snow flake traveled this frame.
 
-	Matrix4x4 identity(true);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,identity);
-
-	DX8Wrapper::Set_Shader(ShaderClass::_PresetAlphaShader);
-
-	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
-	REF_PTR_RELEASE(vmat);
-
 	//make sure we have all the resources we need
-	if (usePointSprites && !m_VertexBufferD3D)
+	if (m_snowTexture == nullptr)
 		ReAcquireResources();
-
-	if (!usePointSprites && !m_indexBuffer)
-		ReAcquireResources();
-
-	DX8Wrapper::Set_Texture(0,m_snowTexture);
-
-	if (!usePointSprites)
-	{
-		renderAsQuads(rinfo,cubeOriginX,cubeOriginY,cubeDimX,cubeDimY);
+	if (m_snowTexture == nullptr)
 		return;
-	}
-
-	Vector3 snowCenter;
-
-	DX8Wrapper::Apply_Render_State_Changes();
-
-    // Set the render states for using point sprites
-	DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSPRITEENABLE, TRUE );
-    DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSCALEENABLE,  TRUE );
-    DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSIZE,     FtoDW(m_pointSize) );
-    DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSIZE_MIN, FtoDW(m_minPointSize) );
-    DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSIZE_MAX, FtoDW(m_maxPointSize) );
-    DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSCALE_A,  FtoDW(0.00f) );
-    DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSCALE_B,  FtoDW(0.00f) );
-    DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSCALE_C,  FtoDW(1.00f) );
-
-	DX8Wrapper::_Get_D3D_Device8()->SetStreamSource( 0, m_VertexBufferD3D, sizeof(POINTVERTEX) );
-    DX8Wrapper::_Get_D3D_Device8()->SetVertexShader( D3DFVF_POINTVERTEX );
-	m_dwBase = SNOW_BUFFER_SIZE;	//start with a new vertex buffer each frame.
 
 	m_leafDim = 45;	//cull boxes that are 20x20 emitters in size. Making them much smaller will result in too many draw calls.
 	m_totalRendered = 0;	//keep track of how many particles were rendered.
@@ -440,26 +293,17 @@ void W3DSnowManager::render(RenderInfoClass &rinfo)
 	//Enlarge culling bounds to compensate.
 	m_cullOverscan = m_amplitude+m_quadSize;
 	renderSubBox(rinfo,cubeOriginX,cubeOriginY,cubeDimX,cubeDimY);
-
-	// Reset render states
-    DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSPRITEENABLE, FALSE );
-    DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSCALEENABLE,  FALSE );
-
 }
 
-/**For hardware that doesn't support point sprites*/
+/**Quad path: the only snow submission path on D3D12. Preserves the legacy
+view-space flake math, then inverse-transforms to world space for the backend.*/
 void W3DSnowManager::renderAsQuads(RenderInfoClass &rinfo, Int cubeOriginX, Int cubeOriginY, Int cubeDimX, Int cubeDimY)
 {
-
-	Matrix4x4 proj;
-	Matrix3D view;
-	Vector3 snowCenter;
-	Vector3 snowCenterVS;
-
 	CameraClass &camera=rinfo.Camera;
 
+	Matrix3D view;
+	Matrix3D camTransform = camera.Get_Transform();
 	camera.Get_View_Matrix(&view);
-	camera.Get_Projection_Matrix(&proj);
 
 	Vector3 vertex_offsets[4] = {
 		Vector3(-0.5f, 0.5f, 0.0f),
@@ -475,17 +319,29 @@ void W3DSnowManager::renderAsQuads(RenderInfoClass &rinfo, Int cubeOriginX, Int 
 		Vector2(1.0f, 0.0f)
 	};
 
-
 	//pre-multiple the offsets by particle size
 	for (Int i=0; i<4; i++)
 	{
 		vertex_offsets[i] *= m_quadSize;
 	}
 
-	Matrix4x4 identity(true);
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,identity);
-
-	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr)
+		return;
+	ShaderClass snowShader = ShaderClass::_PresetAlphaShader;
+	RenderBackendMaterialState material;
+	if (!snowShader.Get_Render_Backend_State(material))
+		return;
+	if (m_snowTexture != nullptr) {
+		const TextureFilterClass &filter = m_snowTexture->Get_Filter();
+		if (!filter.Get_Render_Sampler(material.sampler))
+			return;
+		material.clamp_texture = filter.Get_U_Addr_Mode() == TextureFilterClass::TEXTURE_ADDRESS_CLAMP;
+		if (!m_snowTexture->Ensure_Renderer_Texture())
+			return;
+	}
+	const RenderBackendTextureHandle snowHandle =
+		(m_snowTexture != nullptr) ? m_snowTexture->Get_Renderer_Texture() : RenderBackendTextureHandle();
 
 	Int y=cubeOriginY;	//loop counter.
 	Int cubeOriginXRemainder = cubeOriginX;	//loop counter - adjusted when not all particles fit into render buffer.
@@ -495,6 +351,11 @@ void W3DSnowManager::renderAsQuads(RenderInfoClass &rinfo, Int cubeOriginX, Int 
 
 	m_totalRendered += totalPart;
 
+	std::vector<RenderBackendTexturedVertex> vertices;
+	std::vector<unsigned short> indices;
+	vertices.reserve(static_cast<size_t>(SNOW_BATCH_SIZE) * 4);
+	indices.reserve(static_cast<size_t>(SNOW_BATCH_SIZE) * 6);
+
 	while (totalPart)
 	{
 		Int batchSize=totalPart;
@@ -503,68 +364,73 @@ void W3DSnowManager::renderAsQuads(RenderInfoClass &rinfo, Int cubeOriginX, Int 
 			batchSize = SNOW_BATCH_SIZE;
 
 		Int numberInBatch=0;
+		vertices.clear();
+		indices.clear();
 
-		DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,batchSize*4);	//allocate 4 verts per flake
+		for (;y<cubeDimY; y++)
 		{
-			DynamicVBAccessClass::WriteLockClass lock(&vb_access);
-			VertexFormatXYZNDUV2* verts=lock.Get_Formatted_Vertex_Array();
-
-			for (;y<cubeDimY; y++)
+			for (Int x=cubeOriginXRemainder; x<cubeDimX; x++)
 			{
-				for (Int x=cubeOriginXRemainder; x<cubeDimX; x++)
-				{
-					if (numberInBatch >= batchSize)
-					{	cubeOriginXRemainder = x;
-						goto flush_particles;
-					}
-
-					//Get initial height from noise table.  We add a large value to make sure it's positive.  Then
-					//modulate by table dimensions to find a value.
-					Int noiseOffset=MODPOW2(x+MAXIMUM_CAMERA_DISTANCE,SNOW_NOISE_X)+MODPOW2(y+MAXIMUM_CAMERA_DISTANCE,SNOW_NOISE_Y)*SNOW_NOISE_X;
-					if (noiseOffset > (SNOW_NOISE_X * SNOW_NOISE_Y))
-						noiseOffset = 0;	//this should never happen but check to prevent buffer over/under flow.
-
-					//find current height
-					Real h0=m_snowCeiling-fmod(m_heightTraveled+m_startingHeights[noiseOffset],m_boxDimensions);
-
-					//find world-space position of snow flake
-					snowCenter.Set(x*m_emitterSpacing,y*m_emitterSpacing,h0);
-
-					//Get view-space position
-					Matrix3D::Transform_Vector(view,snowCenter,&snowCenterVS);
-
-					//Adjust position so snow flakes don't fall straight down.
-					snowCenterVS.X += m_amplitude * WWMath::Fast_Sin( h0 * m_frequencyScaleX + (Real)x);
-					snowCenterVS.Y += m_amplitude * WWMath::Fast_Sin( h0 * m_frequencyScaleY + (Real)y);
-
-					for (Int i=0; i<4; i++)
-					{
-						*(Vector3 *)verts=snowCenterVS + vertex_offsets[i];
-						verts->nx=0;	//keep AGP write-combining active
-						verts->ny=0;
-						verts->nz=0;
-						verts->diffuse=0xffffffff;	//set to opaque
-						verts->u1=quad_uvs[i].X;
-						verts->v1=quad_uvs[i].Y;
-						verts->u2=0;	//keep AGP write-combining active
-						verts->v2=0;
-						verts++;
-					}
-
-					numberInBatch++;
+				if (numberInBatch >= batchSize)
+				{	cubeOriginXRemainder = x;
+					goto flush_particles;
 				}
-				//getting here means we did not overflow the render buffer, so reset x origin to normal.
-				cubeOriginXRemainder = cubeOriginX;	//reset to normal amount
-			}
-flush_particles:
-			numberInBatch;	//need something at goto destination - stupid c compiler.
-		}
 
+				//Get initial height from noise table.  We add a large value to make sure it's positive.  Then
+				//modulate by table dimensions to find a value.
+				Int noiseOffset=MODPOW2(x+MAXIMUM_CAMERA_DISTANCE,SNOW_NOISE_X)+MODPOW2(y+MAXIMUM_CAMERA_DISTANCE,SNOW_NOISE_Y)*SNOW_NOISE_X;
+				if (noiseOffset > (SNOW_NOISE_X * SNOW_NOISE_Y))
+					noiseOffset = 0;	//this should never happen but check to prevent buffer over/under flow.
+
+				//find current height
+				Real h0=m_snowCeiling-fmod(m_heightTraveled+m_startingHeights[noiseOffset],m_boxDimensions);
+
+				//find world-space position of snow flake
+				Vector3 snowCenter(x*m_emitterSpacing,y*m_emitterSpacing,h0);
+
+				//Get view-space position (preserved legacy math).
+				Vector3 snowCenterVS;
+				Matrix3D::Transform_Vector(view,snowCenter,&snowCenterVS);
+
+				//Adjust position so snow flakes don't fall straight down.
+				snowCenterVS.X += m_amplitude * WWMath::Fast_Sin( h0 * m_frequencyScaleX + (Real)x);
+				snowCenterVS.Y += m_amplitude * WWMath::Fast_Sin( h0 * m_frequencyScaleY + (Real)y);
+
+				const unsigned short base = static_cast<unsigned short>(vertices.size());
+				for (Int i=0; i<4; i++)
+				{
+					// Build the billboard corner in view space, then return to
+					// world space for the backend (world-space draws only).
+					Vector3 cornerVS = snowCenterVS + vertex_offsets[i];
+					Vector3 cornerWS;
+					Matrix3D::Transform_Vector(camTransform, cornerVS, &cornerWS);
+					RenderBackendTexturedVertex v;
+					v.x = cornerWS.X; v.y = cornerWS.Y; v.z = cornerWS.Z;
+					v.r = 1.0f; v.g = 1.0f; v.b = 1.0f; v.a = 1.0f;
+					v.u = quad_uvs[i].X; v.v = quad_uvs[i].Y; v.q = 1.0f;
+					vertices.push_back(v);
+				}
+				indices.push_back(base + 3);
+				indices.push_back(base + 0);
+				indices.push_back(base + 2);
+				indices.push_back(base + 2);
+				indices.push_back(base + 0);
+				indices.push_back(base + 1);
+
+				numberInBatch++;
+			}
+			//getting here means we did not overflow the render buffer, so reset x origin to normal.
+			cubeOriginXRemainder = cubeOriginX;	//reset to normal amount
+		}
+flush_particles:
+		;
 		//Render any particles that may be queued up.
 		if (numberInBatch)
 		{
-			DX8Wrapper::Set_Vertex_Buffer(vb_access);
-			DX8Wrapper::Draw_Triangles(	0,numberInBatch*2, 0, numberInBatch*4);
+			backend->Draw_Indexed_Material_Triangles(vertices.data(),
+				static_cast<unsigned int>(vertices.size()),
+				indices.data(), static_cast<unsigned int>(indices.size()),
+				snowHandle, material);
 			totalPart -= numberInBatch;
 		}
 	}

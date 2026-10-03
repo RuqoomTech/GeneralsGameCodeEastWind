@@ -21,11 +21,11 @@
 #pragma once
 
 #include "GameClient/Snow.h"
+#include "WWMath/vector3.h"
+#include <vector>
 
-class DX8IndexBufferClass;
 class RenderInfoClass;
 class TextureClass;
-struct IDirect3DVertexBuffer8;
 
 class W3DSnowManager : public SnowManager
 {
@@ -46,9 +46,12 @@ class W3DSnowManager : public SnowManager
 	Bool	ReAcquireResources();
 
  private:
-	DX8IndexBufferClass	*m_indexBuffer;
+	// D3D12: no backend point-list exists, so snow (including former point-sprites)
+	// is submitted as indexed triangles (quads). CPU vectors preserve positions/colors.
+	// The legacy DX8 index buffer and D3D point-vertex buffer are replaced by these.
+	std::vector<unsigned short> m_snowIndices;
 	TextureClass *m_snowTexture;
-	IDirect3DVertexBuffer8*  m_VertexBufferD3D;
+	std::vector<Vector3> m_snowPoints;
 	Int m_dwBase;	///<index to beginning of unused vertex buffer space.
     Int m_dwFlush;	///<maximum amount of vertices to sumbit before rendering.
 	Int m_dwDiscard;	///<maximum index allowed before needing to discard the buffer.

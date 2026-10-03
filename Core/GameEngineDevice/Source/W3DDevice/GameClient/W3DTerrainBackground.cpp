@@ -54,9 +54,19 @@
 #include "GameClient/View.h"
 #include "W3DDevice/GameClient/TerrainTex.h"
 #include "W3DDevice/GameClient/HeightMap.h"
-#include "WW3D2/dx8wrapper.h"
-#include "WW3D2/meshrenderer.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/camera.h"
+#include <vector>
+
+// D3D12 migration notes (W3DTerrainBackground):
+// - CPU tessellation/UV/static-lighting gen is unchanged.
+// - Buffers are CPU vectors; drawVisiblePolys() converts to
+//   RenderBackendTexturedVertex and submits via Draw_Indexed_Material_Triangles.
+// - 4X/2X/1X selection is preserved but submitted as a single-texture material
+//   draw. Dual-UV/second-stage detail is not submitted (no multitexture PSO).
+// - Cloud/noise-only passes call drawVisiblePolys(disableTextures=TRUE); those
+//   are skipped here to avoid re-drawing base geometry (documented gap).
 
 
 //-----------------------------------------------------------------------------
@@ -117,113 +127,6 @@ void W3DTerrainBackground::doPartialUpdate(const IRegion2D &partialRange, WorldH
 		return;
 	}
 	doTesselatedUpdate(partialRange, htMap, doTextures);
-
-	return;
-
-	Int requiredVertexSize = (m_width+1) * (m_width+1) + 6;
-	if (m_vertexTerrainSize<requiredVertexSize || m_vertexTerrain==nullptr) {
-		m_vertexTerrainSize = requiredVertexSize;
-		REF_PTR_RELEASE(m_vertexTerrain);
-		REF_PTR_RELEASE(m_indexTerrain);
-		m_vertexTerrain=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,m_vertexTerrainSize+4,DX8VertexBufferClass::USAGE_DEFAULT));
-	}
-
-	Int requiredIndexSize = (m_width+1) * (m_width+1) + 6;
-	if (m_indexTerrainSize<requiredIndexSize || m_indexTerrain==nullptr) {
-		m_indexTerrainSize = requiredIndexSize;
-		REF_PTR_RELEASE(m_indexTerrain);
-		m_indexTerrain=NEW_REF(DX8IndexBufferClass,(m_indexTerrainSize+4,DX8IndexBufferClass::USAGE_DEFAULT));
-	}
-	Int minX = m_xOrigin;
-	Int minY = m_yOrigin;
-	Int maxX = m_xOrigin + m_width;
-	Int maxY = m_yOrigin + m_width;
-	Int limitX = m_map->getXExtent()-1;
-	Int limitY = m_map->getYExtent()-1;
-	if (maxX>limitX) maxX = limitX;
-	if (maxY>limitY) maxY = limitY;
-
-	if (partialRange.lo.x > maxX) return;
-	if (partialRange.lo.y > maxY) return;
-	if (partialRange.hi.x < minX) return;
-	if (partialRange.hi.y < minY) return;
-
-	m_curNumTerrainVertices = 0;
-	//m_curNumTerrainIndices = 0;
-	VertexFormatXYZDUV2 *vb;
-	UnsignedShort *ib;
-	// Lock the buffer.
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexTerrain);
-	vb=(VertexFormatXYZDUV2*)lockVtxBuffer.Get_Vertex_Array();
-	// Add to the vertex buffer.
-
-	VertexFormatXYZDUV2 *curVb = vb;
-	MinMaxAABoxClass bounds;
-	bounds.Init_Empty();
-
-	Int i, j;
-	for (j=minY; j<=maxY; j+=STEP) {
-		for (i=minX; i<=maxX; i+=STEP) {
-			if (m_curNumTerrainVertices >= m_vertexTerrainSize) return;
-			curVb->diffuse = (0<<24)|TheTerrainRenderObject->getStaticDiffuse(i,j);
-			Vector3 pos;
-			pos.Z = ((float)m_map->getHeight(i,j)*MAP_HEIGHT_SCALE);
-			pos.X = (i)*MAP_XY_FACTOR - m_map->getBorderSizeInline()*MAP_XY_FACTOR;
-			pos.Y = (j)*MAP_XY_FACTOR - m_map->getBorderSizeInline()*MAP_XY_FACTOR;
-			curVb->u1 = (float)(i-minX)/(float)(m_width);
-			curVb->v1 = 1.0f - (float)(j-minY)/(float)(m_width);
-			curVb->x = pos.X;
-			curVb->y = pos.Y;
-			curVb->z = pos.Z;
-			curVb++;
-			m_curNumTerrainVertices++;
-			bounds.Add_Point(pos);
-		}
-	}
-	m_bounds.Init(bounds);
-
-	if (m_terrainTexture == nullptr || doTextures) {
-		REF_PTR_RELEASE(m_terrainTexture);
-		REF_PTR_RELEASE(m_terrainTexture2X);
-		REF_PTR_RELEASE(m_terrainTexture4X);
-		m_terrainTexture = m_map->getFlatTexture(m_xOrigin, m_yOrigin, m_width, PIXELS_PER_GRID);
-		//	DEBUG ONLY. jba. m_terrainTexture =  (TerrainTextureClass *)NEW_REF(TextureClass, ("TBBib.tga"));
-		m_terrainTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
-		m_terrainTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
-	}
-
-	if (m_curNumTerrainIndices == 0) {
-		// Only do the index buffer if it has never been done.  Index values don't change. jba.
-		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexTerrain);
-		ib = lockIdxBuffer.Get_Index_Array();
-		UnsignedShort *curIb = ib;
-		Int yOffset = ((maxX - minX)/STEP+1);
-		Int width = yOffset;
-		Int height = (maxY - minY)/STEP;
-		*curIb++ = width-1;
-		m_curNumTerrainIndices++;
-		for (j=0; j<height; j++) {
-			*curIb++ = j*yOffset + yOffset + width-1;
-			m_curNumTerrainIndices++;
-			for (i=width-2; i>=0; i--) {
-				if (m_curNumTerrainIndices+2 > m_indexTerrainSize) return;
-				*curIb++ = j*yOffset + i;
-				*curIb++ = j*yOffset + i+yOffset;
-				m_curNumTerrainIndices+=2;
-			}
-			j++;
-			if (j<height) {
-				*curIb++ = j*yOffset + yOffset;
-				m_curNumTerrainIndices++;
-				for (i=1; i<width; i++) {
-					if (m_curNumTerrainIndices+2 > m_indexTerrainSize) return;
-					*curIb++ = j*yOffset + i;
-					*curIb++ = j*yOffset + i+yOffset;
-					m_curNumTerrainIndices+=2;
-				}
-			}
-		}
-	}
 }
 
 //=============================================================================
@@ -503,38 +406,34 @@ void W3DTerrainBackground::doTesselatedUpdate(const IRegion2D &partialRange, Wor
 		}
 	}
 
-	if (m_vertexTerrainSize<requiredVertex || m_vertexTerrain==nullptr) {
-		m_vertexTerrainSize = requiredVertex;
-		REF_PTR_RELEASE(m_vertexTerrain);
-		m_vertexTerrain=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV2,m_vertexTerrainSize+4,DX8VertexBufferClass::USAGE_DEFAULT));
-	}
+	// D3D12: CPU staging vectors replace DX8 buffers. Tessellation/UV math unchanged.
+	m_terrainVertices.clear();
+	m_terrainVertices.reserve((size_t)requiredVertex + 4);
 
 	m_curNumTerrainVertices = 0;
-	VertexFormatXYZDUV2 *vb;
-	// Lock the buffer.
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexTerrain);
-	vb=(VertexFormatXYZDUV2*)lockVtxBuffer.Get_Vertex_Array();
-	VertexFormatXYZDUV2 *curVb = vb;
-	// Add to the vertex buffer.
+	// Add to the CPU vertex staging.
 	for (j=minY; j<=maxY; j++) {
 		for (i=minX; i<=maxX; i++) {
 			if (m_map->getFlipState(i, j)) {
-				curVb->diffuse = (0<<24)|TheTerrainRenderObject->getStaticDiffuse(i,j);
+				VertexFormatXYZDUV2 v;
+				v.diffuse = (0<<24)|TheTerrainRenderObject->getStaticDiffuse(i,j);
 				Vector3 pos;
 				Int k = i<limitX?i:limitX;
 				Int l = j<limitY?j:limitY;
 				pos.Z = ((float)m_map->getHeight(k,l)*MAP_HEIGHT_SCALE);
 				pos.X = (i)*MAP_XY_FACTOR - m_map->getBorderSizeInline()*MAP_XY_FACTOR;
 				pos.Y = (j)*MAP_XY_FACTOR - m_map->getBorderSizeInline()*MAP_XY_FACTOR;
-				curVb->u1 = (float)(i-minX)/(float)(m_width);
-				curVb->v1 = 1.0f - (float)(j-minY)/(float)(m_width);
-				curVb->x = pos.X;
-				curVb->y = pos.Y;
-				curVb->z = pos.Z;
-				curVb++;
+				v.u1 = (float)(i-minX)/(float)(m_width);
+				v.v1 = 1.0f - (float)(j-minY)/(float)(m_width);
+				v.u2 = v.u1;
+				v.v2 = v.v1;
+				v.x = pos.X;
+				v.y = pos.Y;
+				v.z = pos.Z;
+				m_terrainVertices.push_back(v);
 				Int ndxNdx = i-minX + (m_width+1)*(j-minY);
 				DEBUG_ASSERTCRASH(ndxNdx<count, ("Bad ndxNdx"));
-				ndx[ndxNdx] = m_curNumTerrainVertices;
+				ndx[ndxNdx] = (UnsignedShort)m_curNumTerrainVertices;
 				m_curNumTerrainVertices++;
 			}
 		}
@@ -544,18 +443,12 @@ void W3DTerrainBackground::doTesselatedUpdate(const IRegion2D &partialRange, Wor
 
 	fillVBRecursive(nullptr, 0, 0, m_width, ndx, requiredIndex);
 
-	if (m_indexTerrainSize<requiredIndex || m_indexTerrain==nullptr) {
-		m_indexTerrainSize = requiredIndex;
-		REF_PTR_RELEASE(m_indexTerrain);
-		m_indexTerrain=NEW_REF(DX8IndexBufferClass,(m_indexTerrainSize+4,DX8IndexBufferClass::USAGE_DEFAULT));
-	}
+	m_terrainIndices.resize((size_t)requiredIndex + 4);
 
 	m_curNumTerrainIndices = 0;
 
-	UnsignedShort *ib;
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexTerrain);
-	ib = lockIdxBuffer.Get_Index_Array();
-	fillVBRecursive(ib, 0, 0, m_width, ndx, m_curNumTerrainIndices);
+	fillVBRecursive(m_terrainIndices.data(), 0, 0, m_width, ndx, m_curNumTerrainIndices);
+	m_terrainIndices.resize((size_t)m_curNumTerrainIndices);
 	delete[] ndx;
 	ndx = nullptr;
 
@@ -611,16 +504,19 @@ W3DTerrainBackground::~W3DTerrainBackground()
 for the bibs. */
 //=============================================================================
 W3DTerrainBackground::W3DTerrainBackground():
-m_vertexTerrain(nullptr),
-m_vertexTerrainSize(0),
 m_initialized(FALSE),
-m_indexTerrain(nullptr),
-m_indexTerrainSize(0),
 m_terrainTexture(nullptr),
 m_terrainTexture2X(nullptr),
 m_terrainTexture4X(nullptr),
 m_cullStatus(CULL_STATUS_UNKNOWN),
-m_texMultiplier(TEX1X)
+m_texMultiplier(TEX1X),
+m_curNumTerrainVertices(0),
+m_curNumTerrainIndices(0),
+m_xOrigin(0),
+m_yOrigin(0),
+m_width(0),
+m_map(nullptr),
+m_anythingChanged(false)
 {
 }
 
@@ -631,8 +527,8 @@ m_texMultiplier(TEX1X)
 //=============================================================================
 void W3DTerrainBackground::freeTerrainBuffers()
 {
-	REF_PTR_RELEASE(m_vertexTerrain);
-	REF_PTR_RELEASE(m_indexTerrain);
+	m_terrainVertices.clear();
+	m_terrainIndices.clear();
 	m_curNumTerrainVertices=0;
 	m_curNumTerrainIndices=0;
 	m_initialized = false;
@@ -755,47 +651,125 @@ void W3DTerrainBackground::updateTexture()
 //=============================================================================
 void W3DTerrainBackground::drawVisiblePolys(RenderInfoClass & rinfo, Bool disableTextures)
 {
-#if 1
 	if (m_curNumTerrainIndices == 0) {
 		return;
 	}
 	if (m_cullStatus==CULL_STATUS_INVISIBLE) {
 		return;
 	}
-	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Index_Buffer(m_indexTerrain,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexTerrain);
-  if (!disableTextures) {
-		if (m_terrainTexture4X) {
-			DX8Wrapper::Set_Texture(1, m_terrainTexture4X);
-		}	else if (m_terrainTexture2X) {
-			DX8Wrapper::Set_Texture(1, m_terrainTexture2X);
-		}	else {
-			DX8Wrapper::Set_Texture(1, m_terrainTexture);
-		}
-	}
-	DX8Wrapper::Draw_Triangles(	0, m_curNumTerrainIndices/3, 0,	m_curNumTerrainVertices);
-#else
-	if (m_curNumTerrainIndices == 0) {
+	if (m_terrainVertices.empty() || m_terrainIndices.empty()) {
 		return;
 	}
-	if (m_cullStatus==CULL_STATUS_INVISIBLE) {
+	// Cloud/noise-only passes (pass>0 in FlatHeightMap) call with disableTextures=TRUE.
+	// Those second stages have no backend PSO; skip to avoid re-drawing base geometry.
+	if (disableTextures) {
 		return;
 	}
-	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Index_Buffer(m_indexTerrain,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexTerrain);
-  if (!disableTextures) {
-		if (m_terrainTexture4X) {
-			DX8Wrapper::Set_Texture(0, m_terrainTexture4X);
-		}	else if (m_terrainTexture2X) {
-			DX8Wrapper::Set_Texture(0, m_terrainTexture2X);
-		}	else {
-			DX8Wrapper::Set_Texture(0, m_terrainTexture);
+	// Preserve 4X/2X/1X selection, submitted as a single-texture material draw.
+	TerrainTextureClass *selected = m_terrainTexture;
+	if (m_terrainTexture4X) {
+		selected = m_terrainTexture4X;
+	} else if (m_terrainTexture2X) {
+		selected = m_terrainTexture2X;
+	}
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr) {
+		return;
+	}
+	RenderBackendMaterialState state;
+	if (!detailShader.Get_Render_Backend_State(state)) {
+		return;
+	}
+	// depth_test LessEqual + depth_write true come from detailShader (SC_DETAIL).
+	RenderBackendTextureHandle handle;
+	if (selected != nullptr) {
+		RenderBackendMaterialState batch = state;
+		if (!selected->Get_Filter().Get_Render_Sampler(batch.sampler)) {
+			return;
+		}
+		batch.clamp_texture = false;
+		if (!selected->Ensure_Renderer_Texture()) {
+			return;
+		}
+		handle = selected->Get_Renderer_Texture();
+		state = batch;
+	}
+	// Convert CPU verts (diffuse ARGB + base UV) to backend verts; second UV (u2/v2)
+	// is preserved in gen but not submitted (single-texture PSO).
+	std::vector<RenderBackendTexturedVertex> vertices;
+	vertices.reserve(m_terrainVertices.size());
+	for (size_t i = 0; i < m_terrainVertices.size(); ++i) {
+		const VertexFormatXYZDUV2 &src = m_terrainVertices[i];
+		RenderBackendTexturedVertex dst;
+		dst.x = src.x; dst.y = src.y; dst.z = src.z;
+		dst.r = ((src.diffuse >> 16) & 255) / 255.0f;
+		dst.g = ((src.diffuse >> 8) & 255) / 255.0f;
+		dst.b = (src.diffuse & 255) / 255.0f;
+		dst.a = ((src.diffuse >> 24) & 255) / 255.0f;
+		dst.u = src.u1; dst.v = src.v1; dst.q = 1.0f;
+		vertices.push_back(dst);
+	}
+	// 65535 split (meshrenderer flush pattern): remap indices per chunk.
+	const unsigned short *srcIndices = m_terrainIndices.data();
+	const size_t indexCount = m_terrainIndices.size();
+	size_t cursor = 0;
+	std::vector<unsigned short> chunkIndices;
+	chunkIndices.reserve(60000);
+	std::vector<RenderBackendTexturedVertex> chunkVerts;
+	chunkVerts.reserve(65535);
+	std::vector<int> remap;
+	while (cursor < indexCount) {
+		chunkVerts.clear();
+		chunkIndices.clear();
+		remap.assign(vertices.size(), -1);
+		size_t chunkStart = cursor;
+		// Grow chunk until vertex or index budget would overflow.
+		while (cursor < indexCount) {
+			// Peek next triangle (indices are triangle list).
+			size_t triEnd = cursor + 3;
+			if (triEnd > indexCount) {
+				triEnd = indexCount;
+			}
+			size_t needed = 0;
+			for (size_t k = cursor; k < triEnd; ++k) {
+				if (srcIndices[k] < vertices.size() && remap[srcIndices[k]] < 0) {
+					needed++;
+				}
+			}
+			if (chunkVerts.size() + needed > 65535 || chunkIndices.size() + (triEnd - cursor) > 60000) {
+				if (chunkIndices.empty()) {
+					// Single triangle exceeds budget (should not happen); force it.
+				} else {
+					break;
+				}
+			}
+			for (size_t k = cursor; k < triEnd; ++k) {
+				unsigned short src = srcIndices[k];
+				if (src >= vertices.size()) {
+					break;
+				}
+				if (remap[src] < 0) {
+					remap[src] = (int)chunkVerts.size();
+					chunkVerts.push_back(vertices[src]);
+				}
+				chunkIndices.push_back((unsigned short)remap[src]);
+			}
+			cursor = triEnd;
+			if (triEnd - chunkStart >= 3 && (triEnd % 3) == 0) {
+				// Continue accumulating; loop condition handles budget.
+			}
+			if (cursor < indexCount && (cursor % 3) != 0) {
+				continue;
+			}
+		}
+		if (chunkIndices.empty()) {
+			break;
+		}
+		if (!backend->Draw_Indexed_Material_Triangles(chunkVerts.data(), (unsigned int)chunkVerts.size(),
+			chunkIndices.data(), (unsigned int)chunkIndices.size(), handle, state)) {
+			break;
 		}
 	}
-	DX8Wrapper::Draw_Triangles(	0, m_curNumTerrainIndices/3, 0,	m_curNumTerrainVertices);
-#endif
 }
 
 

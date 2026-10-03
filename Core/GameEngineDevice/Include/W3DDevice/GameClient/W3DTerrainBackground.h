@@ -50,13 +50,14 @@
 #include "WWLib/always.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
+#include "WW3D2/dx8fvf.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
+#include "WW3D2/IRenderBackend.h"
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
 #include "Common/AsciiString.h"
+#include <vector>
 
 //-----------------------------------------------------------------------------
 //           Forward References
@@ -94,10 +95,13 @@ protected:
 	enum {CULL_STATUS_UNKNOWN, CULL_STATUS_VISIBLE, CULL_STATUS_INVISIBLE} m_cullStatus;
 	AABoxClass						m_bounds;
 
-	DX8VertexBufferClass	*m_vertexTerrain;	///<Terrain vertex buffer.
-	Int										m_vertexTerrainSize; ///< Num vertices in bib buffer.
-	DX8IndexBufferClass		*m_indexTerrain;	///<indices defining a triangles for the bib drawing.
-	Int							  		m_indexTerrainSize;	///<indices available in m_indexTerrain.
+	// D3D12 migration: CPU staging vectors replace DX8VertexBufferClass/DX8IndexBufferClass.
+	// CPU gen (tessellation, heights, UVs, static diffuse) is unchanged; drawVisiblePolys()
+	// converts to RenderBackendTexturedVertex and submits via Draw_Indexed_Material_Triangles.
+	// 4X/2X/1X selection is preserved but submitted as a single-texture material draw:
+	// dual-UV/second-stage detail is not submitted (no multitexture PSO invented).
+	std::vector<VertexFormatXYZDUV2>	m_terrainVertices;	///<CPU staging for terrain verts.
+	std::vector<UnsignedShort> m_terrainIndices;	///<CPU staging for terrain indices (fixed-width).
 	TerrainTextureClass *m_terrainTexture;	///<Terrain texture
 	TerrainTextureClass *m_terrainTexture2X;	///<Terrain texture
 	TerrainTextureClass *m_terrainTexture4X;	///<Terrain texture

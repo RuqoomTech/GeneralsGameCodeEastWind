@@ -56,10 +56,11 @@
 #include "W3DDevice/GameClient/HeightMap.h"
 #include "W3DDevice/GameClient/W3DDynamicLight.h"
 #include "WW3D2/camera.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/meshrenderer.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/meshmdl.h"
+#include "WW3D2/ww3d.h"
 
 //-----------------------------------------------------------------------------
 //         Private Data
@@ -85,7 +86,7 @@ static ShaderClass detailAlphaShader(SC_ALPHA_DETAIL);
 //=============================================================================
 void W3DBibBuffer::loadBibsInVertexAndIndexBuffers()
 {
-	if (!m_indexBib || !m_vertexBib || !m_initialized) {
+	if (!m_initialized) {
 		return;
 	}
 	if (!m_anythingChanged) {
@@ -96,22 +97,12 @@ void W3DBibBuffer::loadBibsInVertexAndIndexBuffers()
 	m_curNumBibIndices = 0;
 	m_curNumNormalBibIndices = 0;
 	m_curNumNormalBibVertex = 0;
+	m_bibVertices.clear();
+	m_bibIndices.clear();
 
 	if (m_numBibs==0) {
 		return;
 	}
-
-	VertexFormatXYZDUV1 *vb;
-	UnsignedShort *ib;
-	// Lock the buffers.
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBib, D3DLOCK_DISCARD);
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexBib, D3DLOCK_DISCARD);
-	vb=(VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-	ib = lockIdxBuffer.Get_Index_Array();
-	// Add to the index buffer & vertex buffer.
-	UnsignedShort *curIb = ib;
-
-	VertexFormatXYZDUV1 *curVb = vb;
 
 	Int curBib;
 
@@ -131,6 +122,12 @@ void W3DBibBuffer::loadBibsInVertexAndIndexBuffers()
 	shadeB*=255.0f;
 
 	Int diffuse = (REAL_TO_INT(shadeB) | (REAL_TO_INT(shadeG) << 8) | (REAL_TO_INT(shadeR) << 16) | (255 << 24));
+	// Unpack the legacy ARGB diffuse for the backend's float color channels.
+	const UnsignedInt packedDiffuse = (UnsignedInt)diffuse;
+	const Real diffuseB = ((packedDiffuse) & 255) / 255.0f;
+	const Real diffuseG = ((packedDiffuse >> 8) & 255) / 255.0f;
+	const Real diffuseR = ((packedDiffuse >> 16) & 255) / 255.0f;
+	const Real diffuseA = ((packedDiffuse >> 24) & 255) / 255.0f;
 	Int doHighlight;
 	for (doHighlight=0; doHighlight<=1; doHighlight++)
 	{
@@ -175,22 +172,43 @@ void W3DBibBuffer::loadBibsInVertexAndIndexBuffers()
 						break;
 				}
 
-				curVb->u1 = U;
-				curVb->v1 = V;
-				curVb->x = vLoc.X;
-				curVb->y = vLoc.Y;
-				curVb->z = vLoc.Z;
-				curVb->diffuse = diffuse;
-				curVb++;
+				Real U, V;
+				Vector3 vLoc=m_bibs[curBib].m_corners[i];
+				switch (i) {
+					case 0 :
+						U=0;V=1;
+						break;
+					case 1:
+						U=1;V=1;
+						break;
+					case 2:
+						U=1;V=0;
+						break;
+					case 3:
+						U=0;V=0;
+						break;
+				}
+
+				RenderBackendTexturedVertex curVb;
+				curVb.u = U;
+				curVb.v = V;
+				curVb.x = vLoc.X;
+				curVb.y = vLoc.Y;
+				curVb.z = vLoc.Z;
+				curVb.r = diffuseR;
+				curVb.g = diffuseG;
+				curVb.b = diffuseB;
+				curVb.a = diffuseA;
+				m_bibVertices.push_back(curVb);
 				m_curNumBibVertices++;
 			}
 
-			*curIb++ = startVertex + 0;
-			*curIb++ = startVertex + 1;
-			*curIb++ = startVertex + 2;
-			*curIb++ = startVertex + 0;
-			*curIb++ = startVertex + 2;
-			*curIb++ = startVertex + 3;
+			m_bibIndices.push_back((UnsignedShort)(startVertex + 0));
+			m_bibIndices.push_back((UnsignedShort)(startVertex + 1));
+			m_bibIndices.push_back((UnsignedShort)(startVertex + 2));
+			m_bibIndices.push_back((UnsignedShort)(startVertex + 0));
+			m_bibIndices.push_back((UnsignedShort)(startVertex + 2));
+			m_bibIndices.push_back((UnsignedShort)(startVertex + 3));
 			m_curNumBibIndices+=6;
 		}
 	}
@@ -221,8 +239,6 @@ for the bibs. */
 W3DBibBuffer::W3DBibBuffer()
 {
 	m_initialized = false;
-	m_vertexBib = nullptr;
-	m_indexBib = nullptr;
 	m_bibTexture = nullptr;
 	m_curNumBibVertices=0;
 	m_curNumBibIndices=0;
@@ -248,8 +264,8 @@ W3DBibBuffer::W3DBibBuffer()
 //=============================================================================
 void W3DBibBuffer::freeBibBuffers()
 {
-	REF_PTR_RELEASE(m_vertexBib);
-	REF_PTR_RELEASE(m_indexBib);
+	m_bibVertices.clear();
+	m_bibIndices.clear();
 }
 
 //=============================================================================
@@ -259,8 +275,8 @@ void W3DBibBuffer::freeBibBuffers()
 //=============================================================================
 void W3DBibBuffer::allocateBibBuffers()
 {
-	m_vertexBib=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,m_vertexBibSize+4,DX8VertexBufferClass::USAGE_DYNAMIC));
-	m_indexBib=NEW_REF(DX8IndexBufferClass,(m_indexBibSize+4, DX8IndexBufferClass::USAGE_DYNAMIC));
+	m_bibVertices.reserve(m_vertexBibSize+4);
+	m_bibIndices.reserve(m_indexBibSize+4);
 	m_curNumBibVertices=0;
 	m_curNumBibIndices=0;
 }
@@ -411,6 +427,40 @@ void W3DBibBuffer::removeBibDrawable(DrawableID id)
 
 
 //=============================================================================
+// W3DBibBuffer::submitBibRange
+//=============================================================================
+/** Uploads one bib texture and submits one bib vertex/index range through the
+D3D12 render backend. Returns false (without crashing) when the texture or the
+material state is not backend-ready. */
+//=============================================================================
+static Bool submitBibRange(IRenderBackend *backend, TextureClass *texture,
+	const RenderBackendMaterialState &baseState,
+	const RenderBackendTexturedVertex *vertices, UnsignedInt vertexCount,
+	const UnsignedShort *indices, UnsignedInt indexCount)
+{
+	if (backend == nullptr || texture == nullptr || vertices == nullptr || indices == nullptr ||
+			vertexCount == 0 || indexCount == 0) {
+		return false;
+	}
+	RenderBackendMaterialState state = baseState;
+	if (detailAlphaShader.Get_Texturing() == ShaderClass::TEXTURING_ENABLE) {
+		if (!texture->Get_Filter().Get_Render_Sampler(state.sampler)) {
+			return false;
+		}
+		state.clamp_texture = false;
+		if (!texture->Ensure_Renderer_Texture()) {
+			return false;
+		}
+	}
+	RenderBackendTextureHandle textureHandle = texture->Get_Renderer_Texture();
+	if (!textureHandle.Is_Valid()) {
+		return false;
+	}
+	return backend->Draw_Indexed_Material_Triangles(vertices, vertexCount, indices, indexCount,
+		textureHandle, state);
+}
+
+//=============================================================================
 // W3DBibBuffer::drawBibs
 //=============================================================================
 /** Draws the bibs.  Uses camera to cull. */
@@ -423,18 +473,34 @@ void W3DBibBuffer::renderBibs()
 	if (m_curNumBibIndices == 0) {
 		return;
 	}
-	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Index_Buffer(m_indexBib,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexBib);
-	DX8Wrapper::Set_Shader(detailAlphaShader);
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr) {
+		return;
+	}
+	// Translate the legacy SC_ALPHA_DETAIL shader (SrcAlpha/InvSrcAlpha, depth
+	// write disabled, no culling) instead of pushing DX8 render states.
+	RenderBackendMaterialState materialState;
+	if (!detailAlphaShader.Get_Render_Backend_State(materialState)) {
+		return;
+	}
 	if (m_curNumNormalBibIndices) {
-		DX8Wrapper::Set_Texture(0,m_bibTexture);
-		DX8Wrapper::Draw_Triangles(	0, m_curNumNormalBibIndices/3, 0,	m_curNumNormalBibVertex);
+		submitBibRange(backend, m_bibTexture, materialState,
+			m_bibVertices.data(), (UnsignedInt)m_curNumNormalBibVertex,
+			m_bibIndices.data(), (UnsignedInt)m_curNumNormalBibIndices);
 	}
 	if (m_curNumBibIndices>m_curNumNormalBibIndices) {
-		DX8Wrapper::Set_Texture(0,m_highlightBibTexture);
-		DX8Wrapper::Draw_Triangles(	m_curNumNormalBibIndices, (m_curNumBibIndices-m_curNumNormalBibIndices)/3,
-						m_curNumNormalBibVertex,	m_curNumBibVertices-m_curNumNormalBibVertex);
+		// The highlight indices address the shared vertex store, so rebase them
+		// onto the highlight vertex range for this separate submission.
+		const Int highlightVertexCount = m_curNumBibVertices - m_curNumNormalBibVertex;
+		const Int highlightIndexCount = m_curNumBibIndices - m_curNumNormalBibIndices;
+		std::vector<UnsignedShort> rebasedIndices;
+		rebasedIndices.reserve(highlightIndexCount);
+		for (Int i = 0; i < highlightIndexCount; ++i) {
+			rebasedIndices.push_back((UnsignedShort)(m_bibIndices[m_curNumNormalBibIndices + i] - m_curNumNormalBibVertex));
+		}
+		submitBibRange(backend, m_highlightBibTexture, materialState,
+			m_bibVertices.data() + m_curNumNormalBibVertex, (UnsignedInt)highlightVertexCount,
+			rebasedIndices.data(), (UnsignedInt)highlightIndexCount);
 	}
 }
 

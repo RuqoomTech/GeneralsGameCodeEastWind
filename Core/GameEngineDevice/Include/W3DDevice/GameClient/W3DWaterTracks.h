@@ -24,6 +24,16 @@
 
 #pragma once
 
+#include "WWLib/always.h"
+#include "WW3D2/rendobj.h"
+#include "WW3D2/shader.h"
+#include "WW3D2/vertmaterial.h"
+#include "WW3D2/IRenderBackend.h"
+#include <vector>
+
+class TextureClass;
+class RenderInfoClass;
+
 enum waveType CPP_11(: Int);	//forward reference
 
 /// Custom render object that draws animated tracks/waves on the water.
@@ -48,7 +58,10 @@ public:
 	void init( Real width, Real length, const Vector2 &start, const Vector2 &end, const Char *texturename, Int waveTimeOffset);	///<allocate W3D resources and set size
 	void init( Real width, const Vector2 &start, const Vector2 &end, const Char *texturename);	///<allocate W3D resources and set size
 	Int	update(Int msElapsed);	///< update animation state
-	Int render(DX8VertexBufferClass	*vertexBuffer, Int batchStart);	///<draw this object
+	// D3D12: track quads are built on the CPU and submitted via
+	// Draw_Indexed_Material_Triangles. The batch below replaces the DX8 vertex buffer.
+	Int	render(std::vector<RenderBackendTexturedVertex> &cpuVertices,
+		std::vector<unsigned short> &cpuIndices);	///<draw this object
 
 protected:
 	TextureClass *m_stageZeroTexture;	///<primary texture
@@ -124,8 +137,10 @@ public:
 	WaterTracksObj *findTrack(Vector2 &start, Vector2 &end, waveType type);
 
 protected:
-	DX8VertexBufferClass		*m_vertexBuffer;	///<vertex buffer used to draw all tracks
-	DX8IndexBufferClass			*m_indexBuffer;	///<indices defining triangles in maximum length track
+	// D3D12: CPU-side vertex/index batches replace DX8VertexBufferClass/DX8IndexBufferClass.
+	// Submitted with the alpha-shader material state (cull disabled, shroud modulate).
+	std::vector<RenderBackendTexturedVertex> m_cpuVertices;
+	std::vector<unsigned short> m_cpuIndices;
 	VertexMaterialClass	  	  *m_vertexMaterialClass;	///< vertex lighting material
 	ShaderClass m_shaderClass; ///<shader or rendering state for heightmap
 
