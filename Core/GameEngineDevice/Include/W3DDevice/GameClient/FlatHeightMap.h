@@ -27,15 +27,17 @@
 #include "WWLib/always.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/dx8fvf.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
+#include "WW3D2/IRenderBackend.h"
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
+
+// D3D12 migration (FlatHeightMap): DX8 buffers/hook retired; draws via
+// CPU vectors/backend (tiles delegate to W3DTerrainBackground).
 
 class W3DTerrainBackground;
 /// Custom render object that draws the heightmap and handles intersection tests.
@@ -52,9 +54,9 @@ public:
 	FlatHeightMapRenderObjClass();
 	virtual ~FlatHeightMapRenderObjClass() override;
 
-	// DX8_CleanupHook methods
-	virtual void ReleaseResources() override;	///< Release all dx8 resources so the device can be reset.
-	virtual void ReAcquireResources() override;  ///< Reacquire all resources after device reset.
+	// Device-loss hooks (formerly DX8_CleanupHook).
+	virtual void ReleaseResources() override;	///< Release terrain resources.
+	virtual void ReAcquireResources() override;  ///< Reacquire terrain resources.
 
 
 	/////////////////////////////////////////////////////////////////////////////

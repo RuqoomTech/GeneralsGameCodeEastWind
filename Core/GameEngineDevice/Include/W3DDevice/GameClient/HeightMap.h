@@ -27,15 +27,24 @@
 #include "WWLib/always.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/dx8fvf.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
+#include "WW3D2/IRenderBackend.h"
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
+#include <vector>
+
+// D3D12 migration (HeightMap):
+// - DX8 vertex/index buffers and WriteLock are retired; terrain geometry lives
+//   in CPU vectors (std::vector<RenderBackendTexturedVertex>/unsigned short).
+//   VERTEX_FORMAT backup is retained as a CPU vector for identical terrain math
+//   (positions, UVs, packed diffuse lighting); backend vertices are converted
+//   per update for Draw_Indexed_Material_Triangles submission.
+// - Dead non-T&L transformed path, COLORWRITEENABLE gates,
+//   TestCooperativeLevel/SetLOD/ProcessVertices paths are removed.
 
 
 // Adjust the triangles to make cliff sides most attractive.  jba.
@@ -90,35 +99,38 @@ protected:
 	Int m_numExtraBlendTiles;		///<number of blend tiles in m_extraBlendTilePositions.
 	Int	m_numVisibleExtraBlendTiles; ///<number rendered last frame.
 	Int m_extraBlendTilePositionsSize; //<total size of array including unused memory.
-	DX8VertexBufferClass **m_vertexBufferTiles; ///<collection of smaller vertex buffers that make up 1 heightmap
-	VERTEX_FORMAT *m_vertexBufferBackup; ///< In memory copy of the vertex buffer data for quick update of dynamic lighting.
+	std::vector<RenderBackendTexturedVertex> m_backendVertices; ///<CPU backend vertices replacing DX8 VB tiles (numTiles*HEIGHTMAP_VERTEX_NUM).
+	std::vector<VERTEX_FORMAT> m_cpuBackup; ///<CPU VERTEX_FORMAT backup for identical terrain math + dynamic lighting.
 	Int m_originX; ///<  Origin point in the grid.  Slides around.
 	Int m_originY; ///< Origin point in the grid.  Slides around.
 	Int m_desiredDrawWidth; // Regular draw width requested by the view system.
 	Int m_desiredDrawHeight; // Regular draw height requested by the view system.
 	Int m_oversizeDrawWidth; // Oversize draw width required by mission scripts for cinematic sequences.
 	Int m_oversizeDrawHeight; // Oversize draw height required by mission scripts for cinematic sequences.
-	DX8IndexBufferClass			*m_indexBuffer;	///<indices defining triangles in a VB tile.
+	std::vector<unsigned short> m_backendIndices;	///<shared CPU indices replacing DX8 IB (fixed-width UnsignedShort).
 	Int	m_numVBTilesX;	///<dimensions of array containing all the vertex buffers
 	Int	m_numVBTilesY;	///<dimensions of array containing all the vertex buffers
 	Int m_numVertexBufferTiles;	///<number of vertex buffers needed to store this heightmap
 	Int	m_numBlockColumnsInLastVB;///<a VB tile may be partially filled, this indicates how many 2x2 vertex blocks are filled.
 	Int	m_numBlockRowsInLastVB;///<a VB tile may be partially filled, this indicates how many 2x2 vertex blocks are filled.
 
-	DX8VertexBufferClass *getVertexBufferTile(Int x, Int y);
+	RenderBackendTexturedVertex *getVertexBufferTile(Int x, Int y);
 	VERTEX_FORMAT *getVertexBufferBackup(Int x, Int y);
 	UnsignedInt doTheDynamicLight(VERTEX_FORMAT *vb, VERTEX_FORMAT *vbMirror, Vector3*light, Vector3*normal, W3DDynamicLight *pLights[], Int numLights);
 	Int getXWithOrigin(Int x);
 	Int getYWithOrigin(Int x);
 	///update vertex diffuse color for dynamic lights inside given rectangle
-	Int updateVBForLight(DX8VertexBufferClass *pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights);
-	Int updateVBForLightOptimized(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights);
+	Int updateVBForLight(RenderBackendTexturedVertex *backendVerts, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights);
+	Int updateVBForLightOptimized(RenderBackendTexturedVertex *backendVerts, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights);
 	///update vertex buffer vertices inside given rectangle
-	Int updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIterator);
+	Int updateVB(RenderBackendTexturedVertex *backendVerts, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIterator);
 	///update vertex buffers associated with the given rectangle
 	void initDestAlphaLUT();	///<initialize water depth LUT stored in m_destAlphaTexture
 	void renderTerrainPass(CameraClass *pCamera);	///< renders additional terrain pass.
 	virtual Int	getNumExtraBlendTiles(Bool visible) override { return visible?m_numVisibleExtraBlendTiles:m_numExtraBlendTiles;}
 	void freeIndexVertexBuffers();
 	void renderExtraBlendTiles();	///< render 3-way blend tiles that have blend of 3 textures.
+	// Convert packed VERTEX_FORMAT (diffuse + dual UV) to backend vertex.
+	// Base pass uses u1/v1; blend overlay (extra tiles) uses its own UVs.
+	static void Convert_To_Backend(const VERTEX_FORMAT &src, RenderBackendTexturedVertex &dst);
 };

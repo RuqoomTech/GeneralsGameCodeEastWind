@@ -2475,14 +2475,39 @@ transition.  This version is exactly like the one above but optimized for the ca
 are assumed to be sorted.  Not used by World Builder. */
 void BaseHeightMapRenderObjClass::renderShoreLinesSorted(CameraClass *pCamera)
 {
+	(void)pCamera;
 	m_numVisibleShoreLineTiles=0;
 
 	if (!TheGlobalData->m_showSoftWaterEdge || TheWaterTransparency->m_transparentWaterDepth==0 || m_numShoreLineTiles == 0)
 		return;
 
-	//Check if video card is capable of using this effect
-	if (DX8Wrapper::getBackBufferFormat() != WW3D_FORMAT_A8R8G8B8)
-		return;	//can't apply effect on cards without destination alpha
+	// D3D12: no destination-alpha gate; single alpha-blended LUT submission
+	// (same documented simplification as renderShoreLines).
+	IRenderBackend *shoreBackend = WW3D::Get_Render_Backend();
+	if (shoreBackend == nullptr) {
+		return;
+	}
+	ShaderClass unlitShader=ShaderClass::_PresetOpaque2DShader;
+	unlitShader.Set_Depth_Compare(ShaderClass::PASS_LEQUAL);
+	RenderBackendMaterialState shoreState;
+	if (!unlitShader.Get_Render_Backend_State(shoreState)) {
+		return;
+	}
+	shoreState.source_blend = RenderBackendBlendFactor::SourceAlpha;
+	shoreState.destination_blend = RenderBackendBlendFactor::InverseSourceAlpha;
+	RenderBackendTextureHandle shoreTexture;
+	if (m_destAlphaBackendHandle.Is_Valid()) {
+		shoreTexture = m_destAlphaBackendHandle;
+	} else if (m_destAlphaTexture != nullptr) {
+		if (m_destAlphaTexture->Ensure_Renderer_Texture()) {
+			shoreTexture = m_destAlphaTexture->Get_Renderer_Texture();
+		}
+	}
+	if (shoreTexture.Is_Valid() && m_destAlphaTexture != nullptr) {
+		if (!m_destAlphaTexture->Get_Filter().Get_Render_Sampler(shoreState.sampler)) {
+			return;
+		}
+	}
 
 	Int vertexCount = 0;
 	Int indexCount = 0;
@@ -2516,18 +2541,6 @@ void BaseHeightMapRenderObjClass::renderShoreLinesSorted(CameraClass *pCamera)
 		if ((drawEdgeY-drawStartY) <= 0)
 			return;	//nothing to draw
 	}
-
-	ShaderClass unlitShader=ShaderClass::_PresetOpaque2DShader;
-	unlitShader.Set_Depth_Compare(ShaderClass::PASS_LEQUAL);
-	DX8Wrapper::Set_Shader(unlitShader);
-	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
-	REF_PTR_RELEASE(vmat);
-	DX8Wrapper::Set_Texture(0,m_destAlphaTexture);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Matrix3D(true));
-	//Enabled writes to destination alpha only
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_ALPHA);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(0,  D3DTSS_TEXCOORDINDEX, 0);
 
 	Bool isDone=FALSE;
 	Int lastRenderedTile=0;
@@ -2792,19 +2805,16 @@ flushVertexBuffer1:
 
 		if (indexCount > 0 && vertexCount > 0)
 		{
-			DX8Wrapper::Set_Index_Buffer(ib_access,0);
-			DX8Wrapper::Set_Vertex_Buffer(vb_access);
-			DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
-			m_numVisibleShoreLineTiles += indexCount/6;
+			if (shoreBackend->Draw_Indexed_Material_Triangles(vb_cpu.data(),
+				static_cast<unsigned int>(vertexCount), ib_cpu.data(),
+				static_cast<unsigned int>(indexCount), shoreTexture, shoreState)) {
+				m_numVisibleShoreLineTiles += indexCount/6;
+			}
 		}
 
 		vertexCount=0;
 		indexCount=0;
 	}
-
-	//Disable writes to destination alpha
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
-	ShaderClass::Invalidate();
 }
 
 //=============================================================================
@@ -2823,8 +2833,8 @@ void BaseHeightMapRenderObjClass::renderTrees(CameraClass * camera)
 	if (m_map==nullptr) return;
 	if (Scene==nullptr) return;
 	if (m_treeBuffer) {
-		DX8Wrapper::Set_Transform(D3DTS_WORLD,Transform);
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
+		// D3D12: world transform and material are consumed per-draw by the
+		// tree buffer's backend path; no global DX8 state here.
 		RTS3DScene *pMyScene = (RTS3DScene *)Scene;
 		RefRenderObjListIterator pDynamicLightsIterator(pMyScene->getDynamicLights());
 		m_treeBuffer->drawTrees(camera, &pDynamicLightsIterator);

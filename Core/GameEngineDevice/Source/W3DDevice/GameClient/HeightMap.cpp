@@ -81,9 +81,16 @@
 #include "W3DDevice/GameClient/W3DShadow.h"
 #include "W3DDevice/GameClient/W3DWater.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
-#include "WW3D2/dx8wrapper.h"
+// D3D12 migration (HeightMap): WW3D->IRenderBackend->D3D12Backend.
+// Shader via Get_Render_Backend_State, texture via Ensure/Get/Sampler, submit
+// via Draw_Indexed_Material_Triangles (Decal for pure extra-blend). CPU math
+// (heights, TileData, blend/shore lists, lighting) unchanged. Dead T&L,
+// COLORWRITEENABLE, TestCooperativeLevel/SetLOD/ProcessVertices removed.
+#include "WW3D2/IRenderBackend.h"
+#include "WW3D2/ww3d.h"
 #include "WW3D2/light.h"
 #include "WW3D2/scene.h"
+#include <vector>
 #include "W3DDevice/GameClient/W3DPoly.h"
 #include "W3DDevice/GameClient/W3DCustomScene.h"
 
@@ -122,19 +129,13 @@ inline Int IABS(Int x) {	if (x>=0) return x; return -x;};
 //=============================================================================
 void HeightMapRenderObjClass::freeIndexVertexBuffers()
 {
-	REF_PTR_RELEASE(m_indexBuffer);
-
-	if (m_vertexBufferTiles) {
-		for (int i=0; i<m_numVertexBufferTiles; i++)
-			REF_PTR_RELEASE(m_vertexBufferTiles[i]);
-		delete[] m_vertexBufferTiles;
-		m_vertexBufferTiles = nullptr;
-	}
-
-	delete[] m_vertexBufferBackup;
-	m_vertexBufferBackup = nullptr;
-
+	// D3D12: CPU vectors replace DX8 VB/IB; no ref-counted GPU buffers here.
+	m_backendVertices.clear();
+	m_cpuBackup.clear();
+	m_backendIndices.clear();
 	m_numVertexBufferTiles = 0;
+	m_numVBTilesX = 0;
+	m_numVBTilesY = 0;
 }
 
 //=============================================================================
@@ -152,15 +153,41 @@ Int HeightMapRenderObjClass::freeMapResources()
 
 //=============================================================================
 
-DX8VertexBufferClass *HeightMapRenderObjClass::getVertexBufferTile(Int x, Int y)
+void HeightMapRenderObjClass::Convert_To_Backend(const VERTEX_FORMAT &src, RenderBackendTexturedVertex &dst)
 {
-	return m_vertexBufferTiles[y*m_numVBTilesX+x];
+	// Preserve packed diffuse precision (0xAARRGGBB) via normalized floats.
+	// Base pass uses u1/v1; alpha comes from the packed diffuse alpha channel.
+	dst.x = src.x;
+	dst.y = src.y;
+	dst.z = src.z;
+	dst.r = ((src.diffuse >> 16) & 255) / 255.0f;
+	dst.g = ((src.diffuse >> 8) & 255) / 255.0f;
+	dst.b = (src.diffuse & 255) / 255.0f;
+	dst.a = ((src.diffuse >> 24) & 255) / 255.0f;
+	dst.u = src.u1;
+	dst.v = src.v1;
+	dst.q = 1.0f;
+}
+
+RenderBackendTexturedVertex *HeightMapRenderObjClass::getVertexBufferTile(Int x, Int y)
+{
+	const size_t tile = static_cast<size_t>(y) * static_cast<size_t>(m_numVBTilesX) + static_cast<size_t>(x);
+	const size_t offset = tile * HEIGHTMAP_VERTEX_NUM;
+	if (offset >= m_backendVertices.size()) {
+		return nullptr;
+	}
+	return m_backendVertices.data() + offset;
 }
 
 //=============================================================================
 VERTEX_FORMAT *HeightMapRenderObjClass::getVertexBufferBackup(Int x, Int y)
 {
-	return m_vertexBufferBackup + y*m_numVBTilesX*HEIGHTMAP_VERTEX_NUM + x*HEIGHTMAP_VERTEX_NUM;
+	const size_t tile = static_cast<size_t>(y) * static_cast<size_t>(m_numVBTilesX) + static_cast<size_t>(x);
+	const size_t offset = tile * HEIGHTMAP_VERTEX_NUM;
+	if (offset >= m_cpuBackup.size()) {
+		return nullptr;
+	}
+	return m_cpuBackup.data() + offset;
 }
 
 //=============================================================================
@@ -300,7 +327,7 @@ data is expected to be an array same dimensions as current heightmap
 mapped into this VB.
 */
 //=============================================================================
-Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIterator)
+Int HeightMapRenderObjClass::updateVB(RenderBackendTexturedVertex *backendVerts, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIterator)
 {
 	Int i,j;
 	Vector3 lightRay[MAX_GLOBAL_LIGHTS];
@@ -311,7 +338,7 @@ Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *
 	constexpr const Int cellOffset = 1;
 
 	REF_PTR_SET(m_map, pMap);	//update our heightmap pointer in case it changed since last call.
-	if (m_vertexBufferTiles && pMap)
+	if (!m_backendVertices.empty() && !m_cpuBackup.empty() && pMap)
 	{
 #ifdef RTS_DEBUG
 		assert(x0 >= originX && y0 >= originY && x1>x0 && y1>y0 && x1<=originX+VERTEX_BUFFER_TILE_LENGTH && y1<=originY+VERTEX_BUFFER_TILE_LENGTH);
@@ -323,12 +350,10 @@ Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *
 			lightRay[lightIndex].Set(-lightPos.x, -lightPos.y, -lightPos.z);
 		}
 
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
-		VERTEX_FORMAT *vbHardware = (VERTEX_FORMAT*)lockVtxBuffer.Get_Vertex_Array();
 		VERTEX_FORMAT *vBase = data;
+		RenderBackendTexturedVertex *backendBase = backendVerts;
 		// Note that we are building the vertex buffer data in the memory buffer, data.
-		// At the bottom, we will copy the final vertex data for one cell into the
-		// hardware vertex buffer.
+		// At the bottom, we convert the final 4 vertices to backend vertices.
 
 		for (j=y0; j<y1; j++)
 		{
@@ -526,11 +551,13 @@ Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *
 				}
 
 				// Note - We have been building the vertex buffer in the memory location.
-				// Now copy the set of vertices into the hardware buffer.
-				// We don't copy the whole vertex buffer because we often update only
-				// a couple of rows and its a lot faster to just copy the ones that change.
-				Int offset = pCurVertices - vBase;
-				memcpy(vbHardware+offset, pCurVertices, 4*sizeof(VERTEX_FORMAT));
+				// Now convert the 4 vertices to backend vertices for submission.
+				// We don't convert the whole tile because we often update only
+				// a couple of rows and its a lot faster to just convert the ones that change.
+				Int offset = static_cast<Int>(pCurVertices - vBase);
+				for (Int k = 0; k < 4; ++k) {
+					Convert_To_Backend(pCurVertices[k], backendBase[offset + k]);
+				}
 			}
 		}
 		return 0; //success.
@@ -544,11 +571,11 @@ Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *
 /** Update the dynamic lighting values only in a rectangular block of the given Vertex Buffer.
 The vertex locations and texture coords are unchanged.
 */
-Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights)
+Int HeightMapRenderObjClass::updateVBForLight(RenderBackendTexturedVertex *backendVerts, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights)
 {
 
 #if (OPTIMIZED_HEIGHTMAP_LIGHTING)	// (gth) if optimizations are enabled, jump over to the "optimized" version of this function.
-	return updateVBForLightOptimized( pVB, data, x0, y0, x1, y1, originX, originY, pLights, numLights );
+	return updateVBForLightOptimized( backendVerts, data, x0, y0, x1, y1, originX, originY, pLights, numLights );
 #endif
 
 	Int i,j,k;
@@ -556,15 +583,13 @@ Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_
 	Vector3 l2r,n2f,normalAtTexel;
 	constexpr const Int	vertsPerRow=(VERTEX_BUFFER_TILE_LENGTH)*4;	//vertices per row of VB
 
-	if (m_vertexBufferTiles && m_map)
+	if (!m_backendVertices.empty() && !m_cpuBackup.empty() && m_map)
 	{
 #ifdef RTS_DEBUG
 		assert(x0 >= originX && y0 >= originY && x1>x0 && y1>y0 && x1<=originX+VERTEX_BUFFER_TILE_LENGTH && y1<=originY+VERTEX_BUFFER_TILE_LENGTH);
 #endif
 
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
-		VERTEX_FORMAT *vBase = (VERTEX_FORMAT*)lockVtxBuffer.Get_Vertex_Array();
-		VERTEX_FORMAT *vb;
+		RenderBackendTexturedVertex *vBase = backendVerts;
 
 		for (j=y0; j<y1; j++)
 		{
@@ -613,13 +638,14 @@ Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_
 				if (!intersect) {
 					continue;
 				}
-				// vb is the pointer to the vertex in the hardware dx8 vertex buffer.
+				// backend is the CPU submission vertex; mirror holds static lighting.
+				// Lighting math (normals, doTheDynamicLight on packed diffuse)
+				// is unchanged; results are converted to backend floats.
 				Int offset = (j-originY)*vertsPerRow+4*(i-originX);
-				vb = vBase + offset;	//skip to correct row in vertex buffer
+				RenderBackendTexturedVertex *vb = vBase + offset;	//skip to correct row in vertex buffer
 				// vbMirror is the pointer to the vertex in our memory based copy.
 				// The important point is that we can read out of our copy to get the original
-				// diffuse color, and xyz location.  It is VERY SLOW to read out of the
-				// hardware vertex buffer, possibly worse... jba.
+				// diffuse color, and xyz location.
 				VERTEX_FORMAT *vbMirror = data + offset;
 				un0 = mapX-1;
 				if (un0 < -m_map->getDrawOrgX())
@@ -640,7 +666,11 @@ Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_
 				Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
 #endif
 
-				doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
+				{
+					VERTEX_FORMAT tmp = *vbMirror;
+					doTheDynamicLight(&tmp, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
+					Convert_To_Backend(tmp, *vb);
+				}
 				vb++;	vbMirror++;
 
 				//top-right sample
@@ -653,7 +683,11 @@ Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_
 				Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
 #endif
 
-				doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
+				{
+					VERTEX_FORMAT tmp = *vbMirror;
+					doTheDynamicLight(&tmp, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
+					Convert_To_Backend(tmp, *vb);
+				}
 				vb++;	vbMirror++;
 
 				//bottom-right sample
@@ -666,7 +700,11 @@ Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_
 				Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
 #endif
 
-				doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
+				{
+					VERTEX_FORMAT tmp = *vbMirror;
+					doTheDynamicLight(&tmp, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
+					Convert_To_Backend(tmp, *vb);
+				}
 				vb++;	vbMirror++;
 
 				//bottom-left sample
@@ -679,7 +717,11 @@ Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_
 				Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
 #endif
 
-				doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
+				{
+					VERTEX_FORMAT tmp = *vbMirror;
+					doTheDynamicLight(&tmp, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
+					Convert_To_Backend(tmp, *vb);
+				}
 				vb++;	vbMirror++;
 			}
 		}
@@ -689,177 +731,13 @@ Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_
 }
 
 
-Int HeightMapRenderObjClass::updateVBForLightOptimized(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights)
+Int HeightMapRenderObjClass::updateVBForLightOptimized(RenderBackendTexturedVertex *backendVerts, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights)
 {
-	Int i,j,k;
-	Int vn0,un0,vp1,up1;
-	Vector3 l2r,n2f,normalAtTexel;
-	constexpr const Int vertsPerRow=(VERTEX_BUFFER_TILE_LENGTH)*4;	//vertices per row of VB
-
-	if (m_vertexBufferTiles && m_map)
-	{
-#ifdef RTS_DEBUG
-		assert(x0 >= originX && y0 >= originY && x1>x0 && y1>y0 && x1<=originX+VERTEX_BUFFER_TILE_LENGTH && y1<=originY+VERTEX_BUFFER_TILE_LENGTH);
-#endif
-
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
-		VERTEX_FORMAT *vBase = (VERTEX_FORMAT*)lockVtxBuffer.Get_Vertex_Array();
-		VERTEX_FORMAT *vb;
-
-		//
-		// (gth) the optimization in this function is to take advantage of verts in the same
-		// x,y position who have already computed their lighting.  To do this, we need to set up
-		// some offsets in the vertex buffer.  I've computed these offsets to be consistent with
-		// the formula's that Generals is using but in the case of the "half-res-mesh" I'm not
-		// sure things are correct...
-		//
-		constexpr const Int quad_right_offset = 4;
-		constexpr const Int quad_below_offset = vertsPerRow;
-		//constexpr const Int quad_below_right_offset = vertsPerRow + 4;
-
-		//
-		// i,j loop over the quads affected by the light.  Each quad has its *own* 4 vertices.  This
-		// means that for any vertex position on the map, there are actually 4 copies of the vertex.
-		//
-		for (j=y0; j<y1; j++)
-		{
-			const Int mapY = getYWithOrigin(j);
-			const Int yCoord = mapY+m_map->getDrawOrgY()-m_map->getBorderSizeInline();
-			Bool intersect = false;
-			for (k=0; k<numLights; k++) {
-				if (pLights[k]->m_minY <= yCoord+1 &&
-					pLights[k]->m_maxY >= yCoord) {
-					intersect = true;
-				}
-				if (pLights[k]->m_prevMinY <= yCoord+1 &&
-					pLights[k]->m_prevMaxY >= yCoord) {
-					intersect = true;
-				}
-			}
-			if (!intersect) {
-				continue;
-			}
-			vn0 = mapY-1;
-			if (vn0 < -m_map->getDrawOrgY())
-				vn0=-m_map->getDrawOrgY();
-			vp1 = getYWithOrigin(j+1)+1;
-			if (vp1 >= m_map->getYExtent()-m_map->getDrawOrgY())
-				vp1=m_map->getYExtent()-m_map->getDrawOrgY()-1;
-
-			for (i=x0; i<x1; i++)
-			{
-				const Int mapX = getXWithOrigin(i);
-				const Int xCoord = mapX+m_map->getDrawOrgX()-m_map->getBorderSizeInline();
-				Bool intersect = false;
-				for (k=0; k<numLights; k++) {
-					if (pLights[k]->m_minX <= xCoord+1 &&
-						pLights[k]->m_maxX >= xCoord &&
-						pLights[k]->m_minY <= yCoord+1 &&
-						pLights[k]->m_maxY >= yCoord) {
-						intersect = true;
-					}
-					if (pLights[k]->m_prevMinX <= xCoord+1 &&
-						pLights[k]->m_prevMaxX >= xCoord &&
-						pLights[k]->m_prevMinY <= yCoord+1 &&
-						pLights[k]->m_prevMaxY >= yCoord) {
-						intersect = true;
-					}
-				}
-				if (!intersect) {
-					continue;
-				}
-				// vb is the pointer to the vertex in the hardware dx8 vertex buffer.
-				Int offset = (j-originY)*vertsPerRow+4*(i-originX);
-				vb = vBase + offset;	//skip to correct row in vertex buffer
-				// vbMirror is the pointer to the vertex in our memory based copy.
-				// The important point is that we can read out of our copy to get the original
-				// diffuse color, and xyz location.  It is VERY SLOW to read out of the
-				// hardware vertex buffer, possibly worse... jba.
-				VERTEX_FORMAT *vbMirror = data + offset;
-				VERTEX_FORMAT *vbaseMirror = data;
-				un0 = mapX-1;
-				if (un0 < -m_map->getDrawOrgX())
-					un0=-m_map->getDrawOrgX();
-				up1 = getXWithOrigin(i+1)+1;
-				if (up1 >= m_map->getXExtent()-m_map->getDrawOrgX())
-					up1=m_map->getXExtent()-m_map->getDrawOrgX()-1;
-
-				Vector3 lightRay(0,0,0);
-
-				//
-				// (gth) Following the set of rules below lets us take advantage of lighting values that have
-				// been previously computed.  The idea is to copy them ahead to future quads that will need them
-				// and then not compute them when we get to those quads.  This also avoids having to read-back
-				// from the vertex buffer but we do jump around in memory... probably bad anyway, maybe we should
-				// compute into a temporary buffer and copy all at once...
-				//
-				unsigned long light_copy;
-
-				// top-left sample -> only compute when i==0 and j==0
-				if ((i==x0) && (j==y0)) {
-					l2r.Set(2*MAP_XY_FACTOR,0,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX+1, mapY) - m_map->getDisplayHeight(un0, mapY)));
-					n2f.Set(0,2*MAP_XY_FACTOR,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX, (mapY+1)) - m_map->getDisplayHeight(mapX, vn0)));
-					Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
-					doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
-				}
-				vb++;	vbMirror++;
-
-				//top-right sample -> compute when j==0, then copy to (right,0)
-				if (j==y0) {
-					l2r.Set(2*MAP_XY_FACTOR,0,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(up1 , mapY ) - m_map->getDisplayHeight(mapX , mapY )));
-					n2f.Set(0,2*MAP_XY_FACTOR,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX+1 , (mapY+1) ) - m_map->getDisplayHeight(mapX+1 , vn0 )));
-					Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
-					light_copy = doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
-
-					if (i < x1-1) {
-						// copy light to (right,0)
-						(vBase + offset + quad_right_offset)->diffuse = (light_copy&0x00FFFFFF) | ((vbaseMirror + offset + quad_right_offset)->diffuse&0xff000000) ;
-					}
-				}
-				vb++;	vbMirror++;
-
-				//bottom-right sample -> always compute, then copy to (right,3), (down,1), (down+right,0)
-				l2r.Set(2*MAP_XY_FACTOR,0,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(up1 , (mapY+1) ) - m_map->getDisplayHeight(mapX , (mapY+1) )));
-				n2f.Set(0,2*MAP_XY_FACTOR,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX+1 , vp1 ) - m_map->getDisplayHeight(mapX+1 , mapY )));
-				Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
-				light_copy = doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
-
-				if (i < x1-1) {
-					// copy light to (right,3)
-					//(vBase + offset + quad_right_offset + 3)->diffuse = light_copy;
-					(vBase + offset + quad_right_offset + 3)->diffuse = (light_copy&0x00FFFFFF) | ((vbaseMirror + offset + quad_right_offset + 3)->diffuse&0xff000000) ;
-				}
-				if (j < y1-1) {
-					// copy light to (down,1)
-					//(vBase + offset + quad_below_offset + 1)->diffuse = light_copy;
-					(vBase + offset + quad_right_offset + 1)->diffuse = (light_copy&0x00FFFFFF) | ((vbaseMirror + offset + quad_right_offset + 1)->diffuse&0xff000000) ;
-				}
-				if ((i < x1-1) && (j < y1-1)) {
-					// copy light to (right+down,0)
-					//(vBase + offset + quad_below_right_offset)->diffuse = light_copy;
-					(vBase + offset + quad_right_offset)->diffuse = (light_copy&0x00FFFFFF) | ((vbaseMirror + offset + quad_right_offset)->diffuse&0xff000000) ;
-				}
-				vb++;	vbMirror++;
-
-				//bottom-left sample -> compute when i==0, otherwise copy from (left,2)
-				if (i==x0) {
-					l2r.Set(2*MAP_XY_FACTOR,0,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX+1 , (mapY+1) ) - m_map->getDisplayHeight(un0 , (mapY+1) )));
-					n2f.Set(0,2*MAP_XY_FACTOR,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX , vp1 ) - m_map->getDisplayHeight(mapX , mapY )));
-					Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
-					light_copy = doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
-
-					if (j < y1-1) {
-						// copy light to (down,0)
-						//(vBase + offset + quad_below_offset)->diffuse = light_copy;
-						(vBase + offset + quad_below_offset)->diffuse = (light_copy&0x00FFFFFF) | ((vbaseMirror + offset + quad_below_offset)->diffuse&0xff000000) ;
-					}
-				}
-				vb++;	vbMirror++;
-			}
-		}
-		return 0; //success.
-	}
-	return -1;
+	// D3D12: optimized copy-ahead path retired (it targeted DX8 readback).
+	// The non-optimized CPU lighting math is identical; forward to it.
+	// Note: OPTIMIZED_HEIGHTMAP_LIGHTING is disabled (no_ prefix), so this
+	// path never ran in practice; forwarding preserves behavior.
+	return updateVBForLight(backendVerts, data, x0, y0, x1, y1, originX, originY, pLights, numLights);
 }
 
 
@@ -1004,9 +882,11 @@ Int HeightMapRenderObjClass::updateBlock(Int x0, Int y0, Int x1, Int y1,  WorldH
 			if (xMin >= xMax) {
 				continue;
 			}
-			DX8VertexBufferClass *pVB = getVertexBufferTile(i, j);
+			RenderBackendTexturedVertex *pVB = getVertexBufferTile(i, j);
 			VERTEX_FORMAT *pData = getVertexBufferBackup(i, j);
-			updateVB(pVB, pData, xMin, yMin, xMax, yMax, originX, originY, pMap, pLightsIterator);
+			if (pVB != nullptr && pData != nullptr) {
+				updateVB(pVB, pData, xMin, yMin, xMax, yMax, originX, originY, pMap, pLightsIterator);
+			}
 		}
 	}
 
@@ -1041,15 +921,12 @@ m_extraBlendTilePositions(nullptr),
 m_numExtraBlendTiles(0),
 m_numVisibleExtraBlendTiles(0),
 m_extraBlendTilePositionsSize(0),
-m_vertexBufferTiles(nullptr),
-m_vertexBufferBackup(nullptr),
 m_originX(0),
 m_originY(0),
 m_desiredDrawWidth(WorldHeightMap::NORMAL_DRAW_WIDTH),
 m_desiredDrawHeight(WorldHeightMap::NORMAL_DRAW_HEIGHT),
 m_oversizeDrawWidth(0),
 m_oversizeDrawHeight(0),
-m_indexBuffer(nullptr),
 m_numVBTilesX(0),
 m_numVBTilesY(0),
 m_numVertexBufferTiles(0),
@@ -1275,26 +1152,25 @@ Int HeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, 
 	if (data && needToAllocate && m_treeBuffer != nullptr)
 	{	//requested heightmap different from old one.
 		freeIndexVertexBuffers();
-		//Create static index buffers.  These will index the vertex buffers holding the map.
-		m_indexBuffer=NEW_REF(DX8IndexBufferClass,(VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*2*3));
-
-		// Fill up the IB
-		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBuffer);
-		UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
-
-		for (j=0; j<(VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*4); j+=VERTEX_BUFFER_TILE_LENGTH*4)
+		//Create static CPU index pattern shared by all tiles (fixed-width UnsignedShort).
+		//Same triangle order as the legacy IB: two triangles per 2x2 block.
+		m_backendIndices.resize(static_cast<size_t>(VERTEX_BUFFER_TILE_LENGTH) * VERTEX_BUFFER_TILE_LENGTH * 2 * 3);
 		{
-			for (i=j; i<(j+VERTEX_BUFFER_TILE_LENGTH*4); i+=4)	//4 vertices per 2x2 block
+			unsigned short *ib = m_backendIndices.data();
+			for (j=0; j<(VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*4); j+=VERTEX_BUFFER_TILE_LENGTH*4)
 			{
-				ib[0]=i;
-				ib[1]=i+2;
-				ib[2]=i+3;
+				for (i=j; i<(j+VERTEX_BUFFER_TILE_LENGTH*4); i+=4)	//4 vertices per 2x2 block
+				{
+					ib[0]=static_cast<unsigned short>(i);
+					ib[1]=static_cast<unsigned short>(i+2);
+					ib[2]=static_cast<unsigned short>(i+3);
 
-				ib[3]=i;
-				ib[4]=i+1;
-				ib[5]=i+2;
+					ib[3]=static_cast<unsigned short>(i);
+					ib[4]=static_cast<unsigned short>(i+1);
+					ib[5]=static_cast<unsigned short>(i+2);
 
-				ib+=6;	//skip the 6 indices we just filled
+					ib+=6;	//skip the 6 indices we just filled
+				}
 			}
 		}
 
@@ -1318,16 +1194,8 @@ Int HeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, 
 		m_x=x;
 		m_y=y;
 
-		m_vertexBufferTiles = NEW DX8VertexBufferClass*[m_numVertexBufferTiles];
-		m_vertexBufferBackup = NEW VERTEX_FORMAT [m_numVertexBufferTiles * HEIGHTMAP_VERTEX_NUM];
-
-		for (i=0; i<m_numVertexBufferTiles; i++) {
-#ifdef USE_NORMALS
-			m_vertexBufferTiles[i] = NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZNUV2,HEIGHTMAP_VERTEX_NUM,DX8VertexBufferClass::USAGE_DEFAULT));
-#else
-			m_vertexBufferTiles[i] = NEW_REF(DX8VertexBufferClass,(DX8_VERTEX_FORMAT,HEIGHTMAP_VERTEX_NUM,DX8VertexBufferClass::USAGE_DEFAULT));
-#endif
-		}
+		m_backendVertices.resize(static_cast<size_t>(m_numVertexBufferTiles) * HEIGHTMAP_VERTEX_NUM);
+		m_cpuBackup.resize(static_cast<size_t>(m_numVertexBufferTiles) * HEIGHTMAP_VERTEX_NUM);
 
 		//go with a preset material for now.
 	}
@@ -1518,9 +1386,11 @@ void HeightMapRenderObjClass::On_Frame_Update()
 				if (!intersect) {
 					continue;
 				}
-				DX8VertexBufferClass *pVB = getVertexBufferTile(i, j);
+				RenderBackendTexturedVertex *pVB = getVertexBufferTile(i, j);
 				VERTEX_FORMAT *pData = getVertexBufferBackup(i, j);
-				updateVBForLight(pVB, pData, xMin, yMin, xMax, yMax, originX,originY, enabledLights, numDynaLights);
+				if (pVB != nullptr && pData != nullptr) {
+					updateVBForLight(pVB, pData, xMin, yMin, xMax, yMax, originX,originY, enabledLights, numDynaLights);
+				}
 			}
 		}
 	}
@@ -1636,7 +1506,7 @@ void HeightMapRenderObjClass::updateCenter(CameraClass *camera, const Vector3 *c
 	if (m_updating) {
 		return;
 	}
-	if (m_vertexBufferTiles ==nullptr)
+	if (m_backendVertices.empty() || m_cpuBackup.empty())
 		return;		//did not initialize resources yet.
 
 	BaseHeightMapRenderObjClass::updateCenter(camera, cameraPivot, pLightsIterator);
@@ -1870,35 +1740,18 @@ void HeightMapRenderObjClass::updateCenter(CameraClass *camera, const Vector3 *c
 
 void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 {
-	//USE_PERF_TIMER(Terrain_Render)
-
-	Int i,j,devicePasses;
-	W3DShaderManager::ShaderTypes st;
+	// D3D12: single-texture backend submission (meshrenderer flush pattern).
+	// CPU tile math, blend/shore lists, lighting, and draw order are unchanged.
+	// Cloud/noise multi-pass and dual-UV second-stage detail are not submitted
+	// (no multitexture PSO; documented gap, same as W3DTerrainBackground).
+	// Dead non-T&L transformed path, COLORWRITEENABLE gates,
+	// TestCooperativeLevel/SetLOD/ProcessVertices paths are removed.
 	const Bool doCloud = useCloud();
-
 	if (doCloud)
 	{
-		// TheSuperHackers @tweak Updates the cloud movement before applying it to the world.
-		// Is now decoupled from logic step.
 		W3DShaderManager::updateCloud();
 	}
 
-#if 0 // There is some weirdness sometimes with the dx8 static buffers.
-			// This usually fixes terrain flashing.  jba.
-	static Int delay = 1;
-	delay --;
-	if (delay<1) {
-		delay = 1;
-		static Int ndx = -1;
-		ndx++;
-		if (ndx>=m_numVertexBufferTiles) {
-			ndx = 0;
-		}
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexBufferTiles + ndx);
-		VERTEX_FORMAT *vb = (VERTEX_FORMAT*)lockVtxBuffer.Get_Vertex_Array();
-		vb = 0;
-	}
-#endif
 	// If there are trees, tell them to draw at the transparent time to draw.
 	if (m_treeBuffer) {
 		m_treeBuffer->setIsTerrain();
@@ -1916,218 +1769,103 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	}
 #endif
 
-	DX8Wrapper::Set_Light_Environment(rinfo.light_environment);
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr || m_map == nullptr) {
+		return;
+	}
+	if (m_backendVertices.empty() || m_backendIndices.empty()) {
+		return;
+	}
 
-	// Force shaders to update.
-	m_stageTwoTexture->restore();
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	ShaderClass::Invalidate();
-
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Transform);
-
-	//Apply the shader and material
-
-	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
-
-	Bool doMultiPassWireFrame=FALSE;
-
+	// Custom shroud/mask pass: submit base geometry for the additional pass.
+	// Wireframe debug (texturing disabled) uses an untextured material.
 	if (((RTS3DScene *)rinfo.Camera.Get_User_Data())->getCustomPassMode() == SCENE_PASS_ALPHA_MASK ||
 		((SceneClass *)rinfo.Camera.Get_User_Data())->Get_Extra_Pass_Polygon_Mode() == SceneClass::EXTRA_PASS_CLEAR_LINE)
 	{
-			if (WW3D::Is_Texturing_Enabled())
-			{	//first pass where we just fill the z-buffer
-
-				devicePasses=1;	//one pass solid, next in wireframe.
-				doMultiPassWireFrame=TRUE;
-
-				if (rinfo.Additional_Pass_Count())
-				{
-					rinfo.Peek_Additional_Pass(0)->Install_Materials();
-					renderTerrainPass(&rinfo.Camera);
-					rinfo.Peek_Additional_Pass(0)->UnInstall_Materials();
-					return;
-				}
-			}
-			else
-			{	//wireframe pass
-				//Set to vertex diffuse lighting
-				DX8Wrapper::Set_Material(m_vertexMaterialClass);
-				//Set shader to non-textured solid color from vertex
-				DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueSolidShader);
-				devicePasses=1;	//one pass solid, next in wireframe.
-				DX8Wrapper::Apply_Render_State_Changes();
-				DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG2, D3DTA_TFACTOR );
-				DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR,0xff808080);
-				doMultiPassWireFrame=TRUE;
-				renderTerrainPass(&rinfo.Camera);
-				DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR,0xff008000);
-				return;
-			}
-	}
-	else
-	{
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
-		DX8Wrapper::Set_Shader(m_shaderClass);
-
- 		st=W3DShaderManager::ST_TERRAIN_BASE; //set default shader
-
- 		//set correct shader based on current settings
- 		if (!ShaderClass::Is_Backface_Culling_Inverted())
- 		{	//not reflection pass
- 			if (TheGlobalData->m_useLightMap && doCloud)
- 			{	st=W3DShaderManager::ST_TERRAIN_BASE_NOISE12;
- 			}
- 			else
- 			if (TheGlobalData->m_useLightMap)
- 			{	//lightmap only
- 				st=W3DShaderManager::ST_TERRAIN_BASE_NOISE2;
- 			}
- 			else
- 			if (doCloud)
- 			{	//cloudmap only
- 				st=W3DShaderManager::ST_TERRAIN_BASE_NOISE1;
- 			}
- 		}
- 		else
- 		{	//reflection pass, just do base texture
- 			st=W3DShaderManager::ST_TERRAIN_BASE;
- 		}
-
- 		//Find number of passes required to render current shader
- 		devicePasses=W3DShaderManager::getShaderPasses(st);
-
- 		if (m_disableTextures)
- 			devicePasses=1;	//force to 1 lighting-only pass
-
- 		//Specify all textures that this shader may need.
- 		W3DShaderManager::setTexture(0,m_stageZeroTexture);
- 		W3DShaderManager::setTexture(1,m_stageZeroTexture);
- 		W3DShaderManager::setTexture(2,m_stageTwoTexture);	//cloud
- 		W3DShaderManager::setTexture(3,m_stageThreeTexture);//noise
-		//Disable writes to destination alpha channel (if there is one)
-		if (DX8Wrapper::getBackBufferFormat() == WW3D_FORMAT_A8R8G8B8)
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
-	}
-
-	Int pass;
- 	for (pass=0; pass<devicePasses; pass++) {
-#ifdef TIMING_TESTS
-#endif
-		if (!doMultiPassWireFrame)	//multi-pass wireframe doesn't use regular shaders.
+		if (rinfo.Additional_Pass_Count())
 		{
- 			if (m_disableTextures ) {
- 				DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaque2DShader);
- 				DX8Wrapper::Set_Texture(0,nullptr);
-   			} else {
- 				W3DShaderManager::setShader(st, pass);
-			}
+			renderTerrainPass(&rinfo.Camera);
+			return;
 		}
-
-		for (j=0; j<m_numVBTilesY; j++)
-			for (i=0; i<m_numVBTilesX; i++)
-			{
-				DX8Wrapper::Set_Vertex_Buffer(getVertexBufferTile(i, j));
-#ifdef PRE_TRANSFORM_VERTEX
-				if (m_xformedVertexBuffer && pass==0) {
-					// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-					DX8Wrapper::Apply_Render_State_Changes();
-					int code = DX8Wrapper::_Get_D3D_Device8()->ProcessVertices(0, 0, numVertex, m_xformedVertexBuffer[j*m_numVBTilesX+i], 0);
-					::OutputDebugString("did process vertex\n");
-				}
-				if (m_xformedVertexBuffer) {
-					// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-					DX8Wrapper::Apply_Render_State_Changes();
-					DX8Wrapper::_Get_D3D_Device8()->SetStreamSource(
-						0,
-						m_xformedVertexBuffer[j*m_numVBTilesX+i],
-						sizeof(float) * 8 + sizeof(DWORD));
-					DX8Wrapper::_Get_D3D_Device8()->SetVertexShader(D3DFVF_XYZRHW |D3DFVF_DIFFUSE|D3DFVF_TEX2);
-				}
-#endif
-				if (Is_Hidden() == 0) {
-					DX8Wrapper::Draw_Triangles(0, HEIGHTMAP_POLYGON_NUM, 0, HEIGHTMAP_VERTEX_NUM);
-				}
-
-			}
 	}
 
-	if (!doMultiPassWireFrame)
-	{
-		if (pass)	//shader was applied at least once?
- 			W3DShaderManager::resetShader(st);
-
-		//Draw feathered shorelines
-		renderShoreLines(&rinfo.Camera);
-
-		//Do additional pass over any tiles that have 3 textures blended together.
-		if (TheGlobalData->m_use3WayTerrainBlends)
-			renderExtraBlendTiles();
-
-		Int yCoordMin = m_map->getDrawOrgY();
-		Int yCoordMax = m_y+m_map->getDrawOrgY()-1;
-		Int xCoordMin = m_map->getDrawOrgX();
-		Int xCoordMax = m_x+m_map->getDrawOrgX()-1;
-#ifdef DO_ROADS
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Set_Texture(1,nullptr);
-		m_stageTwoTexture->restore();
-
-		ShaderClass::Invalidate();
-		if (!ShaderClass::Is_Backface_Culling_Inverted()) {
-			DX8Wrapper::Set_Material(m_vertexMaterialClass);
-			if (Scene) {
-				RTS3DScene *pMyScene = (RTS3DScene *)Scene;
-				RefRenderObjListIterator pDynamicLightsIterator(pMyScene->getDynamicLights());
-				m_roadBuffer->drawRoads(&rinfo.Camera, doCloud?m_stageTwoTexture:nullptr, TheGlobalData->m_useLightMap?m_stageThreeTexture:nullptr,
-					m_disableTextures,xCoordMin-m_map->getBorderSizeInline(), xCoordMax-m_map->getBorderSizeInline(), yCoordMin-m_map->getBorderSizeInline(), yCoordMax-m_map->getBorderSizeInline(), &pDynamicLightsIterator);
-			}
+	RenderBackendMaterialState baseState;
+	const ShaderClass *baseShader = &m_shaderClass;
+	ShaderClass untexturedShader = ShaderClass::_PresetOpaque2DShader;
+	if (m_disableTextures) {
+		baseShader = &untexturedShader;
+	}
+	if (!baseShader->Get_Render_Backend_State(baseState)) {
+		return;
+	}
+	RenderBackendTextureHandle baseTexture;
+	if (!m_disableTextures && m_stageZeroTexture != nullptr) {
+		if (!m_stageZeroTexture->Ensure_Renderer_Texture()) {
+			return;
 		}
-	#endif
+		if (!m_stageZeroTexture->Get_Filter().Get_Render_Sampler(baseState.sampler)) {
+			return;
+		}
+		baseTexture = m_stageZeroTexture->Get_Renderer_Texture();
+	}
+
+	for (Int j=0; j<m_numVBTilesY; j++) {
+		for (Int i=0; i<m_numVBTilesX; i++)
+		{
+			RenderBackendTexturedVertex *tileVerts = getVertexBufferTile(i, j);
+			if (tileVerts == nullptr) {
+				continue;
+			}
+			if (Is_Hidden() == 0) {
+				backend->Draw_Indexed_Material_Triangles(tileVerts, HEIGHTMAP_VERTEX_NUM,
+					m_backendIndices.data(), static_cast<unsigned int>(m_backendIndices.size()),
+					baseTexture, baseState);
+			}
+
+		}
+	}
+
+	//Draw feathered shorelines
+	renderShoreLines(&rinfo.Camera);
+
+	//Do additional pass over any tiles that have 3 textures blended together.
+	if (TheGlobalData->m_use3WayTerrainBlends)
+		renderExtraBlendTiles();
+
+	Int yCoordMin = m_map->getDrawOrgY();
+	Int yCoordMax = m_y+m_map->getDrawOrgY()-1;
+	Int xCoordMin = m_map->getDrawOrgX();
+	Int xCoordMax = m_x+m_map->getDrawOrgX()-1;
+#ifdef DO_ROADS
+	if (!ShaderClass::Is_Backface_Culling_Inverted()) {
+		if (Scene) {
+			RTS3DScene *pMyScene = (RTS3DScene *)Scene;
+			RefRenderObjListIterator pDynamicLightsIterator(pMyScene->getDynamicLights());
+			m_roadBuffer->drawRoads(&rinfo.Camera, doCloud?m_stageTwoTexture:nullptr, TheGlobalData->m_useLightMap?m_stageThreeTexture:nullptr,
+				m_disableTextures,xCoordMin-m_map->getBorderSizeInline(), xCoordMax-m_map->getBorderSizeInline(), yCoordMin-m_map->getBorderSizeInline(), yCoordMax-m_map->getBorderSizeInline(), &pDynamicLightsIterator);
+		}
+	}
+#endif
 	if (m_propBuffer) {
 		m_propBuffer->drawProps(rinfo);
 	}
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Set_Texture(1,nullptr);
-		m_stageTwoTexture->restore();
 
-		drawScorches();
+	drawScorches();
 
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Set_Texture(1,nullptr);
-		m_stageTwoTexture->restore();
-		ShaderClass::Invalidate();
-		DX8Wrapper::Apply_Render_State_Changes();
+	m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, doCloud?m_stageTwoTexture:nullptr);
 
-		m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, doCloud?m_stageTwoTexture:nullptr);
+	if (TheTerrainTracksRenderObjClassSystem)
+		TheTerrainTracksRenderObjClassSystem->flush();
 
-		if (TheTerrainTracksRenderObjClassSystem)
-			TheTerrainTracksRenderObjClassSystem->flush();
-
-		if (m_shroud && rinfo.Additional_Pass_Count())
-		{
-			rinfo.Peek_Additional_Pass(0)->Install_Materials();
-			renderTerrainPass(&rinfo.Camera);
-			rinfo.Peek_Additional_Pass(0)->UnInstall_Materials();
-		}
-
-		ShaderClass::Invalidate();
-		DX8Wrapper::Apply_Render_State_Changes();
+	if (m_shroud && rinfo.Additional_Pass_Count())
+	{
+		renderTerrainPass(&rinfo.Camera);
 	}
-	else
-			m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, m_stageTwoTexture);
 
-  if ( m_waypointBuffer )
+   if ( m_waypointBuffer )
 	  m_waypointBuffer->drawWaypoints(rinfo);
 
 	m_bibBuffer->renderBibs();
-
-	// We do some custom blending, so tell the shader class to reset everything.
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	m_stageTwoTexture->restore();
-	ShaderClass::Invalidate();
-	DX8Wrapper::Set_Material(nullptr);
 
 }
 
@@ -2136,37 +1874,46 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 ///Performs additional terrain rendering pass, blending in the black shroud texture.
 void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 {
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Matrix3D(true));
+	(void)pCamera;
+	// D3D12: submit base CPU geometry via the backend (shroud texture comes
+	// from the additional pass in the full path; here we submit base terrain
+	// with vertex-diffuse lighting preserved).
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr || m_map == nullptr) {
+		return;
+	}
+	if (m_backendVertices.empty() || m_backendIndices.empty()) {
+		return;
+	}
+	RenderBackendMaterialState state;
+	if (!m_shaderClass.Get_Render_Backend_State(state)) {
+		return;
+	}
+	RenderBackendTextureHandle texture;
+	if (m_stageZeroTexture != nullptr && !m_disableTextures) {
+		if (!m_stageZeroTexture->Ensure_Renderer_Texture()) {
+			return;
+		}
+		if (!m_stageZeroTexture->Get_Filter().Get_Render_Sampler(state.sampler)) {
+			return;
+		}
+		texture = m_stageZeroTexture->Get_Renderer_Texture();
+	}
 
-	//Apply the shader and material
-
-	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
-
-	for (Int j=0; j<m_numVBTilesY; j++)
+	for (Int j=0; j<m_numVBTilesY; j++) {
 		for (Int i=0; i<m_numVBTilesX; i++)
 		{
-			DX8Wrapper::Set_Vertex_Buffer(getVertexBufferTile(i, j));
-#ifdef PRE_TRANSFORM_VERTEX
-			if (m_xformedVertexBuffer && pass==0) {
-				// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-				DX8Wrapper::Apply_Render_State_Changes();
-				int code = DX8Wrapper::_Get_D3D_Device8()->ProcessVertices(0, 0, numVertex, m_xformedVertexBuffer[j*m_numVBTilesX+i], 0);
-				::OutputDebugString("did process vertex\n");
+			RenderBackendTexturedVertex *tileVerts = getVertexBufferTile(i, j);
+			if (tileVerts == nullptr) {
+				continue;
 			}
-			if (m_xformedVertexBuffer) {
-				// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-				DX8Wrapper::Apply_Render_State_Changes();
-				DX8Wrapper::_Get_D3D_Device8()->SetStreamSource(
-					0,
-					m_xformedVertexBuffer[j*m_numVBTilesX+i],
-					sizeof(float) * 8 + sizeof(DWORD));
-				DX8Wrapper::_Get_D3D_Device8()->SetVertexShader(D3DFVF_XYZRHW |D3DFVF_DIFFUSE|D3DFVF_TEX2);
-			}
-#endif
 			if (Is_Hidden() == 0) {
-				DX8Wrapper::Draw_Triangles(0, HEIGHTMAP_POLYGON_NUM, 0, HEIGHTMAP_VERTEX_NUM);
+				backend->Draw_Indexed_Material_Triangles(tileVerts, HEIGHTMAP_VERTEX_NUM,
+					m_backendIndices.data(), static_cast<unsigned int>(m_backendIndices.size()),
+					texture, state);
 			}
 		}
+	}
 }
 
 //=============================================================================
@@ -2176,8 +1923,11 @@ void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 blended together.  Used primarily for corner cases where 3 different textures meet.*/
 void HeightMapRenderObjClass::renderExtraBlendTiles()
 {
-	Int vertexCount = 0;
-	Int indexCount = 0;
+	// D3D12: CPU vectors + backend decal submission. Tile math (positions,
+	// getStaticDiffuse lighting, getExtraAlphaUVData blend UV/alpha, flip and
+	// cliff flip, fixed-width UnsignedShort indices) is unchanged.
+	// Pure decal extra-blend uses Draw_Indexed_Decal_Triangles; debug white
+	// (m_use3WayTerrainBlends==2) uses an untextured material.
 	Int xExtent = m_map->getXExtent();
 	Int border = m_map->getBorderSizeInline();
 	static Int maxBlendTiles = DEFAULT_MAX_FRAME_EXTRABLEND_TILES;
@@ -2190,16 +1940,17 @@ void HeightMapRenderObjClass::renderExtraBlendTiles()
 	if (maxBlendTiles > 10000)	//we can only fit about 10000 tiles into a single VB.
 		maxBlendTiles = 10000;
 
-	DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,DX8_FVF_XYZNDUV2,maxBlendTiles*4);
-	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,maxBlendTiles*6);
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr) {
+		return;
+	}
+
+	std::vector<RenderBackendTexturedVertex> vertices;
+	std::vector<unsigned short> indices;
+	vertices.reserve(static_cast<size_t>(maxBlendTiles) * 4);
+	indices.reserve(static_cast<size_t>(maxBlendTiles) * 6);
 	{
-
-		DynamicVBAccessClass::WriteLockClass lock(&vb_access);
-		VertexFormatXYZNDUV2* vb= lock.Get_Formatted_Vertex_Array();
-		DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
-		UnsignedShort *ib=lockib.Get_Index_Array();
-
-		if (!vb || !ib) return;
+		Int vertexCount = 0;
 
 		const UnsignedByte* data = m_map->getDataPtr();
 
@@ -2238,144 +1989,100 @@ void HeightMapRenderObjClass::renderExtraBlendTiles()
 				if (cliffState && abs(p0-p2) > abs(p1-p3))	//cliffs sometimes force a flip
 					flipState = TRUE;
 
-				vb->x=(x-border)*MAP_XY_FACTOR;
-				vb->y=(y-border)*MAP_XY_FACTOR;
-				vb->z=p0;
-				vb->nx=0;
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=(alpha[0]<<24)|(getStaticDiffuse(x,y) & 0x00ffffff);
-				vb->u1=U[0];
-				vb->v1=V[0];
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				vb->x=(x+1-border)*MAP_XY_FACTOR;
-				vb->y=(y-border)*MAP_XY_FACTOR;
-				vb->z=p1;
-				vb->nx=0;
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=(alpha[1]<<24)|(getStaticDiffuse(x+1,y) & 0x00ffffff);
-				vb->u1=U[1];
-				vb->v1=V[1];
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				vb->x=(x+1-border)*MAP_XY_FACTOR;
-				vb->y=(y+1-border)*MAP_XY_FACTOR;
-				vb->z=p2;
-				vb->nx=0;
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=(alpha[2]<<24)|(getStaticDiffuse(x+1,y+1) & 0x00ffffff);
-				vb->u1=U[2];
-				vb->v1=V[2];
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				vb->x=(x-border)*MAP_XY_FACTOR;
-				vb->y=(y+1-border)*MAP_XY_FACTOR;
-				vb->z=p3;
-				vb->nx=0;
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=(alpha[3]<<24)|(getStaticDiffuse(x,y+1) & 0x00ffffff);
-				vb->u1=U[3];
-				vb->v1=V[3];
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
+				RenderBackendTexturedVertex v0, v1, v2, v3;
+				auto packBlend = [](UnsignedByte a, Int staticDiffuse, float u, float v) {
+					RenderBackendTexturedVertex out;
+					out.r = ((staticDiffuse >> 16) & 255) / 255.0f;
+					out.g = ((staticDiffuse >> 8) & 255) / 255.0f;
+					out.b = (staticDiffuse & 255) / 255.0f;
+					out.a = a / 255.0f;
+					out.u = u;
+					out.v = v;
+					out.q = 1.0f;
+					return out;
+				};
+				v0 = packBlend(alpha[0], getStaticDiffuse(x,y), U[0], V[0]);
+				v0.x=(x-border)*MAP_XY_FACTOR; v0.y=(y-border)*MAP_XY_FACTOR; v0.z=p0;
+				v1 = packBlend(alpha[1], getStaticDiffuse(x+1,y), U[1], V[1]);
+				v1.x=(x+1-border)*MAP_XY_FACTOR; v1.y=(y-border)*MAP_XY_FACTOR; v1.z=p1;
+				v2 = packBlend(alpha[2], getStaticDiffuse(x+1,y+1), U[2], V[2]);
+				v2.x=(x+1-border)*MAP_XY_FACTOR; v2.y=(y+1-border)*MAP_XY_FACTOR; v2.z=p2;
+				v3 = packBlend(alpha[3], getStaticDiffuse(x,y+1), U[3], V[3]);
+				v3.x=(x-border)*MAP_XY_FACTOR; v3.y=(y+1-border)*MAP_XY_FACTOR; v3.z=p3;
+				vertices.push_back(v0);
+				vertices.push_back(v1);
+				vertices.push_back(v2);
+				vertices.push_back(v3);
 
 				if (flipState)
 				{
-					ib[0]=1+vertexCount;
-					ib[1]=3+vertexCount;
-					ib[2]=0+vertexCount;
-					ib[3]=1+vertexCount;
-					ib[4]=2+vertexCount;
-					ib[5]=3+vertexCount;
+					const unsigned short quad[] = {
+						static_cast<unsigned short>(1+vertexCount),
+						static_cast<unsigned short>(3+vertexCount),
+						static_cast<unsigned short>(0+vertexCount),
+						static_cast<unsigned short>(1+vertexCount),
+						static_cast<unsigned short>(2+vertexCount),
+						static_cast<unsigned short>(3+vertexCount)};
+					indices.insert(indices.end(), quad, quad+6);
 				}
 				else
 				{
-					ib[0]=0+vertexCount;
-					ib[1]=2+vertexCount;
-					ib[2]=3+vertexCount;
-					ib[3]=0+vertexCount;
-					ib[4]=1+vertexCount;
-					ib[5]=2+vertexCount;
+					const unsigned short quad[] = {
+						static_cast<unsigned short>(0+vertexCount),
+						static_cast<unsigned short>(2+vertexCount),
+						static_cast<unsigned short>(3+vertexCount),
+						static_cast<unsigned short>(0+vertexCount),
+						static_cast<unsigned short>(1+vertexCount),
+						static_cast<unsigned short>(2+vertexCount)};
+					indices.insert(indices.end(), quad, quad+6);
 				}
-				ib += 6;
 				vertexCount +=4;
-				indexCount +=6;
 			}
 		}
 	}
 
-	if (vertexCount)
+	if (!vertices.empty() && !indices.empty())
 	{
 		//Check if we couldn't fit all blend tiles into vertex buffer so we can enlarge it for next frame.
-		if (vertexCount == (maxBlendTiles*4))
+		if (static_cast<Int>(vertices.size()) == (maxBlendTiles*4))
 			maxBlendTiles += 16;	//enlarge by 16 to reduce trashing.
-
-		ShaderClass::Invalidate();	//invalidate to force shader to reset since we directly changed states
-		DX8Wrapper::Set_Index_Buffer(ib_access,0);
-		DX8Wrapper::Set_Vertex_Buffer(vb_access);
-		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-		DX8Wrapper::Set_Material(vmat);
-		REF_PTR_RELEASE(vmat);
-		ShaderClass shader=ShaderClass::_PresetOpaqueShader;
-		shader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_DISABLE);	//disable writes to z
-		DX8Wrapper::Set_Shader(shader);
 
 		if (TheGlobalData->m_use3WayTerrainBlends == 2)
 		{
-			shader.Set_Primary_Gradient(ShaderClass::GRADIENT_DISABLE);	//disable lighting.
-			shader.Set_Texturing(ShaderClass::TEXTURING_DISABLE);		//disable texturing.
-			DX8Wrapper::Set_Shader(shader);
-			DX8Wrapper::Set_Texture(0,nullptr);	//debug mode which draws terrain tiles in white.
+			// Debug white mode: untextured material (lighting disabled in legacy).
+			RenderBackendMaterialState whiteState;
+			ShaderClass whiteShader = ShaderClass::_PresetOpaqueShader;
+			whiteShader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_DISABLE);
+			if (!whiteShader.Get_Render_Backend_State(whiteState)) {
+				return;
+			}
 			if (Is_Hidden() == 0) {
-				DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
-				m_numVisibleExtraBlendTiles += indexCount/6;
+				if (backend->Draw_Indexed_Material_Triangles(vertices.data(),
+					static_cast<unsigned int>(vertices.size()), indices.data(),
+					static_cast<unsigned int>(indices.size()), RenderBackendTextureHandle(), whiteState)) {
+					m_numVisibleExtraBlendTiles += static_cast<Int>(indices.size()/6);
+				}
 			}
 		}
 		else
 		{
-			W3DShaderManager::setTexture(0,m_stageOneTexture);
-			W3DShaderManager::setTexture(1,m_stageTwoTexture);	//cloud
-			W3DShaderManager::setTexture(2,m_stageThreeTexture);	//noise/lightmap
-
-			W3DShaderManager::ShaderTypes st = W3DShaderManager::ST_ROAD_BASE;
-
-			const Bool doCloud = useCloud();
-
-			if (TheGlobalData->m_useLightMap && doCloud)
- 			{
-				st = W3DShaderManager::ST_ROAD_BASE_NOISE12;
- 			}
- 			else if (TheGlobalData->m_useLightMap)
- 			{	//lightmap only
- 				st = W3DShaderManager::ST_ROAD_BASE_NOISE2;
- 			}
- 			else if (doCloud)
- 			{	//cloudmap only
- 				st = W3DShaderManager::ST_ROAD_BASE_NOISE1;
- 			}
-
-			Int devicePasses=W3DShaderManager::getShaderPasses(st);
-
-			for (Int pass=0; pass < devicePasses; pass++)
-			{
-				W3DShaderManager::setShader(st, pass);
-				if (Is_Hidden() == 0) {
-					DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
-					m_numVisibleExtraBlendTiles += indexCount/6;
+			RenderBackendTextureHandle blendTexture;
+			if (m_stageOneTexture != nullptr) {
+				if (m_stageOneTexture->Ensure_Renderer_Texture()) {
+					blendTexture = m_stageOneTexture->Get_Renderer_Texture();
 				}
 			}
-			W3DShaderManager::resetShader(st);
+			if (!blendTexture.Is_Valid()) {
+				return;
+			}
+			if (Is_Hidden() == 0) {
+				if (backend->Draw_Indexed_Decal_Triangles(vertices.data(),
+					static_cast<unsigned int>(vertices.size()), indices.data(),
+					static_cast<unsigned int>(indices.size()), blendTexture,
+					RenderBackendDecalBlendMode::Alpha)) {
+					m_numVisibleExtraBlendTiles += static_cast<Int>(indices.size()/6);
+				}
+			}
 		}
   }
 }

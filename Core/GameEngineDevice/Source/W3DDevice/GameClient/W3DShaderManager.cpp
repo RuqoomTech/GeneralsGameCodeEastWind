@@ -53,8 +53,10 @@
 //
 //-----------------------------------------------------------------------------
 
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/assetmgr.h"
+#include "WW3D2/shader.h"
 #include "Lib/BaseType.h"
 #include "Common/file.h"
 #include "Common/FileSystem.h"
@@ -70,60 +72,49 @@
 #include "GameLogic/GameLogic.h"
 #include "Common/GlobalData.h"
 #include "Common/GameLOD.h"
-#include "WW3D2/dx8caps.h"
+#include <vector>
 
 namespace
 {
 
-D3DMATRIX Multiply_Legacy_Shader_Matrices(const D3DMATRIX &a, const D3DMATRIX &b)
+// D3D12: renderer-neutral shader math (renamed from the retired D3D matrix
+// utilities). Projection/texture-transform uploads have no backend equivalent
+// yet; the CPU math below is preserved for documentation and future callers.
+Matrix4x4 Multiply_Legacy_Shader_Matrices(const Matrix4x4 &a, const Matrix4x4 &b)
 {
-	D3DMATRIX result = {};
-	for (int row = 0; row < 4; ++row) {
-		for (int column = 0; column < 4; ++column) {
-			result.m[row][column] =
-				a.m[row][0] * b.m[0][column] +
-				a.m[row][1] * b.m[1][column] +
-				a.m[row][2] * b.m[2][column] +
-				a.m[row][3] * b.m[3][column];
-		}
-	}
-	return result;
+	return a * b;
 }
 
-void Make_Legacy_Shader_Translation(D3DMATRIX &matrix, float x, float y, float z)
+void Make_Legacy_Shader_Translation(Matrix4x4 &matrix, float x, float y, float z)
 {
-	matrix = {};
-	matrix.m[0][0] = 1.0f;
-	matrix.m[1][1] = 1.0f;
-	matrix.m[2][2] = 1.0f;
-	matrix.m[3][0] = x;
-	matrix.m[3][1] = y;
-	matrix.m[3][2] = z;
-	matrix.m[3][3] = 1.0f;
+	matrix.Make_Identity();
+	matrix[3][0] = x;
+	matrix[3][1] = y;
+	matrix[3][2] = z;
 }
 
-void Make_Legacy_Shader_Scaling(D3DMATRIX &matrix, float x, float y, float z)
+void Make_Legacy_Shader_Scaling(Matrix4x4 &matrix, float x, float y, float z)
 {
-	matrix = {};
-	matrix.m[0][0] = x;
-	matrix.m[1][1] = y;
-	matrix.m[2][2] = z;
-	matrix.m[3][3] = 1.0f;
+	matrix.Make_Identity();
+	matrix[0][0] = x;
+	matrix[1][1] = y;
+	matrix[2][2] = z;
 }
 
-void Invert_Legacy_Shader_Matrix(D3DMATRIX &inverse, float &determinant, const D3DMATRIX &matrix)
+bool Invert_Legacy_Shader_Matrix(Matrix4x4 &inverse, float &determinant, const Matrix4x4 &matrix)
 {
-	const Matrix4x4 neutral_matrix = To_Matrix4x4(matrix);
-	Matrix4x4 neutral_inverse;
-	if (Matrix4x4::Inverse(&neutral_inverse, &determinant, &neutral_matrix) != nullptr) {
-		To_D3DMATRIX(inverse, neutral_inverse);
-	}
+	return Matrix4x4::Inverse(&inverse, &determinant, &matrix) != nullptr;
 }
 
-HRESULT Set_Legacy_Pixel_Shader_Constant(DWORD shader_register, const Vector4 &value)
+// GAP (documented): pixel-shader constants (monochrome weights, crossfade
+// tints, water reflection factor) have no backend constant equivalent yet.
+// Values are preserved at their call sites in comments; base geometry is
+// submitted with the closest material (nothing faked).
+struct LegacyPixelShaderConstant
 {
-	return DX8Wrapper::_Get_D3D_Device8()->SetPixelShaderConstant(shader_register, &value.X, 1);
-}
+	unsigned int shader_register;
+	Vector4 value;
+};
 
 } // namespace
 
@@ -142,12 +133,23 @@ public:
 	 ///do any custom resetting necessary to bring W3D in sync.
 	virtual void reset() {
 		ShaderClass::Invalidate();
-		DX8Wrapper::_Get_D3D_Device8()->SetTexture(0, nullptr);
-		DX8Wrapper::_Get_D3D_Device8()->SetTexture(1, nullptr);};
+		if (IRenderBackend *resetBackend = WW3D::Get_Render_Backend())
+			resetBackend->Invalidate_Cached_Render_States();};
 	virtual Int init() = 0;			///<perform any one time initialization and validation
 	virtual Int shutdown() { return TRUE;};			///<release resources used by shader
+	// D3D12: last translated material for this shader. set() fills it via
+	// ShaderClass::Get_Render_Backend_State (textures/samplers preserved from
+	// m_Textures); crossed callers submit geometry with it. No new framework:
+	// one cached state per existing shader object.
+	const RenderBackendMaterialState &getBackendState() const { return m_backendState; }
+	Bool hasBackendState() const { return m_hasBackendState; }
 protected:
+	void storeBackendState(const RenderBackendMaterialState &state) { m_backendState = state; m_hasBackendState = true; }
+	void clearBackendState() { m_hasBackendState = false; }
 	Int m_numPasses;						///<number of passes to complete shader
+private:
+	RenderBackendMaterialState m_backendState;
+	Bool m_hasBackendState = false;
 };
 
 //this table will contain custom versions of each shader tuned for specific video card and user options.
@@ -163,10 +165,70 @@ GraphicsVenderID W3DShaderManager::m_currentVendor;
 __int64 W3DShaderManager::m_driverVersion;
 
 Bool W3DShaderManager::m_renderingToTexture = false;
-IDirect3DSurface8 *W3DShaderManager::m_oldRenderSurface=nullptr;	///<previous render target
-IDirect3DTexture8 *W3DShaderManager::m_renderTexture=nullptr;		///<texture into which rendering will be redirected.
-IDirect3DSurface8 *W3DShaderManager::m_newRenderSurface=nullptr;	///<new render target inside m_renderTexture
-IDirect3DSurface8 *W3DShaderManager::m_oldDepthSurface=nullptr;	///<previous depth buffer surface
+TextureClass *W3DShaderManager::m_filterTexture = nullptr;	///<backend texture into which rendering is redirected.
+RenderBackendTextureHandle W3DShaderManager::m_filterTarget;	///<backend handle for m_filterTexture.
+
+namespace
+{
+
+// D3D12: fullscreen filter quads (legacy XYZRHW DrawPrimitiveUP) become
+// screen_space material draws. Pixel corners are converted to clip/NDC
+// (backend screen_space bypasses the camera); UVs and vertex colors preserved.
+struct ScreenSpaceFilterVertex
+{
+	float px, py; // pixels, top-left origin (legacy XYZRHW convention).
+	unsigned int color; // ARGB diffuse.
+	float u, v;
+};
+
+Bool Submit_Screen_Space_Filter_Quad(
+	const ScreenSpaceFilterVertex quad[4],
+	TextureClass *texture,
+	const RenderBackendMaterialState &baseMaterial)
+{
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr)
+		return false;
+	int outWidth = 0, outHeight = 0, outBits = 0;
+	Bool outWindowed = TRUE;
+	if (!backend->Get_Output_Description(outWidth, outHeight, outBits, outWindowed)
+		|| outWidth <= 0 || outHeight <= 0)
+		return false;
+	RenderBackendMaterialState material = baseMaterial;
+	material.screen_space = true;
+	material.cull = RenderBackendCullMode::None;
+	material.depth_test = RenderBackendDepthTest::Always;
+	material.depth_write = false;
+	RenderBackendTextureHandle handle;
+	if (texture != nullptr) {
+		const TextureFilterClass &filter = texture->Get_Filter();
+		if (!filter.Get_Render_Sampler(material.sampler))
+			return false;
+		material.clamp_texture = true;
+		if (!texture->Ensure_Renderer_Texture())
+			return false;
+		handle = texture->Get_Renderer_Texture();
+	}
+	RenderBackendTexturedVertex verts[4];
+	for (int i = 0; i < 4; ++i) {
+		verts[i].x = (2.0f * quad[i].px / static_cast<float>(outWidth)) - 1.0f;
+		verts[i].y = 1.0f - (2.0f * quad[i].py / static_cast<float>(outHeight));
+		verts[i].z = 0.0f;
+		verts[i].a = ((quad[i].color >> 24) & 255) / 255.0f;
+		verts[i].r = ((quad[i].color >> 16) & 255) / 255.0f;
+		verts[i].g = ((quad[i].color >> 8) & 255) / 255.0f;
+		verts[i].b = (quad[i].color & 255) / 255.0f;
+		verts[i].u = quad[i].u;
+		verts[i].v = quad[i].v;
+		verts[i].q = 1.0f;
+	}
+	// Legacy TRIANGLESTRIP order (BR, TR, BL, TL) -> two triangles.
+	const unsigned short indices[6] = { 0, 1, 2, 2, 1, 3 };
+	return backend->Draw_Indexed_Material_Triangles(verts, 4, indices, 6,
+		handle, material);
+}
+
+} // namespace
 /*===========================================================================================*/
 /*=========      Screen Shaders	=============================================================*/
 /*===========================================================================================*/
@@ -236,74 +298,65 @@ Bool ScreenDefaultFilter::preRender(Bool &skipRender, CustomScenePassModes &scen
 
 Bool ScreenDefaultFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doExtraRender)
 {
-	IDirect3DTexture8 * tex =	W3DShaderManager::endRenderToTexture();
+	TextureClass *tex =	W3DShaderManager::endRenderToTexture();
 	DEBUG_ASSERTCRASH(tex, ("Require rendered texture."));
 	if (!tex) return false;
 	if (!set(mode)) return false;
 
-	LPDIRECT3DDEVICE8 pDev=DX8Wrapper::_Get_D3D_Device8();
-
-	struct _TRANS_LIT_TEX_VERTEX {
-		Vector4 p;
-		DWORD color;   // diffuse color
-		float	u;
-		float	v;
-	} v[4];
-
 	Int xpos, ypos, width, height;
 
-	DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,tex);	//previously rendered frame inside this texture
 	TheTacticalView->getOrigin(&xpos,&ypos);
 	width=TheTacticalView->getWidth();
 	height=TheTacticalView->getHeight();
 
+	// D3D12: XYZRHW DrawPrimitiveUP retired; screen_space material draw below
+	// preserves corners (bottom-right, top-right, bottom-left, top-left) + UVs.
+	ScreenSpaceFilterVertex v[4];
 	//bottom right
-	v[0].p = Vector4( xpos+width-0.5f, ypos+height-0.5f, 0.0f, 1.0f );
+	v[0].px = xpos+width-0.5f; v[0].py = ypos+height-0.5f;
 	v[0].u = (Real)(xpos+width)/(Real)TheDisplay->getWidth();	v[0].v = (Real)(ypos+height)/(Real)TheDisplay->getHeight();
 	//top right
-	v[1].p = Vector4( xpos+width-0.5f, ypos-0.5f, 0.0f, 1.0f );
+	v[1].px = xpos+width-0.5f; v[1].py = ypos-0.5f;
 	v[1].u = (Real)(xpos+width)/(Real)TheDisplay->getWidth();	v[1].v = (Real)(ypos)/(Real)TheDisplay->getHeight();
 	//bottom left
-	v[2].p = Vector4(  xpos-0.5f, ypos+height-0.5f, 0.0f, 1.0f );
+	v[2].px = xpos-0.5f; v[2].py = ypos+height-0.5f;
 	v[2].u = (Real)(xpos)/(Real)TheDisplay->getWidth();	v[2].v = (Real)(ypos+height)/(Real)TheDisplay->getHeight();
 	//top left
-	v[3].p = Vector4(  xpos-0.5f,  ypos-0.5f, 0.0f, 1.0f );
+	v[3].px = xpos-0.5f;  v[3].py = ypos-0.5f;
 	v[3].u = (Real)(xpos)/(Real)TheDisplay->getWidth();	v[3].v = (Real)(ypos)/(Real)TheDisplay->getHeight();
 	v[0].color = 0xffffffff;
 	v[1].color = 0xffffffff;
 	v[2].color = 0xffffffff;
 	v[3].color = 0xffffffff;
 
-	//draw polygons like this is very inefficient but for only 2 triangles, it's
-	//not worth bothering with index/vertex buffers.
-	pDev->SetVertexShader(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1);
-
-	pDev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, v, sizeof(_TRANS_LIT_TEX_VERTEX));
+	// Opaque copy of the previously rendered frame (ZFUNC ALWAYS, no z-write).
+	ShaderClass copyShader = ShaderClass::_PresetOpaqueShader;
+	RenderBackendMaterialState copyMaterial;
+	if (!copyShader.Get_Render_Backend_State(copyMaterial))
+		return false;
+	const Bool submitted = Submit_Screen_Space_Filter_Quad(v, tex, copyMaterial);
 
 	reset();
-	return true;
+	return submitted ? true : false;
 }
 
 Int ScreenDefaultFilter::set(FilterModes mode)
 {
-	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
-	REF_PTR_RELEASE(vmat);	//no need to keep a reference since it's a preset.
-	DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
-
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC,D3DCMP_ALWAYS);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE,FALSE);
-	DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
+	// D3D12: opaque copy material validated via Get_Render_Backend_State;
+	// ZFUNC-ALWAYS/no-z-write preserved via the screen_space submit path.
+	ShaderClass copyShader = ShaderClass::_PresetOpaqueShader;
+	RenderBackendMaterialState copyMaterial;
+	if (!copyShader.Get_Render_Backend_State(copyMaterial))
+		return false;
 
 	return true;
 }
 
 void ScreenDefaultFilter::reset()
 {
-	DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,nullptr);	//previously rendered frame inside this texture
-	DX8Wrapper::Invalidate_Cached_Render_States();
+	//previously rendered frame inside this texture
+	if (IRenderBackend *resetBackend = WW3D::Get_Render_Backend())
+		resetBackend->Invalidate_Cached_Render_States();
 }
 
 /*=========  ScreenBWFilter	=============================================================*/
@@ -328,7 +381,6 @@ W3DFilterInterface *ScreenBWFilterList[]=
 Int ScreenBWFilter::init()
 {
 	Int res;
-	HRESULT hr;
 
 	m_dwBWPixelShader = 0;
 	m_curFadeFrame = 0;
@@ -342,21 +394,10 @@ Int ScreenBWFilter::init()
 	{
 		if (res >= DC_GENERIC_PIXEL_SHADER_1_1)
 		{
-			//this shader needs some assets that need to be loaded
-			//shader decleration
-			DWORD Declaration[]=
-			{
-				(D3DVSD_STREAM(0)),
-				(D3DVSD_REG(0, D3DVSDT_FLOAT3)), // Position
-				(D3DVSD_REG(1, D3DVSDT_D3DCOLOR)), // Diffuse
-				(D3DVSD_REG(2, D3DVSDT_FLOAT2)), //  Texture Coordinates
-				(D3DVSD_END())
-			};
-
-			//Monochrome pixel shader.
-			hr = W3DShaderManager::LoadAndCreateD3DShader("shaders\\monochrome.pso", &Declaration[0], 0, false, &m_dwBWPixelShader);
-			if (FAILED(hr))
-				return FALSE;
+			// D3D12: shaders\monochrome.pso is archival reference only; the
+			// active path submits the base quad with the opaque material (the
+			// monochrome pixel-shader tint has no backend equivalent yet).
+			m_dwBWPixelShader = 0;
 
 			W3DFilters[FT_VIEW_BW_FILTER]=&screenBWFilter;
 
@@ -375,57 +416,51 @@ Bool ScreenBWFilter::preRender(Bool &skipRender, CustomScenePassModes &scenePass
 
 Bool ScreenBWFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doExtraRender)
 {
-	IDirect3DTexture8 * tex =	W3DShaderManager::endRenderToTexture();
+	TextureClass *tex =	W3DShaderManager::endRenderToTexture();
 	DEBUG_ASSERTCRASH(tex, ("Require rendered texture."));
 	if (!tex) return false;
 	if (!set(mode)) return false;
 
-	LPDIRECT3DDEVICE8 pDev=DX8Wrapper::_Get_D3D_Device8();
-
-	struct _TRANS_LIT_TEX_VERTEX {
-		Vector4 p;
-		DWORD color;   // diffuse color
-		float	u;
-		float	v;
-	} v[4];
-
 	Int xpos, ypos, width, height;
 
-	DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,tex);	//previously rendered frame inside this texture
 	TheTacticalView->getOrigin(&xpos,&ypos);
 	width=TheTacticalView->getWidth();
 	height=TheTacticalView->getHeight();
 
+	// D3D12: XYZRHW DrawPrimitiveUP retired; screen_space material draw below
+	// preserves corners + UVs. GAP: the monochrome pixel shader (luminance
+	// weights + fade/tint constants from set()) has no backend equivalent, so
+	// the base frame is submitted unmodified (effect documented, not faked).
+	ScreenSpaceFilterVertex v[4];
 	//bottom right
-	v[0].p = Vector4( xpos+width-0.5f, ypos+height-0.5f, 0.0f, 1.0f );
+	v[0].px = xpos+width-0.5f; v[0].py = ypos+height-0.5f;
 	v[0].u = (Real)(xpos+width)/(Real)TheDisplay->getWidth();	v[0].v = (Real)(ypos+height)/(Real)TheDisplay->getHeight();
 	//top right
-	v[1].p = Vector4( xpos+width-0.5f, ypos-0.5f, 0.0f, 1.0f );
+	v[1].px = xpos+width-0.5f; v[1].py = ypos-0.5f;
 	v[1].u = (Real)(xpos+width)/(Real)TheDisplay->getWidth();	v[1].v = (Real)(ypos)/(Real)TheDisplay->getHeight();
 	//bottom left
-	v[2].p = Vector4(  xpos-0.5f, ypos+height-0.5f, 0.0f, 1.0f );
+	v[2].px = xpos-0.5f; v[2].py = ypos+height-0.5f;
 	v[2].u = (Real)(xpos)/(Real)TheDisplay->getWidth();	v[2].v = (Real)(ypos+height)/(Real)TheDisplay->getHeight();
 	//top left
-	v[3].p = Vector4(  xpos-0.5f,  ypos-0.5f, 0.0f, 1.0f );
+	v[3].px = xpos-0.5f;  v[3].py = ypos-0.5f;
 	v[3].u = (Real)(xpos)/(Real)TheDisplay->getWidth();	v[3].v = (Real)(ypos)/(Real)TheDisplay->getHeight();
 	v[0].color = 0xffffffff;
 	v[1].color = 0xffffffff;
 	v[2].color = 0xffffffff;
 	v[3].color = 0xffffffff;
 
-	//draw polygons like this is very inefficient but for only 2 triangles, it's
-	//not worth bothering with index/vertex buffers.
-	pDev->SetVertexShader(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1);
-
-	pDev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, v, sizeof(_TRANS_LIT_TEX_VERTEX));
+	ShaderClass copyShader = ShaderClass::_PresetOpaqueShader;
+	RenderBackendMaterialState copyMaterial;
+	if (!copyShader.Get_Render_Backend_State(copyMaterial))
+		return false;
+	const Bool submitted = Submit_Screen_Space_Filter_Quad(v, tex, copyMaterial);
 
 	reset();
-	return true;
+	return submitted ? true : false;
 }
 
 Int ScreenBWFilter::set(FilterModes mode)
 {
-	HRESULT hr;
 
 	if (mode > FM_NULL_MODE)
 	{	//rendering a quad with redirected rendering surface tinted by pixel shader
@@ -464,19 +499,17 @@ Int ScreenBWFilter::set(FilterModes mode)
 			}
 		}
 
-		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-		DX8Wrapper::Set_Material(vmat);
-		REF_PTR_RELEASE(vmat);	//no need to keep a reference since it's a preset.
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
+		// D3D12: opaque material validated via Get_Render_Backend_State
+		// (ZFUNC-ALWAYS/no-z-write preserved via the screen_space submit).
+		ShaderClass copyShader = ShaderClass::_PresetOpaqueShader;
+		RenderBackendMaterialState copyMaterial;
+		if (!copyShader.Get_Render_Backend_State(copyMaterial))
+			return false;
 
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC,D3DCMP_ALWAYS);
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE,FALSE);
-		DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
-
-		hr=DX8Wrapper::_Get_D3D_Device8()->SetPixelShader(m_dwBWPixelShader);
-		Set_Legacy_Pixel_Shader_Constant(0, Vector4(0.3f, 0.59f, 0.11f, 1.0f));
+		// GAP: monochrome.pso constants below are preserved CPU-side only.
+		// c0 luminance weights (0.3, 0.59, 0.11).
+		const LegacyPixelShaderConstant luminance = { 0, Vector4(0.3f, 0.59f, 0.11f, 1.0f) };
+		(void)luminance;
 
 		Vector4	color(1.0f,1.0f,1.0f,1.0f);	//multiply color
 
@@ -504,8 +537,11 @@ Int ScreenBWFilter::set(FilterModes mode)
 			color.Z = 0.0f;
 		}
 
-		Set_Legacy_Pixel_Shader_Constant(1, color);
-		Set_Legacy_Pixel_Shader_Constant(2, Vector4(m_curFadeValue, m_curFadeValue, m_curFadeValue, 1.0f));
+		// c1 tint color, c2 fade value (preserved, not uploaded).
+		const LegacyPixelShaderConstant tint = { 1, color };
+		const LegacyPixelShaderConstant fadeValue = { 2, Vector4(m_curFadeValue, m_curFadeValue, m_curFadeValue, 1.0f) };
+		(void)tint;
+		(void)fadeValue;
 /*		Set_Legacy_Pixel_Shader_Constant(2, Vector4(150.0f/255.0f, 150.0f/255.0f, 150.0f/255.0f, 0.0f));
 		Set_Legacy_Pixel_Shader_Constant(3, Vector4((765.0f/450.0f)/3, (765.0f/450.0f)/3, (765.0f/450.0f)/3, 1.0f));
 		Set_Legacy_Pixel_Shader_Constant(4, Vector4(0.5f, 0.5f, 0.5f, 0.0f));
@@ -520,16 +556,14 @@ Int ScreenBWFilter::set(FilterModes mode)
 
 void ScreenBWFilter::reset()
 {
-	DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,nullptr);	//previously rendered frame inside this texture
-	DX8Wrapper::_Get_D3D_Device8()->SetPixelShader(0);	//turn off pixel shader
-	DX8Wrapper::Invalidate_Cached_Render_States();
+	//previously rendered frame inside this texture
+	if (IRenderBackend *resetBackend = WW3D::Get_Render_Backend())
+		resetBackend->Invalidate_Cached_Render_States();
 }
 
 Int ScreenBWFilter::shutdown()
 {
-	if (m_dwBWPixelShader)
-		DX8Wrapper::_Get_D3D_Device8()->DeletePixelShader(m_dwBWPixelShader);
-
+	// D3D12: monochrome.pso handle retired (archival reference only).
 	m_dwBWPixelShader=0;
 
 	return TRUE;

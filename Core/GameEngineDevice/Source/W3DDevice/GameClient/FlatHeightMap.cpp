@@ -80,9 +80,15 @@
 #include "W3DDevice/GameClient/W3DShadow.h"
 #include "W3DDevice/GameClient/W3DWater.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
-#include "WW3D2/dx8wrapper.h"
+// D3D12 migration (FlatHeightMap): WW3D->IRenderBackend->D3D12Backend.
+// Tile draws delegate to W3DTerrainBackground (CPU vectors + backend when
+// migrated); this file removes DX8 state, COLORWRITEENABLE gates, and dead
+// T&L paths, preserving CPU update/culling math.
+#include "WW3D2/IRenderBackend.h"
+#include "WW3D2/ww3d.h"
 #include "WW3D2/light.h"
 #include "WW3D2/scene.h"
+#include <vector>
 #include "W3DDevice/GameClient/W3DPoly.h"
 #include "W3DDevice/GameClient/W3DCustomScene.h"
 
@@ -454,16 +460,15 @@ void FlatHeightMapRenderObjClass::updateCenter(CameraClass *camera, const Vector
 
 void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 {
-	//USE_PERF_TIMER(Terrain_Render)
-
-	Int devicePasses;
-	W3DShaderManager::ShaderTypes st;
+	// D3D12: tile draws delegate to W3DTerrainBackground CPU-vector backend
+	// submission when migrated; this file removes DX8 state,
+	// COLORWRITEENABLE gates, and dead T&L paths. Cloud/noise multi-pass is
+	// not resubmitted here (single-texture material; documented gap).
+	// CPU update/culling math and draw order are unchanged.
 	const Bool doCloud = useCloud();
 
 	if (doCloud)
 	{
-		// TheSuperHackers @tweak Updates the cloud movement before applying it to the world.
-		// Is now decoupled from logic step.
 		W3DShaderManager::updateCloud();
 	}
 
@@ -484,83 +489,21 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	}
 #endif
 
-	DX8Wrapper::Set_Light_Environment(rinfo.light_environment);
-
-	// Force shaders to update.
-	m_stageTwoTexture->restore();
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	ShaderClass::Invalidate();
-
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Transform);
-
-
-	DX8Wrapper::Set_Material(m_vertexMaterialClass);
-	DX8Wrapper::Set_Shader(m_shaderClass);
-
- 	st=W3DShaderManager::ST_FLAT_TERRAIN_BASE; //set default shader
-
- 	//set correct shader based on current settings
- 	if (TheGlobalData->m_useLightMap && doCloud)
- 	{	st=W3DShaderManager::ST_FLAT_TERRAIN_BASE_NOISE12;
- 	}
- 	else
- 	if (TheGlobalData->m_useLightMap)
- 	{	//lightmap only
- 		st=W3DShaderManager::ST_FLAT_TERRAIN_BASE_NOISE2;
- 	}
- 	else
- 	if (doCloud)
- 	{	//cloudmap only
- 		st=W3DShaderManager::ST_FLAT_TERRAIN_BASE_NOISE1;
- 	}
-
-
-
-	//Find number of passes required to render current shader
- 	devicePasses=W3DShaderManager::getShaderPasses(st);
-
- 	if (m_disableTextures)
- 		devicePasses=1;	//force to 1 lighting-only pass
-
- 	//Specify all textures that this shader may need.
- 	W3DShaderManager::setTexture(0,m_stageZeroTexture);
-	if (m_shroud && rinfo.Additional_Pass_Count() && !m_disableTextures)
-	{
-		W3DShaderManager::setTexture(0,TheTerrainRenderObject->getShroud()->getShroudTexture());
+	if (m_map == nullptr || m_tiles == nullptr) {
+		return;
 	}
 
- 	W3DShaderManager::setTexture(1,nullptr);	// Set by the tile later. [3/31/2003]
- 	W3DShaderManager::setTexture(2,m_stageTwoTexture);	//cloud
- 	W3DShaderManager::setTexture(3,m_stageThreeTexture);//noise
-	//Disable writes to destination alpha channel (if there is one)
-	if (DX8Wrapper::getBackBufferFormat() == WW3D_FORMAT_A8R8G8B8) {
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
-	}
-
-	Int pass;
 	Int yCoordMax = 0;
 	Int yCoordMin = m_map->getXExtent();
 	Int xCoordMax = 0;
 	Int xCoordMin = m_map->getYExtent();
- 	for (pass=0; pass<devicePasses; pass++) {
-		Bool disableTex = m_disableTextures;
-		if (m_disableTextures ) {
-			DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaque2DShader);
-			DX8Wrapper::Set_Texture(0,nullptr);
-		} else {
-			W3DShaderManager::setShader(st, pass);
-		}
-
+	{
 		Int i, j;
 		for	(i=0; i<m_tilesWidth; i++) {
 			for (j=0; j<m_tilesHeight; j++) {
 				W3DTerrainBackground *tile = m_tiles+j*m_tilesWidth+i;
-				if (pass>0) {
-					disableTex = TRUE; // doing cloud/noise
-				}
 				if (!tile->isCulled()) {
-					tile->drawVisiblePolys(rinfo, disableTex);
+					tile->drawVisiblePolys(rinfo, m_disableTextures);
 					if (i*CELLS_PER_TILE<xCoordMin) {
 						xCoordMin = i*CELLS_PER_TILE;
 					}
@@ -578,21 +521,13 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		}
 	}
 
-	if (pass)	//shader was applied at least once?
- 		W3DShaderManager::resetShader(st);
 #if 1
 
 	//Draw feathered shorelines
 	renderShoreLines(&rinfo.Camera);
 
 #ifdef DO_ROADS
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	m_stageTwoTexture->restore();
-
-	ShaderClass::Invalidate();
 	if (!ShaderClass::Is_Backface_Culling_Inverted()) {
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
 		if (Scene) {
 			RTS3DScene *pMyScene = (RTS3DScene *)Scene;
 			RefRenderObjListIterator pDynamicLightsIterator(pMyScene->getDynamicLights());
@@ -602,36 +537,17 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	}
 #endif
 
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	m_stageTwoTexture->restore();
-
 	drawScorches();
-
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	m_stageTwoTexture->restore();
-	ShaderClass::Invalidate();
-	DX8Wrapper::Apply_Render_State_Changes();
 
 	m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, m_stageTwoTexture);
 
 	if (TheTerrainTracksRenderObjClassSystem)
 		TheTerrainTracksRenderObjClassSystem->flush();
 
-	ShaderClass::Invalidate();
-	DX8Wrapper::Apply_Render_State_Changes();
-
 	m_waypointBuffer->drawWaypoints(rinfo);
 
 	m_bibBuffer->renderBibs();
 #endif
-	// We do some custom blending, so tell the shader class to reset everything.
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	m_stageTwoTexture->restore();
-	ShaderClass::Invalidate();
-	DX8Wrapper::Set_Material(nullptr);
 
 }
 
