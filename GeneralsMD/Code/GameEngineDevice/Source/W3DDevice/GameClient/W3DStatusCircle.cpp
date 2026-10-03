@@ -222,9 +222,12 @@ Int W3DStatusCircle::updateCircleVB()
 					vb->x=	vec.X;
 					vb->y=	vec.Y;
 				}
-				vb->diffuse = diffuse;
-				vb->u1=0;
-				vb->v1=0;
+				vb->r = diffuseR;
+				vb->g = diffuseG;
+				vb->b = diffuseB;
+				vb->a = diffuseA;
+				vb->u=0;
+				vb->v=0;
 				vb++;
 			}
 			curAngle += deltaAngle;
@@ -232,66 +235,89 @@ Int W3DStatusCircle::updateCircleVB()
 		}
 		return 0; //success.
 	}
-	return -1;
 }
 
 /** updateCircleVB puts a circle with a team color vertex buffer. */
 
 Int W3DStatusCircle::updateScreenVB(Int diffuse)
 {
-	DX8VertexBufferClass	*pVB = m_vertexBufferScreen;
-	if (m_vertexBufferScreen )
+	if (m_screenVertices.size() < (size_t)(2*3))
+	{
+		return -1;
+	}
 	{
 		m_needUpdate = false;
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
-		VertexFormatXYZDUV1 *vb = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-
+		RenderBackendTexturedVertex *vb = m_screenVertices.data();
+		// Unpack the legacy ARGB diffuse for the backend's float color channels.
+		const UnsignedInt packedDiffuse = (UnsignedInt)diffuse;
+		const Real diffuseR = ((packedDiffuse >> 16) & 255) / 255.0f;
+		const Real diffuseG = ((packedDiffuse >> 8) & 255) / 255.0f;
+		const Real diffuseB = ((packedDiffuse) & 255) / 255.0f;
+		const Real diffuseA = ((packedDiffuse >> 24) & 255) / 255.0f;
 		vb->x =	-1;
 		vb->y =	-1;
 		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
+		vb->r = diffuseR;
+		vb->g = diffuseG;
+		vb->b = diffuseB;
+		vb->a = diffuseA;
+		vb->u=0;
+		vb->v=0;
 		vb++;
 
 		vb->x =	1;
 		vb->y =	1;
 		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
+		vb->r = diffuseR;
+		vb->g = diffuseG;
+		vb->b = diffuseB;
+		vb->a = diffuseA;
+		vb->u=0;
+		vb->v=0;
 		vb++;
 
 		vb->x =	-1;
 		vb->y =	1;
 		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
+		vb->r = diffuseR;
+		vb->g = diffuseG;
+		vb->b = diffuseB;
+		vb->a = diffuseA;
+		vb->u=0;
+		vb->v=0;
 		vb++;
 
 		vb->x =	-1;
 		vb->y =	-1;
 		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
+		vb->r = diffuseR;
+		vb->g = diffuseG;
+		vb->b = diffuseB;
+		vb->a = diffuseA;
+		vb->u=0;
+		vb->v=0;
 		vb++;
 
 		vb->x =	1;
 		vb->y =	-1;
 		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
+		vb->r = diffuseR;
+		vb->g = diffuseG;
+		vb->b = diffuseB;
+		vb->a = diffuseA;
+		vb->u=0;
+		vb->v=0;
 		vb++;
 
 		vb->x =	1;
 		vb->y =	1;
 		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
+		vb->r = diffuseR;
+		vb->g = diffuseG;
+		vb->b = diffuseB;
+		vb->a = diffuseA;
+		vb->u=0;
+		vb->v=0;
 		vb++;
 		return 0; //success.
 	}

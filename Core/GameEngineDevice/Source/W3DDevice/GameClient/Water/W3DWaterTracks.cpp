@@ -307,6 +307,11 @@ Int WaterTracksObj::render(std::vector<RenderBackendTexturedVertex> &cpuVertices
 	struct CpuQuadVertex { float x, y, z; unsigned int diffuse; float u, v; };
 	CpuQuadVertex quad[4];
 	Vector2	waveTailOrigin,waveFrontOrigin;
+	Real	ooWaveDirLen=1.0f/m_waveDir.Length();	//one over length
+	Real	waterHeight;
+	Real	waveAlpha;
+	Real	widthFrac;
+	Real	heightFrac;
 
 	//Adjust wave position in a non-linear way so that it slows down as it hits the target.  Using 1/4 sine wave
 	//seems to work okay since it maxes out at 1.0 at our final position.
@@ -414,59 +419,67 @@ Int WaterTracksObj::render(std::vector<RenderBackendTexturedVertex> &cpuVertices
 	//First insert tail of wave:
 	Vector2 testPoint(waveTailOrigin);
 	TheTerrainLogic->isUnderwater(testPoint.X,testPoint.Y,&waterHeight);
-	vb->x=	testPoint.X;
-	vb->y=	testPoint.Y;
-	vb->z=waterHeight+1.5f;
-	vb->diffuse=(REAL_TO_INT(waveAlpha*255.0f)<<24) |0xffffff;
+	quad[0].x=	testPoint.X;
+	quad[0].y=	testPoint.Y;
+	quad[0].z=waterHeight+1.5f;
+	quad[0].diffuse=(REAL_TO_INT(waveAlpha*255.0f)<<24) |0xffffff;
 	if (m_flipU)
-		vb->u1=1;
+		quad[0].u=1;
 	else
-		vb->u1=0;
-	vb->v1=0;
-	vb++;
+		quad[0].u=0;
+	quad[0].v=0;
 	testPoint.Set(waveTailOrigin + m_perpDir*m_waveFinalWidth*widthFrac);
-	vb->x=	testPoint.X;
-	vb->y=	testPoint.Y;
-	vb->z=waterHeight+1.5f;
-	vb->diffuse=(REAL_TO_INT(waveAlpha*255.0f)<<24) |0xffffff;
+	quad[1].x=	testPoint.X;
+	quad[1].y=	testPoint.Y;
+	quad[1].z=waterHeight+1.5f;
+	quad[1].diffuse=(REAL_TO_INT(waveAlpha*255.0f)<<24) |0xffffff;
 	if (m_flipU)
-		vb->u1=0.0f;
+		quad[1].u=0.0f;
 	else
-		vb->u1=1.0f;
-	vb->v1=0;
-	vb++;
+		quad[1].u=1.0f;
+	quad[1].v=0;
 	//insert front of wave
 	testPoint.Set(waveFrontOrigin);
-	vb->x=	testPoint.X;
-	vb->y=	testPoint.Y;
-	vb->z=waterHeight+1.5f;
-	vb->diffuse=(REAL_TO_INT(waveAlpha*255.0f)<<24) |0xffffff;
+	quad[2].x=	testPoint.X;
+	quad[2].y=	testPoint.Y;
+	quad[2].z=waterHeight+1.5f;
+	quad[2].diffuse=(REAL_TO_INT(waveAlpha*255.0f)<<24) |0xffffff;
 	if (m_flipU)
-		vb->u1=1;
+		quad[2].u=1;
 	else
-		vb->u1=0;
-	vb->v1=1.0f;
-	vb++;
+		quad[2].u=0;
+	quad[2].v=1.0f;
 	testPoint.Set(waveFrontOrigin + m_perpDir*m_waveFinalWidth*widthFrac);
-	vb->x=	testPoint.X;
-	vb->y=	testPoint.Y;
-	vb->z=waterHeight+1.5f;
-	vb->diffuse=(REAL_TO_INT(waveAlpha*255.0f)<<24) |0xffffff;
+	quad[3].x=	testPoint.X;
+	quad[3].y=	testPoint.Y;
+	quad[3].z=waterHeight+1.5f;
+	quad[3].diffuse=(REAL_TO_INT(waveAlpha*255.0f)<<24) |0xffffff;
 	if (m_flipU)
-		vb->u1=0;
+		quad[3].u=0;
 	else
-		vb->u1=1.0f;
-	vb->v1=1.0f;
-	vb++;
+		quad[3].u=1.0f;
+	quad[3].v=1.0f;
 
-	vertexBuffer->Get_DX8_Vertex_Buffer()->Unlock();
+	// Append as two backend triangles (0,2,1) + (1,2,3); strip degenerates retired.
+	const unsigned short base = static_cast<unsigned short>(cpuVertices.size());
+	for (int i = 0; i < 4; ++i) {
+		RenderBackendTexturedVertex v;
+		v.x = quad[i].x; v.y = quad[i].y; v.z = quad[i].z;
+		v.a = ((quad[i].diffuse >> 24) & 255) / 255.0f;
+		v.r = ((quad[i].diffuse >> 16) & 255) / 255.0f;
+		v.g = ((quad[i].diffuse >> 8) & 255) / 255.0f;
+		v.b = (quad[i].diffuse & 255) / 255.0f;
+		v.u = quad[i].u; v.v = quad[i].v; v.q = 1.0f;
+		cpuVertices.push_back(v);
+	}
+	cpuIndices.push_back(base + 0);
+	cpuIndices.push_back(base + 2);
+	cpuIndices.push_back(base + 1);
+	cpuIndices.push_back(base + 1);
+	cpuIndices.push_back(base + 2);
+	cpuIndices.push_back(base + 3);
 
-	Int idxCount=(m_y-1)*(m_x*2+2) - 2;	//index count
-
-	DX8Wrapper::Set_Index_Buffer(TheWaterTracksRenderSystem->m_indexBuffer,batchStart);
-	DX8Wrapper::Draw_Strip(0,idxCount-2,0,m_x*m_y);	//there are always n-2 primitives for n index strip.
-
-	return batchStart+m_x*m_y;	//return new offset into unused area of vertex buffer
+	return 1;	//one quad appended
 }
 
 //=============================================================================
@@ -591,9 +604,9 @@ WaterTracksRenderSystem::WaterTracksRenderSystem()
 {
 	m_usedModules = nullptr;
 	m_freeModules = nullptr;
-	m_indexBuffer = nullptr;
 	m_vertexMaterialClass = nullptr;
-	m_vertexBuffer = nullptr;
+	m_cpuVertices.clear();
+	m_cpuIndices.clear();
 	m_stripSizeX=WATER_STRIP_X;
 	m_stripSizeY=WATER_STRIP_Y;
 	m_batchStart=0;
