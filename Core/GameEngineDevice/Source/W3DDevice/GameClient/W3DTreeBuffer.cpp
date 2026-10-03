@@ -82,11 +82,13 @@ enum
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "W3DDevice/GameClient/W3DProjectedShadow.h"
 #include "WW3D2/camera.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/meshrenderer.h"
 #include "WW3D2/matinfo.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/meshmdl.h"
+#include <vector>
 
 
 // If TEST_AND_BLEND is defined, it will do an alpha test and blend.  Otherwise just alpha test. jba. [5/30/2003]
@@ -131,21 +133,15 @@ int W3DTreeBuffer::W3DTreeTextureClass::update(W3DTreeBuffer *buffer)
 	Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 	Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 
-	IDirect3DSurface8 *surface_level;
-	D3DSURFACE_DESC surface_desc;
-	D3DLOCKED_RECT locked_rect;
-	DX8_ErrorCode(Peek_D3D_Texture()->GetSurfaceLevel(0, &surface_level));
-	DX8_ErrorCode(surface_level->GetDesc(&surface_desc));
-
-	DX8_ErrorCode(surface_level->LockRect(&locked_rect, nullptr, 0));
-
+	// D3D12: build the tile atlas as a CPU RGBA8 image and upload via the
+	// backend (single mip level). Tile placement math is preserved exactly;
+	// mip-chain generation is backend-owned (documented gap vs Generate_Mipmaps).
 	Int tilePixelExtent = TILE_PIXEL_EXTENT;
-//	Int numRows = surface_desc.Height/(tilePixelExtent+TILE_OFFSET);
-#ifdef RTS_DEBUG
-	//DASSERT_MSG(tilesPerRow*numRows >= htMap->m_numBitmapTiles,Debug::Format ("Too many tiles."));
-	//DEBUG_ASSERTCRASH((Int)surface_desc.Width >= tilePixelExtent*tilesPerRow, ("Bitmap too small."));
-#endif
-	if (surface_desc.Format == D3DFMT_A8R8G8B8) {
+	const Int atlasWidth = static_cast<Int>(Get_Width());
+	const Int atlasHeight = static_cast<Int>(Get_Height());
+	if (atlasWidth <= 0 || atlasHeight <= 0)
+		return 0;
+	std::vector<unsigned char> rgba(static_cast<size_t>(atlasWidth) * atlasHeight * 4, 0);
 		Int tileNdx;
 		Int pixelBytes = 4;
 #if 0 // Fill unused texture for debug display.
@@ -171,30 +167,37 @@ int W3DTreeBuffer::W3DTreeTextureClass::update(W3DTreeBuffer *buffer)
 				UnsignedByte *pBGR = pTile->getRGBDataForWidth(tilePixelExtent);
 				pBGR += (tilePixelExtent-(1+j))*TILE_BYTES_PER_PIXEL*tilePixelExtent; // invert to match.
 				Int row = position.y+j;
-				UnsignedByte *pBGRA = ((UnsignedByte*)locked_rect.pBits) +
-							(row)*surface_desc.Width*pixelBytes;
-
-				Int column = position.x;
-				pBGRA += column*pixelBytes;
+				if (row < 0 || row >= atlasHeight)
+					continue;
 				for (i=0; i<tilePixelExtent; i++) {
-					// 15 bit color *((Short*)pBGRA) = 0x8000 + ((pBGR[2]>>3)<<10) + ((pBGR[1]>>3)<<5) + (pBGR[0]>>3);
-					*((Int *)pBGRA) = (pBGR[3]<<24) + (pBGR[2]<<16) + (pBGR[1]<<8) + (pBGR[0]);
-					pBGRA +=pixelBytes;
+					Int column = position.x + i;
+					if (column < 0 || column >= atlasWidth)
+						continue;
+					// Tile bytes are BGRA; RGBA8 image is R,G,B,A.
+					unsigned char *dst = rgba.data() + (static_cast<size_t>(row) * atlasWidth + column) * 4;
+					dst[0] = pBGR[2];
+					dst[1] = pBGR[1];
+					dst[2] = pBGR[0];
+					dst[3] = pBGR[3];
 					pBGR +=TILE_BYTES_PER_PIXEL;
 				}
 			}
 		}
 
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend != nullptr) {
+		RenderBackendTextureMipLevel level;
+		level.width = static_cast<unsigned int>(atlasWidth);
+		level.height = static_cast<unsigned int>(atlasHeight);
+		level.row_pitch = static_cast<unsigned int>(atlasWidth) * 4;
+		level.pixels = rgba.data();
+		const RenderBackendTextureHandle handle =
+			backend->Create_Static_RGBA8_Texture(&level, 1);
+		if (handle.Is_Valid())
+			buffer->m_treeTextureHandle = handle;
+		// GAP: single-level upload; legacy Generate_Mipmaps CPU chain retired.
 	}
-	DX8_ErrorCode(surface_level->UnlockRect());
-	surface_level->Release();
-	if (!Generate_Mipmaps()) {
-		return 0;
-	}
-	if (WW3D::Get_Texture_Reduction()) {
-		DX8_ErrorCode(Peek_D3D_Texture()->SetLOD((DWORD)WW3D::Get_Texture_Reduction()));
-	}
-	return(surface_desc.Height);
+	return atlasHeight;
 }
 
 
@@ -205,9 +208,9 @@ int W3DTreeBuffer::W3DTreeTextureClass::update(W3DTreeBuffer *buffer)
 //=============================================================================
 void W3DTreeBuffer::W3DTreeTextureClass::setLOD(Int LOD) const
 {
-	if (Peek_D3D_Texture()) {
-		DX8_ErrorCode(Peek_D3D_Texture()->SetLOD((DWORD)LOD));
-	}
+	// D3D12: mip LOD is backend-owned; the value is preserved for API
+	// compatibility but no D3D SetLOD exists. Documented gap.
+	(void)LOD;
 }
 //=============================================================================
 // W3DTreeBuffer::W3DTreeTextureClass::Apply

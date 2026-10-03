@@ -172,23 +172,6 @@ void W3DBibBuffer::loadBibsInVertexAndIndexBuffers()
 						break;
 				}
 
-				Real U, V;
-				Vector3 vLoc=m_bibs[curBib].m_corners[i];
-				switch (i) {
-					case 0 :
-						U=0;V=1;
-						break;
-					case 1:
-						U=1;V=1;
-						break;
-					case 2:
-						U=1;V=0;
-						break;
-					case 3:
-						U=0;V=0;
-						break;
-				}
-
 				RenderBackendTexturedVertex curVb;
 				curVb.u = U;
 				curVb.v = V;

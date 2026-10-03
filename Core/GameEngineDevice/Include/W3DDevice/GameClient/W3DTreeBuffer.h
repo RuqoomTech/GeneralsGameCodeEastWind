@@ -237,7 +237,8 @@ private:
 	Short		m_areaPartition[PARTITION_WIDTH_HEIGHT*PARTITION_WIDTH_HEIGHT];
 	Region2D m_bounds;
 
-	TextureClass *m_treeTexture;	///<Trees texture
+	TextureClass *m_treeTexture;	///<Trees texture (CPU tile atlas; GPU upload is m_treeTextureHandle)
+	RenderBackendTextureHandle m_treeTextureHandle;	///<backend upload of the tile atlas (procedural RGBA8).
 	Int			m_textureWidth;				///<Width in pixels m_treeTexture;
 	Int			m_textureHeight;				///<Width in pixels m_treeTexture;
 	Int			m_curNumTreeVertices[MAX_BUFFERS]; ///<Number of vertices used in m_vertexTree.
@@ -262,6 +263,9 @@ private:
 	Real		m_curSwayOffset[MAX_SWAY_TYPES];
 	Real		m_curSwayStep[MAX_SWAY_TYPES];
 	Real		m_curSwayFactor[MAX_SWAY_TYPES];
+	// Last per-sway-type world offset computed in drawTrees (preserved CPU-side;
+	// applied to batch vertices since Trees.vso c4/c8/c9/c32-33 has no backend).
+	Vector3 m_lastSwayFactor[MAX_SWAY_TYPES];
 
 	W3DProjectedShadow *m_shadow;
 

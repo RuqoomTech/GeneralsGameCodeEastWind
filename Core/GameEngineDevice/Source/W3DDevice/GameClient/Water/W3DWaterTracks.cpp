@@ -635,46 +635,13 @@ WaterTracksRenderSystem::~WaterTracksRenderSystem()
 //=============================================================================
 void WaterTracksRenderSystem::ReAcquireResources()
 {
-	Int i,j,k;
-//	const Int numModules=16;	///@todo: Get a value out of gdf
-
-	// just for paranoia's sake.
-	REF_PTR_RELEASE(m_indexBuffer);
-	REF_PTR_RELEASE(m_vertexBuffer);
-
-	//Will need m_y-1 strips, each of length m_x*2.
-	//Will also need 2 extra indices to connect each strip to next one (except last strip)
-	//Total index buffer size = (m_y-1)*(m_x*2+2) - 2 (drop the extra 2 indices from last strip)
-
-	Int idxCount=(m_stripSizeY-1)*(m_stripSizeX*2+2) - 2;
-
-	m_indexBuffer=NEW_REF(DX8IndexBufferClass,(idxCount));
-
-	// Fill up the IB
-	{
-		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBuffer);
-		UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
-
-		for (i=0,j=0,k=0; i<idxCount; j++)
-		{
-			for (;k<(m_stripSizeX*(j+1)); k++,i+=2)
-			{
-				ib[i]=(UnsignedShort) k+m_stripSizeX;
-				ib[i+1]=(UnsignedShort) k;
-			}
-			//Generate 4 degenerate triangle to connect current strip to next strip/row of map
-			//To do this, we just repeat the last index of first strip and first index of new strip.
-			//Any triangles with repeated vertices will be skipped during rendering.
-			if (i<idxCount) //check if there is at least 1 more strip to go
-			{
-				ib[i]=k-1;
-				ib[i+1]=k+m_stripSizeX;
-				i+=2;
-			}
-		}
-	}
-
-	m_vertexBuffer=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,m_stripSizeX*m_stripSizeY*WATER_VB_PAGES,DX8VertexBufferClass::USAGE_DYNAMIC));
+	// D3D12: CPU vectors replace the DX8 strip index/vertex buffers.
+	// Quads are appended per track and submitted in flush(); no GPU resources
+	// are allocated here. Reserve one VB page worth of quads.
+	m_cpuVertices.clear();
+	m_cpuIndices.clear();
+	m_cpuVertices.reserve(static_cast<size_t>(WATER_VB_PAGES) * 4);
+	m_cpuIndices.reserve(static_cast<size_t>(WATER_VB_PAGES) * 6);
 	m_batchStart=0;
 }
 
@@ -685,10 +652,10 @@ void WaterTracksRenderSystem::ReAcquireResources()
 //=============================================================================
 void WaterTracksRenderSystem::ReleaseResources()
 {
-	REF_PTR_RELEASE(m_indexBuffer);
-	REF_PTR_RELEASE(m_vertexBuffer);
+	m_cpuVertices.clear();
+	m_cpuIndices.clear();
 	// Note - it is ok to not release the material, as it is a w3d object that
-	// has no dx8 resources. jba.
+	// has no renderer resources. jba.
 }
 
 //=============================================================================
@@ -806,9 +773,7 @@ void WaterTracksRenderSystem::shutdown()
 
 	}
 
-	REF_PTR_RELEASE(m_indexBuffer);
 	REF_PTR_RELEASE(m_vertexMaterialClass);
-	REF_PTR_RELEASE(m_vertexBuffer);
 
 }
 
@@ -870,9 +835,8 @@ Try improving the fit to vertical surfaces like cliffs.
 	if (!m_usedModules || ShaderClass::Is_Backface_Culling_Inverted())
 		return;	//don't render track marks in reflections.
 
-	//According to Nvidia there's a D3D bug that happens if you don't start with a
-	//new dynamic VB each frame - so we force a DISCARD by overflowing the counter.
-	m_batchStart = 0xffff;
+	// D3D12: CPU batches are rebuilt every frame; no DISCARD hack needed.
+	m_batchStart = 0;
 
 	// adjust shading for time of day.
 	Real shadeR, shadeG, shadeB;
@@ -887,57 +851,77 @@ Try improving the fit to vertical surfaces like cliffs.
 	shadeB*=255.0f;
 
 	diffuseLight=REAL_TO_INT(shadeB) | (REAL_TO_INT(shadeG) << 8) | (REAL_TO_INT(shadeR) << 16);
+	(void)diffuseLight; // Preserved legacy shading computation; backend vertex colors carry wave alpha.
 
-	Matrix3D tm(1);	///set to identity
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);	//position the water surface
+	// D3D12: material state comes from the caller's alpha shader via
+	// Get_Render_Backend_State. The legacy ZBIAS + stage-1 shroud modulate have
+	// no backend equivalent yet; base wave quads are submitted with the closest
+	// material (alpha, cull disabled) and documented here (no fake shroud).
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr)
+		return;
+	RenderBackendMaterialState material;
+	if (!m_shaderClass.Get_Render_Backend_State(material))
+		return;
+	material.cull = RenderBackendCullMode::None;
 
-	DX8Wrapper::Set_Material(m_vertexMaterialClass);
-	DX8Wrapper::Set_Shader(m_shaderClass);
-
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexBuffer);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZBIAS,8);
-	//Force apply of render states so we can override them.
-	DX8Wrapper::Apply_Render_State_Changes();
-
-	if (TheTerrainRenderObject->getShroud())
-	{
-		W3DShaderManager::setTexture(0,TheTerrainRenderObject->getShroud()->getShroudTexture());
-		W3DShaderManager::setShader(W3DShaderManager::ST_SHROUD_TEXTURE, 1);
-
-		//modulate with shroud texture
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLORARG1, D3DTA_TEXTURE );	//stage 1 texture
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLORARG2, D3DTA_CURRENT );	//previous stage texture
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLOROP,   D3DTOP_MODULATE );
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_ALPHAOP,   D3DTOP_MODULATE );
-
-		//Shroud shader uses z-compare of EQUAL which wouldn't work on water because it doesn't
-		//write to the zbuffer.  Change to LESSEQUAL.
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+	if (TheTerrainRenderObject != nullptr && TheTerrainRenderObject->getShroud() != nullptr) {
+		// GAP: shroud-texture projection (ST_SHROUD_TEXTURE stage-1 MODULATE
+		// with LESSEQUAL zfunc) is preserved CPU-side via shroud levels but not
+		// projected in UV space on the backend yet. Submit unmodulated.
 	}
 
-	Int LastTextureType=-1;
+	m_cpuVertices.clear();
+	m_cpuIndices.clear();
+
+	TextureClass *batchTexture = nullptr;
+	RenderBackendTextureHandle batchHandle;
+	size_t batchStartVertex = 0;
+	size_t batchStartIndex = 0;
 
 	WaterTracksObj *mod=m_usedModules;
 
+	auto flushBatch = [&]() {
+		if (batchTexture == nullptr || m_cpuVertices.size() <= batchStartVertex
+			|| m_cpuIndices.size() <= batchStartIndex)
+			return;
+		RenderBackendMaterialState batchMaterial = material;
+		const TextureFilterClass &filter = batchTexture->Get_Filter();
+		if (!filter.Get_Render_Sampler(batchMaterial.sampler))
+			return;
+		batchMaterial.clamp_texture = filter.Get_U_Addr_Mode() == TextureFilterClass::TEXTURE_ADDRESS_CLAMP;
+		if (!batchTexture->Ensure_Renderer_Texture())
+			return;
+		batchHandle = batchTexture->Get_Renderer_Texture();
+		std::vector<RenderBackendTexturedVertex> batchVerts(
+			m_cpuVertices.begin() + batchStartVertex, m_cpuVertices.end());
+		std::vector<unsigned short> batchIndices;
+		batchIndices.reserve(m_cpuIndices.size() - batchStartIndex);
+		const unsigned int base = static_cast<unsigned int>(batchStartVertex);
+		for (size_t i = batchStartIndex; i < m_cpuIndices.size(); ++i)
+			batchIndices.push_back(static_cast<unsigned short>(m_cpuIndices[i] - base));
+		backend->Draw_Indexed_Material_Triangles(batchVerts.data(),
+			static_cast<unsigned int>(batchVerts.size()),
+			batchIndices.data(), static_cast<unsigned int>(batchIndices.size()),
+			batchHandle, batchMaterial);
+		batchStartVertex = m_cpuVertices.size();
+		batchStartIndex = m_cpuIndices.size();
+	};
+
 	while( mod )
 	{
-		if (LastTextureType != mod->m_type)
-			DX8Wrapper::Set_Texture(0,mod->m_stageZeroTexture);
+		if (batchTexture != mod->m_stageZeroTexture) {
+			flushBatch();
+			batchTexture = mod->m_stageZeroTexture;
+		}
 
-		Int vertsRendered=mod->render(m_vertexBuffer,m_batchStart);
-
-		m_batchStart = vertsRendered;	//advance past vertices already in buffer
+		mod->render(m_cpuVertices, m_cpuIndices);
 
 		mod = mod->m_nextSystem;
 	}
+	flushBatch();
 
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZBIAS,0);
-
-	if (TheTerrainRenderObject->getShroud())
-	{	//we used the shroud shader, so reset it.
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC, D3DCMP_EQUAL);
-		W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
-	}
+	backend->Invalidate_Cached_Render_States();
 }
 
 WaterTracksObj *WaterTracksRenderSystem::findTrack(Vector2 &start, Vector2 &end, waveType type)
@@ -1298,8 +1282,9 @@ void TestWaterUpdate()
 				Real xdiff=terrainPointEnd.x - terrainPointStart.x;
 				Real ydiff=terrainPointEnd.y - terrainPointStart.y;
 				if (sqrt (xdiff * xdiff + ydiff * ydiff) <= waveTypeInfo[currentWaveType].m_finalWidth)
-				{	TheDisplay->drawLine(mouseAnchor.x, mouseAnchor.y, screenPoint.x, screenPoint.y,1,0xffccccff);
-					DX8Wrapper::Invalidate_Cached_Render_States();
+				{					TheDisplay->drawLine(mouseAnchor.x, mouseAnchor.y, screenPoint.x, screenPoint.y,1,0xffccccff);
+					if (IRenderBackend *lineBackend = WW3D::Get_Render_Backend())
+						lineBackend->Invalidate_Cached_Render_States();
 					ShaderClass::Invalidate();
 				}
 

@@ -152,7 +152,6 @@ void W3DBridge::renderBridge(Bool wireframe, const VertexFormatXYZNDUV1 *sharedV
 		if (!detailAlphaShader.Get_Render_Backend_State(state)) {
 			return;
 		}
-		// depth_test LessEqual + depth_write true come from detailAlphaShader (SC_ALPHA_DETAIL).
 		std::vector<RenderBackendTexturedVertex> vertices;
 		vertices.reserve((size_t)m_numVertex);
 		for (Int i = 0; i < m_numVertex; ++i) {
@@ -798,8 +797,10 @@ W3DBridgeBuffer::W3DBridgeBuffer()
 //=============================================================================
 void W3DBridgeBuffer::freeBridgeBuffers()
 {
-	REF_PTR_RELEASE(m_vertexBridge);
-	REF_PTR_RELEASE(m_indexBridge);
+	m_bridgeVertices.clear();
+	m_bridgeIndices.clear();
+	m_curNumBridgeVertices=0;
+	m_curNumBridgeIndices=0;
 	REF_PTR_RELEASE(m_vertexMaterial);
 }
 
@@ -812,8 +813,11 @@ void W3DBridgeBuffer::allocateBridgeBuffers()
 {
 	if (TheGlobalData->m_headless)
 		return;
-	m_vertexBridge=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZNDUV1,MAX_BRIDGE_VERTEX+4,DX8VertexBufferClass::USAGE_DYNAMIC));
-	m_indexBridge=NEW_REF(DX8IndexBufferClass,(MAX_BRIDGE_INDEX+4, DX8IndexBufferClass::USAGE_DYNAMIC));
+	// D3D12: reserve CPU staging (GlobalData sizes preserved via MAX_* constants).
+	m_bridgeVertices.clear();
+	m_bridgeIndices.clear();
+	m_bridgeVertices.reserve((size_t)MAX_BRIDGE_VERTEX + 4);
+	m_bridgeIndices.reserve((size_t)MAX_BRIDGE_INDEX + 4);
 	m_vertexMaterial=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
 #ifdef USE_BRIDGE_NORMALS
 	m_vertexMaterial= NEW VertexMaterialClass();
@@ -842,6 +846,9 @@ void W3DBridgeBuffer::clearAllBridges()
 		m_bridges[curBridge].clearBridge();
 	}
 	m_curNumBridgeIndices = 0;
+	m_curNumBridgeVertices = 0;
+	m_bridgeVertices.clear();
+	m_bridgeIndices.clear();
 	m_numBridges=0;
 }
 
@@ -1194,57 +1201,22 @@ void W3DBridgeBuffer::drawBridges(CameraClass * camera, Bool wireframe, TextureC
 
 
 
-	if (m_curNumBridgeIndices == 0) {
+	if (m_curNumBridgeIndices == 0 || m_bridgeVertices.empty() || m_bridgeIndices.empty()) {
 		return;
 	}
 
-	DX8Wrapper::Set_Material(m_vertexMaterial);
-	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Index_Buffer(m_indexBridge,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexBridge);
-	DX8Wrapper::Set_Shader(detailAlphaShader);
-#ifdef RTS_DEBUG
-	//DX8Wrapper::Set_Shader(detailShader); // shows alpha clipping.
-#endif
-
-	DX8Wrapper::Apply_Render_State_Changes();
-
-	if (!wireframe && cloudTexture)
-	{	//Force a cloud texture projection into stage 1
-		W3DShaderManager::setTexture(1,cloudTexture);
-		W3DShaderManager::setShader(W3DShaderManager::ST_CLOUD_TEXTURE,1);
-	}
+	// D3D12: base pass only. Cloud second-stage (ST_CLOUD_TEXTURE) and shroud
+	// second pass (ST_SHROUD_TEXTURE) are documented gaps: no multitexture PSO.
+	// Per-bridge batching + ZBIAS/material state preserved via backend state
+	// (depth_test LessEqual, depth_write true from detailAlphaShader).
+	(void)cloudTexture;
+	const VertexFormatXYZNDUV1 *sharedVerts = m_bridgeVertices.data();
+	const UnsignedShort *sharedIndices = m_bridgeIndices.data();
 
 	for (curBridge=0; curBridge<m_numBridges; curBridge++) {
 		if (m_bridges[curBridge].isEnabled() && m_bridges[curBridge].isVisible()) {
-			m_bridges[curBridge].renderBridge(wireframe);
+			m_bridges[curBridge].renderBridge(wireframe, sharedVerts, sharedIndices);
 		}
-	}
-
-	if (!wireframe && cloudTexture)
-		//Force a cloud texture projection into stage 1
-		W3DShaderManager::resetShader(W3DShaderManager::ST_CLOUD_TEXTURE);
-
-	//Render shroud pass over all the bridges
-	if (!wireframe && TheTerrainRenderObject->getShroud())
-	{
-		//Reset to a known shader.
-		DX8Wrapper::Invalidate_Cached_Render_States();
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
-		DX8Wrapper::Set_Material(m_vertexMaterial);
-		DX8Wrapper::Set_Index_Buffer(m_indexBridge,0);
-		DX8Wrapper::Set_Vertex_Buffer(m_vertexBridge);
-		DX8Wrapper::Apply_Render_State_Changes();
-		//Apply custom shroud projection shader.
-		W3DShaderManager::setTexture(0,TheTerrainRenderObject->getShroud()->getShroudTexture());
-		W3DShaderManager::setShader(W3DShaderManager::ST_SHROUD_TEXTURE, 0);
-		for (curBridge=0; curBridge<m_numBridges; curBridge++) {
-			if (m_bridges[curBridge].isEnabled() && m_bridges[curBridge].isVisible()) {
-				//Pretend we're in wireframe so function doesn't reset the shroud texture.
-				m_bridges[curBridge].renderBridge(TRUE);
-			}
-		}
-		W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
 	}
 }
 

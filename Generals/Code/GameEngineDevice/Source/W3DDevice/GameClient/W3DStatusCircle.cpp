@@ -322,7 +322,6 @@ Int W3DStatusCircle::updateScreenVB(Int diffuse)
 		vb++;
 		return 0; //success.
 	}
-	return -1;
 }
 
 void W3DStatusCircle::Render(RenderInfoClass & rinfo)
@@ -330,34 +329,37 @@ void W3DStatusCircle::Render(RenderInfoClass & rinfo)
 	if (!TheGameLogic->isInGame() || TheGameLogic->getGameMode() == GAME_SHELL)
 		return;
 
-	if (m_indexBuffer == nullptr) {
+	if (m_indices.empty()) {
 		initData();
 	}
-	if (m_indexBuffer == nullptr) {
+	if (m_indices.empty()) {
 		return;
 	}
-	Bool setIndex = false;
-	Matrix3D tm(true);
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr) {
+		return;
+	}
 	if( TheGlobalData->m_showTeamDot )
 	{
 		if (m_needUpdate) {
 			updateCircleVB();
 		}
-		//Apply the shader and material
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
-		DX8Wrapper::Set_Shader(m_shaderClass);
-		DX8Wrapper::Set_Texture(0, nullptr);
-		DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
-		DX8Wrapper::Set_Vertex_Buffer(m_vertexBufferCircle);
-		setIndex = true;
-
-		Vector3 vec(0.95f, 0.67f, 0);
-		Matrix3x3 rot(true);
-
-		tm.Set_Translation(vec);
-
-		DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
-		DX8Wrapper::Draw_Triangles(	0,NUM_TRI, 0,	(m_numTriangles*3));
+		// Team dot: untextured alpha-blended circle. Translate the legacy
+		// SC_ALPHA shader instead of pushing DX8 render states.
+		RenderBackendMaterialState circleState;
+		if (m_shaderClass.Get_Render_Backend_State(circleState)) {
+			// Bake the legacy world translation into the submitted vertices.
+			Vector3 vec(0.95f, 0.67f, 0);
+			std::vector<RenderBackendTexturedVertex> worldCircle(m_circleVertices);
+			for (size_t i = 0; i < worldCircle.size(); ++i) {
+				worldCircle[i].x += vec.X;
+				worldCircle[i].y += vec.Y;
+			}
+			rinfo.Camera.Apply();
+			backend->Draw_Indexed_Material_Triangles(worldCircle.data(),
+				(UnsignedInt)worldCircle.size(), m_indices.data(),
+				(UnsignedInt)(m_numTriangles*3), RenderBackendTextureHandle(), circleState);
+		}
 	}
 
 
@@ -366,44 +368,22 @@ void W3DStatusCircle::Render(RenderInfoClass & rinfo)
 		return;
 	}
 
-	if (!setIndex) {
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
-		DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
-		DX8Wrapper::Set_Texture(0, nullptr);
-	}
-
-	tm.Make_Identity();
 	Real intensity = TheScriptEngine->getFadeValue();
 	Int clr = 255*intensity;
 	Int diffuse = (0xff<<24)|(clr<<16)|(clr<<8)|clr;	 // b g<<8 r<<16 a<<24.
 	updateScreenVB(diffuse);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
-	DX8Wrapper::Set_Shader(ShaderClass(SC_ADD));
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexBufferScreen);
-	DX8Wrapper::Apply_Render_State_Changes();
-	switch (fade) {
-		default:
-		case ScriptEngine::FADE_ADD:
-			DX8Wrapper::Draw_Triangles(	0,2, 0,	(2*3));
-			break;
-		case ScriptEngine::FADE_SUBTRACT:
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_BLENDOP, D3DBLENDOP_REVSUBTRACT );
-			DX8Wrapper::Draw_Triangles(	0,2, 0,	(2*3));
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_BLENDOP, D3DBLENDOP_ADD );
-			break;
-		case ScriptEngine::FADE_SATURATE:
-			// 4x multiply
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_SRCBLEND,D3DBLEND_DESTCOLOR);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_DESTBLEND,D3DBLEND_SRCCOLOR);
-			DX8Wrapper::Draw_Triangles(	0,2, 0,	(2*3));
-			DX8Wrapper::Draw_Triangles(	0,2, 0,	(2*3));
-			break;
-		case ScriptEngine::FADE_MULTIPLY:
-			// Straight multiply
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_SRCBLEND,D3DBLEND_ZERO);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_DESTBLEND,D3DBLEND_SRCCOLOR);
-			DX8Wrapper::Draw_Triangles(	0,2, 0,	(2*3));
-			break;
+	// Fullscreen fade quad. Only the additive blend maps onto the backend
+	// material state; subtract/saturate/multiply need raw D3D blend-op
+	// overrides with no backend equivalent, so they are skipped gracefully
+	// instead of being faked with the wrong blend.
+	if (fade != ScriptEngine::FADE_ADD) {
+		return;
 	}
-	ShaderClass::Invalidate();
+	RenderBackendMaterialState fadeState;
+	if (!ShaderClass(SC_ADD).Get_Render_Backend_State(fadeState)) {
+		return;
+	}
+	rinfo.Camera.Apply();
+	backend->Draw_Indexed_Material_Triangles(m_screenVertices.data(), (UnsignedInt)(2*3),
+		m_indices.data(), (UnsignedInt)(2*3), RenderBackendTextureHandle(), fadeState);
 }
