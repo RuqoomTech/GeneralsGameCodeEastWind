@@ -2047,12 +2047,8 @@ AGAIN:
 	do {
 
 		// update all views of the world - recomputes data which will affect drawing
-#if defined(RTS_EVOLUTION_X64)
 		if (WW3D::Get_Render_Backend() != nullptr &&
 			WW3D::Get_Render_Backend()->Is_Device_Ready())
-#else
-		if (DX8Wrapper::_Get_D3D_Device8() && (DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()) == D3D_OK)
-#endif
 		{	//Checking if we have the device before updating views because the heightmap crashes otherwise while
 			//trying to refresh the visible terrain geometry.
 //			if(TheGlobalData->m_loadScreenRender != TRUE)
@@ -3006,43 +3002,10 @@ void W3DDisplay::drawImage( const Image *image, Int startX, Int startY,
 
 VideoBuffer*	W3DDisplay::createVideoBuffer()
 {
-	VideoBuffer::Type format = VideoBuffer::TYPE_UNKNOWN;
-
-	/// @todo query video player for supported formats - we assume bink formats here
-
-	// first try to use the native format
-
-	WW3DFormat displayFormat = DX8Wrapper::getBackBufferFormat();
-
-	if ( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( displayFormat ))
-	{
-		format = W3DVideoBuffer::W3DFormatToType( displayFormat );
-	}
-
-	if ( format == VideoBuffer::TYPE_UNKNOWN )
-	{
-		if ( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( WW3D_FORMAT_X8R8G8B8 ))
-		{
-			format = VideoBuffer::TYPE_X8R8G8B8;
-		}
-		else if ( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( WW3D_FORMAT_R8G8B8 ))
-		{
-			format = VideoBuffer::TYPE_R8G8B8;
-		}
-		else if ( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( WW3D_FORMAT_R5G6B5 ))
-		{
-			format = VideoBuffer::TYPE_R5G6B5;
-		}
-		else if ( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( WW3D_FORMAT_X1R5G5B5 ))
-		{
-			format = VideoBuffer::TYPE_X1R5G5B5;
-		}
-		else
-		{
-			// card does not support any of the formats we need
-			return nullptr;
-		}
-	}
+	// D3D12: output is RGBA8 by construction and the backend texture path
+	// carries X8R8G8B8 video frames, so per-format capability branching is
+	// retired (legacy getBackBufferFormat/Support_Texture_Format chain).
+	VideoBuffer::Type format = VideoBuffer::TYPE_X8R8G8B8;
 	// on low mem machines, render every video in 16bit
 	if (TheGameLODManager && (!TheGameLODManager->didMemPass() || W3DShaderManager::getChipset() == DC_GEFORCE2))
 		format = VideoBuffer::TYPE_R5G6B5;

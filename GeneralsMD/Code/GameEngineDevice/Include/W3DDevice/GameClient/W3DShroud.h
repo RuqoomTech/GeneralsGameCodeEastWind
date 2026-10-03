@@ -25,7 +25,8 @@
 #pragma once
 
 #include "WW3D2/matpass.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/IRenderBackend.h"
+#include <vector>
 
 class AABoxClass;
 class WorldHeightMap;
@@ -106,10 +107,17 @@ protected:
 	Real m_cellWidth;						///<spacing between adjacent cells
 	Real m_cellHeight;						///<spacing between adjacent cells
 	Byte *m_shroudData;						///<holds amount of shroud per cell.
-	IDirect3DSurface8 *m_pSrcTexture;		///<stores sysmem copy of visible shroud.
-	void *m_srcTextureData;					///<pointer to shroud data
+	// D3D12: sysmem shroud lives in a CPU R5G6B5 buffer (replaces the DX8
+	// sysmem surface); the video copy is a backend render texture updated via
+	// whole-texture Copy_Texture. All cell pixel math is preserved exactly.
+	std::vector<unsigned short> m_srcPixels;	///<sysmem copy of visible shroud (R5G6B5, +1 spare row).
+	Int m_srcWidth;						///<cells per row in m_srcPixels.
+	Int m_srcHeight;					///<rows in m_srcPixels (cells + 1 spare).
+	void *m_srcTextureData;					///<pointer to shroud data (into m_srcPixels).
 	UnsignedInt m_srcTexturePitch;			///<width (in bytes) of shroud data buffer.
-	TextureClass *m_pDstTexture;			///<stores vidmem copy of visible shroud.
+	TextureClass *m_pDstTexture;			///<backend render texture holding visible shroud.
+	RenderBackendTextureHandle m_dstHandle;	///<backend handle for m_pDstTexture.
+	Bool m_srcDirty;						///<sysmem changed since last backend upload.
 	Int m_dstTextureWidth;					///<dimensions of m_pDstTexture
 	Int m_dstTextureHeight;					///<dimensions of m_pDstTexture
 	TextureFilterClass::FilterType m_shroudFilter;
@@ -121,5 +129,5 @@ protected:
 	W3DShroudLevel *m_finalFogData;			///<copy of logical shroud in an easier to access array.
 	W3DShroudLevel *m_currentFogData;		///<copy of intermediate logical shroud while it's interpolated.
 	void interpolateFogLevels(RECT *rect);		///<fade current fog levels to actual logic side levels.
-	void fillBorderShroudData(W3DShroudLevel level, SurfaceClass* pDestSurface);	///<fill the destination texture with a known value
+	void fillBorderShroudData(W3DShroudLevel level);	///<fill the spare src row + flag the destination for rebuild
 };
