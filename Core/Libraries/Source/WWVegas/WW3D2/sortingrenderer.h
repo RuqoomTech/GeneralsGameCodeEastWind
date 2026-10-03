@@ -17,39 +17,25 @@
 */
 
 #pragma once
-
-#include "WWLib/always.h"
-
-class SortingNodeStruct;
+#include "IRenderBackend.h"
+class TextureClass;
+class CameraClass;
 class SphereClass;
 
+// Owns copied, world-space CPU geometry and transient render state until the
+// existing WW3D sorting flush. No native renderer buffer/state is captured.
 class SortingRendererClass
 {
-	static bool _EnableTriangleDraw;
-
-	static void Flush_Sorting_Pool();
-	static void Insert_To_Sorted_List(SortingNodeStruct* state);
-	static void Insert_To_Sorting_Pool(SortingNodeStruct* state);
-
+    static bool _EnableTriangleDraw;
 public:
-	static void Insert_Triangles(
-		const SphereClass& bounding_sphere,
-		unsigned short start_index,
-		unsigned short polygon_count,
-		unsigned short min_vertex_index,
-		unsigned short vertex_count);
-
-	static void Insert_Triangles(
-		unsigned short start_index,
-		unsigned short polygon_count,
-		unsigned short min_vertex_index,
-		unsigned short vertex_count);
-
-	static void Flush();
-	static void Deinit();
-
-	static void SetMinVertexBufferSize( unsigned val );
-
-	static void _Enable_Triangle_Draw(bool enable) { _EnableTriangleDraw=enable; }
-	static bool _Is_Triangle_Draw_Enabled() { return _EnableTriangleDraw; }
+    static bool Submit_CPU_Triangles(const RenderBackendTexturedVertex *vertices,
+        unsigned vertex_count, const unsigned short *indices, unsigned index_count,
+        TextureClass *texture, const RenderBackendMaterialState &material,
+        const CameraClass &camera, const SphereClass *world_bounds = nullptr,
+        bool sort = true);
+    static bool Flush();
+    static void Deinit();
+    static void SetMinVertexBufferSize(unsigned value);
+    static void _Enable_Triangle_Draw(bool enable) { _EnableTriangleDraw = enable; }
+    static bool _Is_Triangle_Draw_Enabled() { return _EnableTriangleDraw; }
 };

@@ -85,10 +85,13 @@
 #include "WWLib/wwstring.h"
 #include "camera.h"
 #include "statistics.h"
-#include "dx8wrapper.h"
-#include "dx8vertexbuffer.h"
-#include "dx8indexbuffer.h"
 #include "sortingrenderer.h"
+#include "meshrenderer.h"
+#include "mapper.h"
+#include "texture.h"
+#include <algorithm>
+#include <cstdio>
+#include <vector>
 #include "visrasterizer.h"
 
 static bool Sphere_Array_Valid = false;
@@ -453,79 +456,46 @@ void SphereRenderObjClass::Set_Name(const char * name)
  *   3/01/00    jga : Created.                                                                 *
  *   2/19/01    HY  : upgraded to DX8                                                          *
  *=============================================================================================*/
-void SphereRenderObjClass::render_sphere()
+void SphereRenderObjClass::render_sphere(RenderInfoClass &rinfo, const Matrix3D &world)
 {
-	// Should never get here with null LOD
-	if (CurrentLOD == 0) {
-		WWASSERT(0);
-		return;
-	}
-
-	SphereMeshClass & mesh = SphereMeshArray[CurrentLOD - 1];
-
-	if (SphereTexture) {
-		SphereShader.Set_Texturing (ShaderClass::TEXTURING_ENABLE);
-	} else {
-		SphereShader.Set_Texturing (ShaderClass::TEXTURING_DISABLE);
-	}
-	DX8Wrapper::Set_Shader(SphereShader);
-	DX8Wrapper::Set_Texture(0,SphereTexture);
-	DX8Wrapper::Set_Material(SphereMaterial);
-
-	// Enable sorting if the primitive is translucent, alpha testing is not enabled, and sorting is enabled globally.
-	const bool sort = (SphereShader.Get_Dst_Blend_Func() != ShaderClass::DSTBLEND_ZERO) && (SphereShader.Get_Alpha_Test() == ShaderClass::ALPHATEST_DISABLE) && (WW3D::Is_Sorting_Enabled());
- 	const unsigned int buffer_type = sort ? BUFFER_TYPE_DYNAMIC_SORTING : BUFFER_TYPE_DYNAMIC_DX8;
-
-	DynamicVBAccessClass vb(buffer_type, dynamic_fvf_type, mesh.Vertex_ct);
-	{
-		DynamicVBAccessClass::WriteLockClass Lock(&vb);
-		VertexFormatXYZNDUV2 *vb = Lock.Get_Formatted_Vertex_Array();
-
-		for (int i=0; i<mesh.Vertex_ct; i++)
-		{
-			vb->x = mesh.vtx[i].X;
-			vb->y = mesh.vtx[i].Y;
-			vb->z = mesh.vtx[i].Z;
-
-			vb->nx = mesh.vtx_normal[i].X;		// may not need this!
-			vb->ny = mesh.vtx_normal[i].Y;
-			vb->nz = mesh.vtx_normal[i].Z;
-
-			if (Flags & USE_ALPHA_VECTOR) {
-				vb->diffuse = DX8Wrapper::Convert_Color(mesh.dcg[i]);
-			} else {
-				vb->diffuse = 0xFFFFFFFF;		// TODO could combine the material color with this and turn off lighting
-			}
-
-			if (SphereTexture) {
-				vb->u1 = mesh.vtx_uv[i].X;
-				vb->v1 = mesh.vtx_uv[i].Y;
-			}
-			vb++;
-		}
-	}
-
-	DynamicIBAccessClass ib(buffer_type, mesh.face_ct*3);
-	{
-		DynamicIBAccessClass::WriteLockClass Lock(&ib);
-		unsigned short *mem=Lock.Get_Index_Array();
-		for (int i=0; i<mesh.face_ct; i++)
-		{
-			mem[3*i]=mesh.tri_poly[i].I;
-			mem[3*i+1]=mesh.tri_poly[i].J;
-			mem[3*i+2]=mesh.tri_poly[i].K;
-		}
-	}
-
-	DX8Wrapper::Set_Vertex_Buffer(vb);
-	DX8Wrapper::Set_Index_Buffer(ib,0);
-
-	if (sort) {
-		SortingRendererClass::Insert_Triangles(Get_Bounding_Sphere(), 0, mesh.face_ct, 0, mesh.Vertex_ct);
-	} else {
-		DX8Wrapper::Draw_Triangles(0,mesh.face_ct,0,mesh.Vertex_ct);
-	}
-
+    if (!CurrentLOD) return;
+    auto &mesh = SphereMeshArray[CurrentLOD - 1];
+    SphereShader.Set_Texturing(SphereTexture ? ShaderClass::TEXTURING_ENABLE : ShaderClass::TEXTURING_DISABLE);
+    RenderBackendMaterialState state;
+    if (!SphereShader.Get_Render_Backend_State(state)) {
+        std::fputs("sphere: unsupported shader state\n", stderr); return;
+    }
+    TextureMapperRenderMapping mapping;
+    if (auto *mapper = SphereMaterial->Peek_Mapper())
+        if (!mapper->Get_Render_Mapping(mapping, rinfo.Camera)) { std::fputs("sphere: unsupported mapper\n", stderr); return; }
+    const Matrix3D view = rinfo.Camera.Get_View_Matrix();
+    std::vector<RenderBackendTexturedVertex> vertices;
+    std::vector<unsigned short> indices;
+    const auto channel = [](float component) { return static_cast<unsigned>(std::max(0.0f, std::min(1.0f, component)) * 255.0f); };
+    for (int i = 0; i < mesh.Vertex_ct; ++i) {
+        const Vector4 vertex_color = Flags & USE_ALPHA_VECTOR ? mesh.dcg[i] : Vector4(1,1,1,1);
+        const unsigned diffuse = (channel(vertex_color.W) << 24) | (channel(vertex_color.X) << 16) |
+            (channel(vertex_color.Y) << 8) | channel(vertex_color.Z);
+        Vector3 position;
+        Matrix3D::Transform_Vector(world, mesh.vtx[i], &position);
+        const Vector3 normal = world.Rotate_Vector(mesh.vtx_normal[i]);
+        Vector3 color; float alpha;
+        if (!TheMeshRenderer.Shade_Vertex(SphereMaterial, rinfo.light_environment, position, normal,
+            diffuse, 0, 1.0f, 1.0f, false, color, alpha)) return;
+        Vector3 camera_position;
+        Matrix3D::Transform_Vector(view, position, &camera_position);
+        const Vector3 uv = mapping.Map_Coordinate(SphereTexture ? mesh.vtx_uv[i] : Vector2(0,0),
+            camera_position, view.Rotate_Vector(normal));
+        vertices.push_back({position.X,position.Y,position.Z,color.X,color.Y,color.Z,alpha,uv.X,uv.Y,uv.Z});
+    }
+    for (int i = 0; i < mesh.face_ct; ++i) {
+        indices.push_back(mesh.tri_poly[i].I); indices.push_back(mesh.tri_poly[i].J); indices.push_back(mesh.tri_poly[i].K);
+    }
+    const bool sort = SphereShader.Get_Dst_Blend_Func() != ShaderClass::DSTBLEND_ZERO &&
+        SphereShader.Get_Alpha_Test() == ShaderClass::ALPHATEST_DISABLE && WW3D::Is_Sorting_Enabled();
+    const SphereClass bounds = Get_Bounding_Sphere();
+    SortingRendererClass::Submit_CPU_Triangles(vertices.data(), static_cast<unsigned>(vertices.size()),
+        indices.data(), static_cast<unsigned>(indices.size()), SphereTexture, state, rinfo.Camera, &bounds, sort);
 }
 
 
@@ -656,28 +626,16 @@ void SphereRenderObjClass::Render(RenderInfoClass & rinfo)
 			SphereMeshArray[CurrentLOD - 1].Set_Alpha_Vector( CurrentVector, use_inverse, is_additive );
 		}
 
-		// Camera Align
-		if (Flags & USE_CAMERA_ALIGN) {
-			Matrix4x4 view,ident(true);
-			DX8Wrapper::Get_Transform(D3DTS_VIEW,view);
-
-			Vector4 wpos(Transform[0][3],Transform[1][3],Transform[2][3],1);
-			Vector4 cpos;
-
-			Matrix4x4::Transform_Vector(view,wpos,&cpos);
-			Matrix3D tm(0.0f, 1.0f, 0.0f, cpos.X,
-							0.0f, 0.0f, 1.0f, cpos.Y,
-							1.0f, 0.0f, 0.0f, cpos.Z);
-
-			tm.Scale(real_scale);
-			DX8Wrapper::Set_Transform(D3DTS_WORLD,ident);
-			DX8Wrapper::Set_Transform(D3DTS_VIEW,tm);
-			render_sphere();
-			DX8Wrapper::Set_Transform(D3DTS_VIEW,view);
-		} else {
-			DX8Wrapper::Set_Transform(D3DTS_WORLD,temp);
-			render_sphere();
-		}
+        Matrix3D world = temp;
+        if (Flags & USE_CAMERA_ALIGN) {
+            Vector3 camera_position;
+            Matrix3D::Transform_Vector(rinfo.Camera.Get_View_Matrix(), Transform.Get_Translation(), &camera_position);
+            Matrix3D camera_aligned(0.0f,1.0f,0.0f,camera_position.X,
+                0.0f,0.0f,1.0f,camera_position.Y,1.0f,0.0f,0.0f,camera_position.Z);
+            camera_aligned.Scale(real_scale);
+            Matrix3D::Multiply(rinfo.Camera.Get_Transform(), camera_aligned, &world);
+        }
+        render_sphere(rinfo, world);
 	}
 }
 

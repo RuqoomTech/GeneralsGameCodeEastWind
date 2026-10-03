@@ -47,7 +47,7 @@
 class RenderInfoClass;
 class SphereClass;
 struct W3dEmitterLinePropertiesStruct;
-struct VertexFormatXYZUV1;
+struct StreakCPUVertex { float x, y, z, u1, v1; };
 
 // The maximum allowable level of subdivision. This should be no more than 7 to avoid increasing
 // the chunk buffer size too much
@@ -189,9 +189,9 @@ private:
 	friend class SegmentedLineClass;
 
 	// Vertex buffer manager
-	VertexFormatXYZUV1 *getVertexBuffer(unsigned int number);
+	StreakCPUVertex *getVertexBuffer(unsigned int number);
 	unsigned int m_vertexBufferSize;
-	VertexFormatXYZUV1 *m_vertexBuffer;
+	StreakCPUVertex *m_vertexBuffer;
 };
 
 

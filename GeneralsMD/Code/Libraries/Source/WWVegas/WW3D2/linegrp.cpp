@@ -40,14 +40,12 @@
 #include "WWLib/sharebuf.h"
 #include "linegrp.h"
 #include "texture.h"
-#include "vertmaterial.h"
-#include "dx8wrapper.h"
 #include "WWMath/wwmath.h"
 #include "rinfo.h"
 #include "camera.h"
-#include "dx8indexbuffer.h"
-#include "dx8vertexbuffer.h"
 #include "sortingrenderer.h"
+#include <array>
+#include <cstdio>
 
 // Line groups are a rendering primitive similar to point groups
 // They are tetrahedra which are aligned with the view plane with their centers
@@ -226,256 +224,94 @@ LineGroupClass::LineModeType LineGroupClass::Get_Line_Mode()
 	return LineMode;
 }
 
-void	LineGroupClass::Render(RenderInfoClass &rinfo)
+void LineGroupClass::Render(RenderInfoClass &rinfo)
 {
-	int i;
-
-	// If no lines, do nothing:
-	if (LineCount == 0) return;
-
-	// Shader handling
-	Shader.Set_Cull_Mode(ShaderClass::CULL_MODE_ENABLE);
-
-	// If there is a color or alpha array enable gradient in shader - otherwise disable.
-   float value_255 = 0.9961f;	//254 / 255
-	bool default_white_opaque = (	DefaultLineColor.X > value_255 &&
-											DefaultLineColor.Y > value_255 &&
-											DefaultLineColor.Z > value_255 &&
-											DefaultLineAlpha > value_255);
-
-	if (LineDiffuse || !default_white_opaque || !Texture) {
-		Shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
-	} else {
-		Shader.Set_Primary_Gradient(ShaderClass::GRADIENT_DISABLE);
-	}
-
-	// If Texture is non-null enable texturing in shader - otherwise disable.
-	if (Texture) {
-		Shader.Set_Texturing(ShaderClass::TEXTURING_ENABLE);
-	} else {
-		Shader.Set_Texturing(ShaderClass::TEXTURING_DISABLE);
-	}
-
-	VertexMaterialClass * linemat = VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(linemat);
-	DX8Wrapper::Set_Shader(Shader);
-	DX8Wrapper::Set_Texture(0, Texture);
-	REF_PTR_RELEASE(linemat);
-
-	WWASSERT(StartLineLoc && StartLineLoc->Get_Array());
-	WWASSERT(EndLineLoc && EndLineLoc->Get_Array());
-
-	// Enable sorting if the primitives are translucent and alpha testing is not enabled.
-	const bool sort = (Shader.Get_Dst_Blend_Func() != ShaderClass::DSTBLEND_ZERO) && (Shader.Get_Alpha_Test() == ShaderClass::ALPHATEST_DISABLE) && (WW3D::Is_Sorting_Enabled());
-
-	// the 3 offsets in view space
-	const static Vector3 offset_a = Vector3(WWMath::Cos(WWMATH_PI / 2),			WWMath::Sin(WWMATH_PI /2 ), 0);
-	const static Vector3 offset_b = Vector3(WWMath::Cos(7 * WWMATH_PI / 6),		WWMath::Sin(7 * WWMATH_PI / 6), 0);
-	const static Vector3 offset_c = Vector3(WWMath::Cos(11 * WWMATH_PI / 6),	WWMath::Sin(11 * WWMATH_PI / 6), 0);
-
-	static Vector3 offset[3];
-
-	offset[0].Set(offset_a);
-	offset[1].Set(offset_b);
-	offset[2].Set(offset_c);
-
-	// Save off the view matrix
-	Matrix4x4 view;
-	DX8Wrapper::Get_Transform(D3DTS_VIEW, view);
-
-	Matrix4x4 identity(true);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD, identity);
-
-	// if the points are in world space, transform the offsets
-	if (Get_Flag(TRANSFORM)) {
-		Matrix3D xform_mat;
-		xform_mat = rinfo.Camera.Get_Transform();
-		xform_mat.Set_Translation(Vector3(0, 0, 0));
-		xform_mat.Get_Orthogonal_Inverse(xform_mat);
-		for (i = 0; i < 3; i++) {
-			Matrix3D::Transform_Vector(xform_mat, offset[i], &offset[i]);
-		}
-	} else {
-		DX8Wrapper::Set_Transform(D3DTS_VIEW, identity);
-	}
-
-	int num_tris=0;
-	int num_indices=0;
-	int num_vertices=0;
-
-	switch (LineMode)	{
-		case TETRAHEDRON:
-			num_tris			=4 * LineCount;
-			num_indices		=3 * num_tris;
-			num_vertices	=4 * LineCount;
-			break;
-		case PRISM:
-			num_tris			=8 * LineCount;
-			num_indices		=3 * num_tris;
-			num_vertices	=6 * LineCount;
-			break;
-	}
-
-	// construct the tetrahedra in the index buffers
-	// assume first vertex is the apex, followed by offset[0-3]
-
-	DynamicIBAccessClass iba(sort?BUFFER_TYPE_DYNAMIC_SORTING:BUFFER_TYPE_DYNAMIC_DX8,num_indices);
-
-	{
-		DynamicIBAccessClass::WriteLockClass lock(&iba);
-		unsigned short *ibptr = lock.Get_Index_Array();
-		unsigned short j, idx;
-		switch (LineMode)	{
-			case TETRAHEDRON:
-				for (j=0; j<LineCount; j++) {
-					idx = 4 * j;
-					// apex, offset[1], offset[0]
-					*ibptr++	= idx + 0;
-					*ibptr++	= idx + 2;
-					*ibptr++	= idx + 1;
-					// apex, offset[2], offset[1]
-					*ibptr++	= idx + 0;
-					*ibptr++	= idx + 3;
-					*ibptr++	= idx + 2;
-					// apex, offset[0], offset[2]
-					*ibptr++	= idx + 0;
-					*ibptr++	= idx + 1;
-					*ibptr++	= idx + 3;
-					// offset[0-3]
-					*ibptr++	= idx + 1;
-					*ibptr++	= idx + 2;
-					*ibptr++	= idx + 3;
-				}
-				break;
-			case PRISM:
-				for (j=0; j<LineCount; j++) {
-					idx = 6 * j;
-					// starting cap 0,1,2
-					*ibptr++ = idx + 0;
-					*ibptr++ = idx + 1;
-					*ibptr++ = idx + 2;
-					// left side
-					*ibptr++ = idx + 0;
-					*ibptr++ = idx + 3;
-					*ibptr++ = idx + 1;
-					*ibptr++ = idx + 1;
-					*ibptr++ = idx + 3;
-					*ibptr++ = idx + 4;
-					// bottom side
-					*ibptr++ = idx + 1;
-					*ibptr++ = idx + 4;
-					*ibptr++ = idx + 5;
-					*ibptr++ = idx + 1;
-					*ibptr++ = idx + 5;
-					*ibptr++ = idx + 2;
-					// right side
-					*ibptr++ = idx + 0;
-					*ibptr++ = idx + 2;
-					*ibptr++ = idx + 5;
-					*ibptr++ = idx + 0;
-					*ibptr++ = idx + 5;
-					*ibptr++ = idx + 3;
-					// end cap
-					*ibptr++ = idx + 3;
-					*ibptr++ = idx + 5;
-					*ibptr++ = idx + 4;
-				}
-				break;
-		}
-	}
-
-	// make the vertex buffers
-
-	DynamicVBAccessClass vba(sort ? BUFFER_TYPE_DYNAMIC_SORTING : BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,num_vertices);
-
-	{
-		DynamicVBAccessClass::WriteLockClass lock(&vba);
-
-		VertexFormatXYZNDUV2 *vb = lock.Get_Formatted_Vertex_Array();
-
-		Vector3 loc, start, end;
-		int point, j;
-		float size = DefaultLineSize;
-		Vector4 diffuse(DefaultLineColor.X, DefaultLineColor.Y, DefaultLineColor.Z, DefaultLineAlpha);
-		float ucoord = DefaultLineUCoord;
-		Vector4 taildiffuse = DefaultTailDiffuse;
-
-		for (i = 0; i < LineCount; i++)
-		{
-			point = (ALT) ? ALT->Get_Element(i) : i;
-			if (LineSize)		size			= LineSize->Get_Element(point);
-			if (LineDiffuse)	diffuse		= LineDiffuse->Get_Element(point);
-			if (LineUCoord)	ucoord		= LineUCoord->Get_Element(point);
-			if (TailDiffuse)	taildiffuse	= TailDiffuse->Get_Element(point);
-
-			end.Set(EndLineLoc->Get_Element(point));
-			start.Set(StartLineLoc->Get_Element(point));
-
-			switch (LineMode) {
-				case TETRAHEDRON:
-					// apex
-					vb->x			= end.X;
-					vb->y			= end.Y;
-					vb->z			= end.Z;
-					vb->diffuse	= DX8Wrapper::Convert_Color(taildiffuse);
-					vb->u1		= ucoord;
-					vb->v1		= 1.0f;
-					vb++;
-
-					for (j=0; j<3; j++) {
-						loc.Set(start + size * offset[j]);
-						vb->x			= loc.X;
-						vb->y			= loc.Y;
-						vb->z			= loc.Z;
-						vb->diffuse	= DX8Wrapper::Convert_Color(diffuse);
-						vb->u1		= ucoord;
-						vb->v1		= 0.0f;
-						vb++;
-					}
-					break;
-			case PRISM:
-					// start cap
-					for (j = 0; j < 3; j++) {
-						loc.Set(start + size * offset[j]);
-						vb->x			= loc.X;
-						vb->y			= loc.Y;
-						vb->z			= loc.Z;
-						vb->diffuse	= DX8Wrapper::Convert_Color(diffuse);
-						vb->u1		= ucoord;
-						vb->v1		= 0.0f;
-						vb++;
-					}
-					// Do not merge loops. The vb has to be written in a specific order
-					// (This is to optimize AGP memory write)
-
-					// end cap
-					for (j=0; j<3; j++) {
-						loc.Set(end + size * offset[j]);
-						vb->x			= loc.X;
-						vb->y			= loc.Y;
-						vb->z			= loc.Z;
-						vb->diffuse	= DX8Wrapper::Convert_Color(taildiffuse);
-						vb->u1		= ucoord;
-						vb->v1		= 1.0f;
-						vb++;
-					}
-					break;
-			}
-
-		}
-	}
-
-	DX8Wrapper::Set_Index_Buffer(iba, 0);
-	DX8Wrapper::Set_Vertex_Buffer(vba);
-
-	if (sort) {
-		SortingRendererClass::Insert_Triangles(0, num_tris, 0, num_vertices);
-	} else {
-		DX8Wrapper::Draw_Triangles(0, num_tris, 0, num_vertices);
-	}
-
-	// restore the matrices
-	DX8Wrapper::Set_Transform(D3DTS_VIEW, view);
+ if (!LineCount) return;
+ if (LineCount < 0 || !StartLineLoc || !EndLineLoc ||
+     (LineMode != TETRAHEDRON && LineMode != PRISM) ||
+     (ALT && ALT->Get_Count() < LineCount)) {
+  std::fprintf(stderr, "WW3D: invalid line group arrays\n"); return;
+ }
+ for (int i = 0; i < LineCount; ++i) {
+  const unsigned point = ALT ? ALT->Get_Element(i) : static_cast<unsigned>(i);
+  if (point >= static_cast<unsigned>(StartLineLoc->Get_Count()) ||
+      point >= static_cast<unsigned>(EndLineLoc->Get_Count()) ||
+      (LineSize && point >= static_cast<unsigned>(LineSize->Get_Count())) ||
+      (LineDiffuse && point >= static_cast<unsigned>(LineDiffuse->Get_Count())) ||
+      (LineUCoord && point >= static_cast<unsigned>(LineUCoord->Get_Count())) ||
+      (TailDiffuse && point >= static_cast<unsigned>(TailDiffuse->Get_Count()))) {
+   std::fprintf(stderr, "WW3D: line group index exceeds shared arrays\n"); return;
+  }
+ }
+ Shader.Set_Cull_Mode(ShaderClass::CULL_MODE_ENABLE);
+ const float value_255 = 0.9961f;
+ const bool white = DefaultLineColor.X > value_255 && DefaultLineColor.Y > value_255 &&
+                    DefaultLineColor.Z > value_255 && DefaultLineAlpha > value_255;
+ Shader.Set_Primary_Gradient(LineDiffuse || !white || !Texture ? ShaderClass::GRADIENT_MODULATE :
+                             ShaderClass::GRADIENT_DISABLE);
+ Shader.Set_Texturing(Texture ? ShaderClass::TEXTURING_ENABLE : ShaderClass::TEXTURING_DISABLE);
+ RenderBackendMaterialState material;
+ if (!Shader.Get_Render_Backend_State(material)) {
+  std::fprintf(stderr, "WW3D: unsupported line group shader\n"); return;
+ }
+ const bool sort = Shader.Get_Dst_Blend_Func() != ShaderClass::DSTBLEND_ZERO &&
+                   Shader.Get_Alpha_Test() == ShaderClass::ALPHATEST_DISABLE && WW3D::Is_Sorting_Enabled();
+ Vector3 offsets[3] = {
+  Vector3(WWMath::Cos(WWMATH_PI / 2), WWMath::Sin(WWMATH_PI / 2), 0),
+  Vector3(WWMath::Cos(7 * WWMATH_PI / 6), WWMath::Sin(7 * WWMATH_PI / 6), 0),
+  Vector3(WWMath::Cos(11 * WWMATH_PI / 6), WWMath::Sin(11 * WWMATH_PI / 6), 0)
+ };
+ const bool world_space = Get_Flag(TRANSFORM) != 0;
+ const Matrix3D &camera_world = rinfo.Camera.Get_Transform();
+ if (world_space) {
+  // Preserve the original streak cross-section orientation.
+  Matrix3D rotation = camera_world;
+  rotation.Set_Translation(Vector3(0, 0, 0));
+  rotation.Get_Orthogonal_Inverse(rotation);
+  for (auto &offset : offsets) Matrix3D::Transform_Vector(rotation, offset, &offset);
+ }
+ constexpr unsigned short tetra_indices[] = {0,2,1, 0,3,2, 0,1,3, 1,2,3};
+ constexpr unsigned short prism_indices[] = {0,1,2, 0,3,1, 1,3,4, 1,4,5,
+                                             1,5,2, 0,2,5, 0,5,3, 3,5,4};
+ const unsigned vertices_per_line = LineMode == PRISM ? 6 : 4;
+ const unsigned indices_per_line = LineMode == PRISM ? 24 : 12;
+ const unsigned short *topology = LineMode == PRISM ? prism_indices : tetra_indices;
+ constexpr unsigned max_vertices = 2048;
+ std::array<RenderBackendTexturedVertex, max_vertices> vertices;
+ std::array<unsigned short, max_vertices * 4> indices;
+ const unsigned batch_lines = max_vertices / vertices_per_line;
+ for (unsigned first = 0; first < static_cast<unsigned>(LineCount); first += batch_lines) {
+  const unsigned count = MIN(static_cast<unsigned>(LineCount) - first, batch_lines);
+  unsigned vertex_count = 0, index_count = 0;
+  for (unsigned i = 0; i < count; ++i) {
+   const unsigned point = ALT ? ALT->Get_Element(first + i) : first + i;
+   const Vector3 start = StartLineLoc->Get_Element(point), end = EndLineLoc->Get_Element(point);
+   const float size = LineSize ? LineSize->Get_Element(point) : DefaultLineSize;
+   const float u = LineUCoord ? LineUCoord->Get_Element(point) : DefaultLineUCoord;
+   const Vector4 head = LineDiffuse ? LineDiffuse->Get_Element(point) :
+       Vector4(DefaultLineColor.X, DefaultLineColor.Y, DefaultLineColor.Z, DefaultLineAlpha);
+   const Vector4 tail = TailDiffuse ? TailDiffuse->Get_Element(point) : DefaultTailDiffuse;
+   const unsigned base = vertex_count;
+   const auto append = [&](Vector3 position, Vector4 color, float v) {
+    if (!world_space) Matrix3D::Transform_Vector(camera_world, position, &position);
+    for (int c = 0; c < 4; ++c)
+     color[c] = static_cast<unsigned>(WWMath::Clamp(color[c], 0.0f, 1.0f) * 255.0f) / 255.0f;
+    vertices[vertex_count++] = {position.X, position.Y, position.Z, color.X, color.Y, color.Z, color.W, u, v};
+   };
+   if (LineMode == TETRAHEDRON) {
+    append(end, tail, 1.0f);
+    for (const auto &offset : offsets) append(start + size * offset, head, 0.0f);
+   } else {
+    for (const auto &offset : offsets) append(start + size * offset, head, 0.0f);
+    for (const auto &offset : offsets) append(end + size * offset, tail, 1.0f);
+   }
+   for (unsigned j = 0; j < indices_per_line; ++j) indices[index_count++] = base + topology[j];
+  }
+  if (!SortingRendererClass::Submit_CPU_Triangles(vertices.data(), vertex_count, indices.data(),
+       index_count, Texture, material, rinfo.Camera, nullptr, sort)) {
+   std::fprintf(stderr, "WW3D: line group triangle submission failed\n"); return;
+  }
+ }
 }
 
 int LineGroupClass::Get_Polygon_Count()

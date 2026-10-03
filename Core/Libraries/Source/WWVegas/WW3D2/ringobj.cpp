@@ -88,10 +88,13 @@
 #include "camera.h"
 #include "statistics.h"
 #include "predlod.h"
-#include "dx8wrapper.h"
-#include "dx8indexbuffer.h"
-#include "dx8vertexbuffer.h"
 #include "sortingrenderer.h"
+#include "meshrenderer.h"
+#include "mapper.h"
+#include "texture.h"
+#include <algorithm>
+#include <cstdio>
+#include <vector>
 #include "WWMath/Vector3i.h"
 #include "visrasterizer.h"
 
@@ -516,85 +519,48 @@ void RingRenderObjClass::Set_Name(const char * name)
  * HISTORY:                                                                                    *
  *   1/19/00    gth : Created.                                                                 *
  *=============================================================================================*/
-void RingRenderObjClass::render_ring(RenderInfoClass & rinfo,const Vector3 & center,const Vector3 & extent)
+void RingRenderObjClass::render_ring(RenderInfoClass &rinfo, const Matrix3D &world)
 {
-	// Should never get here with null LOD
-	if (CurrentLOD == 0) {
-		WWASSERT(0);
-		return;
-	}
-
-	RingMeshClass & ring = RingMeshArray[CurrentLOD - 1];
-
-	if (RingTexture) {
-		RingShader.Set_Texturing (ShaderClass::TEXTURING_ENABLE);
-	} else {
-		RingShader.Set_Texturing (ShaderClass::TEXTURING_DISABLE);
-	}
-	DX8Wrapper::Set_Shader(RingShader);
-	DX8Wrapper::Set_Texture(0,RingTexture);
-	DX8Wrapper::Set_Material(RingMaterial);
-
-	// Enable sorting if the primitive is translucent, alpha testing is not enabled, and sorting is enabled globally.
-	const bool sort = (RingShader.Get_Dst_Blend_Func() != ShaderClass::DSTBLEND_ZERO) && (RingShader.Get_Alpha_Test() == ShaderClass::ALPHATEST_DISABLE) && (WW3D::Is_Sorting_Enabled());
-	const unsigned int buffer_type = sort ? BUFFER_TYPE_DYNAMIC_SORTING : BUFFER_TYPE_DYNAMIC_DX8;
-
-	DynamicVBAccessClass vb(buffer_type, dynamic_fvf_type, ring.Vertex_ct);
-	{
-		DynamicVBAccessClass::WriteLockClass Lock(&vb);
-		VertexFormatXYZNDUV2 *vb = Lock.Get_Formatted_Vertex_Array();
-
-		//
-		// set up the vertex color+alpha
-		//
-		unsigned color;
-		if (RingShader.Get_Dst_Blend_Func () == ShaderClass::DSTBLEND_ONE) {
-			color = DX8Wrapper::Convert_Color(Alpha * Color,1.0f);
-		} else {
-			color = DX8Wrapper::Convert_Color(Color,Alpha);
-		}
-
-		for (int i=0; i<ring.Vertex_ct; i++)
-		{
-			vb->x = ring.vtx[i].X;
-			vb->y = ring.vtx[i].Y;
-			vb->z = ring.vtx[i].Z;
-
-			vb->nx = ring.vtx_normal[i].X;		// may not need this!
-			vb->ny = ring.vtx_normal[i].Y;
-			vb->nz = ring.vtx_normal[i].Z;
-
-			vb->diffuse = color;
-
-			if (RingTexture) {
-				vb->u1 = ring.vtx_uv[i].X;
-				vb->v1 = ring.vtx_uv[i].Y;
-			}
-			vb++;
-		}
-	}
-
-	DynamicIBAccessClass ib(buffer_type, ring.face_ct * 3);
-	{
-		DynamicIBAccessClass::WriteLockClass Lock(&ib);
-		unsigned short *mem=Lock.Get_Index_Array();
-		for (int i=0; i<ring.face_ct; i++)
-		{
-			mem[3*i]=ring.tri_poly[i].I;
-			mem[3*i+1]=ring.tri_poly[i].J;
-			mem[3*i+2]=ring.tri_poly[i].K;
-		}
-	}
-
-	DX8Wrapper::Set_Vertex_Buffer(vb);
-	DX8Wrapper::Set_Index_Buffer(ib,0);
-
-	if (sort) {
-		SortingRendererClass::Insert_Triangles(Get_Bounding_Sphere(), 0, ring.face_ct, 0, ring.Vertex_ct);
-	} else {
-		DX8Wrapper::Draw_Triangles(0, ring.face_ct, 0, ring.Vertex_ct);
-	}
-
+    if (!CurrentLOD) return;
+    auto &ring = RingMeshArray[CurrentLOD - 1];
+    RingShader.Set_Texturing(RingTexture ? ShaderClass::TEXTURING_ENABLE : ShaderClass::TEXTURING_DISABLE);
+    RenderBackendMaterialState state;
+    if (!RingShader.Get_Render_Backend_State(state)) {
+        std::fputs("ring: unsupported shader state\n", stderr); return;
+    }
+    TextureMapperRenderMapping mapping;
+    if (auto *mapper = RingMaterial->Peek_Mapper())
+        if (!mapper->Get_Render_Mapping(mapping, rinfo.Camera)) { std::fputs("ring: unsupported mapper\n", stderr); return; }
+    const Matrix3D view = rinfo.Camera.Get_View_Matrix();
+    std::vector<RenderBackendTexturedVertex> vertices;
+    std::vector<unsigned short> indices;
+    const auto channel = [](float component) { return static_cast<unsigned>(std::max(0.0f, std::min(1.0f, component)) * 255.0f); };
+    for (int i = 0; i < ring.Vertex_ct; ++i) {
+        Vector3 vertex_color = Color;
+        float vertex_alpha = Alpha;
+        if (RingShader.Get_Dst_Blend_Func() == ShaderClass::DSTBLEND_ONE) { vertex_color *= Alpha; vertex_alpha = 1.0f; }
+        const unsigned diffuse = (channel(vertex_alpha) << 24) | (channel(vertex_color.X) << 16) |
+            (channel(vertex_color.Y) << 8) | channel(vertex_color.Z);
+        Vector3 position;
+        Matrix3D::Transform_Vector(world, ring.vtx[i], &position);
+        const Vector3 normal = world.Rotate_Vector(ring.vtx_normal[i]);
+        Vector3 color; float alpha;
+        if (!TheMeshRenderer.Shade_Vertex(RingMaterial, rinfo.light_environment, position, normal,
+            diffuse, 0, 1.0f, 1.0f, false, color, alpha)) return;
+        Vector3 camera_position;
+        Matrix3D::Transform_Vector(view, position, &camera_position);
+        const Vector3 uv = mapping.Map_Coordinate(RingTexture ? ring.vtx_uv[i] : Vector2(0,0),
+            camera_position, view.Rotate_Vector(normal));
+        vertices.push_back({position.X,position.Y,position.Z,color.X,color.Y,color.Z,alpha,uv.X,uv.Y,uv.Z});
+    }
+    for (int i = 0; i < ring.face_ct; ++i) {
+        indices.push_back(ring.tri_poly[i].I); indices.push_back(ring.tri_poly[i].J); indices.push_back(ring.tri_poly[i].K);
+    }
+    const bool sort = RingShader.Get_Dst_Blend_Func() != ShaderClass::DSTBLEND_ZERO &&
+        RingShader.Get_Alpha_Test() == ShaderClass::ALPHATEST_DISABLE && WW3D::Is_Sorting_Enabled();
+    const SphereClass bounds = Get_Bounding_Sphere();
+    SortingRendererClass::Submit_CPU_Triangles(vertices.data(), static_cast<unsigned>(vertices.size()),
+        indices.data(), static_cast<unsigned>(indices.size()), RingTexture, state, rinfo.Camera, &bounds, sort);
 }
 
 
@@ -711,6 +677,7 @@ void RingRenderObjClass::Render(RenderInfoClass & rinfo)
 		//	Should we force the ring to be camera aligned?
 		// (this will cause the ring to be parallel to the screen)
 		//
+		Matrix3D world = Transform;
 		if (Flags & USE_CAMERA_ALIGN) {
 			Vector3 obj_position;
 			Vector3 camera_z_vector;
@@ -720,15 +687,15 @@ void RingRenderObjClass::Render(RenderInfoClass & rinfo)
 
 			Matrix3D temp;
 			temp.Look_At(obj_position, obj_position + camera_z_vector, 0.0f);
-			DX8Wrapper::Set_Transform(D3DTS_WORLD, temp);
+			world = temp;
 		} else {
-			DX8Wrapper::Set_Transform(D3DTS_WORLD, Transform);
+			world = Transform;
 		}
 
 		//
 		//	Pass the geometry on to DX8
 		//
-		render_ring (rinfo, ObjSpaceCenter, ObjSpaceExtent);
+		render_ring(rinfo, world);
 	}
 }
 

@@ -68,6 +68,7 @@ float4 PSTextured(TexturedPSInput input) : SV_TARGET
 
 // The real decal caller clamps to its edge and explicitly disables mipmaps.
 SamplerState DecalSampler : register(s1);
+SamplerState MaterialSampler : register(s2);
 
 cbuffer MaterialParameters : register(b1)
 {
@@ -93,10 +94,7 @@ float4 PSMaterialTexture(TexturedPSInput input) : SV_TARGET
 {
     float4 textureColor;
     float2 coordinates = input.texcoord.xy / input.texcoord.z;
-    if (ClampTexture != 0)
-        textureColor = PrimitiveTexture.SampleLevel(DecalSampler, coordinates, 0.0f);
-    else
-        textureColor = PrimitiveTexture.Sample(PrimitiveSampler, coordinates);
+    textureColor = PrimitiveTexture.Sample(MaterialSampler, coordinates);
 
     float4 color = textureColor;
     if (TextureCombine == 1) color *= input.color;

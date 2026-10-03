@@ -40,7 +40,12 @@
 #include "seglinerenderer.h"
 #include "ww3d.h"
 #include "rinfo.h"
-#include "dx8wrapper.h"
+#include "camera.h"
+#include "IRenderBackend.h"
+#include "w3d_file.h"
+#include <array>
+#include <climits>
+#include <cstdio>
 #include "sortingrenderer.h"
 #include "WWMath/vp.h"
 #include "WWMath/Vector3i.h"
@@ -217,12 +222,19 @@ void SegLineRendererClass::Render
 	Vector4 * rgbas
 )
 {
-	Matrix4x4 view;
-	DX8Wrapper::Get_Transform(D3DTS_VIEW,view);
-
-	Matrix4x4 identity(true);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,identity);
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,identity);
+	if (num_points < 2) return;
+	if (!points || num_points > INT_MAX || SubdivisionLevel > MAX_SEGLINE_SUBDIV_LEVELS) {
+		std::fprintf(stderr, "WW3D: invalid segmented line geometry\n");
+		return;
+	}
+	Matrix4x4 view(rinfo.Camera.Get_View_Matrix());
+	const Matrix3D &camera_world = rinfo.Camera.Get_Transform();
+	const auto set_color = [](RenderBackendTexturedVertex &vertex, const Vector4 &color) {
+		float rgba[4];
+		for (int c = 0; c < 4; ++c)
+			rgba[c] = static_cast<unsigned>(WWMath::Clamp(color[c], 0.0f, 1.0f) * 255.0f) / 255.0f;
+		vertex.r = rgba[0]; vertex.g = rgba[1]; vertex.b = rgba[2]; vertex.a = rgba[3];
+	};
 
 	/*
 	** Handle texture UV offset animation (done once for entire line).
@@ -925,7 +937,7 @@ void SegLineRendererClass::Render
 
 		// Configure vertex array and setup renderer.
 		unsigned int vnum = num_intersections[TOP_EDGE] + num_intersections[BOTTOM_EDGE];
-		VertexFormatXYZDUV1 *vArray = getVertexBuffer(vnum);
+		RenderBackendTexturedVertex *vArray = getVertexBuffer(vnum);
 		TriIndex v_index_array[MAX_SEGLINE_POLY_BUFFER_SIZE];
 
 		// Vertex and triangle indices
@@ -942,16 +954,16 @@ void SegLineRendererClass::Render
 		vArray[vidx].x = top.X;
 		vArray[vidx].y = top.Y;
 		vArray[vidx].z = top.Z;
-		vArray[vidx].diffuse = DX8Wrapper::Convert_Color(intersection[1][TOP_EDGE].RGBA);
-		vArray[vidx].u1 = u_values[0] + uv_offset.X;
-		vArray[vidx].v1 = intersection[1][TOP_EDGE].TexV + uv_offset.Y;
+		set_color(vArray[vidx], intersection[1][TOP_EDGE].RGBA);
+		vArray[vidx].u = u_values[0] + uv_offset.X;
+		vArray[vidx].v = intersection[1][TOP_EDGE].TexV + uv_offset.Y;
 		vidx++;
 		vArray[vidx].x = bottom.X;
 		vArray[vidx].y = bottom.Y;
 		vArray[vidx].z = bottom.Z;
-		vArray[vidx].diffuse = DX8Wrapper::Convert_Color(intersection[1][BOTTOM_EDGE].RGBA);
-		vArray[vidx].u1 = u_values[1] + uv_offset.X;
-		vArray[vidx].v1 = intersection[1][BOTTOM_EDGE].TexV + uv_offset.Y;
+		set_color(vArray[vidx], intersection[1][BOTTOM_EDGE].RGBA);
+		vArray[vidx].u = u_values[1] + uv_offset.X;
+		vArray[vidx].v = intersection[1][BOTTOM_EDGE].TexV + uv_offset.Y;
 		vidx++;
 
 		unsigned int last_top_vidx = 0;
@@ -1003,16 +1015,16 @@ void SegLineRendererClass::Render
 				vArray[vidx].x = top.X;
 				vArray[vidx].y = top.Y;
 				vArray[vidx].z = top.Z;
-				vArray[vidx].diffuse = DX8Wrapper::Convert_Color(intersection[top_int_idx][TOP_EDGE].RGBA);
-				vArray[vidx].u1 = u_values[0] + uv_offset.X;
-				vArray[vidx].v1 = intersection[top_int_idx][TOP_EDGE].TexV + uv_offset.Y;
+				set_color(vArray[vidx], intersection[top_int_idx][TOP_EDGE].RGBA);
+				vArray[vidx].u = u_values[0] + uv_offset.X;
+				vArray[vidx].v = intersection[top_int_idx][TOP_EDGE].TexV + uv_offset.Y;
 				vidx++;
 				vArray[vidx].x = bottom.X;
 				vArray[vidx].y = bottom.Y;
 				vArray[vidx].z = bottom.Z;
-				vArray[vidx].diffuse = DX8Wrapper::Convert_Color(intersection[bottom_int_idx][BOTTOM_EDGE].RGBA);
-				vArray[vidx].u1 = u_values[1] + uv_offset.X;
-				vArray[vidx].v1 = intersection[bottom_int_idx][BOTTOM_EDGE].TexV + uv_offset.Y;
+				set_color(vArray[vidx], intersection[bottom_int_idx][BOTTOM_EDGE].RGBA);
+				vArray[vidx].u = u_values[1] + uv_offset.X;
+				vArray[vidx].v = intersection[bottom_int_idx][BOTTOM_EDGE].TexV + uv_offset.Y;
 				vidx++;
 			} else {
 				// Exactly one of the pointcounts is greater than one - advance it and draw one triangle
@@ -1039,9 +1051,9 @@ void SegLineRendererClass::Render
 					vArray[vidx].x = bottom.X;
 					vArray[vidx].y = bottom.Y;
 					vArray[vidx].z = bottom.Z;
-					vArray[vidx].diffuse = DX8Wrapper::Convert_Color(intersection[bottom_int_idx][BOTTOM_EDGE].RGBA);
-					vArray[vidx].u1 = u_values[1] + uv_offset.X;
-					vArray[vidx].v1 = intersection[bottom_int_idx][BOTTOM_EDGE].TexV + uv_offset.Y;
+					set_color(vArray[vidx], intersection[bottom_int_idx][BOTTOM_EDGE].RGBA);
+					vArray[vidx].u = u_values[1] + uv_offset.X;
+					vArray[vidx].v = intersection[bottom_int_idx][BOTTOM_EDGE].TexV + uv_offset.Y;
 					vidx++;
 				} else {
 
@@ -1068,9 +1080,9 @@ void SegLineRendererClass::Render
 					vArray[vidx].x = top.X;
 					vArray[vidx].y = top.Y;
 					vArray[vidx].z = top.Z;
-					vArray[vidx].diffuse = DX8Wrapper::Convert_Color(intersection[top_int_idx][TOP_EDGE].RGBA);
-					vArray[vidx].u1 = u_values[0] + uv_offset.X;
-					vArray[vidx].v1 = intersection[top_int_idx][TOP_EDGE].TexV + uv_offset.Y;
+					set_color(vArray[vidx], intersection[top_int_idx][TOP_EDGE].RGBA);
+					vArray[vidx].u = u_values[0] + uv_offset.X;
+					vArray[vidx].v = intersection[top_int_idx][TOP_EDGE].TexV + uv_offset.Y;
 					vidx++;
 				}
 			}
@@ -1097,28 +1109,13 @@ void SegLineRendererClass::Render
 		** Set color, opacity, vertex flags:
 		*/
 
-		// If color is not white or opacity not 100%, enable gradient in shader and in renderer - otherwise disable.
-		unsigned int rgba;
-		rgba=DX8Wrapper::Convert_Color(Color,Opacity);
-		bool rgba_all=(rgba==0xFFFFFFFF);
-
-		// Enable sorting if sorting has not been disabled and line is translucent and alpha testing is not enabled.
-		bool sorting = (!Is_Sorting_Disabled()) && (Shader.Get_Dst_Blend_Func() != ShaderClass::DSTBLEND_ZERO && Shader.Get_Alpha_Test() == ShaderClass::ALPHATEST_DISABLE);
-
+		// Preserve the prelit diffuse gradient produced by subdivision and intersection merging.
+		const bool sorting = !Is_Sorting_Disabled() && WW3D::Is_Sorting_Enabled() &&
+		    Shader.Get_Dst_Blend_Func() != ShaderClass::DSTBLEND_ZERO &&
+		    Shader.Get_Alpha_Test() == ShaderClass::ALPHATEST_DISABLE;
 		ShaderClass shader = Shader;
 		shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
-
-		VertexMaterialClass *mat;
-
-		// if there's a default color or an rgba array modulate
-		if (!rgba_all || (rgba != 0) ) {
-			shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
-			mat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-		} else {
-			// othewise it's texture only
-			shader.Set_Primary_Gradient(ShaderClass::GRADIENT_DISABLE);
-			mat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_NODIFFUSE);
-		}
+		shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
 
 		// If Texture is non-null enable texturing in shader - otherwise disable.
 		if (Texture) {
@@ -1132,65 +1129,32 @@ void SegLineRendererClass::Render
 		** Render
 		*/
 
-		DynamicVBAccessClass Verts((sorting?BUFFER_TYPE_DYNAMIC_SORTING:BUFFER_TYPE_DYNAMIC_DX8),dynamic_fvf_type,vnum);
-		// Copy in the data to the  VB
-		{
-			DynamicVBAccessClass::WriteLockClass Lock(&Verts);
-			unsigned int i;
-			unsigned char *vb=(unsigned char*)Lock.Get_Formatted_Vertex_Array();
-			const FVFInfoClass& fvfinfo=Verts.FVF_Info();
-
-			const unsigned int verticesOffset = fvfinfo.Get_Location_Offset();
-			const unsigned diffuseOffset = fvfinfo.Get_Diffuse_Offset();
-			const unsigned textureOffset = fvfinfo.Get_Tex_Offset(0);
-			const unsigned vbSize = fvfinfo.Get_FVF_Size();
-
-			for (i=0; i<vnum; i++)
-			{
-				// Copy Locations
-				Vector3 *vertex = reinterpret_cast<Vector3 *>(vb + verticesOffset);
-				vertex->X = vArray[i].x;
-				vertex->Y = vArray[i].y;
-				vertex->Z = vArray[i].z;
-				*reinterpret_cast<unsigned int *>(vb + diffuseOffset) = vArray[i].diffuse;
-				Vector2 *texture = reinterpret_cast<Vector2 *>(vb + textureOffset);
-				texture->U = vArray[i].u1;
-				texture->V = vArray[i].v1;
-				vb += vbSize;
-			}
+		RenderBackendMaterialState material;
+		if (!shader.Get_Render_Backend_State(material) || vidx != vnum ||
+		    vnum > 65536 || tidx > MAX_SEGLINE_POLY_BUFFER_SIZE) {
+			std::fprintf(stderr, "WW3D: unsupported segmented line material or geometry\n");
+			return;
 		}
-
-		DynamicIBAccessClass ib_access((sorting?BUFFER_TYPE_DYNAMIC_SORTING:BUFFER_TYPE_DYNAMIC_DX8),tidx*3);
-		{
-			unsigned int i;
-			DynamicIBAccessClass::WriteLockClass lock(&ib_access);
-			unsigned short* inds=lock.Get_Index_Array();
-
-			for (i=0; i<tidx; i++)
-			{
-				*inds++=v_index_array[i].I;
-				*inds++=v_index_array[i].J;
-				*inds++=v_index_array[i].K;
-			}
+		std::array<unsigned short, MAX_SEGLINE_POLY_BUFFER_SIZE * 3> indices;
+		for (unsigned int i = 0; i < tidx; ++i) {
+			indices[i * 3] = v_index_array[i].I;
+			indices[i * 3 + 1] = v_index_array[i].J;
+			indices[i * 3 + 2] = v_index_array[i].K;
 		}
-
-		DX8Wrapper::Set_Index_Buffer(ib_access,0);
-		DX8Wrapper::Set_Vertex_Buffer(Verts);
-		DX8Wrapper::Set_Material(mat);
-		DX8Wrapper::Set_Texture(0,Texture);
-		DX8Wrapper::Set_Shader(shader);
-
-		if (sorting) {
-			SortingRendererClass::Insert_Triangles(obj_sphere,0,tidx,0,vnum);
-		} else {
-			DX8Wrapper::Draw_Triangles(0,tidx,0,vnum);
+		for (unsigned int i = 0; i < vnum; ++i) {
+			Vector3 position;
+			Matrix3D::Transform_Vector(camera_world, Vector3(vArray[i].x, vArray[i].y, vArray[i].z), &position);
+			vArray[i].x = position.X; vArray[i].y = position.Y; vArray[i].z = position.Z;
+			vArray[i].q = 1.0f;
 		}
-
-		REF_PTR_RELEASE(mat);
+		if (!SortingRendererClass::Submit_CPU_Triangles(vArray, vnum, indices.data(), tidx * 3,
+		    Texture, material, rinfo.Camera, &obj_sphere, sorting)) {
+			std::fprintf(stderr, "WW3D: segmented line triangle submission failed\n");
+			return;
+		}
 
 	}
 
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,view);
 
 }
 
@@ -1300,14 +1264,14 @@ void SegLineRendererClass::Scale(float scale)
 	NoiseAmplitude *= scale;
 }
 
-VertexFormatXYZDUV1 *SegLineRendererClass::getVertexBuffer(unsigned int number)
+RenderBackendTexturedVertex *SegLineRendererClass::getVertexBuffer(unsigned int number)
 {
 	// TODO: use a stl vector instead of our own array.
 	if (number > m_vertexBufferSize)
 	{
 		unsigned int numberToAlloc = number + (number >> 1);
 		delete [] m_vertexBuffer;
-		m_vertexBuffer = W3DNEWARRAY VertexFormatXYZDUV1[numberToAlloc];
+		m_vertexBuffer = W3DNEWARRAY RenderBackendTexturedVertex[numberToAlloc];
 		m_vertexBufferSize = numberToAlloc;
 	}
 

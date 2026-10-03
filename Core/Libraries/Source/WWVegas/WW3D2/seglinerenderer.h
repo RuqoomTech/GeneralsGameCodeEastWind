@@ -47,7 +47,7 @@
 class RenderInfoClass;
 class SphereClass;
 struct W3dEmitterLinePropertiesStruct;
-struct VertexFormatXYZDUV1;
+struct RenderBackendTexturedVertex;
 
 
 // The maximum allowable level of subdivision. This should be no more than 7 to avoid increasing
@@ -178,9 +178,9 @@ private:
 
 	friend class SegmentedLineClass;
 
-	VertexFormatXYZDUV1 *getVertexBuffer(unsigned int number);
+	RenderBackendTexturedVertex *getVertexBuffer(unsigned int number);
 	unsigned int m_vertexBufferSize;
-	VertexFormatXYZDUV1 *m_vertexBuffer;
+	RenderBackendTexturedVertex *m_vertexBuffer;
 };
 
 

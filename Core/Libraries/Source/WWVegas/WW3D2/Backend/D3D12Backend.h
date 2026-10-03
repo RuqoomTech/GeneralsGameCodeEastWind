@@ -49,6 +49,7 @@ public:
                float dest_alpha, float z, unsigned int stencil) override;
     void Set_Viewport(const RenderBackendViewport &viewport) override;
     void Set_View_Projection(const Matrix4x4 &view_projection) override;
+    void Get_View_Projection(Matrix4x4 &view_projection) const override;
     RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height) override;
     bool Set_Render_Texture(RenderBackendTextureHandle texture) override;
     bool Get_Render_Target_Size(int &width, int &height) const override;
@@ -113,6 +114,7 @@ public:
 
 private:
     static constexpr std::uint32_t FrameCount = 2;
+    static constexpr unsigned int MaterialSamplerCount = 1024;
 
     struct StaticGeometryResource
     {
@@ -196,6 +198,9 @@ private:
     ID3D12DescriptorHeap *m_rtv_heap = nullptr;
     ID3D12DescriptorHeap *m_dsv_heap = nullptr;
     ID3D12DescriptorHeap *m_texture_srv_heap = nullptr;
+    ID3D12DescriptorHeap *m_material_sampler_heap = nullptr;
+    bool m_material_sampler_initialized[MaterialSamplerCount]{};
+    unsigned int materialSampler(const RenderBackendSamplerState &sampler);
     ID3D12Resource *m_render_targets[FrameCount]{};
     ID3D12Resource *m_depth_stencil = nullptr;
     ID3D12Resource *m_output_capture = nullptr;

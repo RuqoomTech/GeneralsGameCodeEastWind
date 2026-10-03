@@ -38,6 +38,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #pragma once
+struct RenderBackendSamplerState;
 
 #ifndef DX8_WRAPPER_H
 //#include "dx8wrapper.h"
@@ -113,6 +114,7 @@ public:
 	TextureFilterClass(MipCountType mip_level_count=MIP_LEVELS_1);
 
 	void Apply(unsigned int stage);
+    bool Get_Render_Sampler(RenderBackendSamplerState &sampler, unsigned int stage = 0) const;
 
 	// Filter and MIPmap settings:
 	FilterType Get_Min_Filter() const { return TextureMinFilter; }

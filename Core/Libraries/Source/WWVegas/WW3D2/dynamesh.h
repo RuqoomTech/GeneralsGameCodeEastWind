@@ -39,7 +39,6 @@
 #include "matinfo.h"
 #include "rendobj.h"
 #include "polyinfo.h"
-#include "dx8wrapper.h"
 
 class	ShaderClass;
 class	IntersectionClass;
@@ -70,7 +69,7 @@ public:
 	void	Reset();
 
 	// Render mesh
-	void	Render(RenderInfoClass & rinfo);
+	void	Render(RenderInfoClass & rinfo, const Matrix3D &world);
 
 	// Set current polygon and vertex counts
 	void	Set_Counts(int pnum, int vnum)	{ DynamicMeshPNum = pnum;	DynamicMeshVNum = vnum;	}
@@ -278,7 +277,7 @@ public:
 		unsigned * color = Model->Get_Color_Array(color_array_index);
 		assert(color);
 
-		color[VertCount]=DX8Wrapper::Convert_Color_Clamp(Vector4(r,g,b,a));
+		color[VertCount]=Pack_Vertex_Color(Vector4(r,g,b,a));
 //		color[VertCount].X = r;
 //		color[VertCount].Y = g;
 //		color[VertCount].Z = b;
@@ -361,7 +360,7 @@ public:
 		CurVertexColor[color_array_index].W = color.W;
 //		Vector4 * color_list = Model->Get_Color_Array(color_array_index);
 		unsigned * color_list = Model->Get_Color_Array(color_array_index);
-		color_list[index] = DX8Wrapper::Convert_Color_Clamp(color);
+		color_list[index] = Pack_Vertex_Color(color);
 	}
 
 
@@ -403,6 +402,7 @@ public:
 	DynamicMeshModel *		Peek_Model()	{ return Model; }
 
 protected:
+	static unsigned Pack_Vertex_Color(const Vector4 &color);
 
 	inline void	Switch_To_Multi_Vertex_Color(int color_array_index = 0);
 
@@ -485,7 +485,7 @@ void DynamicMeshClass::Switch_To_Multi_Vertex_Color(int color_array_index)
 */
 	unsigned * color_list = Model->Get_Color_Array(color_array_index);
 	// set the proper color for all the existing vertices
-	unsigned vertex_color=DX8Wrapper::Convert_Color_Clamp(CurVertexColor[color_array_index]);
+	unsigned vertex_color=Pack_Vertex_Color(CurVertexColor[color_array_index]);
 	for (int lp = 0; lp < VertCount; lp++) {
 		color_list[lp]=vertex_color;
 	}

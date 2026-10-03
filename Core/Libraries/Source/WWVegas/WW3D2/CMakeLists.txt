@@ -245,7 +245,7 @@ if (MSVC AND NOT IS_VS6_BUILD)
 endif()
 
 target_link_libraries(corei_ww3d2 INTERFACE
-    core_browserengine
+    core_browserhost
     core_profile_legacy
     core_wwlib
     core_wwmath
@@ -257,6 +257,7 @@ endif()
 
 # Both normal game executables consume the same canonical WW3D shader assets.
 function(rts_stage_ww3d_shaders target_name)
+    rts_stage_browser_loader(${target_name})
     set(_shader "${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl")
     set_property(TARGET ${target_name} APPEND PROPERTY LINK_DEPENDS "${_shader}")
     add_custom_command(TARGET ${target_name} POST_BUILD

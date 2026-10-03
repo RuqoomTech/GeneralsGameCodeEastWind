@@ -1174,6 +1174,9 @@ void W3DVolumetricShadow::getRenderCost(RenderCost & rc) const
 /************************************ New Buffered Rendering Code ************************/
 void W3DVolumetricShadow::RenderVolume(Int meshIndex, Int lightIndex)
 {
+	if (!m_robj || !m_geometry || meshIndex < 0 || meshIndex >= m_geometry->getMeshCount() ||
+		meshIndex >= MAX_SHADOW_CASTER_MESHES || lightIndex < 0 || lightIndex >= MAX_SHADOW_LIGHTS ||
+		!m_shadowVolume[lightIndex][meshIndex]) return;
 	HLodClass *hlod=(HLodClass *)m_robj;
 	MeshClass *mesh=nullptr;
 

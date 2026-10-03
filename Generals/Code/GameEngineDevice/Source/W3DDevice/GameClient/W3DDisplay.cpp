@@ -94,7 +94,7 @@ static void drawFramerateBar();
 #include "WW3D2/render2dsentence.h"
 #include "WW3D2/sortingrenderer.h"
 #include "WW3D2/textureloader.h"
-#include "WW3D2/dx8webbrowser.h"
+#include "browserhost.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/hlod.h"
 #include "WW3D2/meshmatdesc.h"
@@ -424,7 +424,7 @@ W3DDisplay::~W3DDisplay()
 		WW3D::Shutdown();
 	WWMath::Shutdown();
 	if (!TheGlobalData->m_headless)
-		DX8WebBrowser::Shutdown();
+		BrowserHost::Shutdown();
 	delete TheW3DFileSystem;
 	TheW3DFileSystem = nullptr;
 
@@ -915,7 +915,10 @@ void W3DDisplay::init()
 			m_nativeDebugDisplay->setFontWidth( 9 );
 		}
 
-		DX8WebBrowser::Initialize();
+		if (!BrowserHost::Initialize(static_cast<HWND>(WW3D::Get_Window())))
+		{
+			DEBUG_LOG(("Native browser host initialization failed (HRESULT %08lx)", static_cast<unsigned long>(BrowserHost::GetError(nullptr))));
+		}
 	}
 
 	// we're now online

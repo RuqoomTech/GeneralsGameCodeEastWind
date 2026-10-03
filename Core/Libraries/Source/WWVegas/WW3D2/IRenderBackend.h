@@ -117,6 +117,19 @@ enum class RenderBackendBlendFactor { Zero, One, SourceColor, InverseSourceColor
 enum class RenderBackendCullMode { None, Clockwise, CounterClockwise };
 enum class RenderBackendTextureCombine { Replace, Modulate, Add, Modulate2X };
 enum class RenderBackendAlphaTest { Disabled, GreaterEqual, LessEqual };
+enum class RenderBackendTextureFilter { Point, Linear };
+enum class RenderBackendTextureAddress { Wrap, Clamp };
+
+struct RenderBackendSamplerState
+{
+    RenderBackendTextureFilter min_filter = RenderBackendTextureFilter::Linear;
+    RenderBackendTextureFilter mag_filter = RenderBackendTextureFilter::Linear;
+    RenderBackendTextureFilter mip_filter = RenderBackendTextureFilter::Linear;
+    RenderBackendTextureAddress address_u = RenderBackendTextureAddress::Wrap;
+    RenderBackendTextureAddress address_v = RenderBackendTextureAddress::Wrap;
+    bool mipmaps = true;
+    unsigned int max_anisotropy = 1;
+};
 enum class RenderBackendStencilCompare { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always };
 enum class RenderBackendStencilOperation { Keep, Zero, Replace, IncrementSaturate, DecrementSaturate, Invert, Increment, Decrement };
 
@@ -151,6 +164,7 @@ struct RenderBackendMaterialState
     bool color_write = true;
     bool clamp_texture = false;
     bool screen_space = false; // Caller supplies clip/NDC coordinates, bypassing the camera.
+    RenderBackendSamplerState sampler;
     RenderBackendStencilState stencil;
 };
 
@@ -211,6 +225,7 @@ public:
     // World-space primitive draws use WWMath column-vector math and a 0..1
     // clip-depth projection. Screen-space draws remain independent of camera.
     virtual void Set_View_Projection(const Matrix4x4 &view_projection) = 0;
+    virtual void Get_View_Projection(Matrix4x4 &view_projection) const = 0;
     // Projected-shadow textures use RGBA8 color-only targets. Selection is
     // between scenes; an empty handle restores output viewport/camera state.
     virtual RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height) = 0;

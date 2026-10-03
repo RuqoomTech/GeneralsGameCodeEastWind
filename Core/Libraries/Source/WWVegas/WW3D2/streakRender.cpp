@@ -28,8 +28,14 @@
 #include "streakRender.h"
 #include "ww3d.h"
 #include "rinfo.h"
-#include "dx8wrapper.h"
+#include "camera.h"
 #include "sortingrenderer.h"
+#include "meshrenderer.h"
+#include "mapper.h"
+#include "texture.h"
+#include <algorithm>
+#include <cstdio>
+#include <vector>
 #include "WWMath/vp.h"
 #include "WWMath/Vector3i.h"
 #include "WWLib/RANDOM.h"
@@ -310,12 +316,7 @@ void StreakRendererClass::RenderStreak
 	unsigned int *personalities			/////////////// DIFFERENT FROM RENDER()
 )
 {
-	Matrix4x4 view;
-	DX8Wrapper::Get_Transform(D3DTS_VIEW,view);
-
-	Matrix4x4 identity(true);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,identity);
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,identity);
+	const Matrix4x4 view(rinfo.Camera.Get_View_Matrix());
 
 	/*
 	** Handle texture UV offset animation (done once for entire line).
@@ -1087,7 +1088,7 @@ void StreakRendererClass::RenderStreak
 
 		// Configure vertex array and setup renderer.
 		unsigned int vnum = num_intersections[TOP_EDGE] + num_intersections[BOTTOM_EDGE];
-		VertexFormatXYZUV1 *vertexArray = getVertexBuffer(vnum);
+		StreakCPUVertex *vertexArray = getVertexBuffer(vnum);
 		Vector3i v_index_array[MAX_STREAK_POLY_BUFFER_SIZE];
 
 		// Vertex and triangle indices
@@ -1277,7 +1278,6 @@ void StreakRendererClass::RenderStreak
 
 		// If color is not white or opacity not 100%, enable gradient in shader and in renderer - otherwise disable.
 		//unsigned int rgba;
-		//rgba=DX8Wrapper::Convert_Color(Color,Opacity);
 		//bool rgba_all=(rgba==0xFFFFFFFF);
 
 //		int colorIndex = 0;
@@ -1286,7 +1286,6 @@ void StreakRendererClass::RenderStreak
 //			//vertexArray[vertexIndex].diffuse = rgba;/// OLD WAY COLORS THEM ALL TO THE COLOR,OPACITY MEMBERS /////////////////
 //			unsigned int perPointARGB;
 //			colorIndex = MIN(vertexIndex / 2, point_cnt);
-//			perPointARGB = DX8Wrapper::Convert_Color( colors[colorIndex] );// twice as many verts as points? or so?
 //			vertexArray[vertexIndex].diffuse = perPointARGB;
 //			vertexArray[vertexIndex].u1 = (float)((vertexIndex&2) == 2);
 //			vertexArray[vertexIndex].v1 = (float)((vertexIndex&1) == 1);
@@ -1300,11 +1299,6 @@ void StreakRendererClass::RenderStreak
 		ShaderClass shader = Shader;
 		shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
 		shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
-
-		VertexMaterialClass *mat;
-		mat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-		DX8Wrapper::Set_Material(mat);
-		REF_PTR_RELEASE(mat);
 
 		// If Texture is non-null enable texturing in shader - otherwise disable.
 		if (Texture)
@@ -1322,73 +1316,29 @@ void StreakRendererClass::RenderStreak
 		** Render
 		*/
 
-		DynamicVBAccessClass Verts((sorting?BUFFER_TYPE_DYNAMIC_SORTING:BUFFER_TYPE_DYNAMIC_DX8),dynamic_fvf_type,vnum);
-		// Copy in the data to the  VB
-		{
-			DynamicVBAccessClass::WriteLockClass Lock(&Verts);
-			unsigned int i;
-			unsigned char *vb=(unsigned char*)Lock.Get_Formatted_Vertex_Array();
-			const FVFInfoClass& fvfinfo=Verts.FVF_Info();
-			int segIdx = 0;
-			unsigned int argb = 0x00000000;
-
-			unsigned int oddEven = 0;
-
-			//oddEven = ( personalities[0] & 1 );
-
-			const unsigned verticesOffset = fvfinfo.Get_Location_Offset();
-			const unsigned diffuseOffset = fvfinfo.Get_Diffuse_Offset();
-			const unsigned textureOffset = fvfinfo.Get_Tex_Offset(0);
-			const unsigned vbSize = fvfinfo.Get_FVF_Size();
-
-			for (i=0; i<vnum; i++)
-			{
-				DEBUG_ASSERTCRASH(vertexArray[i].x != (float)0xdeadbeef && vertexArray[i].y != (float)0xdeadbeef && vertexArray[i].z != (float)0xdeadbeef && vertexArray[i].u1 != (float)0xdeadbeeef && vertexArray[i].v1 != (float)0xdeadbeef, ("Uninitialized vertexArray[%d]", i));
-				DEBUG_ASSERTCRASH((! _isnan(vertexArray[i].x) && _finite(vertexArray[i].x) && ! _isnan(vertexArray[i].y) && _finite(vertexArray[i].y) && ! _isnan(vertexArray[i].z) && _finite(vertexArray[i].z)) , ("Bad vertexArray[%d]", i));
-				Vector3 *vertex = reinterpret_cast<Vector3 *>(vb + verticesOffset);
-				vertex->X = vertexArray[i].x;
-				vertex->Y = vertexArray[i].y;
-				vertex->Z = vertexArray[i].z;
-				*reinterpret_cast<unsigned int *>(vb + diffuseOffset) = DX8Wrapper::Convert_Color_Clamp(colors[MIN((i/2), point_cnt)]); // TODO: Does not work correctly when subdivision are not 0
-				Vector2 *texture = reinterpret_cast<Vector2 *>(vb + textureOffset);
-				texture->U = vertexArray[i].u1;
-				texture->V = vertexArray[i].v1;
-				vb += vbSize;
-			}
-		}
-
-		DynamicIBAccessClass ib_access((sorting?BUFFER_TYPE_DYNAMIC_SORTING:BUFFER_TYPE_DYNAMIC_DX8),triangleIndex*3);
-		{
-			unsigned int i;
-			DynamicIBAccessClass::WriteLockClass lock(&ib_access);
-			unsigned short* inds=lock.Get_Index_Array();
-
-			for (i=0; i<triangleIndex; i++)
-			{
-				*inds++=v_index_array[i].I;
-				*inds++=v_index_array[i].J;
-				*inds++=v_index_array[i].K;
-			}
-		}
-
-
-		DX8Wrapper::Set_Index_Buffer(ib_access,0);
-		DX8Wrapper::Set_Vertex_Buffer(Verts);
-		DX8Wrapper::Set_Texture(0,Texture);
-		DX8Wrapper::Set_Shader(shader);
-
-		if (sorting)
-		{
-			SortingRendererClass::Insert_Triangles(obj_sphere,0,triangleIndex,0,vnum);
-		}
-		else
-		{
-			DX8Wrapper::Draw_Triangles(0,triangleIndex,0,vnum);
-		}
+        RenderBackendMaterialState state;
+        if (!shader.Get_Render_Backend_State(state)) { std::fputs("StreakRenderer: unsupported shader\n", stderr); return; }
+        std::vector<RenderBackendTexturedVertex> vertices;
+        std::vector<unsigned short> indices;
+        for (unsigned i = 0; i < vnum; ++i) {
+            const auto &source = vertexArray[i];
+            Vector3 position;
+            Matrix3D::Transform_Vector(rinfo.Camera.Get_Transform(), Vector3(source.x, source.y, source.z), &position);
+            const Vector4 &color = colors[MIN(i/2, point_cnt)];
+            const auto clamp = [](float value) {
+                return static_cast<unsigned>(std::max(0.0f, std::min(1.0f, value)) * 255.0f) / 255.0f;
+            };
+            vertices.push_back({position.X,position.Y,position.Z,clamp(color.X),clamp(color.Y),clamp(color.Z),
+                clamp(color.W),source.u1,source.v1});
+        }
+        for (unsigned i = 0; i < triangleIndex; ++i) {
+            indices.push_back(v_index_array[i].I); indices.push_back(v_index_array[i].J); indices.push_back(v_index_array[i].K);
+        }
+        if (!SortingRendererClass::Submit_CPU_Triangles(vertices.data(), static_cast<unsigned>(vertices.size()),
+            indices.data(), static_cast<unsigned>(indices.size()), Texture, state, rinfo.Camera, &obj_sphere, sorting)) return;
 
 	}
 
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,view);
 
 }
 
@@ -1397,14 +1347,14 @@ void StreakRendererClass::RenderStreak
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
-VertexFormatXYZUV1 *StreakRendererClass::getVertexBuffer(unsigned int number)
+StreakCPUVertex *StreakRendererClass::getVertexBuffer(unsigned int number)
 {
 	// TODO: use a stl vector instead of our own array.
 	if (number > m_vertexBufferSize)
 	{
 		unsigned int numberToAlloc = number + (number >> 1);
 	  delete [] m_vertexBuffer;
-		m_vertexBuffer = W3DNEWARRAY VertexFormatXYZUV1[numberToAlloc];
+		m_vertexBuffer = W3DNEWARRAY StreakCPUVertex[numberToAlloc];
 		m_vertexBufferSize = numberToAlloc;
 	}
 

@@ -11,6 +11,7 @@
 #include "WW3D2/texture.h"
 #include "WW3D2/decalmsh.h"
 #include "WW3D2/meshdebugger.h"
+#include "WW3D2/sortingrenderer.h"
 #include "WWMath/obbox.h"
 #include "WWDebug/wwdebug.h"
 #include "WWLib/win.h"
@@ -41,6 +42,47 @@ Vector3 materialColor(VertexMaterialClass::ColorSourceType source,
     if (source == VertexMaterialClass::COLOR2) return rgb(specular);
     return color;
 }
+bool shadeVertex(VertexMaterialClass *material, const LightEnvironmentClass *lighting,
+    bool lighting_enabled, const Vector3 &position, const Vector3 &normal,
+    unsigned int diffuse_color, unsigned int specular_color, float alpha_override,
+    float emissive_scale, bool additive, Vector3 &color, float &alpha)
+    {
+        if (!material) return false;
+        color = rgb(diffuse_color);
+        alpha = ((diffuse_color >> 24) & 255) / 255.0f;
+        if (material->Get_Lighting() && lighting_enabled) {
+            if (!(lighting != nullptr)) return false;
+            Vector3 ambient, diffuse, emissive;
+            material->Get_Ambient(&ambient); material->Get_Diffuse(&diffuse); material->Get_Emissive(&emissive);
+            ambient = materialColor(material->Get_Ambient_Color_Source(), ambient, diffuse_color, specular_color);
+            diffuse = materialColor(material->Get_Diffuse_Color_Source(), diffuse, diffuse_color, specular_color);
+            emissive = materialColor(material->Get_Emissive_Color_Source(), emissive, diffuse_color, specular_color);
+            if (additive && alpha_override != 1.0f) diffuse.Set(alpha_override, alpha_override, alpha_override);
+            color = multiply(ambient, lighting->Get_Equivalent_Ambient()) + emissive * emissive_scale;
+            for (int light = 0; light < lighting->Get_Light_Count(); ++light) {
+                Vector3 direction = lighting->Get_Light_Direction(light);
+                Vector3 illumination = lighting->Get_Light_Diffuse(light);
+                float attenuation = 1.0f;
+                if (lighting->isPointLight(light)) {
+                    direction = lighting->getPointCenter(light) - position;
+                    const float distance = direction.Length();
+                    const float outer = lighting->getPointOrad(light);
+                    const float inner = lighting->getPointIrad(light);
+                    if (distance > outer || outer <= 0.0f) continue;
+                    const float linear = std::fabs(inner - outer) < 1.0e-5f ? 0.0f : 0.1f / inner;
+                    attenuation = 1.0f / (1.0f + linear * distance + 8.0f * distance * distance / (outer * outer));
+                    direction.Normalize();
+                    illumination = lighting->getPointDiffuse(light);
+                    color += multiply(ambient, lighting->getPointAmbient(light)) * attenuation;
+                }
+                color += multiply(diffuse, illumination) * (std::max(0.0f, Vector3::Dot_Product(normal, direction)) * attenuation);
+            }
+            alpha = material->Get_Diffuse_Color_Source() == VertexMaterialClass::COLOR1 ? alpha : material->Get_Opacity();
+        }
+        if (alpha_override != 1.0f) alpha = alpha_override;
+        return true;
+    }
+
 // Renderer diagnostic state is never part of asset CRC or deterministic state.
 bool failure(const MeshClass *mesh, const char *reason)
 {
@@ -105,38 +147,10 @@ struct MeshRendererClass::Impl
         const Vector3 &normal, unsigned int diffuse_color, unsigned int specular_color,
         Vector3 &color, float &alpha)
     {
-        color = rgb(diffuse_color);
-        alpha = ((diffuse_color >> 24) & 255) / 255.0f;
-        if (material->Get_Lighting() && lighting_enabled) {
-            if (!task.has_lighting) return failure(task.mesh, "global light state without a mesh light environment is not migrated");
-            Vector3 ambient, diffuse, emissive;
-            material->Get_Ambient(&ambient); material->Get_Diffuse(&diffuse); material->Get_Emissive(&emissive);
-            ambient = materialColor(material->Get_Ambient_Color_Source(), ambient, diffuse_color, specular_color);
-            diffuse = materialColor(material->Get_Diffuse_Color_Source(), diffuse, diffuse_color, specular_color);
-            emissive = materialColor(material->Get_Emissive_Color_Source(), emissive, diffuse_color, specular_color);
-            if (!task.pass && task.alpha != 1.0f && task.mesh->Is_Additive()) diffuse.Set(task.alpha, task.alpha, task.alpha);
-            color = multiply(ambient, task.lighting.Get_Equivalent_Ambient()) + emissive * task.emissive;
-            for (int light = 0; light < task.lighting.Get_Light_Count(); ++light) {
-                Vector3 direction = task.lighting.Get_Light_Direction(light);
-                Vector3 illumination = task.lighting.Get_Light_Diffuse(light);
-                float attenuation = 1.0f;
-                if (task.lighting.isPointLight(light)) {
-                    direction = task.lighting.getPointCenter(light) - position;
-                    const float distance = direction.Length();
-                    const float outer = task.lighting.getPointOrad(light);
-                    const float inner = task.lighting.getPointIrad(light);
-                    if (distance > outer || outer <= 0.0f) continue;
-                    const float linear = std::fabs(inner - outer) < 1.0e-5f ? 0.0f : 0.1f / inner;
-                    attenuation = 1.0f / (1.0f + linear * distance + 8.0f * distance * distance / (outer * outer));
-                    direction.Normalize();
-                    illumination = task.lighting.getPointDiffuse(light);
-                    color += multiply(ambient, task.lighting.getPointAmbient(light)) * attenuation;
-                }
-                color += multiply(diffuse, illumination) * (std::max(0.0f, Vector3::Dot_Product(normal, direction)) * attenuation);
-            }
-            alpha = material->Get_Diffuse_Color_Source() == VertexMaterialClass::COLOR1 ? alpha : material->Get_Opacity();
-        }
-        if (task.alpha != 1.0f) alpha = task.alpha;
+        if (!shadeVertex(material, task.has_lighting ? &task.lighting : nullptr,
+                lighting_enabled, position, normal, diffuse_color, specular_color,
+                task.alpha, task.emissive, !task.pass && task.mesh->Is_Additive(), color, alpha))
+            return failure(task.mesh, "missing material or mesh light environment");
         return true;
     }
 
@@ -147,8 +161,7 @@ struct MeshRendererClass::Impl
         auto *backend = WW3D::Get_Render_Backend();
         if (!model || !camera || !backend) return failure(mesh, "missing model, camera, or backend");
         if (MeshRendererDebugger::Is_Enabled() && mesh->Is_Disabled_By_Debugger()) return true;
-        if (model->Get_Flag(MeshGeometryClass::SORT) && WW3D::Is_Sorting_Enabled())
-            return failure(mesh, "global transparent triangle sorting is not migrated");
+        const bool sorted = model->Get_Flag(MeshGeometryClass::SORT) && WW3D::Is_Sorting_Enabled();
         if (WW3D::Get_NPatches_Level() > 1 && model->Get_Flag(MeshGeometryClass::ALLOW_NPATCHES))
             return failure(mesh, "NPatch tessellation is not migrated");
         if (model->GapFiller)
@@ -212,9 +225,14 @@ struct MeshRendererClass::Impl
         bool have_batch = false;
         const auto flush = [&]() {
             if (vertices.empty()) return true;
-            if (!backend->Draw_Indexed_Material_Triangles(vertices.data(),
+            const bool submitted = sorted ? SortingRendererClass::Submit_CPU_Triangles(vertices.data(),
                     static_cast<unsigned int>(vertices.size()), indices.data(),
-                    static_cast<unsigned int>(indices.size()), texture_handle, batch_state))
+                    static_cast<unsigned int>(indices.size()), batch_texture, batch_state,
+                    *camera, &mesh->Get_Bounding_Sphere()) :
+                backend->Draw_Indexed_Material_Triangles(vertices.data(),
+                    static_cast<unsigned int>(vertices.size()), indices.data(),
+                    static_cast<unsigned int>(indices.size()), texture_handle, batch_state);
+            if (!submitted)
                 return failure(mesh, "D3D12 material submission rejected");
             ++draws;
             vertices.clear(); indices.clear();
@@ -275,12 +293,9 @@ struct MeshRendererClass::Impl
                 texture_handle = RenderBackendTextureHandle();
                 if (shader.Get_Texturing() == ShaderClass::TEXTURING_ENABLE && texture) {
                     const auto &filter = texture->Get_Filter();
-                    if (filter.Get_U_Addr_Mode() != filter.Get_V_Addr_Mode())
-                        return failure(mesh, "independent U/V address modes are not migrated");
-                    if (filter.Get_Min_Filter() == TextureFilterClass::FILTER_TYPE_FAST ||
-                        filter.Get_Mag_Filter() == TextureFilterClass::FILTER_TYPE_FAST)
-                        return failure(mesh, "point-filtered material sampling is not migrated");
-                    batch_state.clamp_texture = filter.Get_U_Addr_Mode() == TextureFilterClass::TEXTURE_ADDRESS_CLAMP;
+                    if (!filter.Get_Render_Sampler(batch_state.sampler))
+                        return failure(mesh, "unsupported texture sampler");
+                    batch_state.clamp_texture = false;
                     if (!texture->Ensure_Renderer_Texture()) return failure(mesh, "texture upload failed");
                     texture_handle = texture->Get_Renderer_Texture();
                 }
@@ -404,6 +419,14 @@ void MeshRendererClass::Set_Camera(CameraClass *camera)
 }
 CameraClass *MeshRendererClass::Peek_Camera() const { return implementation->camera; }
 void MeshRendererClass::Enable_Lighting(bool enabled) { implementation->lighting_enabled = enabled; }
+bool MeshRendererClass::Shade_Vertex(VertexMaterialClass *material, const LightEnvironmentClass *lighting,
+    const Vector3 &position, const Vector3 &normal, unsigned int diffuse_color, unsigned int specular_color,
+    float alpha_override, float emissive_scale, bool additive, Vector3 &color, float &alpha) const
+{
+    return shadeVertex(material, lighting, implementation->lighting_enabled,
+        position, normal, diffuse_color, specular_color, alpha_override, emissive_scale, additive, color, alpha);
+}
+
 void MeshRendererClass::Set_Force_Multiply(bool enabled) { implementation->force_multiply = enabled; }
 void MeshRendererClass::Register_Mesh_Type(MeshModelClass *model)
 {

@@ -7,6 +7,22 @@
 # and can crash otherwise portable tests inside the C++ standard library before the test body runs.
 # Mirror the self-contained GCC runtime policy already carried by core_config, but keep these
 # standalone tests free of legacy engine libraries/definitions.
+option(RTS_TEST_NATIVE_BROWSER "Test the native x64 browser against an installed WebView2 runtime" OFF)
+if(RTS_TEST_NATIVE_BROWSER)
+    if(NOT TARGET core_browserhost)
+        add_subdirectory(${CMAKE_SOURCE_DIR}/Core/Libraries/Source/BrowserHost ${CMAKE_CURRENT_BINARY_DIR}/BrowserHost)
+    endif()
+    add_executable(browser_host_smoke_test BrowserHostSmokeTest.cpp)
+    target_compile_features(browser_host_smoke_test PRIVATE cxx_std_17)
+    target_link_libraries(browser_host_smoke_test PRIVATE core_browserhost)
+    if(MINGW)
+        target_link_options(browser_host_smoke_test PRIVATE -static-libgcc -static-libstdc++)
+    endif()
+    rts_stage_browser_loader(browser_host_smoke_test)
+    add_test(NAME browser_host_smoke_test COMMAND browser_host_smoke_test)
+    set_tests_properties(browser_host_smoke_test PROPERTIES TIMEOUT 45 LABELS "native;browser")
+endif()
+
 if(MINGW)
     add_link_options(-static-libgcc -static-libstdc++)
 endif()
@@ -600,4 +616,39 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
         DEPENDS d3d12_backend_smoke_test
         USES_TERMINAL
     )
+endif()
+
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND MINGW)
+    # Run the production CPU particle expansion without renderer/window state.
+    add_executable(particle_geometry_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/ParticleGeometryTest.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp
+        ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/shader.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWMath/wwmath.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWMath/lookuptable.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWMath/matrix3d.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWMath/curve.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/multilist.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/wwstring.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/mutex.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/chunkio.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWSaveLoad/persistfactory.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWSaveLoad/saveload.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWSaveLoad/pointerremap.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/slnode.cpp
+    )
+    target_include_directories(particle_geometry_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+        ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas
+        ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2
+    )
+    target_link_libraries(particle_geometry_test PRIVATE core_config core_utility_no_pch)
+    target_compile_options(particle_geometry_test PRIVATE
+        -ffunction-sections -fdata-sections -fno-exceptions -fno-asynchronous-unwind-tables
+        -fno-unwind-tables -fno-jump-tables -include Utility/CppMacros.h)
+    target_link_options(particle_geometry_test PRIVATE -Wl,--gc-sections)
+    set_target_properties(particle_geometry_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
+    add_test(NAME particle_geometry COMMAND particle_geometry_test)
 endif()

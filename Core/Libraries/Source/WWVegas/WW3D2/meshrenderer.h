@@ -15,6 +15,7 @@ class Vector3i16;
 class TextureClass;
 class VertexMaterialClass;
 class ShaderClass;
+class LightEnvironmentClass;
 
 // Owns renderer-only mesh submissions. Asset geometry and materials stay on the
 // CPU; native buffers and draw state are owned by IRenderBackend.
@@ -32,6 +33,11 @@ public:
     void Set_Camera(CameraClass *camera);
     CameraClass *Peek_Camera() const;
     void Enable_Lighting(bool enabled);
+    bool Shade_Vertex(VertexMaterialClass *material, const LightEnvironmentClass *lighting,
+        const Vector3 &world_position, const Vector3 &world_normal,
+        unsigned int diffuse_color, unsigned int specular_color,
+        float alpha_override, float emissive_scale, bool additive,
+        Vector3 &color, float &alpha) const;
     void Set_Force_Multiply(bool enabled);
     void Queue_Base_Passes(MeshClass *mesh);
     void Queue_Material_Pass(MeshClass *mesh, MaterialPassClass *pass, bool delayed);

@@ -369,7 +369,7 @@ void D3D12Backend::createPrimitivePipeline()
     texture_range.RegisterSpace = 0;
     texture_range.OffsetInDescriptorsFromTableStart = 0;
 
-    D3D12_ROOT_PARAMETER parameters[3]{};
+    D3D12_ROOT_PARAMETER parameters[4]{};
     D3D12_ROOT_PARAMETER &texture_parameter = parameters[0];
     texture_parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     texture_parameter.DescriptorTable.NumDescriptorRanges = 1;
@@ -387,6 +387,14 @@ void D3D12Backend::createPrimitivePipeline()
     material_parameter.Constants.ShaderRegister = 1;
     material_parameter.Constants.Num32BitValues = 4;
     material_parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    D3D12_DESCRIPTOR_RANGE sampler_range{};
+    sampler_range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+    sampler_range.NumDescriptors = 1;
+    sampler_range.BaseShaderRegister = 2;
+    parameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    parameters[3].DescriptorTable.NumDescriptorRanges = 1;
+    parameters[3].DescriptorTable.pDescriptorRanges = &sampler_range;
+    parameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -404,7 +412,7 @@ void D3D12Backend::createPrimitivePipeline()
     sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC root_desc{};
-    root_desc.NumParameters = 3;
+    root_desc.NumParameters = 4;
     root_desc.pParameters = parameters;
     D3D12_STATIC_SAMPLER_DESC samplers[2]{sampler, sampler};
     samplers[1].ShaderRegister = 1;
@@ -444,6 +452,15 @@ void D3D12Backend::createPrimitivePipeline()
             serialized_root->GetBufferSize(),
             IID_PPV_ARGS(&m_primitive_root_signature)));
     releaseCom(serialized_root);
+
+    // Every supported 2D filter/address/anisotropy combination has a stable
+    // slot. Existing commands never observe an overwritten sampler descriptor.
+    D3D12_DESCRIPTOR_HEAP_DESC sampler_heap{};
+    sampler_heap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+    sampler_heap.NumDescriptors = MaterialSamplerCount;
+    sampler_heap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    checkHresult("CreateDescriptorHeap(material samplers)",
+        m_device->CreateDescriptorHeap(&sampler_heap, IID_PPV_ARGS(&m_material_sampler_heap)));
 
     const std::wstring shader_path = getPrimitiveShaderPath();
     ID3DBlob *color_vertex_shader = compileShaderFromFile(shader_path.c_str(), "VSMain", "vs_5_1");
@@ -945,6 +962,13 @@ void D3D12Backend::Set_View_Projection(const Matrix4x4 &view_projection)
     for (unsigned int row = 0; row < 4; ++row)
         for (unsigned int column = 0; column < 4; ++column)
             m_view_projection[row * 4 + column] = view_projection[row][column];
+}
+
+void D3D12Backend::Get_View_Projection(Matrix4x4 &view_projection) const
+{
+    for (unsigned int row = 0; row < 4; ++row)
+        for (unsigned int column = 0; column < 4; ++column)
+            view_projection[row][column] = m_view_projection[row * 4 + column];
 }
 
 D3D12Backend::TextureResource *D3D12Backend::findTexture(RenderBackendTextureHandle handle)
@@ -1450,11 +1474,25 @@ bool D3D12Backend::drawDynamicGeometry(
         }
         if (texture_handle.Is_Valid())
         {
-            ID3D12DescriptorHeap *heaps[] = {m_texture_srv_heap};
-            m_command_list->SetDescriptorHeaps(1, heaps);
+            ID3D12DescriptorHeap *heaps[] = {m_texture_srv_heap, m_material_sampler_heap};
+            m_command_list->SetDescriptorHeaps(material ? 2 : 1, heaps);
             D3D12_GPU_DESCRIPTOR_HANDLE srv = m_texture_srv_heap->GetGPUDescriptorHandleForHeapStart();
             srv.ptr += static_cast<std::size_t>(texture_handle.slot - 1) * m_srv_descriptor_size;
             m_command_list->SetGraphicsRootDescriptorTable(0, srv);
+            if (material)
+            {
+                auto sampler = material->sampler;
+                if (material->clamp_texture)
+                {
+                    sampler.address_u = sampler.address_v = RenderBackendTextureAddress::Clamp;
+                    sampler.mipmaps = false;
+                }
+                const auto slot = materialSampler(sampler);
+                auto descriptor = m_material_sampler_heap->GetGPUDescriptorHandleForHeapStart();
+                descriptor.ptr += static_cast<std::size_t>(slot) *
+                    m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+                m_command_list->SetGraphicsRootDescriptorTable(3, descriptor);
+            }
         }
         m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
@@ -1970,6 +2008,37 @@ bool D3D12Backend::Is_Texture_Valid(RenderBackendTextureHandle handle) const
     return texture.occupied && texture.release_frame == FrameCount && texture.generation == handle.generation;
 }
 
+unsigned int D3D12Backend::materialSampler(const RenderBackendSamplerState &state)
+{
+    const unsigned int key = static_cast<unsigned int>(state.min_filter) |
+        (static_cast<unsigned int>(state.mag_filter) << 1) |
+        (static_cast<unsigned int>(state.mip_filter) << 2) |
+        (static_cast<unsigned int>(state.address_u) << 3) |
+        (static_cast<unsigned int>(state.address_v) << 4) |
+        (static_cast<unsigned int>(state.mipmaps) << 5) | ((state.max_anisotropy-1) << 6);
+    if (!m_material_sampler_initialized[key])
+    {
+        D3D12_SAMPLER_DESC sampler{};
+        sampler.Filter = state.max_anisotropy > 1 ? D3D12_FILTER_ANISOTROPIC :
+            static_cast<D3D12_FILTER>((static_cast<unsigned int>(state.min_filter) << 4) |
+                (static_cast<unsigned int>(state.mag_filter) << 2) | static_cast<unsigned int>(state.mip_filter));
+        sampler.AddressU = state.address_u == RenderBackendTextureAddress::Wrap ?
+            D3D12_TEXTURE_ADDRESS_MODE_WRAP : D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        sampler.AddressV = state.address_v == RenderBackendTextureAddress::Wrap ?
+            D3D12_TEXTURE_ADDRESS_MODE_WRAP : D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+        sampler.MaxAnisotropy = state.max_anisotropy;
+        sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+        sampler.MaxLOD = state.mipmaps ? D3D12_FLOAT32_MAX : 0.0f;
+        auto descriptor = m_material_sampler_heap->GetCPUDescriptorHandleForHeapStart();
+        descriptor.ptr += static_cast<std::size_t>(key) *
+            m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+        m_device->CreateSampler(&sampler, descriptor);
+        m_material_sampler_initialized[key] = true;
+    }
+    return key;
+}
+
 ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialState &material, bool textured)
 {
     const unsigned int depth = static_cast<unsigned int>(material.depth_test);
@@ -2070,6 +2139,12 @@ bool D3D12Backend::Draw_Indexed_Material_Triangles(
         !(material.alpha_reference >= 0.0f && material.alpha_reference <= 1.0f) ||
         material.stencil.reference > 255 || material.stencil.read_mask > 255 || material.stencil.write_mask > 255 ||
         !valid_face(material.stencil.front) || !valid_face(material.stencil.back) ||
+        static_cast<unsigned int>(material.sampler.min_filter) > 1 ||
+        static_cast<unsigned int>(material.sampler.mag_filter) > 1 ||
+        static_cast<unsigned int>(material.sampler.mip_filter) > 1 ||
+        static_cast<unsigned int>(material.sampler.address_u) > 1 ||
+        static_cast<unsigned int>(material.sampler.address_v) > 1 ||
+        material.sampler.max_anisotropy < 1 || material.sampler.max_anisotropy > 16 ||
         ((texture.slot != 0 || texture.generation != 0) && !texture.Is_Valid()) ||
         (m_selected_texture.Is_Valid() && (material.depth_test != RenderBackendDepthTest::Disabled || material.stencil.enabled)) ||
         (texture.Is_Valid() && (!Is_Texture_Valid(texture) ||
@@ -2332,6 +2407,7 @@ void D3D12Backend::releaseObjects() noexcept
         releaseCom(allocator);
     }
     releaseCom(m_texture_srv_heap);
+    releaseCom(m_material_sampler_heap);
     releaseCom(m_dsv_heap);
     releaseCom(m_rtv_heap);
     releaseCom(m_swap_chain);

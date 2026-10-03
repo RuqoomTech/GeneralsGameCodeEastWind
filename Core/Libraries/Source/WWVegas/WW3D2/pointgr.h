@@ -43,9 +43,9 @@
 #include "WWMath/vector2.h"
 #include "WWLib/Vector.h"
 
-class VertexMaterialClass;
 class RenderInfoClass;
 class TextureClass;
+class Matrix4x4;
 
 /*
 ** PointGroupClass -- a custom object for rendering
@@ -130,7 +130,8 @@ protected:
 									int active_points,
 									int total_points,
 									int &vnum,
-									int &pnum);
+									int &pnum,
+									const Matrix4x4 &view);
 
 	// These shared buffers are used for communication to the point group - to
 	// pass point locations, colors and enables. The location and color arrays
@@ -212,7 +213,8 @@ private:
 	static Vector3 _ScreenspaceVertexLocationSizeTable[2][3];
 	static Vector2 *_TriVertexUVFrameTable[5];
 	static Vector2 *_QuadVertexUVFrameTable[5];
-	static VertexMaterialClass *PointMaterial;
+	bool Validate_Arrays() const;
+	bool Submit_Arrays(RenderInfoClass &rinfo, int vertex_count, bool has_diffuse, bool sort);
 
 	// Static arrays for intermediate calcs (never resized down, just up):
 	static VectorClass<Vector3>		compressed_loc;		// point locations 'compressed' by APT

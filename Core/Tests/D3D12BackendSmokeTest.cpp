@@ -231,9 +231,9 @@ bool verifyStencil(IRenderBackend &backend)
     write={}; write.depth_test=RenderBackendDepthTest::Disabled; write.stencil.reference=17;
     write.stencil.front.pass=RenderBackendStencilOperation::Replace;
     write.stencil.back.pass=RenderBackendStencilOperation::Increment;
-    // NDC CCW becomes clockwise in the render target; reversed triangles select BackFace.
-    ok=verify(2,17,write) && ok;
-    ok=verify(2,3,write,reverse) && ok;
+    // With culling disabled, normal indices select BackFace; reversed indices select FrontFace.
+    ok=verify(2,3,write) && ok;
+    ok=verify(2,17,write,reverse) && ok;
 
     // A screen-space overlay uses the entire output, bypasses the camera, and
     // restores the tactical viewport for subsequent world geometry.
@@ -258,6 +258,92 @@ bool verifyStencil(IRenderBackend &backend)
     if (captured) ok=pixels[(240*640+320)*4]==255 && pixels[(60*640+80)*4+1]==255 && ok;
     backend.Flip_To_Primary(); backend.Set_Viewport({0,0,640,480,0,1});
     if (!ok) std::cerr << "Stencil or screen-space material checks failed.\n";
+    return ok;
+}
+
+bool verifyDeferredTextureRelease(IRenderBackend &backend)
+{
+    const unsigned char red[]={255,0,0,255}, blue[]={0,0,255,255}, green[]={0,255,0,255};
+    const auto released=backend.Create_Static_RGBA8_Texture(1,1,red,4);
+    RenderBackendTexturedVertex quad[]={
+        {-.8f,-.8f,.5f,1,1,1,1,0,0}, {-.8f,.8f,.5f,1,1,1,1,0,0},
+        {0,.8f,.5f,1,1,1,1,0,0}, {0,-.8f,.5f,1,1,1,1,0,0}};
+    const unsigned short indices[]={0,2,1,0,3,2};
+    RenderBackendMaterialState material;
+    material.depth_test=RenderBackendDepthTest::Disabled; material.depth_write=false;
+    backend.Set_View_Projection(Matrix4x4(true)); backend.Set_Viewport({0,0,640,480,0,1});
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    auto capture=[&]() {
+        backend.End_Scene(false);
+        return backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    };
+    auto matches=[&](unsigned x, unsigned channel) {
+        const auto offset=(240u*640+x)*4;
+        return pixels[offset]==(channel==0 ? 255 : 0) &&
+            pixels[offset+1]==(channel==1 ? 255 : 0) &&
+            pixels[offset+2]==(channel==2 ? 255 : 0) && pixels[offset+3]==255;
+    };
+
+    backend.Clear(true,true,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
+    bool ok=released.Is_Valid() && backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,released,material);
+    backend.Release_Texture(released); backend.Release_Texture(released);
+    ok=!backend.Is_Texture_Valid(released) &&
+        !backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,released,material) && ok;
+    const auto other=backend.Create_Static_RGBA8_Texture(1,1,blue,4);
+    ok=other.Is_Valid() && other.slot!=released.slot && ok;
+    for (auto &vertex:quad) vertex.x+=.8f;
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,other,material) && ok;
+    const bool read=capture(); ok=read && ok;
+    if (read) ok=matches(160,0) && matches(480,2) && ok;
+
+    // Reuse the same command frame without presenting: Begin_Scene waits for
+    // its fence and collects the retired slot before the next allocation.
+    backend.Clear(true,true,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
+    const auto replacement=backend.Create_Static_RGBA8_Texture(1,1,green,4);
+    ok=replacement.Is_Valid() && replacement.slot==released.slot &&
+        replacement.generation!=released.generation && !backend.Is_Texture_Valid(released) && ok;
+    backend.Release_Texture(released);
+    ok=backend.Is_Texture_Valid(replacement) &&
+        backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,replacement,material) && ok;
+    const bool replacement_read=capture(); ok=replacement_read && ok;
+    if (replacement_read) ok=matches(480,1) && ok;
+    backend.Flip_To_Primary();
+    backend.Release_Texture(other); backend.Release_Texture(replacement);
+
+    const auto target=backend.Create_Render_Texture(13,7);
+    ok=target.Is_Valid() && backend.Set_Render_Texture(target) && ok;
+    Matrix4x4 translated(true); translated[0][3]=10.f;
+    backend.Set_View_Projection(translated);
+    backend.Clear(true,false,Vector3(1,0,0),1,1,0); backend.Begin_Scene();
+    backend.Release_Texture(target); backend.Release_Texture(target);
+    int target_width=0,target_height=0;
+    ok=!backend.Is_Texture_Valid(target) && backend.Get_Render_Target_Size(target_width,target_height) &&
+        target_width==13 && target_height==7 && ok;
+    // The released target still owns the currently recorded clear/draw/barrier.
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material) && ok;
+    backend.End_Scene(false);
+    ok=backend.Get_Render_Target_Size(target_width,target_height) && target_width==640 && target_height==480 &&
+        !backend.Set_Render_Texture(target) && ok;
+    const bool preserved=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    ok=preserved && ok;
+    if (preserved) ok=matches(480,1) && ok; // Offscreen submission did not replace primary capture.
+
+    backend.Clear(true,true,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
+    for (auto &vertex:quad) { vertex.r=0; vertex.g=1; vertex.b=0; }
+    // Identity camera and full viewport were restored when the released target
+    // was submitted; no explicit restoration here can hide a backend mistake.
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material) && ok;
+    const bool primary_read=capture(); ok=primary_read && ok;
+    if (primary_read) ok=matches(480,1) && ok;
+    const auto target_replacement=backend.Create_Render_Texture(13,7);
+    ok=target_replacement.Is_Valid() && target_replacement.slot==target.slot &&
+        target_replacement.generation!=target.generation && !backend.Set_Render_Texture(target) && ok;
+    backend.Release_Texture(target);
+    ok=backend.Is_Texture_Valid(target_replacement) && backend.Set_Render_Texture(target_replacement) && ok;
+    ok=backend.Set_Render_Texture({}) && ok;
+    backend.Release_Texture(target_replacement); backend.Flip_To_Primary();
+    if (!ok) std::cerr << "Deferred texture release, descriptor lifetime, or selected target restoration failed.\n";
     return ok;
 }
 
@@ -806,7 +892,7 @@ int main()
         std::cerr << "D3D12 backend smoke failed: camera transform or screen-space isolation is incorrect.\n";
         return 15;
     }
-    if (!verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
+    if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
         !verifyMaterials(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";

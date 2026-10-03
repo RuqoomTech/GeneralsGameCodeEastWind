@@ -280,7 +280,13 @@ WW3DErrorType WW3D::Init(void *hwnd, char *defaultpal, bool lite)
 	{
 		return(WW3D_ERROR_INITIALIZATION_FAILED);
 	}
-	if (!lite) TextureLoader::Init();
+	if (!lite) {
+		// These CPU asset owners formerly depended on native device startup.
+		VertexMaterialClass::Init();
+		BoxRenderObjClass::Init();
+		ShatterSystem::Init();
+		TextureLoader::Init();
+	}
 	TheMeshRenderer.Init();
 
 	WWDEBUG_SAY(("Allocate Debug Resources"));
@@ -337,8 +343,10 @@ WW3DErrorType WW3D::Shutdown()
 {
 	assert(Lite || IsInitted == true);
 	TheMeshRenderer.Shutdown();
+	SortingRendererClass::Deinit();
 	// Stop texture work before releasing the assets and their GPU owner.
 	if (!Lite) TextureLoader::Deinit();
+	if (!Lite) ShatterSystem::Shutdown();
 //	WWDEBUG_SAY(("WW3D::Shutdown"));
 
 
@@ -365,7 +373,10 @@ WW3DErrorType WW3D::Shutdown()
 	if (WW3DAssetManager::Get_Instance()) {
 		WW3DAssetManager::Get_Instance()->Free_Assets();
 	}
-
+	if (!Lite) {
+		BoxRenderObjClass::Shutdown();
+		VertexMaterialClass::Shutdown();
+	}
 
 	delete RenderBackend;
 	RenderBackend = nullptr;
