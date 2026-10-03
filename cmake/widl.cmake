@@ -116,7 +116,7 @@ function(rts_require_widl_for_runtime)
             "No PATH override is required by the canonical presets.")
     endif()
 
-    # The in-tree BrowserEngine/BrowserDispatch IDLs import oaidl.idl and
+    # The retained BrowserDispatch IDL imports oaidl.idl and
     # ocidl.idl. Native MSYS2 installs both under /mingw64/include as part of
     # mingw-w64-x86_64-headers. Fail before FetchContent if that canonical header
     # set is incomplete instead of waiting for a later custom-command failure.

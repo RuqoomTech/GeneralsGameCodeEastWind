@@ -8,6 +8,7 @@ class Dispatch final : public IDispatch {
     LONG references = 1;
 public:
     int calls = 0;
+    LONG referenceCount() const { return references; }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override {
         if(!out) return E_POINTER;
         *out = nullptr;
@@ -54,6 +55,7 @@ int main() {
     BrowserHost::Shutdown();
     okay = okay && BrowserHost::Initialize(window);
     wchar_t folder[MAX_PATH]{}, filename[MAX_PATH]{};
+    std::string page_url;
     okay = okay && GetTempPathW(MAX_PATH, folder) && GetTempFileNameW(folder, L"geb", 0, filename);
     if(okay) {
         // The browser uses the extension when selecting a local file's MIME type.
@@ -70,7 +72,7 @@ int main() {
     }
     if(okay) {
         std::wstring path(filename);
-        std::string url = "file:///";
+        page_url = "file:///";
         // File-system paths may contain spaces or non-ASCII user names.
         const int count = WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, nullptr, 0, nullptr, nullptr);
         std::string utf8(static_cast<std::size_t>(count), '\0');
@@ -78,22 +80,36 @@ int main() {
         utf8.resize(static_cast<std::size_t>(count-1));
         const char hex[] = "0123456789ABCDEF";
         for(unsigned char c : utf8) {
-            if(c == '\\') url += '/';
-            else if(c == ':' || c == '/' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') url += static_cast<char>(c);
-            else { url += '%'; url += hex[c >> 4]; url += hex[c & 15]; }
+            if(c == '\\') page_url += '/';
+            else if(c == ':' || c == '/' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') page_url += static_cast<char>(c);
+            else { page_url += '%'; page_url += hex[c >> 4]; page_url += hex[c & 15]; }
         }
-        okay = BrowserHost::CreateBrowser("real", url.c_str(), 10, 12, 200, 160, dispatch);
+        okay = BrowserHost::CreateBrowser("real", page_url.c_str(), 10, 12, 200, 160, dispatch);
     }
     const ULONGLONG deadline = GetTickCount64() + 30000;
-    while(okay && dispatch->calls == 0 && GetTickCount64() < deadline && BrowserHost::GetState("real") != BrowserHost::State::Failed) pump();
+    while(okay && (dispatch->calls == 0 || BrowserHost::GetState("real") == BrowserHost::State::Pending) && GetTickCount64() < deadline && BrowserHost::GetState("real") != BrowserHost::State::Failed) pump();
     okay = okay && dispatch->calls == 1 && BrowserHost::GetState("real") == BrowserHost::State::Ready;
     if(!okay) std::fprintf(stderr, "Real browser/IDispatch bridge failed: state=%d error=%08lx calls=%d\n", static_cast<int>(BrowserHost::GetState("real")), static_cast<unsigned long>(BrowserHost::GetError("real")), dispatch->calls);
     BrowserHost::DestroyBrowser("real");
     okay = okay && BrowserHost::GetState("real") == BrowserHost::State::Closed;
+    if(okay) {
+        // An accepted Navigate request is not proof that the page loaded.
+        const std::string missing = page_url + ".missing";
+        okay = BrowserHost::CreateBrowser("missing", missing.c_str(), 0, 0, 100, 100, dispatch);
+        const ULONGLONG failure_deadline = GetTickCount64() + 15000;
+        while(okay && BrowserHost::GetState("missing") != BrowserHost::State::Failed && GetTickCount64() < failure_deadline) pump();
+        okay = okay && BrowserHost::GetState("missing") == BrowserHost::State::Failed && FAILED(BrowserHost::GetError("missing"));
+        if(!okay) std::fprintf(stderr, "Missing page did not report Failed and HRESULT error\n");
+        BrowserHost::DestroyBrowser("missing");
+    }
     BrowserHost::Shutdown();
     // Drain outstanding cancelled callbacks on their creating STA.
     const ULONGLONG drain = GetTickCount64() + 1000;
     while(GetTickCount64() < drain) pump();
+    if(dispatch->referenceCount() != 1) {
+        std::fprintf(stderr, "Native dispatch reference retained after shutdown: %ld\n", dispatch->referenceCount());
+        okay = false;
+    }
     dispatch->Release();
     if(*filename) DeleteFileW(filename);
     DestroyWindow(window);

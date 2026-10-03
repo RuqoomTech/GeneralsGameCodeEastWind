@@ -217,7 +217,8 @@ PointGroupClass::PointGroupClass() :
 	VPXMin(0.0f),
 	VPYMin(0.0f),
 	VPXMax(0.0f),
-	VPYMax(0.0f)
+	VPYMax(0.0f),
+	Billboard(true)
 {
 }
 

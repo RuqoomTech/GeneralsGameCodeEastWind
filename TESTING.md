@@ -298,3 +298,26 @@ ctest --preset mingw64-tests
 The local game compile clears the migrated output/statistics callers and reaches a failed final link with 98 distinct remaining legacy renderer symbols. The next actual error is `W3DProjectedShadow.cpp` calling `DX8Wrapper::Create_Render_Target`. It requires coherent off-screen resource, mesh/material, and shadow draw migration. Do not restore the old backend, drop required sources, or substitute empty drawing implementations to resolve it.
 
 The 27 focused regressions pass. The GPU smoke asserts real dynamic/static/textured submission counts, accepts presentation intervals 0-4 and rejects 5, reads known pixel colors after deferred and immediate presentation, and resizes to 643x479 to verify RGBA order, orientation, and GPU row padding. Empty/open-scene/just-resized captures are rejected. In-game screenshot/movie files, real game boot/frame, and optional Generals/viewer targets remain separate unfulfilled runtime/build gates. Continue Step05H; Step06 SDL3 and major W3X runtime work remain deferred.
+
+
+### Step 05H1AA Windows continuation — 2026-10-03
+
+The authoritative `(4).zip` tree configured successfully on real Windows MinGW-w64 GCC 16.2 and stopped at 2/107 in `Core/Libraries/Source/WWVegas/WW3D2/shattersystem.cpp`. Seven CPU-side color conversion calls still referenced `DX8Wrapper::Convert_Color` after the wrapper implementation ownership had been retired from this path. H1AA keeps shatter behavior intact and replaces only those conversions with local renderer-neutral ARGB helpers: unpack is the established `0xAARRGGBB` channel decode and pack delegates to `Vector3::Convert_To_ARGB(alpha)`, matching the prior GCC implementation. The D3D12 policy now forbids `DX8Wrapper` from returning to `shattersystem.cpp`.
+
+Continue on Windows with the existing configured tree:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Use the next first hard compiler/link/runtime failure as the queue. Do not restore `DX8Wrapper` merely for color conversion, and do not mix unrelated shatter interpolation cleanup into this compile unblock.
+
+### Step 05H1AB Windows continuation
+
+H1AB addresses the `W3DDisplay.cpp:101: browserhost.h: No such file or directory` blocker exposed at 55/107 after H1AA. Apply the H1AB hotfix and continue without cleaning:
+
+```powershell
+cmake --build --preset mingw64-game --target z_generals -- -j1
+```
+
+Windows sign-off requires that real build to advance past both `W3DDisplay.cpp` and `W3DWebBrowser.cpp`.

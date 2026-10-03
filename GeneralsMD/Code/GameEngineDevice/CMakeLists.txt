@@ -208,6 +208,7 @@ target_precompile_headers(z_gameenginedevice PRIVATE
 )
 
 target_link_libraries(z_gameenginedevice PRIVATE
+    core_browserhost
     corei_gameenginedevice_private
     zi_always
     zi_main

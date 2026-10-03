@@ -39,6 +39,16 @@ foreach(retired_debugger_file IN ITEMS dx8rendererdebugger.cpp dx8rendererdebugg
 endforeach()
 
 rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/shattersystem.cpp"
+    "DX8Wrapper"
+    "CPU shatter color interpolation must not depend on the retired renderer wrapper")
+
+rts_policy_require_contains(
+    "GeneralsMD/Code/GameEngineDevice/CMakeLists.txt"
+    "core_browserhost"
+    "the game-device target must own its direct BrowserHost include/link dependency")
+
+rts_policy_require_absent(
     "Core/Libraries/Source/WWVegas/WW3D2/ww3d.cpp"
     "#if !defined(RTS_EVOLUTION_X64)"
     "WW3D must not retain an alternative DX8 device lifecycle")

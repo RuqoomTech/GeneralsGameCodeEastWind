@@ -70,6 +70,22 @@
 #define BPT_EPSILON					0.0001f
 #define BPT_COINCIDENCE_EPSILON	0.000001f
 
+namespace {
+Vector4 Unpack_ARGB_Color(unsigned color)
+{
+	return Vector4(
+		((color >> 16) & 0xff) / 255.0f,
+		((color >> 8) & 0xff) / 255.0f,
+		(color & 0xff) / 255.0f,
+		((color >> 24) & 0xff) / 255.0f);
+}
+
+unsigned Pack_ARGB_Color(const Vector4 &color)
+{
+	return Vector3(color.X, color.Y, color.Z).Convert_To_ARGB(color.W);
+}
+}
+
 
 /**
 ** Mesh Material Parameters
@@ -339,10 +355,10 @@ void VertexClass::Lerp
 
 	// interpolate material properies
 	for (int ipass=0; ipass<v0.PassCount; ipass++) {
-		Vector4 dcg_v0=DX8Wrapper::Convert_Color(v0.DCG[ipass]);
-		Vector4 dcg_v1=DX8Wrapper::Convert_Color(v1.DCG[ipass]);
-		Vector4 dig_v0=DX8Wrapper::Convert_Color(v0.DIG[ipass]);
-		Vector4 dig_v1=DX8Wrapper::Convert_Color(v1.DIG[ipass]);
+		Vector4 dcg_v0=Unpack_ARGB_Color(v0.DCG[ipass]);
+		Vector4 dcg_v1=Unpack_ARGB_Color(v1.DCG[ipass]);
+		Vector4 dig_v0=Unpack_ARGB_Color(v0.DIG[ipass]);
+		Vector4 dig_v1=Unpack_ARGB_Color(v1.DIG[ipass]);
 		Vector4::Lerp(dcg_v0,dcg_v1,res->DCG[ipass]);
 		Vector4::Lerp(dig_v0,dig_v1,res->DIG[ipass]);
 //		Vector4::Lerp(v0.DCG[ipass],v1.DCG[ipass],lerp,&(res->DCG[ipass]));
@@ -1204,10 +1220,10 @@ void ShatterSystem::Process_Clip_Pools
 						// HY- Multiplying DIG with DCG as in meshmdlio
 						if (mtl_params.DIG[ipass] != nullptr) {
 							SHATTER_DEBUG_SAY(("DIG: pass:%d: %f %f %f",ipass,vert.DIG[ipass].X,vert.DIG[ipass].Y,vert.DIG[ipass].Z));
-							Vector4 mc=DX8Wrapper::Convert_Color(mycolor);
-							Vector4 dc=DX8Wrapper::Convert_Color(vert.DIG[ipass]);
+							Vector4 mc=Unpack_ARGB_Color(mycolor);
+							Vector4 dc=Unpack_ARGB_Color(vert.DIG[ipass]);
 							mc=Vector4(mc.X*dc.X,mc.Y*dc.Y,mc.Z*dc.Z,mc.W);
-							mycolor=DX8Wrapper::Convert_Color(mc);
+							mycolor=Pack_ARGB_Color(mc);
 						}
 
 						new_mesh->Color(mycolor);

@@ -1,18 +1,14 @@
 # Project state
 
-Updated: 2026-10-01
+Updated: 2026-10-03
 
 ## Current baseline
 
-Step 04 is complete and Windows-signed-off. The supported Evolution path is x64-only.
+The authoritative working tree is the user-provided `GeneralsGameCodeEastWind(4).zip` (SHA-256 `d379a84ce5c0779fec06d846c3ef325898ae50efe78d6db96f0f7126d8b7c8c9`). It materially supersedes the older H1X/H1Z package notes retained below: the source has already retired `dx8renderer.*`, `dx8polygonrenderer.*`, `dx8webbrowser.*`, and the old EABrowserEngine implementation files, introduced renderer-neutral `meshrenderer.*` and `BrowserHost`, and contains broader D3D12 migration work. Historical unresolved-symbol counts in older sections are therefore not the active queue.
 
-Step 05A is Windows-signed-off. Step 05B's temporary standalone D3D12 shell is also Windows-signed-off: MinGW-w64 GCC 16.2 built it successfully, Intel UHD 770 and WARP both presented frames, the staged executable ran, and the focused graph passed 26/26.
+The real Windows MinGW-w64 GCC 16.2 `mingw64-game` continuation on 2026-10-03 configured successfully and stopped at **2/107** compiling `Core/Libraries/Source/WWVegas/WW3D2/shattersystem.cpp`. The hard error is seven uses of `DX8Wrapper::Convert_Color` in CPU-side shatter vertex/material color interpolation after `DX8Wrapper` ceased to be a complete dependency in that translation unit. H1AA replaces those calls with local renderer-neutral ARGB unpack/pack helpers that preserve the exact legacy `0xAARRGGBB` decode and GCC `Vector3::Convert_To_ARGB(alpha)` encode semantics. It does not change shatter interpolation, mesh rendering, deterministic simulation, wire/replay/CRC/Xfer/RNG state, or introduce a compatibility renderer.
 
-Step 05C2 through Step 05G are Windows-signed-off. The production D3D12 backend lives behind WW3D; the standalone `Evolution/` tree is gone, canonical HLSL is staged beside the executable, and persistent geometry/RGBA8 textures use default-heap resources. Step 05H remains active. H1A-H1S cleared native-width and D3DX utility/math blockers, and H1T reached the real game link. H1X is the current locally validated candidate: the archival DX8 build lane is retired, output/capture/statistics callers use D3D12, camera viewport/view/projection crosses the backend seam, migrated diagnostics use neutral names, projected-shadow texture allocation/copy uses neutral resources, and decal batches draw real CPU-decoded textures through D3D12. All compilation completes, but 94 unresolved legacy renderer symbols still prevent linking the normal game. Shader, texture, mesh, material/depth bias, shadow, terrain and effect migration remains unfinished. No visible game frame or user H1X Windows sign-off is claimed.
-
-The local H1T continuation reached the final link. GNU `ld` initially failed at startup (`collect2: ld returned 8`): GCC selected the linker in the MinGW triplet directory, but its DLL lookup reached incompatible tools on the inherited `PATH`. The canonical Windows toolchain now prepends its selected bin directory for C/C++ compiler and linker subprocesses, preserving existing launchers. Fresh C/C++ ABI detection and executable builds pass without changing the calling shell. DirectInput imports are owned by the device source interface, and WW3D declares its existing telemetry library dependency so GNU archive ordering resolves both. The focused x64 graph passes 27/27 tests, including the D3D12 backend smoke test. The game still requires migration of direct DX8 callers before it can link and boot; this is local validation, not user Windows sign-off or a first-game-frame claim.
-
-The full local serial compile completed, and the final linker now exposes 107 distinct unresolved legacy renderer symbols. The DirectInput and telemetry references are resolved. The accompanying warning sweep completes the existing gadget integer-data API with native-width setters for local GUI tags (including negative ladder IDs and unsigned 32-bit IP values) and fixes the two sabotage-frame callback casts without widening the `UnsignedInt` frame counter. This does not complete the DX8 caller migration or establish game boot/frame evidence.
+Host focused validation for H1AA rebuilds 46/46 actions and passes 26/26 tests, including the D3D12 source-policy gate. Windows sign-off remains pending the user's next exact `cmake --build --preset mingw64-game --target z_generals -- -j1` continuation. If the build advances, its next first hard compiler/link/runtime failure becomes the queue.
 
 ## Step 05H1U candidate — D3D12-only build and output ownership
 
@@ -187,3 +183,7 @@ The H1J Windows build cleared the native-address sweep and advanced to Zero Hour
 - `PivotMapClass` and `SnapPointsClass` now override `Delete_This()` at the complete-object class, avoiding deletion from their nonzero-offset secondary `RefCountClass` subobject.
 - x64/D3D12 policy guards cover all three fixes. Clean host validation rebuilt 46/46 actions and passed 26/26 tests.
 - H1N is locally validated only until the next real Windows `cmake --build --preset mingw64-game --target z_generals -- -j1` run.
+
+### Step 05H1AB candidate — BrowserHost target dependency
+
+The real Windows `mingw64-game` continuation after H1AA advanced to 55/107 and then stopped in `W3DDisplay.cpp` because `browserhost.h` was not on the `z_gameenginedevice` include path. H1AB makes `core_browserhost` a direct private dependency of `z_gameenginedevice`, which propagates BrowserHost's public include directory and records the implementation ownership of the browser calls in `W3DDisplay.cpp` / `W3DWebBrowser.cpp`. No renderer behavior or deterministic state is changed. Windows sign-off remains pending the next real `z_generals` build.

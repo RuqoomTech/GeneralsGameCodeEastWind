@@ -347,6 +347,72 @@ bool verifyDeferredTextureRelease(IRenderBackend &backend)
     return ok;
 }
 
+bool verifySamplers(IRenderBackend &backend)
+{
+    const unsigned char colors[]={255,0,0,255,0,255,0,255,0,0,255,255,255,255,255,255};
+    const auto texture=backend.Create_Static_RGBA8_Texture(2,2,colors,8);
+    std::vector<unsigned char> red(64),green(16),blue(4);
+    for (unsigned i=0;i<red.size();i+=4) {red[i]=255; red[i+3]=255;}
+    for (unsigned i=0;i<green.size();i+=4) {green[i+1]=255; green[i+3]=255;}
+    blue[2]=blue[3]=255;
+    const RenderBackendTextureMipLevel levels[]={{4,4,16,red.data()},{2,2,8,green.data()},{1,1,4,blue.data()}};
+    const auto mips=backend.Create_Static_RGBA8_Texture(levels,3);
+    RenderBackendTexturedVertex quad[]={
+        {-.8f,-.8f,.5f,1,1,1,1,.4f,.25f}, {-.8f,.8f,.5f,1,1,1,1,.4f,.25f},
+        {.8f,.8f,.5f,1,1,1,1,.4f,.25f}, {.8f,-.8f,.5f,1,1,1,1,.4f,.25f}};
+    const unsigned short indices[]={0,2,1,0,3,2};
+    RenderBackendMaterialState material; material.depth_write=false;
+    backend.Set_Viewport({0,0,640,480,0,1}); backend.Set_View_Projection(Matrix4x4(true));
+    bool ok=texture.Is_Valid() && mips.Is_Valid();
+    auto verify=[&](RenderBackendTextureHandle handle,int r,int g,int b) {
+        backend.Clear(true,true,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
+        const bool drew=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,handle,material);
+        backend.End_Scene(false);
+        unsigned width=0,height=0; std::vector<unsigned char> pixels;
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        const unsigned center=(240*640+320)*4;
+        const bool match=read && std::abs(int(pixels[center])-r)<=2 &&
+            std::abs(int(pixels[center+1])-g)<=2 && std::abs(int(pixels[center+2])-b)<=2 && pixels[center+3]==255;
+        if (!drew || !match) std::cerr << "Material sampler pixel failed expected " << r << ',' << g << ',' << b << '\n';
+        backend.Flip_To_Primary(); return drew && match;
+    };
+    material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    ok=verify(texture,255,0,0) && ok;
+    material.sampler.mag_filter=RenderBackendTextureFilter::Linear;
+    ok=verify(texture,179,77,0) && ok;
+    material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    for (auto &v:quad) {v.u=v.v=1.25f;}
+    for (unsigned u=0;u<2;++u) for (unsigned v=0;v<2;++v) {
+        material.sampler.address_u=static_cast<RenderBackendTextureAddress>(u);
+        material.sampler.address_v=static_cast<RenderBackendTextureAddress>(v);
+        ok=verify(texture,u==v ? 255 : 0,u ? 255 : 0,v ? 255 : 0) && ok;
+    }
+    material.sampler={};
+    for (unsigned i=0;i<4;++i) {quad[i].u=i>=2 ? 1024.f : 0.f; quad[i].v=.5f;}
+    ok=verify(mips,0,0,255) && ok;
+    material.sampler.mipmaps=false;
+    ok=verify(mips,255,0,0) && ok;
+    material.sampler.mipmaps=true;
+    const float span=512.f*std::pow(2.f,.25f)/4.f;
+    for (unsigned i=0;i<4;++i) quad[i].u=i>=2 ? span : 0.f;
+    material.sampler.mip_filter=RenderBackendTextureFilter::Point;
+    ok=verify(mips,255,0,0) && ok;
+    material.sampler.mip_filter=RenderBackendTextureFilter::Linear;
+    ok=verify(mips,191,64,0) && ok;
+    // Malformed runtime sampler state must never index outside the fixed heap.
+    backend.Begin_Scene(); material.sampler.max_anisotropy=0;
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material) && ok;
+    material.sampler.max_anisotropy=17;
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material) && ok;
+    material.sampler.max_anisotropy=1;
+    material.sampler.address_u=static_cast<RenderBackendTextureAddress>(2);
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material) && ok;
+    backend.End_Scene(false); backend.Flip_To_Primary();
+    backend.Release_Texture(texture); backend.Release_Texture(mips);
+    if (!ok) std::cerr << "Material sampler state checks failed.\n";
+    return ok;
+}
+
 bool verifyMaterials(IRenderBackend &backend)
 {
     const unsigned char rgba[] = {128,64,192,128};
@@ -893,7 +959,7 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

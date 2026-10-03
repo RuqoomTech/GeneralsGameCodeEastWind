@@ -54,7 +54,6 @@ struct SortingSubmission
 };
 std::list<std::unique_ptr<SortingSubmission>> sorted_nodes;
 std::list<std::unique_ptr<SortingSubmission>> unbounded_nodes;
-Matrix4x4 restore_view_projection(true);
 bool draw(SortingSubmission &node, const unsigned short *indices, unsigned count)
 {
     auto *backend = WW3D::Get_Render_Backend();
@@ -157,6 +156,59 @@ void Sort(TempIndexStruct *begin, TempIndexStruct *end)
 }
 
 
+std::unique_ptr<SortingSubmission> Prepare_Submission(
+    const RenderBackendTexturedVertex *vertices, unsigned vertex_count,
+    const unsigned short *indices, unsigned index_count, TextureClass *texture,
+    const RenderBackendMaterialState &material)
+{
+    if (!vertices || !indices || !vertex_count || vertex_count > 65536 ||
+        !index_count || index_count % 3) { failure("invalid CPU geometry"); return {}; }
+    for (unsigned i = 0; i < index_count; ++i)
+        if (indices[i] >= vertex_count) { failure("CPU index out of range"); return {}; }
+    for (unsigned i = 0; i < vertex_count; ++i)
+        if (!std::isfinite(vertices[i].x) || !std::isfinite(vertices[i].y) || !std::isfinite(vertices[i].z))
+            { failure("nonfinite CPU position"); return {}; }
+    auto node = std::make_unique<SortingSubmission>();
+    node->vertices.assign(vertices, vertices + vertex_count);
+    node->indices.assign(indices, indices + index_count);
+    node->material = material;
+    if (texture) {
+        if (!texture->Get_Filter().Get_Render_Sampler(node->material.sampler))
+            { failure("unsupported CPU texture sampler"); return {}; }
+        node->material.clamp_texture = false;
+        node->texture = texture;
+        texture->Add_Ref();
+    }
+    return node;
+}
+
+bool Submit_Snapshot(std::unique_ptr<SortingSubmission> node, const Matrix3D &view,
+    const Matrix4x4 &projection, const SphereClass *world_bounds, bool sort)
+{
+    node->view = view;
+    node->view_projection = projection * Matrix4x4(view);
+    if (!sort || !WW3D::Is_Sorting_Enabled()) {
+        auto *backend = WW3D::Get_Render_Backend();
+        Matrix4x4 saved_view_projection;
+        if (!backend) return failure("missing render backend");
+        backend->Get_View_Projection(saved_view_projection);
+        const bool success = draw(*node, node->indices.data(), static_cast<unsigned>(node->indices.size()));
+        backend->Set_View_Projection(saved_view_projection);
+        return success;
+    }
+    if (world_bounds && world_bounds->Is_Valid()) {
+        Vector3 center;
+        Matrix3D::Transform_Vector(node->view, world_bounds->Center, &center);
+        if (!std::isfinite(center.Z)) return failure("nonfinite sorting bound");
+        node->center_z = center.Z;
+        node->bounded = true;
+        auto position = sorted_nodes.begin();
+        while (position != sorted_nodes.end() && node->center_z <= (*position)->center_z) ++position;
+        sorted_nodes.insert(position, std::move(node));
+    } else unbounded_nodes.push_back(std::move(node));
+    return true;
+}
+
 }
 
 void SortingRendererClass::SetMinVertexBufferSize(unsigned value)
@@ -171,43 +223,13 @@ bool SortingRendererClass::Submit_CPU_Triangles(
     const RenderBackendMaterialState &material, const CameraClass &camera,
     const SphereClass *world_bounds, bool sort)
 {
-    if (!vertices || !indices || !vertex_count || vertex_count > 65536 ||
-        !index_count || index_count % 3) return failure("invalid CPU geometry");
-    for (unsigned i = 0; i < index_count; ++i)
-        if (indices[i] >= vertex_count) return failure("CPU index out of range");
-    for (unsigned i = 0; i < vertex_count; ++i)
-        if (!std::isfinite(vertices[i].x) || !std::isfinite(vertices[i].y) || !std::isfinite(vertices[i].z))
-            return failure("nonfinite CPU position");
-    auto node = std::make_unique<SortingSubmission>();
-    node->vertices.assign(vertices, vertices + vertex_count);
-    node->indices.assign(indices, indices + index_count);
-    node->material = material;
-    if (texture) {
-        if (!texture->Get_Filter().Get_Render_Sampler(node->material.sampler))
-            return failure("unsupported CPU texture sampler");
-        node->material.clamp_texture = false;
-        node->texture = texture;
-        texture->Add_Ref();
-    }
+    auto node = Prepare_Submission(vertices, vertex_count, indices, index_count, texture, material);
+    if (!node) return false;
     auto &mutable_camera = const_cast<CameraClass &>(camera);
-    node->view = mutable_camera.Get_View_Matrix();
+    const Matrix3D view = mutable_camera.Get_View_Matrix();
     Matrix4x4 projection;
     mutable_camera.Get_Zero_To_One_Projection_Matrix(&projection);
-    node->view_projection = projection * Matrix4x4(node->view);
-    restore_view_projection = node->view_projection;
-    if (!sort || !WW3D::Is_Sorting_Enabled())
-        return draw(*node, indices, index_count);
-    if (world_bounds && world_bounds->Is_Valid()) {
-        Vector3 center;
-        Matrix3D::Transform_Vector(node->view, world_bounds->Center, &center);
-        if (!std::isfinite(center.Z)) return failure("nonfinite sorting bound");
-        node->center_z = center.Z;
-        node->bounded = true;
-        auto position = sorted_nodes.begin();
-        while (position != sorted_nodes.end() && node->center_z <= (*position)->center_z) ++position;
-        sorted_nodes.insert(position, std::move(node));
-    } else unbounded_nodes.push_back(std::move(node));
-    return true;
+    return Submit_Snapshot(std::move(node), view, projection, world_bounds, sort);
 }
 
 bool SortingRendererClass::Flush()
@@ -216,6 +238,10 @@ bool SortingRendererClass::Flush()
     while (position != sorted_nodes.end() && (*position)->center_z > 0) ++position;
     sorted_nodes.splice(position, unbounded_nodes);
     if (sorted_nodes.empty()) return true;
+    auto *backend = WW3D::Get_Render_Backend();
+    if (!backend) { Deinit(); return failure("missing render backend"); }
+    Matrix4x4 saved_view_projection;
+    backend->Get_View_Projection(saved_view_projection);
     std::vector<SortingSubmission *> nodes;
     std::vector<TempIndexStruct> triangles;
     triangles.reserve(minimum_vertices / 2);
@@ -256,7 +282,7 @@ bool SortingRendererClass::Flush()
         }
     }
     sorted_nodes.clear();
-    if (auto *backend = WW3D::Get_Render_Backend()) backend->Set_View_Projection(restore_view_projection);
+    backend->Set_View_Projection(saved_view_projection);
     return success;
 }
 

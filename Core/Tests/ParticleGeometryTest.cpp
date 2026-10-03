@@ -48,6 +48,7 @@ public:
 void Test_Triangles_And_Atlas()
 {
     PointGeometryPeer group;
+    Check(group.Get_Billboard(), "Default particles face the camera");
     group.Set_Point_Mode(PointGroupClass::TRIS);
     group.Set_Point_Size(2);
     group.Set_Frame_Row_Column_Count_Log2(1);
