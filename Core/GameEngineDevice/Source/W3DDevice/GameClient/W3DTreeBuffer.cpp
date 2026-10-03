@@ -220,8 +220,9 @@ void W3DTreeBuffer::W3DTreeTextureClass::setLOD(Int LOD) const
 //=============================================================================
 void W3DTreeBuffer::W3DTreeTextureClass::Apply(unsigned int stage)
 {
-	// Do the base apply.
-	TextureClass::Apply(stage);
+	// D3D12: binding happens via the backend texture handle at draw time
+	// (Draw_Indexed_Material_Triangles). Do not call the legacy DX8 Apply path.
+	(void)stage;
 }
 //-----------------------------------------------------------------------------
 //         Private Data
@@ -692,7 +693,8 @@ UnsignedInt W3DTreeBuffer::doLighting(const Vector3 *normal,
 //=============================================================================
 void W3DTreeBuffer::loadTreesInVertexAndIndexBuffers(RefRenderObjListIterator *pDynamicLightsIterator)
 {
-	if (!m_indexTree[0] || !m_vertexTree[0] || !m_initialized) {
+	(void)pDynamicLightsIterator;
+	if (!m_initialized) {
 		return;
 	}
 	if (!m_anythingChanged) {
@@ -723,26 +725,18 @@ void W3DTreeBuffer::loadTreesInVertexAndIndexBuffers(RefRenderObjListIterator *p
 		if (curTree >= m_numTrees) {
 			break;
 		}
-		VertexFormatXYZNDUV1 *vb;
-		UnsignedShort *ib;
-		// Lock the buffers.
-	#ifdef USE_STATIC
-		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexTree[bNdx], 0);
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexTree[bNdx], 0);
-	#else
-		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexTree[bNdx], D3DLOCK_DISCARD);
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexTree[bNdx], D3DLOCK_DISCARD);
-	#endif
-		vb=(VertexFormatXYZNDUV1*)lockVtxBuffer.Get_Vertex_Array();
-		ib = lockIdxBuffer.Get_Index_Array();
-		// Add to the index buffer & vertex buffer.
+		// D3D12: append to the CPU batch (XYZNDUV1 layout retired; sway baked
+		// CPU-side, darkening baked into vertex color, see below).
+		TreeCpuBatch &batch = m_treeBatch[bNdx];
+		batch.vertices.clear();
+		batch.indices.clear();
+		batch.vertices.reserve(MAX_TREE_VERTEX);
+		batch.indices.reserve(MAX_TREE_INDEX);
+		// Add to the CPU batch.
 		Vector2 lookAtVector(m_cameraLookAtVector.X, m_cameraLookAtVector.Y);
 		lookAtVector.Normalize();
 		// We draw from back to front, so we put the indexes in the buffer
 		// from back to front.
-		UnsignedShort *curIb = ib;
-
-		VertexFormatXYZNDUV1 *curVb = vb;
 
 
 
@@ -840,8 +834,8 @@ void W3DTreeBuffer::loadTreesInVertexAndIndexBuffers(RefRenderObjListIterator *p
 				if (V>1.0f) V=1.0f;
 				if (V<0.0f) V=0.0f;
 
-				curVb->u1 = U*Uscale + UOffset;
-				curVb->v1 = V*Vscale + VOffset;
+				Real quadU = U*Uscale + UOffset;
+				Real quadV = V*Vscale + VOffset;
 				Real x = pVert[i].X;
 				Real y = pVert[i].Y;
 
@@ -866,13 +860,23 @@ void W3DTreeBuffer::loadTreesInVertexAndIndexBuffers(RefRenderObjListIterator *p
 					vLoc.Z += loc.Z;
 				}
 
-
-				curVb->x = vLoc.X;
-				curVb->y = vLoc.Y;
-				curVb->z = vLoc.Z;
-				curVb->nx = m_trees[curTree].swayType;
-				curVb->ny = 1.0f - m_treeTypes[type].m_data->m_darkening*m_trees[curTree].pushAside;
-				curVb->nz = loc.Z;
+				// D3D12: Trees.vso sway (c4/c8/c9/c32-33) has no backend
+				// equivalent. The CPU sway factors computed in drawTrees are
+				// applied here, height-weighted (taller verts sway more),
+				// preserving motion without faking GPU perturb. Darkening
+				// (legacy ny) is baked into vertex color; loc.Z (legacy nz)
+				// carried no lighting and is dropped (documented).
+				{
+					Int swayNdx = m_trees[curTree].swayType;
+					if (swayNdx < 0) swayNdx = 0;
+					if (swayNdx >= MAX_SWAY_TYPES) swayNdx = MAX_SWAY_TYPES - 1;
+					const Real heightWeight = pVert[i].Z * scale;
+					vLoc.X += m_lastSwayFactor[swayNdx].X * heightWeight;
+					vLoc.Y += m_lastSwayFactor[swayNdx].Y * heightWeight;
+					vLoc.Z += m_lastSwayFactor[swayNdx].Z * heightWeight;
+				}
+				const Real darken = 1.0f - m_treeTypes[type].m_data->m_darkening*m_trees[curTree].pushAside;
+				UnsignedInt litDiffuse;
 				if (doVertexLighting) {
 					Vector3 normal(0.0f, 0.0f, 1.0f);
 					if (normals) {
@@ -886,21 +890,31 @@ void W3DTreeBuffer::loadTreesInVertexAndIndexBuffers(RefRenderObjListIterator *p
 					} else {
 						vertexDiffuse = 0xffffffff;
 					}
-					curVb->diffuse = doLighting(&normal, objectLighting, &emissive,
+					litDiffuse = doLighting(&normal, objectLighting, &emissive,
 														vertexDiffuse, 1.0f);
 				} else {
-					curVb->diffuse = diffuse;
+					litDiffuse = static_cast<UnsignedInt>(diffuse);
 				}
-				curVb++;
+				RenderBackendTexturedVertex out;
+				out.x = vLoc.X; out.y = vLoc.Y; out.z = vLoc.Z;
+				out.r = (((litDiffuse >> 16) & 255) / 255.0f) * darken;
+				out.g = (((litDiffuse >> 8) & 255) / 255.0f) * darken;
+				out.b = ((litDiffuse & 255) / 255.0f) * darken;
+				out.a = ((litDiffuse >> 24) & 255) / 255.0f;
+				if (out.r > 1.0f) out.r = 1.0f;
+				if (out.g > 1.0f) out.g = 1.0f;
+				if (out.b > 1.0f) out.b = 1.0f;
+				out.u = quadU; out.v = quadV; out.q = 1.0f;
+				batch.vertices.push_back(out);
 				m_curNumTreeVertices[bNdx]++;
 			}
 
 			for (i=0; i<numIndex; i++) {
 				if (m_curNumTreeIndices[bNdx]+4 > MAX_TREE_INDEX)
 					break;
-				*curIb++ = startVertex + pPoly[i].I;
-				*curIb++ = startVertex + pPoly[i].J;
-				*curIb++ = startVertex + pPoly[i].K;
+				batch.indices.push_back(static_cast<unsigned short>(startVertex + pPoly[i].I));
+				batch.indices.push_back(static_cast<unsigned short>(startVertex + pPoly[i].J));
+				batch.indices.push_back(static_cast<unsigned short>(startVertex + pPoly[i].K));
 				m_curNumTreeIndices[bNdx]+=3;
 			}
 		}
@@ -914,7 +928,7 @@ void W3DTreeBuffer::loadTreesInVertexAndIndexBuffers(RefRenderObjListIterator *p
 //=============================================================================
 void W3DTreeBuffer::updateVertexBuffer()
 {
-	if (!m_indexTree[0] || !m_vertexTree[0] || !m_initialized) {
+	if (!m_initialized) {
 		return;
 	}
 	Int bNdx;
@@ -922,19 +936,10 @@ void W3DTreeBuffer::updateVertexBuffer()
 		if (m_curNumTreeIndices[bNdx]==0) {
 			break;
 		}
-		VertexFormatXYZNDUV1 *vb;
-		// Lock the buffers.
-	#ifdef USE_STATIC
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexTree[bNdx], 0);
-	#else
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexTree[bNdx], D3DLOCK_DISCARD);
-	#endif
-		vb=(VertexFormatXYZNDUV1*)lockVtxBuffer.Get_Vertex_Array();
-		if (!vb) {
+		TreeCpuBatch &batch = m_treeBatch[bNdx];
+		if (batch.vertices.empty()) {
 			continue;
 		}
-
-		VertexFormatXYZNDUV1 *curVb;
 
 		Int curTree;
 		for (curTree=0; curTree<m_numTrees; curTree++) {
@@ -954,7 +959,6 @@ void W3DTreeBuffer::updateVertexBuffer()
 			DEBUG_ASSERTCRASH(type>=0 && m_treeTypes[type].m_mesh!=nullptr, ("Invalid tree type or mesh."));
 
 			Int startVertex = m_trees[curTree].firstIndex;
-			curVb = vb+startVertex;
 			Int i;
 			Int numVertex = m_treeTypes[type].m_mesh->Peek_Model()->Get_Vertex_Count();
 			Vector3 *pVert = m_treeTypes[type].m_mesh->Peek_Model()->Get_Vertex_Array();
@@ -984,11 +988,24 @@ void W3DTreeBuffer::updateVertexBuffer()
 					vLoc.Z += loc.Z;
 				}
 
-				curVb->x = vLoc.X;
-				curVb->y = vLoc.Y;
-				curVb->z = vLoc.Z;
-				curVb->ny = 1.0f - m_treeTypes[type].m_data->m_darkening*m_trees[curTree].pushAside;
-				curVb++;
+				// D3D12: sway baked CPU-side (see loadTrees...). Darkening is
+				// rebaked on the next full rebuild; the incremental path
+				// preserves positions exactly (documented).
+				{
+					Int swayNdx = m_trees[curTree].swayType;
+					if (swayNdx < 0) swayNdx = 0;
+					if (swayNdx >= MAX_SWAY_TYPES) swayNdx = MAX_SWAY_TYPES - 1;
+					const Real heightWeight = pVert[i].Z * scale;
+					vLoc.X += m_lastSwayFactor[swayNdx].X * heightWeight;
+					vLoc.Y += m_lastSwayFactor[swayNdx].Y * heightWeight;
+					vLoc.Z += m_lastSwayFactor[swayNdx].Z * heightWeight;
+				}
+				const size_t vNdx = static_cast<size_t>(startVertex + i);
+				if (vNdx < batch.vertices.size()) {
+					batch.vertices[vNdx].x = vLoc.X;
+					batch.vertices[vNdx].y = vLoc.Y;
+					batch.vertices[vNdx].z = vLoc.Z;
+				}
 			}
 		}
 	}
@@ -1027,14 +1044,17 @@ W3DTreeBuffer::W3DTreeBuffer()
 	m_initialized = false;
 	Int i;
 	for	(i=0; i<MAX_BUFFERS; i++) {
-		m_vertexTree[i] = nullptr;
-		m_indexTree[i] = nullptr;
+		m_treeBatch[i].vertices.clear();
+		m_treeBatch[i].indices.clear();
 		m_curNumTreeVertices[i]=0;
 		m_curNumTreeIndices[i]=0;
 	}
 	m_treeTexture = nullptr;
-	m_dwTreeVertexShader = 0;
-	m_dwTreePixelShader = 0;
+	m_treeTextureHandle = RenderBackendTextureHandle();
+	m_treeVertexShader = 0;
+	m_treePixelShader = 0;
+	for (i = 0; i < MAX_SWAY_TYPES; ++i)
+		m_lastSwayFactor[i].Set(0.0f, 0.0f, 0.0f);
 	clearAllTrees();
 	allocateTreeBuffers();
 	m_initialized = true;
@@ -1054,17 +1074,19 @@ void W3DTreeBuffer::freeTreeBuffers()
 {
 	Int i;
 	for	(i=0; i<MAX_BUFFERS; i++) {
-		REF_PTR_RELEASE(m_vertexTree[i]);
-		REF_PTR_RELEASE(m_indexTree[i]);
+		m_treeBatch[i].vertices.clear();
+		m_treeBatch[i].indices.clear();
 	}
 
-	if (m_dwTreePixelShader)
-		DX8Wrapper::_Get_D3D_Device8()->DeletePixelShader(m_dwTreePixelShader);
-	m_dwTreePixelShader = 0;
-
-	if (m_dwTreeVertexShader)
-		DX8Wrapper::_Get_D3D_Device8()->DeleteVertexShader(m_dwTreeVertexShader);
-	m_dwTreeVertexShader = 0;
+	// D3D12: Trees.vso/pso shader blobs are archival reference only
+	// (shaders\\Trees.vso, shaders\\Trees.pso). No D3D handles exist.
+	m_treePixelShader = 0;
+	m_treeVertexShader = 0;
+	if (IRenderBackend *backend = WW3D::Get_Render_Backend()) {
+		if (m_treeTextureHandle.Is_Valid())
+			backend->Release_Texture(m_treeTextureHandle);
+	}
+	m_treeTextureHandle = RenderBackendTextureHandle();
 }
 
 //=============================================================================
@@ -1155,37 +1177,18 @@ void W3DTreeBuffer::allocateTreeBuffers()
 {
 	Int i;
 	for	(i=0; i<MAX_BUFFERS; i++) {
-	#ifdef USE_STATIC
-		m_vertexTree[i]=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZNDUV1,MAX_TREE_VERTEX+4,DX8VertexBufferClass::USAGE_DEFAULT));
-		m_indexTree[i]=NEW_REF(DX8IndexBufferClass,(MAX_TREE_INDEX+4, DX8IndexBufferClass::USAGE_DEFAULT));
-	#else
-		m_vertexTree[i]=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZNDUV1,MAX_TREE_VERTEX+4,DX8VertexBufferClass::USAGE_DYNAMIC));
-		m_indexTree[i]=NEW_REF(DX8IndexBufferClass,(MAX_TREE_INDEX+4, DX8IndexBufferClass::USAGE_DYNAMIC));
-	#endif
+		// CPU batches replace DX8 XYZNDUV1 static + XYZNDUV2 dynamic buffers.
+		m_treeBatch[i].vertices.reserve(static_cast<size_t>(MAX_TREE_VERTEX) + 4);
+		m_treeBatch[i].indices.reserve(static_cast<size_t>(MAX_TREE_INDEX) + 4);
 		m_curNumTreeVertices[i]=0;
 		m_curNumTreeIndices[i]=0;
 	}
 
-		//shader decleration
-	// DX8_FVF_XYZNDUV1
-	DWORD Declaration[] =
-	{
-		D3DVSD_STREAM( 0 ),
-		D3DVSD_REG( 0, D3DVSDT_FLOAT3 ),  // Position
-		D3DVSD_REG( 1, D3DVSDT_FLOAT3 ),  // Normal
-		D3DVSD_REG( 2, D3DVSDT_D3DCOLOR), // Diffuse color
-		D3DVSD_REG( 7, D3DVSDT_FLOAT2 ),  // Tex coord
-		D3DVSD_END()
-	};
-
-	HRESULT hr;
-	hr = W3DShaderManager::LoadAndCreateD3DShader("shaders\\Trees.vso", &Declaration[0], 0, true, &m_dwTreeVertexShader);
-	if (FAILED(hr))
-		return;
-
-	hr = W3DShaderManager::LoadAndCreateD3DShader("shaders\\Trees.pso", &Declaration[0], 0, false, &m_dwTreePixelShader);
-	if (FAILED(hr))
-		return;
+	// D3D12: shaders\\Trees.vso / Trees.pso (sway c4/c8/c9/c32-33) are archival
+	// reference only. The active path uses SC_ALPHA_DETAIL material state with
+	// CPU-baked sway (see drawTrees/loadTrees...). No D3D handles are created.
+	m_treeVertexShader = 0;
+	m_treePixelShader = 0;
 }
 
 //=============================================================================

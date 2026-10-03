@@ -62,10 +62,22 @@
 #include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameClient/W3DShaderManager.h"
 #include "WW3D2/camera.h"
-#include "WW3D2/dx8wrapper.h"
-#include "WW3D2/meshrenderer.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/meshmdl.h"
+#include <vector>
+
+// D3D12 migration notes (W3DRoadBuffer):
+// - CPU road/bib vertex gen is unchanged (road/bib vertex gen, track edge gen
+//   equivalent here: segment/curve/tee/Y/H/alpha-join tessellation + UVs).
+// - Per-type buffers are CPU vectors; drawRoads() submits one backend batch per
+//   road type via Draw_Indexed_Material_Triangles (per-texture batching,
+//   depth_test LessEqual, depth_write false from SC_ALPHA_DETAIL).
+// - detailAlphaShader carries DETAILCOLOR_SCALE with no detail texture bound;
+//   backend state uses a sanitized copy (DETAILCOLOR_DISABLE) for submission.
+// - Cloud/noise second stages (ST_ROAD_BASE_NOISE*) are documented gaps:
+//   base stage only, single pass (no multitexture PSO invented).
 
 static const Real TEE_WIDTH_ADJUSTMENT = 1.03f;
 
@@ -130,8 +142,6 @@ static Int xpSign(const Vector2 &v1, const Vector2 &v2) {
 //=============================================================================
 RoadType::RoadType():
 m_roadTexture(nullptr),
-m_vertexRoad(nullptr),
-m_indexRoad(nullptr),
 m_stackingOrder(0),
 m_uniqueID(-1)
 {
@@ -145,25 +155,12 @@ m_uniqueID(-1)
 RoadType::~RoadType()
 {
 	REF_PTR_RELEASE(m_roadTexture);
-	REF_PTR_RELEASE(m_vertexRoad);
-	REF_PTR_RELEASE(m_indexRoad);
+	m_roadVertices.clear();
+	m_roadIndices.clear();
 }
 
 //=============================================================================
 // RoadType applyTexture
-//=============================================================================
-/** Sets the W3D texture. */
-//=============================================================================
-void RoadType::applyTexture()
-{
- 	W3DShaderManager::setTexture(0,m_roadTexture);
-	DX8Wrapper::Set_Index_Buffer(m_indexRoad,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexRoad);
-}
-
-
-//=============================================================================
-// RoadType loadTexture
 //=============================================================================
 /** Sets the W3D texture. */
 //=============================================================================
@@ -179,10 +176,11 @@ void RoadType::loadTexture(AsciiString path, Int ID)
 	m_roadTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_REPEAT);
 	m_roadTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_REPEAT);
 
-	m_vertexRoad=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,TheGlobalData->m_maxRoadVertex+4,DX8VertexBufferClass::USAGE_DYNAMIC));
-	m_indexRoad=NEW_REF(DX8IndexBufferClass,(TheGlobalData->m_maxRoadIndex+4, DX8IndexBufferClass::USAGE_DYNAMIC));
-	m_numRoadVertices=0;
-	m_numRoadIndices=0;
+	// D3D12: CPU staging only; capacity comes from GlobalData sizes.
+	m_roadVertices.clear();
+	m_roadIndices.clear();
+	m_roadVertices.reserve((size_t)TheGlobalData->m_maxRoadVertex + 4);
+	m_roadIndices.reserve((size_t)TheGlobalData->m_maxRoadIndex + 4);
 
 #ifdef LOAD_TEST_ASSETS
 	m_texturePath = path;
@@ -1232,18 +1230,13 @@ void W3DRoadBuffer::loadRoadsInVertexAndIndexBuffers()
 	}
 	m_curNumRoadVertices = 0;
 	m_curNumRoadIndices = 0;
-	VertexFormatXYZDUV1 *vb;
-	UnsignedShort *ib;
-	// Lock the buffers.
-	if (m_roadTypes[m_curRoadType].getIB() == nullptr) {
-		this->m_roadTypes[m_curRoadType].setNumVertices(0);
-		this->m_roadTypes[m_curRoadType].setNumIndices(0);
-		return;
-	}
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_roadTypes[m_curRoadType].getIB());
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_roadTypes[m_curRoadType].getVB());
-	vb=(VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-	ib = lockIdxBuffer.Get_Index_Array();
+	// D3D12: write into per-type CPU staging vectors (gen math unchanged).
+	std::vector<VertexFormatXYZDUV1> &verts = m_roadTypes[m_curRoadType].getVertices();
+	std::vector<UnsignedShort> &idx = m_roadTypes[m_curRoadType].getIndices();
+	verts.assign((size_t)m_maxRoadVertex + 4, VertexFormatXYZDUV1());
+	idx.assign((size_t)m_maxRoadIndex + 4, (UnsignedShort)0);
+	VertexFormatXYZDUV1 *vb = verts.data();
+	UnsignedShort *ib = idx.data();
 	// Add to the index buffer & vertex buffer.
 
 	Int curRoad;
@@ -1257,8 +1250,8 @@ void W3DRoadBuffer::loadRoadsInVertexAndIndexBuffers()
 			}
 		}
 	}
-	this->m_roadTypes[m_curRoadType].setNumVertices(m_curNumRoadVertices);
-	this->m_roadTypes[m_curRoadType].setNumIndices(m_curNumRoadIndices);
+	verts.resize((size_t)m_curNumRoadVertices);
+	idx.resize((size_t)m_curNumRoadIndices);
 }
 
 //=============================================================================
@@ -1273,13 +1266,13 @@ void W3DRoadBuffer::loadLitRoadsInVertexAndIndexBuffers(RefRenderObjListIterator
 	}
 	m_curNumRoadVertices = 0;
 	m_curNumRoadIndices = 0;
-	VertexFormatXYZDUV1 *vb;
-	UnsignedShort *ib;
-	// Lock the buffers.
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_roadTypes[m_curRoadType].getIB());
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_roadTypes[m_curRoadType].getVB());
-	vb=(VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-	ib = lockIdxBuffer.Get_Index_Array();
+	// D3D12: write into per-type CPU staging vectors (gen math unchanged).
+	std::vector<VertexFormatXYZDUV1> &verts = m_roadTypes[m_curRoadType].getVertices();
+	std::vector<UnsignedShort> &idx = m_roadTypes[m_curRoadType].getIndices();
+	verts.assign((size_t)m_maxRoadVertex + 4, VertexFormatXYZDUV1());
+	idx.assign((size_t)m_maxRoadIndex + 4, (UnsignedShort)0);
+	VertexFormatXYZDUV1 *vb = verts.data();
+	UnsignedShort *ib = idx.data();
 	// Add to the index buffer & vertex buffer.
 
 	Int curRoad;
@@ -1294,8 +1287,8 @@ void W3DRoadBuffer::loadLitRoadsInVertexAndIndexBuffers(RefRenderObjListIterator
 			}
 		}
 	}
-	this->m_roadTypes[m_curRoadType].setNumVertices(m_curNumRoadVertices);
-	this->m_roadTypes[m_curRoadType].setNumIndices(m_curNumRoadIndices);
+	verts.resize((size_t)m_curNumRoadVertices);
+	idx.resize((size_t)m_curNumRoadIndices);
 }
 
 //=============================================================================
