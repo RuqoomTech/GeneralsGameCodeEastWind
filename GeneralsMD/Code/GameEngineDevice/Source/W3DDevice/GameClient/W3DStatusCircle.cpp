@@ -33,8 +33,9 @@
 #include <WW3D2/coltest.h>
 #include <WW3D2/rinfo.h>
 #include <WW3D2/camera.h>
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/shader.h"
+#include "WW3D2/ww3d.h"
 #include "Common/GlobalData.h"
 #include "Common/MapObject.h"
 #include "GameLogic/GameLogic.h"
@@ -76,10 +77,7 @@ W3DStatusCircle::~W3DStatusCircle()
 
 W3DStatusCircle::W3DStatusCircle()
 {
-	m_indexBuffer=nullptr;
 	m_vertexMaterialClass=nullptr;
-	m_vertexBufferCircle=nullptr;
-	m_vertexBufferScreen=nullptr;
 }
 
 
@@ -132,9 +130,9 @@ RenderObjClass * W3DStatusCircle::Clone() const
 Int W3DStatusCircle::freeMapResources()
 {
 
-	REF_PTR_RELEASE(m_indexBuffer);
-	REF_PTR_RELEASE(m_vertexBufferScreen);
-	REF_PTR_RELEASE(m_vertexBufferCircle);
+	m_indices.clear();
+	m_circleVertices.clear();
+	m_screenVertices.clear();
 	REF_PTR_RELEASE(m_vertexMaterialClass);
 	return 0;
 }
@@ -150,23 +148,18 @@ Int W3DStatusCircle::initData()
 	freeMapResources();	//free old data and ib/vb
 
 	m_numTriangles = NUM_TRI;
-	m_indexBuffer=NEW_REF(DX8IndexBufferClass,(m_numTriangles*3));
-
-	// Fill up the IB
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBuffer);
-	UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
+	// Fill the CPU index store with the same sequential triples the DX8 index buffer held.
+	m_indices.resize(m_numTriangles*3);
 
 	for (i=0; i<3*m_numTriangles; i+=3)
 	{
-		ib[0]=i;
-		ib[1]=i+1;
-		ib[2]=i+2;
-
-		ib+=3;	//skip the 3 indices we just filled
+		m_indices[i]= (UnsignedShort)(i);
+		m_indices[i+1]=(UnsignedShort)(i+1);
+		m_indices[i+2]=(UnsignedShort)(i+2);
 	}
 
-	m_vertexBufferCircle=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,m_numTriangles*3,DX8VertexBufferClass::USAGE_DEFAULT));
-	m_vertexBufferScreen=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,2*3,DX8VertexBufferClass::USAGE_DEFAULT));
+	m_circleVertices.resize(m_numTriangles*3);
+	m_screenVertices.resize(2*3);
 
 	//go with a preset material for now.
 	m_vertexMaterialClass=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
@@ -184,17 +177,24 @@ Int W3DStatusCircle::updateCircleVB()
 {
 	Int i, k;
 	Real shade;
-	DX8VertexBufferClass	*pVB = m_vertexBufferCircle;
-	if (m_vertexBufferCircle )
+	if (m_circleVertices.size() < (size_t)(m_numTriangles*3))
+	{
+		return -1;
+	}
 	{
 		m_needUpdate = false;
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
-		VertexFormatXYZDUV1 *vb = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
+		RenderBackendTexturedVertex *vb = m_circleVertices.data();
 
 		const Real theZ = 0.0f;
 		const Real theRadius = 0.02f;
 		const Int theAlpha = 127;
 	  Int diffuse = m_diffuse + (theAlpha<<24);	 // b g<<8 r<<16 a<<24.
+		// Unpack the legacy ARGB diffuse for the backend's float color channels.
+		const UnsignedInt packedDiffuse = (UnsignedInt)diffuse;
+		const Real diffuseR = ((packedDiffuse >> 16) & 255) / 255.0f;
+		const Real diffuseG = ((packedDiffuse >> 8) & 255) / 255.0f;
+		const Real diffuseB = ((packedDiffuse) & 255) / 255.0f;
+		const Real diffuseA = ((packedDiffuse >> 24) & 255) / 255.0f;
 		Int limit = m_numTriangles;
 		float curAngle = 0;
 		float deltaAngle = 2*PI/limit;

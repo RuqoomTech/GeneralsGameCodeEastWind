@@ -24,12 +24,13 @@
 #include "Common/MapObject.h"
 #include "W3DDevice/GameClient/TerrainTex.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/IRenderBackend.h"
+#include "WW3D2/shader.h"
+#include "WW3D2/texture.h"
+#include "WW3D2/ww3d.h"
 
 W3DScorch::W3DScorch(bool deduplicateScorches)
-  : m_vertexScorch(nullptr)
-  , m_indexScorch(nullptr)
-  , m_scorchTexture(nullptr)
+  : m_scorchTexture(nullptr)
   , m_curNumScorchVertices(0)
   , m_curNumScorchIndices(0)
   , m_needBufferRecompute(true)
@@ -41,16 +42,16 @@ W3DScorch::~W3DScorch() { freeBuffers(); }
 void W3DScorch::allocateBuffers()
 {
 	freeBuffers();
-	m_vertexScorch = NEW_REF(DX8VertexBufferClass, (DX8_FVF_XYZDUV1, MAX_SCORCH_VERTEX, DX8VertexBufferClass::USAGE_DEFAULT));
-	m_indexScorch = NEW_REF(DX8IndexBufferClass, (MAX_SCORCH_INDEX));
+	m_scorchVertices.reserve(MAX_SCORCH_VERTEX);
+	m_scorchIndices.reserve(MAX_SCORCH_INDEX);
 	m_scorchTexture = NEW ScorchTextureClass;
 	invalidateBuffers();
 }
 
 void W3DScorch::freeBuffers()
 {
-	REF_PTR_RELEASE(m_vertexScorch);
-	REF_PTR_RELEASE(m_indexScorch);
+	m_scorchVertices.clear();
+	m_scorchIndices.clear();
 	REF_PTR_RELEASE(m_scorchTexture);
 }
 
@@ -118,16 +119,41 @@ Bool W3DScorch::isDuplicate(const TScorch& scorch) const
 void W3DScorch::drawScorches(WorldHeightMap& map)
 {
 	updateScorches(map);
-	if (m_curNumScorchIndices == 0)
+	if (m_curNumScorchIndices == 0 || m_scorchTexture == nullptr)
 	{
 		return;
 	}
-	DX8Wrapper::Set_Index_Buffer(m_indexScorch, 0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexScorch);
-	DX8Wrapper::Set_Shader(ShaderClass::_PresetAlphaShader);
-
-	DX8Wrapper::Set_Texture(0, m_scorchTexture);
-	DX8Wrapper::Draw_Triangles(0, m_curNumScorchIndices / 3, 0, m_curNumScorchVertices);
+	IRenderBackend* backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr)
+	{
+		return;
+	}
+	// Translate the legacy PresetAlpha shader instead of pushing DX8 render states.
+	RenderBackendMaterialState materialState;
+	if (!ShaderClass::_PresetAlphaShader.Get_Render_Backend_State(materialState))
+	{
+		return;
+	}
+	RenderBackendTextureHandle textureHandle;
+	if (ShaderClass::_PresetAlphaShader.Get_Texturing() == ShaderClass::TEXTURING_ENABLE)
+	{
+		if (!m_scorchTexture->Get_Filter().Get_Render_Sampler(materialState.sampler))
+		{
+			return;
+		}
+		materialState.clamp_texture = false;
+		if (!m_scorchTexture->Ensure_Renderer_Texture())
+		{
+			return;
+		}
+		textureHandle = m_scorchTexture->Get_Renderer_Texture();
+		if (!textureHandle.Is_Valid())
+		{
+			return;
+		}
+	}
+	backend->Draw_Indexed_Material_Triangles(m_scorchVertices.data(), (UnsignedInt)m_curNumScorchVertices,
+		m_scorchIndices.data(), (UnsignedInt)m_curNumScorchIndices, textureHandle, materialState);
 }
 
 static Real getMapHeight(WorldHeightMap& map, Int x, Int y)
@@ -139,7 +165,7 @@ static Real getMapHeight(WorldHeightMap& map, Int x, Int y)
 
 void W3DScorch::updateScorches(WorldHeightMap& map)
 {
-	if (!m_needBufferRecompute || m_scorches.empty() || !m_indexScorch || !m_vertexScorch)
+	if (!m_needBufferRecompute || m_scorches.empty() || m_scorchTexture == nullptr)
 	{
 		return;
 	}
@@ -148,16 +174,22 @@ void W3DScorch::updateScorches(WorldHeightMap& map)
 	m_curNumScorchVertices = 0;
 	m_curNumScorchIndices = 0;
 
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexScorch);
-	UnsignedShort* ib = lockIdxBuffer.Get_Index_Array();
-
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexScorch);
-	VertexFormatXYZDUV1* vb = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
+	// Stage into the full-size CPU store. The data pointers stay stable because
+	// nothing reallocates between the staging resize and the trim below.
+	m_scorchVertices.resize(MAX_SCORCH_VERTEX);
+	m_scorchIndices.resize(MAX_SCORCH_INDEX);
+	RenderBackendTexturedVertex* vb = m_scorchVertices.data();
+	UnsignedShort* ib = m_scorchIndices.data();
 
 	Real shadeR = (TheGlobalData->m_terrainAmbient[0].red + TheGlobalData->m_terrainDiffuse[0].red) / 2.0f;
 	Real shadeG = (TheGlobalData->m_terrainAmbient[0].green + TheGlobalData->m_terrainDiffuse[0].green) / 2.0f;
 	Real shadeB = (TheGlobalData->m_terrainAmbient[0].blue + TheGlobalData->m_terrainDiffuse[0].blue) / 2.0f;
-	UnsignedInt diffuse = DX8Wrapper::Convert_Color_Clamp(Vector4(shadeR, shadeG, shadeB, 1.0f));
+	// Clamp exactly as DX8Wrapper::Clamp_Color did, then pack exactly as
+	// Vector3::Convert_To_ARGB(float) does for DX8Wrapper::Convert_Color_Clamp.
+	if (shadeR < 0.0f) shadeR = 0.0f; else if (shadeR > 1.0f) shadeR = 1.0f;
+	if (shadeG < 0.0f) shadeG = 0.0f; else if (shadeG > 1.0f) shadeG = 1.0f;
+	if (shadeB < 0.0f) shadeB = 0.0f; else if (shadeB > 1.0f) shadeB = 1.0f;
+	UnsignedInt diffuse = (UnsignedInt)Vector3(shadeR, shadeG, shadeB).Convert_To_ARGB(1.0f);
 
 	// TheSuperHackers @info Scorches are written in reverse order to ensure that the last added scorches fit in the buffers.
 	for (std::deque<TScorch>::reverse_iterator it = m_scorches.rbegin(); it != m_scorches.rend(); ++it)
@@ -165,15 +197,23 @@ void W3DScorch::updateScorches(WorldHeightMap& map)
 		if (writeScorchToBuffer(*it, map, diffuse,
 		                        vb + m_curNumScorchVertices, ib + m_curNumScorchIndices) == SCORCH_BUFFER_FULL)
 		{
-			return;
+			break;
 		}
 	}
+
+	m_scorchVertices.resize(m_curNumScorchVertices);
+	m_scorchIndices.resize(m_curNumScorchIndices);
 }
 
 W3DScorch::WriteScorchResult W3DScorch::writeScorchToBuffer(const TScorch& scorch, WorldHeightMap& map,
-                                                          UnsignedInt diffuse, VertexFormatXYZDUV1* curVb,
+                                                          UnsignedInt diffuse, RenderBackendTexturedVertex* curVb,
                                                           UnsignedShort* curIb)
 {
+	// Unpack the legacy ARGB diffuse for the backend's float color channels.
+	const Real red = ((diffuse >> 16) & 255) / 255.0f;
+	const Real green = ((diffuse >> 8) & 255) / 255.0f;
+	const Real blue = (diffuse & 255) / 255.0f;
+	const Real alpha = ((diffuse >> 24) & 255) / 255.0f;
 	Real radius = scorch.radius;
 	Vector3 loc = scorch.location;
 	Int type = scorch.scorchType;
@@ -219,15 +259,18 @@ W3DScorch::WriteScorchResult W3DScorch::writeScorchToBuffer(const TScorch& scorc
 	{
 		for (i = minX; i < maxX; i++)
 		{
-			curVb->diffuse = diffuse;
+			curVb->r = red;
+			curVb->g = green;
+			curVb->b = blue;
+			curVb->a = alpha;
 			Real theZ = amtToFloat + getMapHeight(map, i, j);
 			// The scorchmarks are spaced out by 1.5 in the texture.
 			Real uOffset = (type % SCORCH_PER_ROW) * 1.5f;
 			Real vOffset = (type / SCORCH_PER_ROW) * 1.5f;
 			Real X = i * MAP_XY_FACTOR;
 			Real Y = j * MAP_XY_FACTOR;
-			curVb->u1 = (uOffset + 0.5f + (X - loc.X) / (2 * radius)) / (SCORCH_PER_ROW + 1);
-			curVb->v1 = (vOffset + 0.5f + (Y - loc.Y) / (2 * radius)) / (SCORCH_PER_ROW + 1);
+			curVb->u = (uOffset + 0.5f + (X - loc.X) / (2 * radius)) / (SCORCH_PER_ROW + 1);
+			curVb->v = (vOffset + 0.5f + (Y - loc.Y) / (2 * radius)) / (SCORCH_PER_ROW + 1);
 			curVb->x = X;
 			curVb->y = Y;
 			curVb->z = theZ;

@@ -61,7 +61,9 @@
 #include "WW3D2/rinfo.h"
 #include "WW3D2/camera.h"
 #include "WW3D2/assetmgr.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
+#include "WW3D2/shader.h"
 
 //number of vertex pages allocated - allows double buffering of vertex updates.
 //while one is being rendered, another is being updated.  Improves HW parallelism.
@@ -293,30 +295,18 @@ Int WaterTracksObj::update(Int msElapsed)
  */
 //=============================================================================
 
-Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
+Int WaterTracksObj::render(std::vector<RenderBackendTexturedVertex> &cpuVertices,
+	std::vector<unsigned short> &cpuIndices)
 {
 	// TheSuperHackers @tweak The wave movement time step is now decoupled from the render update.
 	m_elapsedMs += TheFramePacer->getLogicTimeStepMilliseconds();
 
-	VertexFormatXYZDUV1 *vb;
+	// D3D12: quads are appended to CPU vectors (2x2 strip == 1 quad == 4 verts).
+	// Wave position/alpha/UV math below is preserved exactly; submission happens
+	// in WaterTracksRenderSystem::flush via Draw_Indexed_Material_Triangles.
+	struct CpuQuadVertex { float x, y, z; unsigned int diffuse; float u, v; };
+	CpuQuadVertex quad[4];
 	Vector2	waveTailOrigin,waveFrontOrigin;
-	Real	ooWaveDirLen=1.0f/m_waveDir.Length();	//one over length
-	Real	waterHeight;
-	Real	waveAlpha;
-	Real	widthFrac;
-	Real	heightFrac;
-
-	if (batchStart < (WATER_VB_PAGES*WATER_STRIP_X*WATER_STRIP_Y-m_x*m_y))
-	{	//we have room in current VB, append new verts
-		if(vertexBuffer->Get_DX8_Vertex_Buffer()->Lock(batchStart*vertexBuffer->FVF_Info().Get_FVF_Size(),m_x*m_y*vertexBuffer->FVF_Info().Get_FVF_Size(),(unsigned char**)&vb,D3DLOCK_NOOVERWRITE) != D3D_OK)
-			return batchStart;
-	}
-	else
-	{	//ran out of room in last VB, request a substitute VB.
-		if(vertexBuffer->Get_DX8_Vertex_Buffer()->Lock(0,m_x*m_y*vertexBuffer->FVF_Info().Get_FVF_Size(),(unsigned char**)&vb,D3DLOCK_DISCARD) != D3D_OK)
-			return batchStart;
-		batchStart=0;	//reset start of page to first vertex
-	}
 
 	//Adjust wave position in a non-linear way so that it slows down as it hits the target.  Using 1/4 sine wave
 	//seems to work okay since it maxes out at 1.0 at our final position.

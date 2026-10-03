@@ -50,14 +50,15 @@
 #include "WWLib/always.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
+#include "WW3D2/dx8fvf.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
+#include "WW3D2/IRenderBackend.h"
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
 #include "Common/Dict.h"
 #include "Common/AsciiString.h"
+#include <vector>
 
 //-----------------------------------------------------------------------------
 //           Forward References
@@ -137,7 +138,7 @@ public:
 	Bool isVisible() {return m_visible;};
 	Bool isEnabled() {return m_enabled;};
 	void setEnabled(Bool enable) {m_enabled = enable;};
-	void renderBridge(Bool wireframe);
+	void renderBridge(Bool wireframe, const VertexFormatXYZNDUV1 *sharedVerts, const UnsignedShort *sharedIndices);
 	void getBridgeInfo(BridgeInfo *pInfo);
 };
 
@@ -166,8 +167,11 @@ public:
 					MAX_BRIDGE_INDEX=2*8000,
 					MAX_BRIDGES=200};
 protected:
-	DX8VertexBufferClass	*m_vertexBridge;	///<Bridge vertex buffer.
-	DX8IndexBufferClass			*m_indexBridge;	///<indices defining a triangles for the bridge drawing.
+	// D3D12 migration: CPU staging vectors replace DX8VertexBufferClass/DX8IndexBufferClass.
+	// CPU gen (bridge vertex/index gen) is unchanged; drawBridges() converts slices to
+	// RenderBackendTexturedVertex and submits per bridge via Draw_Indexed_Material_Triangles.
+	std::vector<VertexFormatXYZNDUV1>	m_bridgeVertices;	///<CPU staging for bridge verts.
+	std::vector<UnsignedShort> m_bridgeIndices;	///<CPU staging for bridge indices (fixed-width).
 	VertexMaterialClass *m_vertexMaterial;
 	TextureClass *m_bridgeTexture;	///<Bridges texture
 	Int			m_curNumBridgeVertices; ///<Number of vertices used in m_vertexBridge.
