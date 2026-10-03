@@ -42,11 +42,10 @@
 #include "WW3D2/rinfo.h"
 #include "WW3D2/camera.h"
 #include "WW3D2/scene.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/light.h"
-#if !defined(RTS_EVOLUTION_X64)
-#include <d3dx8core.h>
-#endif
+#include "WW3D2/shader.h"
 #include "WWLib/simplevec.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/matinfo.h"
@@ -109,16 +108,19 @@
 #define WATER_MESH_Y_VERTICES	128
 #define WATER_MESH_SPACING	MAP_XY_FACTOR	//same as terrain
 
-#ifdef USE_MESH_NORMALS
-#define WATER_MESH_FVF	DX8_FVF_XYZNDUV2
-typedef VertexFormatXYZNDUV2 MaterMeshVertexFormat;
-#else
-#define WATER_MESH_FVF	DX8_FVF_XYZDUV2
-typedef VertexFormatXYZDUV2 MaterMeshVertexFormat;
-#endif
+#define MIPMAP_BUMP_TEXTURE
 
-// Converts a FLOAT to a DWORD for use in SetRenderState() calls
-static inline DWORD F2DW( FLOAT f ) { return *((DWORD*)&f); }
+// D3D12: water mesh vertex layout is CPU-side only. The legacy FVF aliases are
+// retired; MaterMeshVertexFormat documents the two historical layouts.
+struct WaterMeshCpuVertex
+{
+	float x, y, z;
+	float nx, ny, nz;
+	unsigned int diffuse;
+	float u1, v1;
+	float u2, v2;
+};
+typedef WaterMeshCpuVertex MaterMeshVertexFormat;
 
 #define DRAW_WATER_WAKES
 /// @todo: Fix clipping of objects that intersect the mirror surface
@@ -171,71 +173,51 @@ static ShaderClass blendStagesShader(SC_DETAIL_BLEND);
 namespace
 {
 
-D3DMATRIX Build_Water_Noise_Texture_Transform(const D3DMATRIX &view_matrix, Real origin)
+// D3D12: renderer-neutral water helpers (renamed from the retired D3D matrix
+// utilities). The noise texture transform and world/view/projection constant
+// math below is preserved CPU-side for documentation; the backend material
+// path has no texture-transform / shader-constant equivalent yet, so callers
+// submit base geometry with the closest material (no fake perturb/mirror).
+Matrix4x4 Build_Water_Noise_Texture_Transform(const Matrix4x4 &view_matrix, Real origin)
 {
 	Matrix4x4 inverse_view;
 	float determinant = 0.0f;
-	const Matrix4x4 neutral_view = To_Matrix4x4(view_matrix);
-	if (Matrix4x4::Inverse(&inverse_view, &determinant, &neutral_view) == nullptr) {
-		D3DMATRIX identity = {};
-		identity.m[0][0] = 1.0f;
-		identity.m[1][1] = 1.0f;
-		identity.m[2][2] = 1.0f;
-		identity.m[3][3] = 1.0f;
+	if (Matrix4x4::Inverse(&inverse_view, &determinant, &view_matrix) == nullptr) {
+		Matrix4x4 identity(true);
 		return identity;
 	}
 
-	D3DMATRIX scale = {};
-	scale.m[0][0] = NOISE_REPEAT_FACTOR;
-	scale.m[1][1] = NOISE_REPEAT_FACTOR;
-	scale.m[2][2] = 1.0f;
-	scale.m[3][3] = 1.0f;
+	Matrix4x4 scale(true);
+	scale[0][0] = NOISE_REPEAT_FACTOR;
+	scale[1][1] = NOISE_REPEAT_FACTOR;
 
-	D3DMATRIX translation = {};
-	translation.m[0][0] = 1.0f;
-	translation.m[1][1] = 1.0f;
-	translation.m[2][2] = 1.0f;
-	translation.m[3][0] = origin;
-	translation.m[3][1] = origin;
-	translation.m[3][3] = 1.0f;
+	Matrix4x4 translation(true);
+	translation[3][0] = origin;
+	translation[3][1] = origin;
 
-	// The legacy D3DX path calculated inverse(view) * scale * translation.
-	// To_Matrix4x4 transposes D3DMATRIX values into the WWMath convention,
-	// so the multiplication order is reversed here to preserve the exact D3D
-	// matrix that is later sent back through _Set_DX8_Transform().
-	const Matrix4x4 neutral_result =
-		To_Matrix4x4(translation) * To_Matrix4x4(scale) * inverse_view;
-	return To_D3DMATRIX(neutral_result);
+	// The legacy path calculated inverse(view) * scale * translation.
+	return inverse_view * scale * translation;
 }
 
-D3DMATRIX Build_Water_World_Matrix(const D3DMATRIX &patch_matrix, const D3DMATRIX &ww3d_matrix)
+Matrix4x4 Build_Water_World_Matrix(const Matrix4x4 &patch_matrix, const Matrix4x4 &ww3d_matrix)
 {
-	return To_D3DMATRIX(To_Matrix4x4(ww3d_matrix) * To_Matrix4x4(patch_matrix));
+	return ww3d_matrix * patch_matrix;
 }
 
 void Build_Water_World_View_Projection_Constants(
-	D3DMATRIX &shader_constants,
-	const D3DMATRIX &patch_matrix,
-	const D3DMATRIX &ww3d_matrix,
-	const D3DMATRIX &view_matrix,
-	const D3DMATRIX &projection_matrix)
+	Matrix4x4 &shader_constants,
+	const Matrix4x4 &patch_matrix,
+	const Matrix4x4 &ww3d_matrix,
+	const Matrix4x4 &view_matrix,
+	const Matrix4x4 &projection_matrix)
 {
-	// Legacy D3DX built patch * WW3D * view * projection and then transposed
-	// the result before uploading four vertex-shader constants. Conversion to
-	// WWMath already transposes each D3DMATRIX, so the reversed order below
-	// yields exactly that final transposed shader matrix.
-	const Matrix4x4 shader_matrix =
-		To_Matrix4x4(projection_matrix) *
-		To_Matrix4x4(view_matrix) *
-		To_Matrix4x4(ww3d_matrix) *
-		To_Matrix4x4(patch_matrix);
-
-	shader_constants = {};
-	for (Int row = 0; row < 4; ++row) {
-		for (Int column = 0; column < 4; ++column) {
-			shader_constants.m[row][column] = shader_matrix[row][column];
-		}
-	}
+	// Legacy code built patch * WW3D * view * projection and uploaded four
+	// vertex-shader constants. Preserved here as plain matrix math.
+	shader_constants =
+		patch_matrix *
+		ww3d_matrix *
+		view_matrix *
+		projection_matrix;
 }
 
 } // namespace
@@ -281,72 +263,35 @@ static Bool wireframeForDebug = 0;
 
 void WaterRenderObjClass::setupJbaWaterShader()
 {
-	if (!TheWaterTransparency->m_additiveBlend)
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetAlphaShader);
-	else
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetAdditiveShader);
-
-	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
-	REF_PTR_RELEASE(vmat);
-	m_riverTexture->Get_Filter().Set_Mag_Filter(TextureFilterClass::FILTER_TYPE_BEST);
-	m_riverTexture->Get_Filter().Set_Min_Filter(TextureFilterClass::FILTER_TYPE_BEST);
-	m_riverTexture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_BEST);
-
-
-//	Setting *setting=&m_settings[m_tod];
-
-
-	DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ALPHAOP,   D3DTOP_ADD );
-	if (!m_riverAlphaEdge->Is_Initialized())
-		m_riverAlphaEdge->Init();
-	DX8Wrapper::_Get_D3D_Device8()->SetTexture(3,m_riverAlphaEdge->Peek_D3D_Texture());
-	DX8Wrapper::Set_DX8_Texture_Stage_State(3,  D3DTSS_ADDRESSU, D3DTADDRESS_WRAP);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(3,  D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(0,  D3DTSS_TEXCOORDINDEX, 0);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(1,  D3DTSS_TEXCOORDINDEX, 0);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(3,  D3DTSS_TEXCOORDINDEX, 1);
-
-	Bool doSparkles = true;
-
-	if (m_riverWaterPixelShader && doSparkles) {
-		if (!m_waterSparklesTexture->Is_Initialized())
-			m_waterSparklesTexture->Init();
-		DX8Wrapper::_Get_D3D_Device8()->SetTexture(1,m_waterSparklesTexture->Peek_D3D_Texture());
-
-		if (!m_waterNoiseTexture->Is_Initialized())
-			m_waterNoiseTexture->Init();
-		DX8Wrapper::_Get_D3D_Device8()->SetTexture(2,m_waterNoiseTexture->Peek_D3D_Texture());
-
-		DX8Wrapper::Set_DX8_Texture_Stage_State(1,  D3DTSS_ADDRESSU, D3DTADDRESS_WRAP);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(1,  D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
-
-		DX8Wrapper::Set_DX8_Texture_Stage_State(2,  D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_CAMERASPACEPOSITION);
-		// Two output coordinates are used.
-		DX8Wrapper::Set_DX8_Texture_Stage_State(2,  D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT2);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(2,  D3DTSS_ADDRESSU, D3DTADDRESS_WRAP);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(2,  D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
-
-		D3DMATRIX curView;
-		DX8Wrapper::_Get_DX8_Transform(D3DTS_VIEW, curView);
-		const D3DMATRIX destMatrix = Build_Water_Noise_Texture_Transform(curView, m_riverVOrigin);
-		DX8Wrapper::_Set_DX8_Transform(D3DTS_TEXTURE2, destMatrix);
-
+	// D3D12: river material intent is preserved (alpha vs additive from
+	// TheWaterTransparency); texture/sampler setup uses Ensure_Renderer_Texture.
+	// The legacy stage-1 sparkles / stage-2 camera-space noise transform /
+	// stage-3 alpha-edge wrap and the ps.1.1 river pixel shader (c0
+	// REFLECTION_FACTOR) have no backend equivalent yet. CPU scroll offsets
+	// (m_riverVOrigin/m_riverXOffset/m_riverYOffset) and REFLECTION_FACTOR are
+	// preserved CPU-side; river quads are submitted with the closest alpha
+	// material and river alpha-edge wrap addressing (no fake perturb/mirror).
+	// The inline .pso/.vso asm stays as archival reference in ReAcquireResources.
+	if (m_riverTexture != nullptr) {
+		m_riverTexture->Get_Filter().Set_Mag_Filter(TextureFilterClass::FILTER_TYPE_BEST);
+		m_riverTexture->Get_Filter().Set_Min_Filter(TextureFilterClass::FILTER_TYPE_BEST);
+		m_riverTexture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_BEST);
+		m_riverTexture->Ensure_Renderer_Texture();
 	}
-	m_pDev->SetTextureStageState( 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR );
-	m_pDev->SetTextureStageState( 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR );
-	m_pDev->SetTextureStageState( 1, D3DTSS_MINFILTER, D3DTEXF_LINEAR );
-	m_pDev->SetTextureStageState( 1, D3DTSS_MAGFILTER, D3DTEXF_LINEAR );
-	m_pDev->SetTextureStageState( 2, D3DTSS_MINFILTER, D3DTEXF_LINEAR );
-	m_pDev->SetTextureStageState( 2, D3DTSS_MAGFILTER, D3DTEXF_LINEAR );
-	m_pDev->SetTextureStageState( 3, D3DTSS_MINFILTER, D3DTEXF_LINEAR );
-	m_pDev->SetTextureStageState( 3, D3DTSS_MAGFILTER, D3DTEXF_LINEAR );
-	if (m_riverWaterPixelShader){
-		const Vector4 reflectionConstant(REFLECTION_FACTOR, REFLECTION_FACTOR, REFLECTION_FACTOR, 1.0f);
-		DX8Wrapper::_Get_D3D_Device8()->SetPixelShaderConstant(0, &reflectionConstant.X, 1);
-		DX8Wrapper::_Get_D3D_Device8()->SetPixelShader(m_riverWaterPixelShader);
+	if (m_riverAlphaEdge != nullptr) {
+		// River alpha-edge wrap preserved via sampler (backend clamp_texture=false).
+		m_riverAlphaEdge->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_REPEAT);
+		m_riverAlphaEdge->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_REPEAT);
+		m_riverAlphaEdge->Ensure_Renderer_Texture();
 	}
+	if (m_waterSparklesTexture != nullptr)
+		m_waterSparklesTexture->Ensure_Renderer_Texture();
+	if (m_waterNoiseTexture != nullptr)
+		m_waterNoiseTexture->Ensure_Renderer_Texture();
+	// GAP (documented): Build_Water_Noise_Texture_Transform CPU math above is
+	// preserved but not uploaded (no backend texture-transform); the river
+	// pixel-shader constant c0 == REFLECTION_FACTOR is preserved CPU-side.
+	(void)REFLECTION_FACTOR;
 }
 
 
@@ -378,9 +323,12 @@ WaterRenderObjClass::~WaterRenderObjClass()
 
 	i=NUM_BUMP_FRAMES;
 	while (i--)
-	{	SAFE_RELEASE( m_pBumpTexture[i]);
-		SAFE_RELEASE( m_pBumpTexture2[i]);
+	{	// D3D12: bump frames are neutral RGBA8 uploads, not D3D textures.
 	}
+	m_bumpNeutralRGBA.clear();
+	m_bumpNeutralWidth = 0;
+	m_bumpNeutralHeight = 0;
+	m_bumpNeutralTexture = RenderBackendTextureHandle();
 
 	delete [] m_meshData;
 	m_meshData = nullptr;
@@ -406,7 +354,7 @@ WaterRenderObjClass::WaterRenderObjClass()
 	memset( &m_settings, 0, sizeof( m_settings ) );
 	m_dx=0;
 	m_dy=0;
-	m_indexBuffer=nullptr;
+	m_quadIndices.clear();
 	m_waterTrackSystem = nullptr;
 	m_doWaterGrid = FALSE;
 	m_meshVertexMaterialClass=nullptr;
@@ -418,12 +366,15 @@ WaterRenderObjClass::WaterRenderObjClass()
 	m_tod=TIME_OF_DAY_AFTERNOON;
 	m_pReflectionTexture=nullptr;
 	m_skyBox=nullptr;
-	m_vertexBufferD3D=nullptr;
-	m_indexBufferD3D=nullptr;
-	m_vertexBufferD3DOffset=0;
+	m_patchVertices.clear();
+	m_patchIndices.clear();
+	m_bumpNeutralRGBA.clear();
+	m_bumpNeutralWidth=0;
+	m_bumpNeutralHeight=0;
+	m_bumpNeutralTexture=RenderBackendTextureHandle();
 
-	m_dwWavePixelShader=0;
-	m_dwWaveVertexShader=0;
+	m_wavePixelShader=0;
+	m_waveVertexShader=0;
 	m_meshData=nullptr;
 	m_meshDataSize = 0;
 	m_meshInMotion = FALSE;
@@ -437,18 +388,14 @@ WaterRenderObjClass::WaterRenderObjClass()
 	m_gridWidth = m_gridCellsX * m_gridCellSize;
 	m_gridHeight = m_gridCellsY * m_gridCellSize;
 
-	Int i=NUM_BUMP_FRAMES;
-	while (i--)
-		m_pBumpTexture[i]=nullptr;
-
 	m_riverVOrigin=0;
 	m_riverTexture=nullptr;
 	m_whiteTexture=nullptr;
 	m_waterNoiseTexture=nullptr;
 	m_riverAlphaEdge=nullptr;
-	m_waterPixelShader=0;		///<D3D handle to pixel shader.
-	m_riverWaterPixelShader=0;		///<D3D handle to pixel shader.
-	m_trapezoidWaterPixelShader=0;		///<D3D handle to pixel shader.
+	m_waterPixelShader=0;		///<retired pixel-shader handle (reference only, always 0).
+	m_riverWaterPixelShader=0;		///<retired pixel-shader handle (reference only, always 0).
+	m_trapezoidWaterPixelShader=0;		///<retired pixel-shader handle (reference only, always 0).
 	m_waterSparklesTexture=nullptr;
 	m_riverXOffset=0;
 	m_riverYOffset=0;
@@ -500,37 +447,44 @@ RenderObjClass *	 WaterRenderObjClass::Clone() const
 }
 
 //-------------------------------------------------------------------------------------------------
+/** Uploads a neutral RGBA8 bump image (D3D12 replaces the retired U8V8 format).
+	*   The legacy grayscale-to-gradient (du/dv) math is retired with the D3D
+	*   lock path; bump perturb has no backend equivalent yet (documented gap). */
+//-------------------------------------------------------------------------------------------------
+HRESULT WaterRenderObjClass::initBumpMap(TextureClass *pBumpSource)
+{
+	(void)pBumpSource;
+	// RGBA8 neutral normal (128,128,255 == flat). Uploaded once and reused.
+	const unsigned int neutralSize = 64;
+	m_bumpNeutralWidth = neutralSize;
+	m_bumpNeutralHeight = neutralSize;
+	m_bumpNeutralRGBA.assign(static_cast<size_t>(neutralSize) * neutralSize * 4, 0);
+	for (size_t px = 0; px < static_cast<size_t>(neutralSize) * neutralSize; ++px) {
+		m_bumpNeutralRGBA[px * 4 + 0] = 128;
+		m_bumpNeutralRGBA[px * 4 + 1] = 128;
+		m_bumpNeutralRGBA[px * 4 + 2] = 255;
+		m_bumpNeutralRGBA[px * 4 + 3] = 255;
+	}
+	if (IRenderBackend *bumpBackend = WW3D::Get_Render_Backend()) {
+		RenderBackendTextureMipLevel bumpLevel;
+		bumpLevel.width = neutralSize;
+		bumpLevel.height = neutralSize;
+		bumpLevel.row_pitch = neutralSize * 4;
+		bumpLevel.pixels = m_bumpNeutralRGBA.data();
+		m_bumpNeutralTexture = bumpBackend->Create_Static_RGBA8_Texture(&bumpLevel, 1);
+	}
+	return S_OK;
+}
+
+//-------------------------------------------------------------------------------------------------
+// Retired D3D8 bump-gradient reference (U8V8 lock path). Kept out of the build;
+// the active path is the neutral RGBA8 upload above.
+//-------------------------------------------------------------------------------------------------
+#if 0
+//-------------------------------------------------------------------------------------------------
 /** Copies raw bits from pBumpSrc (a regular grayscale texture) into a D3D
 	*   bump-map format. */
-//-------------------------------------------------------------------------------------------------
-HRESULT WaterRenderObjClass::initBumpMap(LPDIRECT3DTEXTURE8 *pTex, TextureClass *pBumpSource)
-{
-    SurfaceClass::SurfaceDescription    d3dsd;
-	SurfaceClass * surf;
-    D3DLOCKED_RECT     d3dlr;
-	DWORD dwSrcPitch;
-	BYTE* pSrc;
-	Int numLevels;
-
-#ifdef MIPMAP_BUMP_TEXTURE
-
-	pBumpSource->Get_Level_Description(d3dsd);
-
-	if (Get_Bytes_Per_Pixel(d3dsd.Format) != 4)
-	{
-		// LORENZEN WAS BUGGED BY THIS,
-		//		DEBUG_CRASH(("WaterRenderObjClass::Invalid BumpMap format - Was it compressed?") );
-		return S_OK;
-	}
-
-	if (pBumpSource->Peek_D3D_Texture())
-	{
-		numLevels=pBumpSource->Peek_D3D_Texture()->GetLevelCount();
-	}
-	else
-		return S_OK;
-
-	pTex[0]=DX8Wrapper::_Create_DX8_Texture(d3dsd.Width,d3dsd.Height,WW3D_FORMAT_U8V8,MIP_LEVELS_ALL,D3DPOOL_MANAGED,false);
+static void WaterBumpMap_D3D8_Reference_Note() {}
 
 	for (Int level=0; level < numLevels; level++)
 	{
@@ -610,7 +564,7 @@ HRESULT WaterRenderObjClass::initBumpMap(LPDIRECT3DTEXTURE8 *pTex, TextureClass 
 		REF_PTR_RELEASE (surf);
 	}
 
-#else
+#if 0 // retired non-mip bump path (was #else, now stripped with the block above)
 	surf=pBumpSource->Get_Surface_Level();
 	surf->Get_Description(d3dsd);
 	pSrc=(unsigned char *)surf->Lock((int *)&dwSrcPitch);
@@ -690,224 +644,98 @@ HRESULT WaterRenderObjClass::initBumpMap(LPDIRECT3DTEXTURE8 *pTex, TextureClass 
 
     m_pBumpTexture[i]->UnlockRect(0);
     surf->Unlock();
-#endif
-
-    return S_OK;
-}
+#endif // retired non-mip bump path
+#endif // retired D3D8 bump-gradient reference (U8V8 lock path)
 
 //-------------------------------------------------------------------------------------------------
-/** Create and fill a D3D vertex buffer with water surface vertices */
+/** Create and fill a CPU patch grid with water surface vertices (D3D12) */
 //-------------------------------------------------------------------------------------------------
 HRESULT WaterRenderObjClass::generateVertexBuffer( Int sizeX, Int sizeY, Int vertexSize, Bool doStatic)
 {
+	(void)vertexSize;
 	m_numVertices=sizeX*sizeY;
-	//Assuming dynamic vertex buffer, allocate maximum multiple of required size to allow rendering from
-	//different parts of the buffer. 5-15-03: Disabled this since we use DISCARD mode instead to avoid Nvidia Runtime bug. -MW
-	//m_numVertices=(65536 / (sizeX*sizeY))*sizeX*sizeY;
-
-	SEA_PATCH_VERTEX* pVertices;
 
 	Setting *setting=&m_settings[m_tod];
 
-	HRESULT hr;
+	HRESULT hr = S_OK;
 
-	//default setting for a dynamic vertex buffer
-	D3DPOOL pool = D3DPOOL_DEFAULT;
-	DWORD usage = D3DUSAGE_WRITEONLY | D3DUSAGE_DYNAMIC;
-	DWORD fvf = WATER_MESH_FVF;
-
-	if (doStatic)
-	{	//change settings for a static vertex buffer
-		pool = D3DPOOL_MANAGED;
-		usage = D3DUSAGE_WRITEONLY;
-		fvf=0;// DX8 Docs confusing on this. Say no FVF for vertex shaders. Else DX8_FVF_XYZDUV1;
-		m_numVertices=sizeX*sizeY;
-	}
-
-	if (m_vertexBufferD3D == nullptr)
-	{	// Create vertex buffer
-
-		if (FAILED(hr=m_pDev->CreateVertexBuffer
-		(
-			m_numVertices*vertexSize,
-			usage,
-			fvf,
-			pool,
-			&m_vertexBufferD3D
-		)))
-			return hr;
-	}
-
-	m_vertexBufferD3DOffset=0;
+	m_patchVertices.clear();
+	m_patchVertices.reserve(static_cast<size_t>(m_numVertices));
 
 	if (!doStatic)
-		return S_OK;	//only create the buffer, other code will fill it.
+		return S_OK;	//only reserve the grid, other code will fill it.
 
-	// load results into buffer
-	if (FAILED(hr=m_vertexBufferD3D->Lock
-	(
-		0,
-		m_numVertices*sizeof(SEA_PATCH_VERTEX),
-		(BYTE**)&pVertices,
-		0//D3DLOCK_DISCARD
-	)))
-		return hr;
-
-	Int x,z;
-	for (z=0; z<sizeY; z++)
+	// Fill the CPU patch grid (position + water diffuse/alpha + bump UVs).
+	for (Int z=0; z<sizeY; z++)
 	{
-		for (x=0; x<sizeX; x++)
+		for (Int x=0; x<sizeX; x++)
 		{
-			pVertices->x=(float)x;
-			pVertices->y=m_level;
-			pVertices->z=(float)z;
-
-			pVertices->tu=(float)x*PATCH_UV_SCALE;
-			pVertices->tv=(float)z*PATCH_UV_SCALE;
-			pVertices->c=setting->transparentWaterDiffuse;	//vertex alpha/color
-			pVertices++;
+			RenderBackendTexturedVertex v;
+			v.x=(float)x;
+			v.y=m_level;
+			v.z=(float)z;
+			const UnsignedInt c = setting->transparentWaterDiffuse;	//vertex alpha/color
+			v.a = ((c >> 24) & 255) / 255.0f;
+			v.r = ((c >> 16) & 255) / 255.0f;
+			v.g = ((c >> 8) & 255) / 255.0f;
+			v.b = (c & 255) / 255.0f;
+			v.u=(float)x*PATCH_UV_SCALE;
+			v.v=(float)z*PATCH_UV_SCALE;
+			v.q = 1.0f;
+			m_patchVertices.push_back(v);
 		}
 	}
-
-	if (FAILED(hr=m_vertexBufferD3D->Unlock())) return hr;
 
 	return S_OK;
 }
 
 //-------------------------------------------------------------------------------------------------
-/** Create and fill a D3D index buffer with water surface strip indices */
+/** Create and fill a CPU index list with water surface triangle indices (D3D12) */
 //-------------------------------------------------------------------------------------------------
 HRESULT WaterRenderObjClass::generateIndexBuffer(Int sizeX, Int sizeY)
 {
-	HRESULT hr;
-
-	//Will need SizeY-1 strips, each of length SizeX*2 (2 indices per strip segment).
-	//Will also need 2 extra indices to connect each strip to next one (except last strip)
-	//Total index buffer size = (SizeY-1)*(SizeX*2+2) - 2 (drop the extra 2 indices from last strip)
-
-	m_numIndices=(sizeY-1)*(sizeX*2+2) - 2;
-
-	//old way
-
-	// Create index buffer
-	WORD* pIndices;
-
-	if (FAILED(hr=m_pDev->CreateIndexBuffer
-	(
-		(m_numIndices+2)*sizeof(WORD),
-		D3DUSAGE_WRITEONLY,
-		D3DFMT_INDEX16,
-		D3DPOOL_MANAGED,
-		&m_indexBufferD3D
-	)))
-		return hr;
-
-	if (FAILED(hr=m_indexBufferD3D->Lock
-	(
-		0,
-		m_numIndices*sizeof(WORD),
-		(BYTE**)&pIndices,
-		0
-	)))
-		return hr;
-
-	Int i,j,k;
-
-	for (i=0,j=0,k=0; i<m_numIndices; j++)
-	{
-		for (;k<(sizeX*(j+1)); k++,i+=2)
-		{
-			pIndices[i]=(UnsignedShort) k+sizeX;
-			pIndices[i+1]=(UnsignedShort) k;
-		}
-		//Generate 4 degenerate triangle to connect current strip to next strip/row of map
-		//To do this, we just repeat the last index of first strip and first index of new strip.
-		//Any triangles with repeated vertices will be skipped during rendering.
-		if (i<m_numIndices) //check if there is at least 1 more strip to go
-		{
-			pIndices[i]=k-1;
-			pIndices[i+1]=k+sizeX;
-			i+=2;
+	// D3D12: triangle list (no degenerate strip links; zero-area triangles are
+	// simply not generated). Grid topology matches the legacy strip layout.
+	m_patchIndices.clear();
+	m_patchIndices.reserve(static_cast<size_t>(sizeY - 1) * (sizeX - 1) * 6);
+	for (Int z = 0; z < sizeY - 1; ++z) {
+		for (Int x = 0; x < sizeX - 1; ++x) {
+			const UnsignedShort a = static_cast<UnsignedShort>(z * sizeX + x);
+			const UnsignedShort b = static_cast<UnsignedShort>(z * sizeX + x + 1);
+			const UnsignedShort c = static_cast<UnsignedShort>((z + 1) * sizeX + x);
+			const UnsignedShort d = static_cast<UnsignedShort>((z + 1) * sizeX + x + 1);
+			m_patchIndices.push_back(a);
+			m_patchIndices.push_back(c);
+			m_patchIndices.push_back(b);
+			m_patchIndices.push_back(b);
+			m_patchIndices.push_back(c);
+			m_patchIndices.push_back(d);
 		}
 	}
-
-	/*Old way
-	Int step=1;
-	Int psize=(size-1)/step;
-
-	m_numIndices=psize*((psize+1)*2)+(psize*2)-2;
-
-
-	Int x,z,s_toggle=1;
-	for (z=step; z<size; z+=step)
-	{
-		if (s_toggle)
-		{
-			for (x=0; x<(size-step); x+=step)
-			{
-				*pIndices++=(WORD)((z-0)*size+(x));
-				*pIndices++=(WORD)((z-step)*size+(x));
-			}
-				*pIndices++=(WORD)((z-0)*size+(size-1));
-			*pIndices++=(WORD)((z-step)*size+(size-1));
-			// insert additional degenerate to start next row
-			*pIndices++=pIndices[-2];
-			*pIndices++=pIndices[-1];
-		}
-		else
-		{
-			*pIndices++=(WORD)((z-step)*size+(size-1));
-			*pIndices++=(WORD)((z-0)*size+(size-1));
-			for (x=size-1; x>0; x-=step)
-			{
-				*pIndices++=(WORD)((z-step)*size+(x-step));
-				*pIndices++=(WORD)((z-0)*size+(x-step));
-			}
-			// insert additional degenerate to start next row
-			*pIndices++=pIndices[-1];
-			*pIndices++=pIndices[-1];
-		}
-
-		s_toggle=!s_toggle;
-	}
-*/
-	if (FAILED(hr=m_indexBufferD3D->Unlock())) return hr;
+	m_numIndices = static_cast<Int>(m_patchIndices.size());
 
 	return S_OK;
 }
 
 //-------------------------------------------------------------------------------------------------
-/** Releases all w3d assets, to prepare for Reset device call. */
+/** Releases all renderer assets, to prepare for Reset device call. */
 //-------------------------------------------------------------------------------------------------
 void WaterRenderObjClass::ReleaseResources()
 {
 
-	REF_PTR_RELEASE(m_indexBuffer);
+	m_quadIndices.clear();
 
 	REF_PTR_RELEASE(m_pReflectionTexture);
-	SAFE_RELEASE(m_vertexBufferD3D);
-	SAFE_RELEASE(m_indexBufferD3D);
+	m_patchVertices.clear();
+	m_patchIndices.clear();
 
 	if (m_waterTrackSystem)
 		m_waterTrackSystem->ReleaseResources();
 
-	if (m_dwWavePixelShader)
-		m_pDev->DeletePixelShader(m_dwWavePixelShader);
-
-	if (m_dwWaveVertexShader)
-		m_pDev->DeleteVertexShader(m_dwWaveVertexShader);
-
-	if (m_waterPixelShader)
-		m_pDev->DeletePixelShader(m_waterPixelShader);
-
-	if (m_trapezoidWaterPixelShader)
-		m_pDev->DeletePixelShader(m_trapezoidWaterPixelShader);
-
-	if (m_riverWaterPixelShader)
-		m_pDev->DeletePixelShader(m_riverWaterPixelShader);
-
-	m_dwWavePixelShader=0;
-	m_dwWaveVertexShader=0;
+	// D3D12: wave/river pixel/vertex shader blobs are archival reference only.
+	// No D3D handles exist; reset the reference handles.
+	m_wavePixelShader=0;
+	m_waveVertexShader=0;
 	m_waterPixelShader = 0;
 	m_trapezoidWaterPixelShader=0;
 	m_riverWaterPixelShader=0;
@@ -918,28 +746,20 @@ void WaterRenderObjClass::ReleaseResources()
 //-------------------------------------------------------------------------------------------------
 void WaterRenderObjClass::ReAcquireResources()
 {
-	HRESULT hr;
+	HRESULT hr = S_OK;
 
-	m_indexBuffer=NEW_REF(DX8IndexBufferClass,(6));
-	// Fill up the IB
+	// D3D12: quad indices live on the CPU (replaces DX8IndexBufferClass).
+	//quad of 2 triangles:
+	//	3-----2
+	//  |    /|
+	//  |  /  |
+	//	|/    |
+	//  0-----1
+	m_quadIndices.clear();
 	{
-		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBuffer);
-		UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
-		//quad of 2 triangles:
-		//	3-----2
-		//  |    /|
-		//  |  /  |
-		//	|/    |
-		//  0-----1
-		ib[0]=3;
-		ib[1]=0;
-		ib[2]=2;
-		ib[3]=2;
-		ib[4]=0;
-		ib[5]=1;
+		const UnsignedShort quad[6] = { 3, 0, 2, 2, 0, 1 };
+		m_quadIndices.assign(quad, quad + 6);
 	}
-
-	m_pDev=DX8Wrapper::_Get_D3D_Device8();
 
 	//We're using the same grid for either 3D Water Mesh or Pixel/Vertex shader.  Just
 	//allocate the right size depending on usage
@@ -960,26 +780,14 @@ void WaterRenderObjClass::ReAcquireResources()
 		if (FAILED(hr=generateVertexBuffer(PATCH_SIZE,PATCH_SIZE,sizeof(SEA_PATCH_VERTEX),true)))
 			return;
 
-		//shader decleration
-		DWORD Declaration[]=
-		{
-			(D3DVSD_STREAM(0)),
-			(D3DVSD_REG(0, D3DVSDT_FLOAT3)), // Position
-			(D3DVSD_REG(1, D3DVSDT_D3DCOLOR)), // Diffuse
-			(D3DVSD_REG(2, D3DVSDT_FLOAT2)), // Bump map texture
-			(D3DVSD_END())
-		};
+		// D3D12: shaders\\wave.pso / wave.vso are archival reference only.
+		// The active path uses material state; no D3D handles are created.
+		m_wavePixelShader = 0;
+		m_waveVertexShader = 0;
 
-		hr = W3DShaderManager::LoadAndCreateD3DShader("shaders\\wave.pso", &Declaration[0], 0, false, &m_dwWavePixelShader);
-		if (FAILED(hr))
-			return;
-
-		hr = W3DShaderManager::LoadAndCreateD3DShader("shaders\\wave.vso", &Declaration[0], 0, true, &m_dwWaveVertexShader);
-		if (FAILED(hr))
-			return;
-
-		// Create reflection texture
-		m_pReflectionTexture = DX8Wrapper::Create_Render_Target (SEA_REFLECTION_SIZE, SEA_REFLECTION_SIZE);
+		// Create 256px reflection RT via the backend (not D3D8 surfaces).
+		REF_PTR_RELEASE(m_pReflectionTexture);
+		m_pReflectionTexture = WW3D::Create_Render_Texture(SEA_REFLECTION_SIZE, SEA_REFLECTION_SIZE);
 	}
 
 	if (m_waterTrackSystem)

@@ -27,14 +27,20 @@
 #include "WWLib/always.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/dx8fvf.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
+#include "WW3D2/IRenderBackend.h"
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
+
+// D3D12 migration (BaseHeightMap):
+// - DX8 vertex/index buffers and DX8Wrapper cleanup hook are retired; terrain
+//   draws submit CPU vectors via IRenderBackend::Draw_Indexed_Material_Triangles.
+// - VERTEX_FORMAT (VertexFormatXYZDUV2) is retained for CPU terrain math
+//   (positions, UVs, packed diffuse lighting); backend vertices are converted
+//   per submission. The non-T&L transformed path is removed.
 
 #define MAX_ENABLED_DYNAMIC_LIGHTS 20
 typedef UnsignedByte HeightSampleType;	//type of data to store in heightmap
@@ -80,7 +86,7 @@ Custom W3D render object that's used to process the terrain.  It handles
 virtually everything to do with the terrain, including: drawing, lighting,
 scorchmarks and intersection tests.
 */
-class BaseHeightMapRenderObjClass : public RenderObjClass, public DX8_CleanupHook, public Snapshot
+class BaseHeightMapRenderObjClass : public RenderObjClass, public Snapshot
 {
 
 public:
@@ -88,9 +94,10 @@ public:
 	BaseHeightMapRenderObjClass();
 	virtual ~BaseHeightMapRenderObjClass() override;
 
-	// DX8_CleanupHook methods
-	virtual void ReleaseResources() override;	///< Release all dx8 resources so the device can be reset.
-	virtual void ReAcquireResources() override;  ///< Reacquire all resources after device reset.
+	// Device-loss hooks (formerly DX8_CleanupHook). D3D12 has no device reset;
+	// these free/recreate CPU-side terrain resources only.
+	virtual void ReleaseResources();	///< Release terrain resources.
+	virtual void ReAcquireResources();  ///< Reacquire terrain resources.
 
 
 	/////////////////////////////////////////////////////////////////////////////
@@ -301,6 +308,12 @@ protected:
 	void initDestAlphaLUT();	///<initialize water depth LUT stored in m_destAlphaTexture
 	void renderShoreLines(CameraClass *pCamera);	///<re-render parts of terrain that need custom blending into water edge
 	void renderShoreLinesSorted(CameraClass *pCamera);	///<optimized version for game usage.
+	// D3D12: backend handle for the 256x1 water-depth alpha LUT. D3D12 has no
+	// destination-alpha framebuffer, so shoreline soft-edge is submitted as a
+	// single alpha-blended material pass (documented simplification of the
+	// legacy COLORWRITEENABLE_ALPHA two-pass trick).
+	RenderBackendTextureHandle m_destAlphaBackendHandle;
+	void releaseDestAlphaBackend();
 
 	static Bool useCloud();
 };

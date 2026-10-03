@@ -81,11 +81,17 @@
 #include "W3DDevice/GameClient/W3DShadow.h"
 #include "W3DDevice/GameClient/W3DWater.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
-#include "WW3D2/dx8wrapper.h"
+// D3D12 migration (BaseHeightMap): WW3D->IRenderBackend->D3D12Backend.
+// Shader via ShaderClass::Get_Render_Backend_State, texture via
+// Ensure_Renderer_Texture/Get_Renderer_Texture/Get_Render_Sampler, submit via
+// Draw_Indexed_Material_Triangles. CPU terrain math (heights, TileData,
+// blend/shore lists, lighting) is unchanged. Dead non-T&L, COLORWRITEENABLE
+// gates, TestCooperativeLevel/SetLOD/ProcessVertices paths are removed.
 #include "WW3D2/IRenderBackend.h"
 #include "WW3D2/ww3d.h"
 #include "WW3D2/light.h"
 #include "WW3D2/scene.h"
+#include <vector>
 #include "W3DDevice/GameClient/W3DPoly.h"
 #include "W3DDevice/GameClient/W3DCustomScene.h"
 
@@ -153,6 +159,7 @@ Int BaseHeightMapRenderObjClass::freeMapResources()
 	m_scorches->freeBuffers();
 	m_staticScorches->freeBuffers();
 
+	releaseDestAlphaBackend();
 	REF_PTR_RELEASE(m_vertexMaterialClass);
 	REF_PTR_RELEASE(m_stageZeroTexture);
 	REF_PTR_RELEASE(m_stageOneTexture);
@@ -307,7 +314,7 @@ BaseHeightMapRenderObjClass::BaseHeightMapRenderObjClass()
 #else
 	m_shroud = NEW W3DShroud;
 #endif
-	DX8Wrapper::SetCleanupHook(this);
+	// D3D12: no DX8 device-reset cleanup hook.
 }
 
 void BaseHeightMapRenderObjClass::scheduleFullUpdate()
@@ -1446,12 +1453,9 @@ RenderObjClass *	 BaseHeightMapRenderObjClass::Clone() const
 //=============================================================================
 void BaseHeightMapRenderObjClass::loadRoadsAndBridges(W3DTerrainLogic *pTerrainLogic, Bool saveGame)
 {
-#if defined(RTS_EVOLUTION_X64)
+	// D3D12: device readiness is renderer-owned; TestCooperativeLevel is retired.
 	IRenderBackend *backend = WW3D::Get_Render_Backend();
 	if (backend != nullptr && !backend->Is_Device_Ready())
-#else
-	if (DX8Wrapper::_Get_D3D_Device8() && (DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()) != D3D_OK)
-#endif
 		return;	//device not ready to render anything
 
 #ifdef DO_ROADS
@@ -1739,40 +1743,51 @@ void BaseHeightMapRenderObjClass::updateViewImpassableAreas(Bool partial, Int mi
 /** Generate a lookup table which can be used to generate an
 alpha value from a given set of uv coordinates.  Currently used
 for smoothing water/terrain border*/
+void BaseHeightMapRenderObjClass::releaseDestAlphaBackend()
+{
+	if (m_destAlphaBackendHandle.Is_Valid()) {
+		if (IRenderBackend *backend = WW3D::Get_Render_Backend()) {
+			backend->Release_Texture(m_destAlphaBackendHandle);
+		}
+		m_destAlphaBackendHandle = RenderBackendTextureHandle();
+	}
+}
+
 void BaseHeightMapRenderObjClass::initDestAlphaLUT()
 {
+	// D3D12: CPU 256x1 RGBA8 gradient upload via the renderer-neutral seam.
+	// Legacy SurfaceClass::Lock path is retired; the LUT is sampled by the
+	// single alpha-blended shoreline submission (see renderShoreLines).
 	if (!m_destAlphaTexture)
 		return;
 
-	SurfaceClass *surf=m_destAlphaTexture->Get_Surface_Level();
+	m_destAlphaTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
+	m_destAlphaTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 
-	if (surf)
+	const Int maxOpacity=(Int)(TheWaterTransparency->m_minWaterOpacity * 255.0f);
+	std::vector<unsigned char> pixels(256 * 4);
+	for (Int x=0; x<256; x++)
 	{
-		Int pitch;
-		UnsignedInt *pData=(UnsignedInt*)surf->Lock(&pitch);
-
-		Int maxOpacity=(Int)(TheWaterTransparency->m_minWaterOpacity * 255.0f);
-		Int alpha;
-
-		if (pData)
-		{
-			//Fill texture with alpha gradient
-			for (Int x=0; x<256; x++)
-			{
-				alpha = x;
-				if (alpha > maxOpacity)
-					alpha = maxOpacity;
-				*pData=(alpha<<24)|0x00ffffff;
-				pData++;
-			}
-			surf->Unlock();
-		}
-
-		m_destAlphaTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
-		m_destAlphaTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
-		REF_PTR_RELEASE(surf);
-		m_currentMinWaterOpacity = TheWaterTransparency->m_minWaterOpacity;
+		Int alpha = x;
+		if (alpha > maxOpacity)
+			alpha = maxOpacity;
+		pixels[static_cast<size_t>(x) * 4 + 0] = 255;
+		pixels[static_cast<size_t>(x) * 4 + 1] = 255;
+		pixels[static_cast<size_t>(x) * 4 + 2] = 255;
+		pixels[static_cast<size_t>(x) * 4 + 3] = static_cast<unsigned char>(alpha);
 	}
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr) {
+		return;
+	}
+	RenderBackendTextureMipLevel level{256, 1, 256 * 4, pixels.data()};
+	RenderBackendTextureHandle handle = backend->Create_Static_RGBA8_Texture(&level, 1);
+	if (!handle.Is_Valid()) {
+		return;
+	}
+	releaseDestAlphaBackend();
+	m_destAlphaBackendHandle = handle;
+	m_currentMinWaterOpacity = TheWaterTransparency->m_minWaterOpacity;
 }
 
 //=============================================================================
@@ -2288,9 +2303,41 @@ void BaseHeightMapRenderObjClass::renderShoreLines(CameraClass *pCamera)
 	if (!TheGlobalData->m_showSoftWaterEdge || TheWaterTransparency->m_transparentWaterDepth==0 || m_numShoreLineTiles == 0)
 		return;
 
-	//Check if video card is capable of using this effect
-	if (DX8Wrapper::getBackBufferFormat() != WW3D_FORMAT_A8R8G8B8)
-		return;	//can't apply effect on cards without destination alpha
+	// D3D12: no destination-alpha framebuffer gate. Shoreline soft-edge is
+	// simplified to a single alpha-blended material submission using the
+	// water-depth LUT (documented simplification of the legacy
+	// COLORWRITEENABLE_ALPHA two-pass trick).
+	IRenderBackend *shoreBackend = WW3D::Get_Render_Backend();
+	if (shoreBackend == nullptr) {
+		return;
+	}
+	ShaderClass unlitShader=ShaderClass::_PresetOpaque2DShader;
+	unlitShader.Set_Depth_Compare(ShaderClass::PASS_LEQUAL);
+	RenderBackendMaterialState shoreState;
+	if (!unlitShader.Get_Render_Backend_State(shoreState)) {
+		return;
+	}
+	// Single alpha blend using the LUT alpha (texture*vertex color).
+	shoreState.source_blend = RenderBackendBlendFactor::SourceAlpha;
+	shoreState.destination_blend = RenderBackendBlendFactor::InverseSourceAlpha;
+	RenderBackendTextureHandle shoreTexture;
+	if (m_destAlphaBackendHandle.Is_Valid()) {
+		shoreTexture = m_destAlphaBackendHandle;
+		if (!shoreBackend->Is_Texture_Valid(shoreTexture) && m_destAlphaTexture != nullptr) {
+			if (m_destAlphaTexture->Ensure_Renderer_Texture()) {
+				shoreTexture = m_destAlphaTexture->Get_Renderer_Texture();
+			}
+		}
+	} else if (m_destAlphaTexture != nullptr) {
+		if (m_destAlphaTexture->Ensure_Renderer_Texture()) {
+			shoreTexture = m_destAlphaTexture->Get_Renderer_Texture();
+		}
+	}
+	if (shoreTexture.Is_Valid() && m_destAlphaTexture != nullptr) {
+		if (!m_destAlphaTexture->Get_Filter().Get_Render_Sampler(shoreState.sampler)) {
+			return;
+		}
+	}
 
 	Int vertexCount = 0;
 	Int indexCount = 0;
@@ -2304,31 +2351,16 @@ void BaseHeightMapRenderObjClass::renderShoreLines(CameraClass *pCamera)
 	Int drawStartY=m_map->getDrawOrgY();
 	Int j=0;
 
-	ShaderClass unlitShader=ShaderClass::_PresetOpaque2DShader;
-	unlitShader.Set_Depth_Compare(ShaderClass::PASS_LEQUAL);
-	DX8Wrapper::Set_Shader(unlitShader);
-	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
-	REF_PTR_RELEASE(vmat);
-	DX8Wrapper::Set_Texture(0,m_destAlphaTexture);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Matrix3D(true));
-	//Enabled writes to destination alpha only
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_ALPHA);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(0,  D3DTSS_TEXCOORDINDEX, 0);
-
-
 	while (j != m_numShoreLineTiles)
 	{
-		DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,DEFAULT_MAX_BATCH_SHORELINE_TILES*4);
-		DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,DEFAULT_MAX_BATCH_SHORELINE_TILES*6);
+		std::vector<RenderBackendTexturedVertex> vb_cpu(DEFAULT_MAX_BATCH_SHORELINE_TILES*4);
+		std::vector<unsigned short> ib_cpu(DEFAULT_MAX_BATCH_SHORELINE_TILES*6);
 
-		{	//Need to put this in another code block so vb/ib gets automatically locked/unlocked by destructors
-			DynamicVBAccessClass::WriteLockClass lock(&vb_access);
-			VertexFormatXYZNDUV2 *vb= lock.Get_Formatted_Vertex_Array();
-			DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
-			UnsignedShort *ib=lockib.Get_Index_Array();
+		{	//CPU vector batch; pointers into vb_cpu/ib_cpu preserve tile math.
+			RenderBackendTexturedVertex *vb = vb_cpu.data();
+			unsigned short *ib = ib_cpu.data();
 			if (!ib || !vb)
-			{	DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
+			{
 				return;
 			}
 
@@ -2349,53 +2381,53 @@ void BaseHeightMapRenderObjClass::renderShoreLines(CameraClass *pCamera)
 					vb->x = shoreInfo->verts[0];
 					vb->y = shoreInfo->verts[1];
 					vb->z = shoreInfo->verts[2];
-					vb->nx=0;	//filling these to keep AGP write buffer happy.
-					vb->ny=0;
-					vb->nz=0;
-					vb->diffuse=0;
-					vb->u1=shoreInfo->t0;
-					vb->v1=0;
-					vb->u2=0;
-					vb->v2=0;
+					vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+					vb->g=1.0f;
+					vb->b=1.0f;
+					vb->a=1.0f;
+					vb->u=shoreInfo->t0;
+					vb->v=0;
+					vb->q=1.0f;
+					// retired v2
 					vb++;
 
 					vb->x = shoreInfo->verts[3];
 					vb->y = shoreInfo->verts[4];
 					vb->z = shoreInfo->verts[5];
-					vb->nx=0;	//filling these to keep AGP write buffer happy.
-					vb->ny=0;
-					vb->nz=0;
-					vb->diffuse=0;
-					vb->u1=shoreInfo->t1;
-					vb->v1=0;
-					vb->u2=0;
-					vb->v2=0;
+					vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+					vb->g=1.0f;
+					vb->b=1.0f;
+					vb->a=1.0f;
+					vb->u=shoreInfo->t1;
+					vb->v=0;
+					vb->q=1.0f;
+					// retired v2
 					vb++;
 
 					vb->x = shoreInfo->verts[6];
 					vb->y = shoreInfo->verts[7];
 					vb->z = shoreInfo->verts[8];
-					vb->nx=0;	//filling these to keep AGP write buffer happy.
-					vb->ny=0;
-					vb->nz=0;
-					vb->diffuse=0;
-					vb->u1=shoreInfo->t2;
-					vb->v1=0;
-					vb->u2=0;
-					vb->v2=0;
+					vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+					vb->g=1.0f;
+					vb->b=1.0f;
+					vb->a=1.0f;
+					vb->u=shoreInfo->t2;
+					vb->v=0;
+					vb->q=1.0f;
+					// retired v2
 					vb++;
 
 					vb->x = shoreInfo->verts[9];
 					vb->y = shoreInfo->verts[10];
 					vb->z = shoreInfo->verts[11];
-					vb->nx=0;	//filling these to keep AGP write buffer happy.
-					vb->ny=0;
-					vb->nz=0;
-					vb->diffuse=0;
-					vb->u1=shoreInfo->t3;
-					vb->v1=0;
-					vb->u2=0;
-					vb->v2=0;
+					vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+					vb->g=1.0f;
+					vb->b=1.0f;
+					vb->a=1.0f;
+					vb->u=shoreInfo->t3;
+					vb->v=0;
+					vb->q=1.0f;
+					// retired v2
 					vb++;
 
 					if (m_map->getQuickFlipState(x,y))
@@ -2425,19 +2457,16 @@ void BaseHeightMapRenderObjClass::renderShoreLines(CameraClass *pCamera)
 
 		if (indexCount > 0 && vertexCount > 0)
 		{
-			DX8Wrapper::Set_Index_Buffer(ib_access,0);
-			DX8Wrapper::Set_Vertex_Buffer(vb_access);
-			DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
-			m_numVisibleShoreLineTiles += indexCount/6;
+			if (shoreBackend->Draw_Indexed_Material_Triangles(vb_cpu.data(),
+				static_cast<unsigned int>(vertexCount), ib_cpu.data(),
+				static_cast<unsigned int>(indexCount), shoreTexture, shoreState)) {
+				m_numVisibleShoreLineTiles += indexCount/6;
+			}
 		}
 
 		vertexCount=0;
 		indexCount=0;
 	}
-
-	//Disable writes to destination alpha
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
-	ShaderClass::Invalidate();
 }
 
 /**Render parts of terrain that are along the coast line and have vertices directly under the
@@ -2505,16 +2534,14 @@ void BaseHeightMapRenderObjClass::renderShoreLinesSorted(CameraClass *pCamera)
 
 	while (!isDone)
 	{
-		DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,DEFAULT_MAX_BATCH_SHORELINE_TILES*4);
-		DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,DEFAULT_MAX_BATCH_SHORELINE_TILES*6);
+		std::vector<RenderBackendTexturedVertex> vb_cpu(DEFAULT_MAX_BATCH_SHORELINE_TILES*4);
+		std::vector<unsigned short> ib_cpu(DEFAULT_MAX_BATCH_SHORELINE_TILES*6);
 
-		{	//Need to put this in another code block so vb/ib gets automatically locked/unlocked by destructors
-			DynamicVBAccessClass::WriteLockClass lock(&vb_access);
-			VertexFormatXYZNDUV2 *vb= lock.Get_Formatted_Vertex_Array();
-			DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
-			UnsignedShort *ib=lockib.Get_Index_Array();
+		{	//CPU vector batch; pointers into vb_cpu/ib_cpu preserve tile math.
+			RenderBackendTexturedVertex *vb = vb_cpu.data();
+			unsigned short *ib = ib_cpu.data();
 			if (!ib || !vb)
-			{	DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
+			{
 				return;
 			}
 
@@ -2562,53 +2589,53 @@ void BaseHeightMapRenderObjClass::renderShoreLinesSorted(CameraClass *pCamera)
 						vb->x = shoreInfo->verts[0];
 						vb->y = shoreInfo->verts[1];
 						vb->z = shoreInfo->verts[2];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t0;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
+						vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+						vb->g=1.0f;
+						vb->b=1.0f;
+						vb->a=1.0f;
+						vb->u=shoreInfo->t0;
+						vb->v=0;
+						vb->q=1.0f;
+						// retired v2
 						vb++;
 
 						vb->x = shoreInfo->verts[3];
 						vb->y = shoreInfo->verts[4];
 						vb->z = shoreInfo->verts[5];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t1;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
+						vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+						vb->g=1.0f;
+						vb->b=1.0f;
+						vb->a=1.0f;
+						vb->u=shoreInfo->t1;
+						vb->v=0;
+						vb->q=1.0f;
+						// retired v2
 						vb++;
 
 						vb->x = shoreInfo->verts[6];
 						vb->y = shoreInfo->verts[7];
 						vb->z = shoreInfo->verts[8];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t2;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
+						vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+						vb->g=1.0f;
+						vb->b=1.0f;
+						vb->a=1.0f;
+						vb->u=shoreInfo->t2;
+						vb->v=0;
+						vb->q=1.0f;
+						// retired v2
 						vb++;
 
 						vb->x = shoreInfo->verts[9];
 						vb->y = shoreInfo->verts[10];
 						vb->z = shoreInfo->verts[11];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t3;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
+						vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+						vb->g=1.0f;
+						vb->b=1.0f;
+						vb->a=1.0f;
+						vb->u=shoreInfo->t3;
+						vb->v=0;
+						vb->q=1.0f;
+						// retired v2
 						vb++;
 
 						if (m_map->getQuickFlipState(x,tileY))
@@ -2683,53 +2710,53 @@ flushVertexBuffer0:
 						vb->x = shoreInfo->verts[0];
 						vb->y = shoreInfo->verts[1];
 						vb->z = shoreInfo->verts[2];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t0;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
+						vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+						vb->g=1.0f;
+						vb->b=1.0f;
+						vb->a=1.0f;
+						vb->u=shoreInfo->t0;
+						vb->v=0;
+						vb->q=1.0f;
+						// retired v2
 						vb++;
 
 						vb->x = shoreInfo->verts[3];
 						vb->y = shoreInfo->verts[4];
 						vb->z = shoreInfo->verts[5];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t1;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
+						vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+						vb->g=1.0f;
+						vb->b=1.0f;
+						vb->a=1.0f;
+						vb->u=shoreInfo->t1;
+						vb->v=0;
+						vb->q=1.0f;
+						// retired v2
 						vb++;
 
 						vb->x = shoreInfo->verts[6];
 						vb->y = shoreInfo->verts[7];
 						vb->z = shoreInfo->verts[8];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t2;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
+						vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+						vb->g=1.0f;
+						vb->b=1.0f;
+						vb->a=1.0f;
+						vb->u=shoreInfo->t2;
+						vb->v=0;
+						vb->q=1.0f;
+						// retired v2
 						vb++;
 
 						vb->x = shoreInfo->verts[9];
 						vb->y = shoreInfo->verts[10];
 						vb->z = shoreInfo->verts[11];
-						vb->nx=0;	//filling these to keep AGP write buffer happy.
-						vb->ny=0;
-						vb->nz=0;
-						vb->diffuse=0;
-						vb->u1=shoreInfo->t3;
-						vb->v1=0;
-						vb->u2=0;
-						vb->v2=0;
+						vb->r=1.0f;	//filling these to keep AGP write buffer happy.
+						vb->g=1.0f;
+						vb->b=1.0f;
+						vb->a=1.0f;
+						vb->u=shoreInfo->t3;
+						vb->v=0;
+						vb->q=1.0f;
+						// retired v2
 						vb++;
 
 						if (m_map->getQuickFlipState(tileX,y))

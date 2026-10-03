@@ -116,7 +116,7 @@ public:
 	TerrainTracksRenderObjClassSystem();
 	~TerrainTracksRenderObjClassSystem();
 
-	void ReleaseResources();	///< Release all dx8 resources so the device can be reset.
+	void ReleaseResources();	///< Release all render resources so the device can be reset.
 	void ReAcquireResources();  ///< Reacquire all resources after device reset.
 
 	void setDetail();

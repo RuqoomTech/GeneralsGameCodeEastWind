@@ -1496,6 +1496,11 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 		}
 	}
 
+	// D3D12: sway factors are preserved CPU-side every frame and baked into
+	// batch vertices (Trees.vso c4/c8/c9/c32-33 uploads retired, see below).
+	for (Int swayCopy = 0; swayCopy < MAX_SWAY_TYPES; ++swayCopy)
+		m_lastSwayFactor[swayCopy] = swayFactor[swayCopy];
+
 	m_isTerrainPass = false;
 
 	if (m_needToUpdateTexture) {
@@ -1572,177 +1577,59 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 		updateVertexBuffer();
 	}
 
-//#define DEBUG_TEXTURE 1
-#ifdef DEBUG_TEXTURE // Draw the combined texture for debugging. jba. [4/21/2003]
-	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Shader(detailAlphaShader);
-	DX8Wrapper::Set_Texture(0,m_treeTexture);
-	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8, 6);
-	//draw an infinite sky plane
-	DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8, DX8_FVF_XYZNDUV2, 4);
-	{
-		DynamicIBAccessClass::WriteLockClass ibLock(&ib_access);
-		UnsignedShort *ndx = ibLock.Get_Index_Array();
-
-		if (ndx) {
-			ndx[0] = 0;
-			ndx[1] = 1;
-			ndx[2] = 2;
-			ndx[3] = 1;
-			ndx[4] = 3;
-			ndx[5] = 2;
-		}
-		DynamicVBAccessClass::WriteLockClass lock(&vb_access);
-		VertexFormatXYZNDUV2* verts=lock.Get_Formatted_Vertex_Array();
-		if(verts)
-		{
-			Real width = 300;
-			Real origin = 40;
-			verts[0].x=origin;
-			verts[0].y=origin;
-			verts[0].z=15;
-			verts[0].u1=0;
-			verts[0].v1=0;
-			verts[0].diffuse=0xffffffff;
-
-			verts[1].x=origin+width;
-			verts[1].y=origin;
-			verts[1].z=15;
-			verts[1].u1=1;
-			verts[1].v1=0;
-			verts[1].diffuse=0xffffffff;
-
-			verts[2].x=origin;
-			verts[2].y=origin+width;
-			verts[2].z=15;
-			verts[2].u1=0;
-			verts[2].v1=1;
-			verts[2].diffuse=0xffffffff;
-
-			verts[3].x=origin+width;
-			verts[3].y=origin+width;
-			verts[3].z=15;
-			verts[3].u1=1;
-			verts[3].v1=1;
-			verts[3].diffuse=0xffffffff;
-		}
-	}
-
-	DX8Wrapper::Set_Index_Buffer(ib_access,0);
-	DX8Wrapper::Set_Vertex_Buffer(vb_access);
-
-	Matrix3D tm(1);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
-
-	DX8Wrapper::Draw_Triangles(	0,2, 0,	4);	//draw a quad, 2 triangles, 4 verts
-#endif
+	// DEBUG_TEXTURE retired: the legacy combined-texture debug quad used the
+	// retired dynamic VB/IB path. Use the backend tile-atlas handle with a
+	// screen-space material draw when debugging is needed.
 
 
 	if (m_curNumTreeIndices[0] == 0) {
 		return;
 	}
-	DX8Wrapper::Set_Shader(detailAlphaShader);
-
-	DX8Wrapper::Set_Texture(0,m_treeTexture);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(0,  D3DTSS_TEXCOORDINDEX, 0);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(1,  D3DTSS_TEXCOORDINDEX, 1);
-	// Draw all the trees.
-	DX8Wrapper::Apply_Render_State_Changes();
-	W3DShaderManager::setShroudTex(1);
-	DX8Wrapper::Apply_Render_State_Changes();
-
-	if (m_dwTreeVertexShader) {
-		D3DMATRIX matProj, matView, matWorld;
-		DX8Wrapper::_Get_DX8_Transform(D3DTS_WORLD, matWorld);
-		DX8Wrapper::_Get_DX8_Transform(D3DTS_VIEW, matView);
-		DX8Wrapper::_Get_DX8_Transform(D3DTS_PROJECTION, matProj);
-
-		// The legacy utility path built world * view * projection, then transposed
-		// that matrix before uploading it as four shader constants.
-		// To_Matrix4x4 transposes a D3DMATRIX into the WWMath convention, so the
-		// reversed projection * view * world order below produces the same final
-		// transposed shader matrix without the retired utility library.
-		const Matrix4x4 shaderMatrix =
-			To_Matrix4x4(matProj) * To_Matrix4x4(matView) * To_Matrix4x4(matWorld);
-		D3DMATRIX shaderConstants = {};
-		for (Int row = 0; row < 4; ++row) {
-			for (Int column = 0; column < 4; ++column) {
-				shaderConstants.m[row][column] = shaderMatrix[row][column];
+	// D3D12: SC_ALPHA_DETAIL is preserved via Get_Render_Backend_State; sway
+	// (Trees.vso c4 composite WVP, c8 no-sway, c9..c9+MAX_SWAY_TYPES sway amounts,
+	// c32/c33 shroud origin/scale) and the shroud stage-1 projection have no
+	// backend equivalent yet. CPU sway/topple/push-aside/shroud-level math above
+	// is preserved; base geometry is submitted with the closest material below
+	// (no fake perturb/mirror). Trees.vso/pso asm stays as archival reference.
+	IRenderBackend *treeBackend = WW3D::Get_Render_Backend();
+	if (treeBackend == nullptr)
+		return;
+	RenderBackendMaterialState treeMaterial;
+	if (!detailAlphaShader.Get_Render_Backend_State(treeMaterial))
+		return;
+	{
+		RenderBackendTextureHandle treeHandle = m_treeTextureHandle;
+		if (!treeHandle.Is_Valid() && m_treeTexture != nullptr) {
+			const TextureFilterClass &treeFilter = m_treeTexture->Get_Filter();
+			if (!treeFilter.Get_Render_Sampler(treeMaterial.sampler))
+				return;
+			treeMaterial.clamp_texture = true;
+			if (m_treeTexture->Ensure_Renderer_Texture())
+				treeHandle = m_treeTexture->Get_Renderer_Texture();
+		} else if (m_treeTexture != nullptr) {
+			const TextureFilterClass &treeFilter = m_treeTexture->Get_Filter();
+			if (!treeFilter.Get_Render_Sampler(treeMaterial.sampler))
+				return;
+			treeMaterial.clamp_texture = true;
+		}
+		if (!treeHandle.Is_Valid())
+			return;
+		Int bNdx;
+		for (bNdx=0;bNdx<MAX_BUFFERS; bNdx++) {
+			if (m_curNumTreeIndices[bNdx]==0) {
+				break;
 			}
+			TreeCpuBatch &batch = m_treeBatch[bNdx];
+			if (batch.vertices.empty() || batch.indices.empty())
+				continue;
+			// Render the waving grass (sway already baked CPU-side).
+			treeBackend->Draw_Indexed_Material_Triangles(batch.vertices.data(),
+				static_cast<unsigned int>(batch.vertices.size()),
+				batch.indices.data(), static_cast<unsigned int>(batch.indices.size()),
+				treeHandle, treeMaterial);
 		}
-
-		// c4  - Composite World-View-Projection Matrix
-		DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  4, &shaderConstants,  4 );
-		Vector4 noSway(0,0,0,0);
-		DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  8, &noSway,  1 );
-
-		// c8 - c8+MAX_SWAY_TYPES - the sway amount.
-		for	(i=0; i<MAX_SWAY_TYPES; i++) {
-			Vector4 sway4(swayFactor[i].X, swayFactor[i].Y, swayFactor[i].Z, 0);
-			DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  9+i, &sway4,  1 );
-		}
-
-		W3DShroud *shroud;
-		if ((shroud=TheTerrainRenderObject->getShroud()) != nullptr) {
-			// Setup shroud texture info [6/6/2003]
-			float xoffset = 0;
-			float yoffset = 0;
-			Real width=shroud->getCellWidth();
-			Real height=shroud->getCellHeight();
-
-			xoffset = -(float)shroud->getDrawOriginX() + width;
-			yoffset = -(float)shroud->getDrawOriginY() + height;
-			Vector4 offset(xoffset, yoffset, 0, 0);
-			DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  32, &offset,  1 );
-			width = 1.0f/(width*shroud->getTextureWidth());
-			height = 1.0f/(height*shroud->getTextureHeight());
-			offset.Set(width, height, 1, 1);
-			DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  33, &offset,  1 );
-
-		} else {
-			Vector4 offset(0,0,0,0);
-			DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  32, &offset,  1 );
-			DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  33, &offset,  1 );
-		}
-
-		DX8Wrapper::Set_Vertex_Shader(m_dwTreeVertexShader);
-#if 0
-		DX8Wrapper::Set_Pixel_Shader(m_dwTreePixelShader);
-		// a.c. 6/16 - allow switching between normal and 2X mode for terrain
-		Real mulTwoX = 0.5f;
-		if(TheGlobalData && TheGlobalData->m_useOverbright)
-			mulTwoX = 1.0f;
-		Vector4 overbrightConstant(mulTwoX, mulTwoX, mulTwoX, mulTwoX);
-		DX8Wrapper::_Get_D3D_Device8()->SetPixelShaderConstant(1, &overbrightConstant.X, 1);
-#endif
-
-	} else {
-		DX8Wrapper::Set_Vertex_Shader(DX8_FVF_XYZNDUV1);
+		treeBackend->Invalidate_Cached_Render_States();
 	}
-
-
-	Int bNdx;
-	for (bNdx=0;bNdx<MAX_BUFFERS; bNdx++) {
-		if (m_curNumTreeIndices[bNdx]==0) {
-			break;
-		}
-		DX8Wrapper::Set_Index_Buffer(m_indexTree[bNdx],0);
-		DX8Wrapper::Set_Vertex_Buffer(m_vertexTree[bNdx]);
-		// Render the waving grass
-		DX8Wrapper::Apply_Render_State_Changes();
-		if (m_dwTreeVertexShader) {
-			DX8Wrapper::_Get_D3D_Device8()->SetVertexShader(m_dwTreeVertexShader);
-			DX8Wrapper::_Get_D3D_Device8()->SetTextureStageState(0,  D3DTSS_TEXCOORDINDEX, 0);
-			DX8Wrapper::_Get_D3D_Device8()->SetTextureStageState(1,  D3DTSS_TEXCOORDINDEX, 1);
-			DX8Wrapper::_Get_D3D_Device8()->SetTextureStageState(1,  D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
-		}
-		DX8Wrapper::Draw_Triangles(	0, m_curNumTreeIndices[bNdx]/3, 0,	m_curNumTreeVertices[bNdx]);
-	}
-
-	DX8Wrapper::Set_Vertex_Shader(DX8_FVF_XYZNDUV1);
-	DX8Wrapper::Set_Pixel_Shader(0);
-	DX8Wrapper::Invalidate_Cached_Render_States();	//code above mucks around with W3D states so make sure we reset
 
 }
 

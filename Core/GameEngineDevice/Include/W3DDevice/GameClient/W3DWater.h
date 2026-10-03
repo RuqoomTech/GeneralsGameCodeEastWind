@@ -105,7 +105,7 @@ public:
 	void setTimeOfDay(TimeOfDay tod); ///<change sky/water for time of day
 	void toggleCloudLayer(Bool state)	{	m_useCloudLayer=state;}	///<enables/disables the cloud layer
 	void updateRenderTargetTextures(CameraClass *cam);	///< renders into any required textures.
-	void ReleaseResources();	///< Release all dx8 resources so the device can be reset.
+	void ReleaseResources();	///< Release all renderer resources so the device can be reset.
 	void ReAcquireResources();  ///< Reacquire all resources after device reset.
 	Real getWaterHeight(Real x, Real y);	///<return water height at given point - for use by WB.
 	void setGridHeightClamps(Real minz, Real maxz);	///<set min/max height values alllowed in grid

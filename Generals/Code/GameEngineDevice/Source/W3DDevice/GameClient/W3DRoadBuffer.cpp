@@ -3223,24 +3223,28 @@ void W3DRoadBuffer::drawRoads(CameraClass * camera, TextureClass *cloudTexture, 
 			maxStacking = m_roadTypes[i].getStacking();
 		}
 	}
-	Int stacking;
-	W3DShaderManager::ShaderTypes st=W3DShaderManager::ST_ROAD_BASE; //set default shader
-	if (cloudTexture)
-	{	st=W3DShaderManager::ST_ROAD_BASE_NOISE1;
-		if (noiseTexture)
-			st=W3DShaderManager::ST_ROAD_BASE_NOISE12;
+	// D3D12: base stage only (single pass). Cloud/noise second stages
+	// (ST_ROAD_BASE_NOISE*) are documented gaps: no multitexture PSO invented.
+	(void)cloudTexture;
+	(void)noiseTexture;
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr) {
+		m_curRoadType = 0;
+		return;
 	}
-	else
-	if (noiseTexture)
-		st=W3DShaderManager::ST_ROAD_BASE_NOISE2;
+	// detailAlphaShader carries DETAILCOLOR_SCALE with no detail texture bound;
+	// use a sanitized copy for the backend state (depth_write false preserved).
+	ShaderClass roadShader = detailAlphaShader;
+	roadShader.Set_Post_Detail_Color_Func(ShaderClass::DETAILCOLOR_DISABLE);
+	RenderBackendMaterialState baseState;
+	if (!roadShader.Get_Render_Backend_State(baseState)) {
+		m_curRoadType = 0;
+		return;
+	}
+	RenderBackendMaterialState wireState;
+	Bool haveWireState = detailShader.Get_Render_Backend_State(wireState);
 
-	Int devicePasses = 1;	//assume regular rendering
- 	//Find number of passes required to render current shader
-	devicePasses=W3DShaderManager::getShaderPasses(st);
-
-	W3DShaderManager::setTexture(1,cloudTexture);	//cloud
-	W3DShaderManager::setTexture(2,noiseTexture);	//noise/lightmap
-
+	Int stacking;
 	for (stacking=0; stacking <= maxStacking; stacking++) {
 		for (i=0; i<m_maxRoadTypes; i++) {
 			if (stacking != m_roadTypes[i].getStacking()) {
@@ -3250,54 +3254,38 @@ void W3DRoadBuffer::drawRoads(CameraClass * camera, TextureClass *cloudTexture, 
 			m_curRoadType = i;
 			loadRoadsInVertexAndIndexBuffers();
 			if (m_roadTypes[i].getNumIndices() == 0) continue;
-			if (wireframe) {
-				m_roadTypes[i].applyTexture();
-				DX8Wrapper::Set_Texture(0,nullptr);
-				DX8Wrapper::Set_Shader(detailShader); // shows clipping.
-			} else {
-				m_roadTypes[i].applyTexture();
+			if ((Int)m_roadTypes[i].getVertices().size() > 65535) continue;
+			// Convert CPU verts (diffuse ARGB + UV) to backend verts.
+			std::vector<RenderBackendTexturedVertex> vertices;
+			vertices.reserve(m_roadTypes[i].getVertices().size());
+			for (size_t v = 0; v < m_roadTypes[i].getVertices().size(); ++v) {
+				const VertexFormatXYZDUV1 &src = m_roadTypes[i].getVertices()[v];
+				RenderBackendTexturedVertex dst;
+				dst.x = src.x; dst.y = src.y; dst.z = src.z;
+				dst.r = ((src.diffuse >> 16) & 255) / 255.0f;
+				dst.g = ((src.diffuse >> 8) & 255) / 255.0f;
+				dst.b = (src.diffuse & 255) / 255.0f;
+				dst.a = ((src.diffuse >> 24) & 255) / 255.0f;
+				dst.u = src.u1; dst.v = src.v1; dst.q = 1.0f;
+				vertices.push_back(dst);
 			}
-	#ifdef RTS_DEBUG
-			//DX8Wrapper::Set_Shader(detailShader); // shows clipping.
-	#endif
-			for (Int pass=0; pass < devicePasses; pass++)
-			{
-				if (!wireframe)
-		 			W3DShaderManager::setShader(st, pass);
-				//Draw all this road type.
-				DX8Wrapper::Draw_Triangles(	0, m_roadTypes[i].getNumIndices()/3, 0,	m_roadTypes[i].getNumVertices());
-			}
-
-			if (!wireframe)	//shader was applied at least once?
- 				W3DShaderManager::resetShader(st);
-		}
-	}
-
-#if 0
-	// Need to use a separate set of index & vertex buffers for this.  jba.
-	DX8Wrapper::Set_Index_Buffer(nullptr,0);
-	DX8Wrapper::Set_Vertex_Buffer(nullptr);
-	if (pDynamicLightsIterator) {
-		for (i=0; i<m_maxRoadTypes; i++) {
-			m_curRoadType = i;
-			m_curUniqueID = m_roadTypes[i].getUniqueID();
-			if (m_curUniqueID < 0 || m_curUniqueID >= m_maxRoadTypes) continue;
-			loadLitRoadsInVertexAndIndexBuffers(pDynamicLightsIterator);
-			if (this->m_curNumRoadIndices == 0) continue;
-			if (wireframe) {
-					DX8Wrapper::Set_Texture(0,nullptr);
-			} else {
-				m_roadTypes[i].applyTexture();
-				if (cloudTexture) {
-					DX8Wrapper::Set_Texture(1,cloudTexture);
+			const std::vector<UnsignedShort> &indices = m_roadTypes[i].getIndices();
+			RenderBackendMaterialState batch = wireframe && haveWireState ? wireState : baseState;
+			RenderBackendTextureHandle handle;
+			if (!wireframe) {
+				TextureClass *tex = m_roadTypes[i].peekTexture();
+				if (tex != nullptr) {
+					if (!tex->Get_Filter().Get_Render_Sampler(batch.sampler)) continue;
+					batch.clamp_texture = false;
+					if (!tex->Ensure_Renderer_Texture()) continue;
+					handle = tex->Get_Renderer_Texture();
 				}
 			}
-			DX8Wrapper::Set_Shader(detailAlphaShader);
-			//Draw all the roads.
-			DX8Wrapper::Draw_Triangles(	0, m_curNumRoadIndices/3, 0,	m_curNumRoadVertices);
+			backend->Draw_Indexed_Material_Triangles(vertices.data(), (unsigned int)vertices.size(),
+				indices.data(), (unsigned int)indices.size(), handle, batch);
 		}
 	}
-#endif
+
 	m_curRoadType = 0;
 }
 
