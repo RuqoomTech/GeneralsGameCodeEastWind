@@ -129,7 +129,7 @@ public:
 		unsigned dest_surface_height,
 		unsigned dest_surface_pitch,
 		WW3DFormat dest_surface_format,
-		unsigned char* src_surface,
+		const unsigned char* src_surface,
 		unsigned src_surface_width,
 		unsigned src_surface_height,
 		unsigned src_surface_pitch,

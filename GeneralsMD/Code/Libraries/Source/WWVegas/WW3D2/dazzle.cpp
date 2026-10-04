@@ -395,7 +395,7 @@ void LensflareTypeClass::Generate_Vertex_Buffers(
 		const float r = ((packed >> 16) & 255) / 255.0f;
 		const float g = ((packed >> 8) & 255) / 255.0f;
 		const float b = (packed & 255) / 255.0f;
-		const float a = ((packed >> 24) & 255) / 255.0f;
+		const float alpha = ((packed >> 24) & 255) / 255.0f;
 
 		vertex->x=x+ix;
 		vertex->y=y-iy;
@@ -403,7 +403,7 @@ void LensflareTypeClass::Generate_Vertex_Buffers(
 		vertex->r=r;
 		vertex->g=g;
 		vertex->b=b;
-		vertex->a=a;
+		vertex->a=alpha;
 		vertex->u=lic.flare_uv[a][0];
 		vertex->v=lic.flare_uv[a][1];
 		vertex->q=1.0f;
@@ -415,7 +415,7 @@ void LensflareTypeClass::Generate_Vertex_Buffers(
 		vertex->r=r;
 		vertex->g=g;
 		vertex->b=b;
-		vertex->a=a;
+		vertex->a=alpha;
 		vertex->u=lic.flare_uv[a][2];
 		vertex->v=lic.flare_uv[a][1];
 		vertex->q=1.0f;
@@ -427,7 +427,7 @@ void LensflareTypeClass::Generate_Vertex_Buffers(
 		vertex->r=r;
 		vertex->g=g;
 		vertex->b=b;
-		vertex->a=a;
+		vertex->a=alpha;
 		vertex->u=lic.flare_uv[a][2];
 		vertex->v=lic.flare_uv[a][3];
 		vertex->q=1.0f;
@@ -439,7 +439,7 @@ void LensflareTypeClass::Generate_Vertex_Buffers(
 		vertex->r=r;
 		vertex->g=g;
 		vertex->b=b;
-		vertex->a=a;
+		vertex->a=alpha;
 		vertex->u=lic.flare_uv[a][0];
 		vertex->v=lic.flare_uv[a][3];
 		vertex->q=1.0f;

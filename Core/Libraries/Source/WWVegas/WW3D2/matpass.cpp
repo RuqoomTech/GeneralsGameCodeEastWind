@@ -49,6 +49,10 @@
 #include "matpass.h"
 #include "IRenderBackend.h"
 #include <typeinfo>
+#include "vertmaterial.h"
+#include "shader.h"
+#include "texture.h"
+#include "statistics.h"
 
 bool MaterialPassClass::Prepare_Render_Material(RenderBackendMaterialState &state) const
 {
@@ -60,11 +64,6 @@ bool MaterialPassClass::Prepare_Render_Material(RenderBackendMaterialState &stat
 	}
 	return Shader.Get_Render_Backend_State(state);
 }
-#include "vertmaterial.h"
-#include "shader.h"
-#include "texture.h"
-#include "statistics.h"
-#include "dx8wrapper.h"
 
 
 bool MaterialPassClass::EnablePerPolygonCulling = true;
@@ -130,12 +129,10 @@ MaterialPassClass::~MaterialPassClass()
  *=============================================================================================*/
 void MaterialPassClass::Install_Materials() const
 {
-	DX8Wrapper::Set_Material(Peek_Material());
-	DX8Wrapper::Set_Shader(Peek_Shader());
-	for (int i=0;i<DX8Wrapper::Get_Current_Caps()->Get_Max_Textures_Per_Pass();++i)
-	{
-		DX8Wrapper::Set_Texture(i,Peek_Texture(i));
-	}
+	// D3D12: global DX8 state machine retired. Migrated callers use
+	// Prepare_Render_Material + IRenderBackend::Draw_Indexed_Material_Triangles
+	// with explicit per-draw material state. This stays as a no-op so legacy
+	// headers link while the remaining callers migrate off global state.
 }
 
 

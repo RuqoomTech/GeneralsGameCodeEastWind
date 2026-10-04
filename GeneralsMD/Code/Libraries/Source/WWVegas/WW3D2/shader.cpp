@@ -43,6 +43,7 @@
 #include "shader.h"
 #include "IRenderBackend.h"
 #include "w3d_file.h"
+#include "WWLib/wwstring.h"
 #include "WWDebug/wwdebug.h"
 
 

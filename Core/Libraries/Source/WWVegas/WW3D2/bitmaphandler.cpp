@@ -201,7 +201,7 @@ void BitmapHandlerClass::Copy_Image(
 	unsigned dest_surface_height,
 	unsigned dest_surface_pitch,
 	WW3DFormat dest_surface_format,
-	unsigned char* src_surface,
+	const unsigned char* src_surface,
 	unsigned src_surface_width,
 	unsigned src_surface_height,
 	unsigned src_surface_pitch,
@@ -224,10 +224,10 @@ void BitmapHandlerClass::Copy_Image(
 		for( unsigned y=0; y<dest_surface_height; y++ ) {
 			unsigned char* dest_ptr=dest_surface;
 			dest_ptr+=y*dest_surface_pitch;
-			unsigned char* src_ptr_mid=src_surface;
+			const unsigned char* src_ptr_mid=src_surface;
 			src_ptr_mid+=y*src_surface_pitch;
-			unsigned char* src_ptr_next_line = ( src_ptr_mid + src_surface_pitch );
-			unsigned char* src_ptr_prev_line = ( src_ptr_mid - src_surface_pitch );
+			const unsigned char* src_ptr_next_line = ( src_ptr_mid + src_surface_pitch );
+			const unsigned char* src_ptr_prev_line = ( src_ptr_mid - src_surface_pitch );
 
 			if( y == src_surface_height-1 )  // Don't go past the last line
 				src_ptr_next_line = src_ptr_mid;
@@ -315,7 +315,7 @@ void BitmapHandlerClass::Copy_Image(
 			// Generate the next mip level while copying the current surface?
 			if (generate_mip_level) {
 				if (dest_surface_width==1) {
-					unsigned b8g8r8a8=*(unsigned*)src_surface;
+					unsigned b8g8r8a8=*(const unsigned*)src_surface;
 					if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
 					*(unsigned*)dest_surface=b8g8r8a8;
 				}
@@ -323,8 +323,8 @@ void BitmapHandlerClass::Copy_Image(
 					for (unsigned y=0;y<dest_surface_height/2;++y) {
 						unsigned* dest_ptr=(unsigned*)dest_surface;
 						dest_ptr+=2*y*dest_surface_pitch;
-						unsigned* src_ptr=(unsigned*)src_surface;
-						unsigned* mip_ptr=src_ptr;
+						const unsigned* src_ptr=(const unsigned*)src_surface;
+						unsigned* mip_ptr=const_cast<unsigned*>((const unsigned*)src_surface);
 						src_ptr+=y*2*src_surface_pitch;
 						mip_ptr+=y*src_surface_pitch;
 						unsigned b8g8r8a8_00;
@@ -411,7 +411,7 @@ void BitmapHandlerClass::Copy_Image(
 			WWASSERT(src_surface_format!=WW3D_FORMAT_P8);	// Paletted textures can't be mipmapped
 			if (dest_surface_width==1) {
 				unsigned char* dest_ptr=dest_surface;
-				unsigned char* src_ptr=src_surface;
+				const unsigned char* src_ptr=src_surface;
 				unsigned b8g8r8a8;
 				Read_B8G8R8A8(b8g8r8a8,src_ptr,src_surface_format,src_palette,src_palette_bpp);
 				if (has_hsv_shift) {
@@ -422,8 +422,8 @@ void BitmapHandlerClass::Copy_Image(
 			else {
 				for (unsigned y=0;y<dest_surface_height/2;++y) {
 					unsigned char* dest_ptr=dest_surface+2*y*dest_surface_pitch;
-					unsigned char* src_ptr=src_surface+y*2*src_surface_pitch;
-					unsigned char* mip_ptr=src_surface+y*src_surface_pitch;
+					const unsigned char* src_ptr=src_surface+y*2*src_surface_pitch;
+					unsigned char* mip_ptr=const_cast<unsigned char*>(src_surface)+y*src_surface_pitch;
 					unsigned b8g8r8a8_00;
 					unsigned b8g8r8a8_01;
 					unsigned b8g8r8a8_10;

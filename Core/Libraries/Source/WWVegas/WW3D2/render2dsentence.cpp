@@ -37,9 +37,9 @@
 #include "render2dsentence.h"
 #include "surfaceclass.h"
 #include "texture.h"
+#include "ww3d.h"
 #include "WWDebug/wwprofile.h"
 #include "WWDebug/wwmemlog.h"
-#include "dx8wrapper.h"
 
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -368,9 +368,9 @@ Render2DSentenceClass::Build_Textures ()
 		new_texture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
 
 		//
-		//	Copy the contents of the texture from the surface
+		//	Copy the contents of the texture from the surface (CPU-side, renderer-neutral)
 		//
-		DX8Wrapper::_Copy_DX8_Rects (curr_surface->Peek_D3D_Surface (), nullptr, 0, texture_surface->Peek_D3D_Surface (), nullptr);
+		texture_surface->Copy(0, 0, 0, 0, desc.Width, desc.Height, curr_surface);
 		REF_PTR_RELEASE (texture_surface);
 
 		//

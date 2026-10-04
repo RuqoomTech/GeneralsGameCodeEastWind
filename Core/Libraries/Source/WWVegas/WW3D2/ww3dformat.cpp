@@ -38,12 +38,10 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "ww3dformat.h"
+#include "ww3d.h"
 #include "WWMath/vector4.h"
 #include "WWDebug/wwdebug.h"
 #include "WWLib/TARGA.h"
-#include "dx8wrapper.h"
-#include "dx8caps.h"
-#include <d3d8.h>
 
  /*
 	WW3D_FORMAT_UNKNOWN=0,
@@ -127,8 +125,8 @@ unsigned char RGB_to_CIEY(Vector4 color)
 
 void Vector4_to_Color(unsigned int *outc,const Vector4 &inc,const WW3DFormat format)
 {
-	// convert to ARGB 32-bit
-	unsigned int color=DX8Wrapper::Convert_Color(inc);
+	// convert to ARGB 32-bit (renderer-neutral pack, matches legacy DX8Wrapper::Convert_Color)
+	unsigned int color=Vector3(inc.X,inc.Y,inc.Z).Convert_To_ARGB(inc.W);
 	unsigned char *argb=(unsigned char*) &color;
 	unsigned char r,g,b,a,lum;
 
@@ -307,8 +305,10 @@ WW3DFormat Get_Valid_Texture_Format(WW3DFormat format, bool is_compression_allow
 	int w,h,bits;
 	bool windowed;
 
-	if (!DX8Wrapper::Get_Current_Caps()->Support_DXTC() ||
-		!is_compression_allowed) {
+	// D3D12: DXT1-5 decode CPU-side to RGBA8 (see textureloader/BitmapHandler),
+	// so compression support is renderer-neutral. Keep the historical
+	// no-compression fallback when the caller disallows it.
+	if (!is_compression_allowed) {
 		switch (format) {
 		case WW3D_FORMAT_DXT1: format=WW3D_FORMAT_R8G8B8; break;
 		case WW3D_FORMAT_DXT2:
@@ -316,23 +316,6 @@ WW3DFormat Get_Valid_Texture_Format(WW3DFormat format, bool is_compression_allow
 		case WW3D_FORMAT_DXT4:
 		case WW3D_FORMAT_DXT5: format=WW3D_FORMAT_A8R8G8B8; break;
 		default: break;
-		}
-	}
-	else {
-		switch (format) {
-		case WW3D_FORMAT_DXT1:
-			// NVidia hack - switch to DXT2 is there is no DXT1 support (which is disabled on NVidia cards)
-			if (!DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(WW3D_FORMAT_DXT1) &&
-				DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(WW3D_FORMAT_DXT2)) {
-				format=WW3D_FORMAT_DXT2;
-			}
-			break;
-		case WW3D_FORMAT_DXT2:
-		case WW3D_FORMAT_DXT3:
-		case WW3D_FORMAT_DXT4:
-		case WW3D_FORMAT_DXT5:
-			if (!DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(format)) format=WW3D_FORMAT_A8R8G8B8;
-			break;
 		}
 	}
 
@@ -362,25 +345,8 @@ WW3DFormat Get_Valid_Texture_Format(WW3DFormat format, bool is_compression_allow
 
 	}
 
-	// Fallback if the hardware doesn't support the texture format
-	if (!DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(format)) {
-		format=WW3D_FORMAT_A8R8G8B8;
-		if (!DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(format)) {
-			format=WW3D_FORMAT_A4R4G4B4;
-			if (!DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(format)) {
-				// If still no luck, try non-alpha formats
-
-				format=WW3D_FORMAT_X8R8G8B8;
-				if (!DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(format)) {
-					format=WW3D_FORMAT_R5G6B5;
-					if (!DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(format)) {
-						WWASSERT_PRINT(0,("No valid texture format found"));
-					}
-				}
-			}
-		}
-	}
-
+	// D3D12: all RGBA formats above upload as RGBA8 through the neutral
+	// TextureClass path. No hardware caps query; A8R8G8B8 is always valid.
 	return format;
 }
 
