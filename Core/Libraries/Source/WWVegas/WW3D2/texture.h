@@ -49,13 +49,8 @@
 #include "WWMath/vector3.h"
 #include "texturefilter.h"
 #include "IRenderBackend.h"
+#include <vector>
 
-struct IDirect3DBaseTexture8;
-struct IDirect3DTexture8;
-struct IDirect3DCubeTexture8;
-struct IDirect3DVolumeTexture8;
-
-class DX8Wrapper;
 class TextureLoader;
 class LoaderThreadClass;
 class TextureLoadTaskClass;
@@ -63,12 +58,18 @@ class TextureClass;
 class CubeTextureClass;
 class VolumeTextureClass;
 
+// Renderer-neutral CPU RGBA8 mip level owned by the uploader. Defined here so
+// TextureBaseClass can reference it without including the loader header.
+struct TextureRGBA8MipLevel {
+	unsigned width = 0;
+	unsigned height = 0;
+	std::vector<unsigned char> pixels;
+};
+
 class TextureBaseClass : public RefCountClass
 {
 	friend class TextureLoader;
 	friend class LoaderThreadClass;
-	friend class DX8TextureTrackerClass;  //(gth) so it can call Poke_Texture,
-	friend class DX8ZTextureTrackerClass;
 
 public:
 
@@ -131,6 +132,7 @@ public:
 	int Get_Inactivation_Time() const { return InactivationTime; }
 
 	// Texture priority affects texture management and caching.
+	// Renderer-neutral: no native priority; kept for asset API compatibility.
 	unsigned int Get_Priority();
 	unsigned int Set_Priority(unsigned int priority);	// Returns previous priority
 
@@ -159,10 +161,6 @@ public:
 	// Native renderer resource; never part of asset serialization.
 	RenderBackendTextureHandle Get_Renderer_Texture() const;
 
-	// Unported legacy texture accessors
-	IDirect3DBaseTexture8 *Peek_D3D_Base_Texture() const;
-	void Set_D3D_Base_Texture(IDirect3DBaseTexture8* tex);
-
 	PoolType Get_Pool() const { return Pool; }
 
 	bool Is_Missing_Texture();
@@ -179,8 +177,10 @@ public:
 
 	unsigned Get_Reduction() const;
 
-	// Background texture loader will call this when texture has been loaded
-	virtual void Apply_New_Surface(IDirect3DBaseTexture8* tex, bool initialized, bool disable_auto_invalidation = false)=0;	// If the parameter is true, the texture will be flagged as initialised
+	// Background texture loader delivers CPU RGBA8 mip chains; upload happens
+	// here via IRenderBackend. If the parameter is true, the texture will be
+	// flagged as initialised.
+	virtual void Apply_RGBA8_Mip_Chain(const std::vector<TextureRGBA8MipLevel> &levels, bool missing, bool initialized, bool disable_auto_invalidation = false)=0;
 
 	MipCountType MipLevelCount;
 
@@ -190,24 +190,20 @@ public:
 	// but the currently used textures.
 	static void Invalidate_Old_Unused_Textures(unsigned inactive_time_override);
 
-	// Apply this texture's settings into D3D
+	// Apply this texture's settings into the renderer (sampler state is
+	// consumed via Get_Render_Sampler during backend draws).
 	virtual void Apply(unsigned int stage)=0;
 
-	// Apply a Null texture's settings into D3D
+	// Apply a Null texture's settings
 	static void Apply_Null(unsigned int stage);
 
 	virtual TextureClass* As_TextureClass() { return nullptr; }
 	virtual CubeTextureClass* As_CubeTextureClass() { return nullptr; }
 	virtual VolumeTextureClass* As_VolumeTextureClass() { return nullptr; }
 
-	IDirect3DTexture8* Peek_D3D_Texture() const { return (IDirect3DTexture8*)Peek_D3D_Base_Texture(); }
-	IDirect3DVolumeTexture8* Peek_D3D_VolumeTexture() const { return (IDirect3DVolumeTexture8*)Peek_D3D_Base_Texture(); }
-	IDirect3DCubeTexture8* Peek_D3D_CubeTexture() const { return (IDirect3DCubeTexture8*)Peek_D3D_Base_Texture(); }
-
 protected:
 
 	void Load_Locked_Surface();
-	void Poke_Texture(IDirect3DBaseTexture8* tex) { D3DTexture = tex; }
 
 	RenderBackendTextureHandle RendererTexture;
 	unsigned RendererMipLevelCount = 0;
@@ -237,9 +233,6 @@ protected:
 
 private:
 
-	// Direct3D texture object
-	IDirect3DBaseTexture8 *D3DTexture;
-
 	// Name
 	StringClass Name;
 	StringClass	FullPath;
@@ -265,14 +258,13 @@ private:
 **                             TextureClass
 **
 ** This is our regular texture class. For legacy reasons it contains some
-** information beyond the D3D texture itself, such as texture addressing
+** information beyond the renderer texture itself, such as texture addressing
 ** modes.
 **
 *************************************************************************/
 class TextureClass : public TextureBaseClass
 {
 	W3DMPO_CODE(TextureClass)
-//	friend DX8Wrapper;
 
 public:
 
@@ -308,8 +300,6 @@ public:
 		MipCountType mip_level_count=MIP_LEVELS_ALL
 	);
 
-	TextureClass(IDirect3DBaseTexture8* d3d_texture);
-
 	// default constructors for derived classes (cube & vol)
 	TextureClass
 	(
@@ -327,12 +317,12 @@ public:
 
 	virtual void Init() override;
 
-	// Background texture loader will call this when texture has been loaded
-	virtual void Apply_New_Surface(IDirect3DBaseTexture8* tex, bool initialized, bool disable_auto_invalidation = false) override;	// If the parameter is true, the texture will be flagged as initialised
+	// Background texture loader delivers CPU RGBA8; see base class.
+	virtual void Apply_RGBA8_Mip_Chain(const std::vector<TextureRGBA8MipLevel> &levels, bool missing, bool initialized, bool disable_auto_invalidation = false) override;
 
 	// Get the surface of one of the mipmap levels (defaults to highest-resolution one)
+	// Renderer-neutral: returns a CPU surface decoded from the asset file.
 	SurfaceClass *Get_Surface_Level(unsigned int level = 0);
-	IDirect3DSurface8 *Get_D3D_Surface_Level(unsigned int level = 0);
 	bool Ensure_Renderer_Texture();
 	bool Copy_From(const TextureClass &source);
 	void Get_Level_Description( SurfaceClass::SurfaceDescription & desc, unsigned int level = 0 );
@@ -349,7 +339,7 @@ public:
 
 protected:
 
-	// Generate the allocated mip chain with the shared CPU box filter.
+	// Mipmaps are generated on the CPU during RGBA8 decode; no native call.
 	bool Generate_Mipmaps();
 
 	WW3DFormat				TextureFormat;
@@ -381,12 +371,11 @@ public:
 
 	virtual void Init() override {}
 
-	// Background texture loader will call this when texture has been loaded
-	virtual void Apply_New_Surface(IDirect3DBaseTexture8* tex, bool initialized, bool disable_auto_invalidation = false) override;	// If the parameter is true, the texture will be flagged as initialised
+	// Background loader path is unused for depth textures; kept for symmetry.
+	virtual void Apply_RGBA8_Mip_Chain(const std::vector<TextureRGBA8MipLevel> &levels, bool missing, bool initialized, bool disable_auto_invalidation = false) override;
 
 	virtual void Apply(unsigned int stage) override;
 
-	IDirect3DSurface8 *Get_D3D_Surface_Level(unsigned int level = 0);
 	virtual unsigned Get_Texture_Memory_Usage() const override;
 
 private:
@@ -429,9 +418,7 @@ public:
 		MipCountType mip_level_count=MIP_LEVELS_ALL
 	);
 
-	CubeTextureClass(IDirect3DBaseTexture8* d3d_texture);
-
-	virtual void Apply_New_Surface(IDirect3DBaseTexture8* tex, bool initialized, bool disable_auto_invalidation = false) override;	// If the parameter is true, the texture will be flagged as initialised
+	virtual void Apply_RGBA8_Mip_Chain(const std::vector<TextureRGBA8MipLevel> &levels, bool missing, bool initialized, bool disable_auto_invalidation = false) override;
 
 	virtual TexAssetType Get_Asset_Type() const override { return TEX_CUBEMAP; }
 
@@ -475,9 +462,7 @@ public:
 		MipCountType mip_level_count=MIP_LEVELS_ALL
 	);
 
-	VolumeTextureClass(IDirect3DBaseTexture8* d3d_texture);
-
-	virtual void Apply_New_Surface(IDirect3DBaseTexture8* tex, bool initialized, bool disable_auto_invalidation = false) override;	// If the parameter is true, the texture will be flagged as initialised
+	virtual void Apply_RGBA8_Mip_Chain(const std::vector<TextureRGBA8MipLevel> &levels, bool missing, bool initialized, bool disable_auto_invalidation = false) override;
 
 	virtual TexAssetType Get_Asset_Type() const override { return TEX_VOLUME; }
 
@@ -490,4 +475,4 @@ protected:
 
 // Utility functions for loading and saving texture descriptions from/to W3D files
 TextureClass *Load_Texture(ChunkLoadClass & cload);
-void Save_Texture(TextureClass * texture, ChunkSaveClass & csave);
+void Save_Texture(TextureClass * texture,ChunkSaveClass & csave);

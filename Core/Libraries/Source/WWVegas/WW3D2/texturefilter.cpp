@@ -40,6 +40,8 @@
 #include "texturefilter.h"
 #include "IRenderBackend.h"
 #include <algorithm>
+#include <cstring>
+#include <string.h>
 
 const char* const TextureFilterClass::TextureFilterModeString[TEXTURE_FILTER_COUNT] = {
 	"None",

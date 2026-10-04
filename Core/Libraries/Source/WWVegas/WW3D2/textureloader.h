@@ -50,11 +50,7 @@ class TextureLoadTaskListClass;
 class TextureLoader
 {
 public:
-	struct RGBA8MipLevel {
-		unsigned width = 0;
-		unsigned height = 0;
-		std::vector<unsigned char> pixels;
-	};
+	using RGBA8MipLevel = TextureRGBA8MipLevel;
 	// DDS levels remain authored; uncompressed images use the shared CPU box filter.
 	static bool Load_RGBA8_Mip_Chain(const StringClass &filename, unsigned requested_levels,
 		bool allow_reduction, bool allow_compression, const Vector3 &hsv_shift,

@@ -29,7 +29,8 @@
 
 
 #include "Common/GameMemory.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/hanim.h"
 #include "WW3D2/camera.h"
@@ -108,13 +109,8 @@ W3DMouse::W3DMouse()
 
 W3DMouse::~W3DMouse()
 {
-	LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
-
-	if (m_pDev)
-	{
-		m_pDev->ShowCursor(FALSE);	//kill DX8 cursor
-		Win32Mouse::setCursor(ARROW); //enable default windows cursor
-	}
+	// D3D12: hardware cursor device retired; restore Windows cursor CPU-side.
+	Win32Mouse::setCursor(ARROW); //enable default windows cursor
 
 	freeD3DAssets();
 	freeW3DAssets();
@@ -193,16 +189,15 @@ Bool W3DMouse::loadD3DCursorTextures(MouseCursor cursor)
 	{	//single animation frame without trailing numbers
 		snprintf(FrameName, ARRAY_SIZE(FrameName), "%s.tga", baseName);
 		cursorTextures[cursor][0]=	am->Get_Texture(FrameName);
-		m_currentD3DSurface[0]=cursorTextures[cursor][0]->Get_Surface_Level();
-		m_currentFrames = 1;
+		// D3D12: cursor surfaces retired; track frames CPU-side, no D3D surface.
+		m_currentFrames = (cursorTextures[cursor][0] != nullptr) ? 1 : 0;
 	}
 	else
 	for (Int i=0; i<animFrames; i++)
 	{
 		snprintf(FrameName, ARRAY_SIZE(FrameName), "%s%04d.tga", baseName, i);
 		if ((cursorTextures[cursor][i]=am->Get_Texture(FrameName)) != nullptr)
-		{	m_currentD3DSurface[m_currentFrames]=cursorTextures[cursor][i]->Get_Surface_Level();
-			m_currentFrames++;
+		{	m_currentFrames++;
 		}
 	}
 	return TRUE;
@@ -387,38 +382,30 @@ void W3DMouse::setCursor( MouseCursor cursor )
 	//make sure Windows didn't reset our cursor
 	if (m_currentRedrawMode == RM_DX8)
 	{
-		SetCursor(nullptr);	//Kill Windows Cursor
+		// D3D12: hardware cursor retired; preserve hotspot/animation timing CPU-side
+		// and fall back to the Windows cursor. Device readiness gates texture preload.
+		SetCursor(nullptr);	//Kill Windows Cursor (restored via fallback below)
 
-		LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
-		Bool doImageChange=FALSE;
+		IRenderBackend *cursorBackend = WW3D::Get_Render_Backend();
+		const Bool deviceReady = (cursorBackend != nullptr && cursorBackend->Is_Device_Ready()) ? TRUE : FALSE;
 
-		if (m_pDev != nullptr)
-		{
-			m_pDev->ShowCursor(FALSE);	//disable DX8 cursor
-			if (cursor != m_currentD3DCursor)
-			{	if (!isThread)
-				{	releaseD3DCursorTextures(m_currentD3DCursor);
-					//Since this type of cursor is updated from a non-D3D thread, we need
-					//to preallocate all surfaces in main thread.
-					loadD3DCursorTextures(cursor);
-				}
-			}
-			if (m_currentD3DSurface[0])
-				doImageChange=TRUE;
+		if (deviceReady && cursor != m_currentD3DCursor && !isThread) {
+			releaseD3DCursorTextures(m_currentD3DCursor);
+			//Since this type of cursor is updated from a non-D3D thread, we need
+			//to preallocate all textures in main thread.
+			loadD3DCursorTextures(cursor);
 		}
-		//For DX8 Cursors, we continually set the image on every call even when
+		//For hardware cursors, we continually refresh the image on every call even when
 		//it didn't change.  This is needed to prevent the cursor from flickering.
-		if (doImageChange)
+		if (deviceReady && cursor != NONE && cursorTextures[cursor][0] != nullptr)
 		{
-			HRESULT res;
 			m_currentHotSpot = m_cursorInfo[cursor].hotSpotPosition;
 			m_currentFMS = m_cursorInfo[cursor].fps/1000.0f;
 			m_currentAnimFrame = 0;	//reset animation when cursor changes
-			res = m_pDev->SetCursorProperties(m_currentHotSpot.x,m_currentHotSpot.y,m_currentD3DSurface[(Int)m_currentAnimFrame]->Peek_D3D_Surface());
-			m_pDev->ShowCursor(TRUE);	//Enable DX8 cursor
 			m_currentD3DFrame=(Int)m_currentAnimFrame;
 			m_currentD3DCursor = cursor;
 			m_lastAnimTime=timeGetTime();
+			Win32Mouse::setCursor(cursor);	// D3D12 fallback: OS cursor carries the image
 		}
 	}
 	else if (m_currentRedrawMode == RM_POLYGON)
@@ -483,22 +470,18 @@ void W3DMouse::draw()
 
 	if (m_currentRedrawMode == RM_DX8 && m_currentD3DCursor != NONE)
 	{
-		//called from update thread or rendering loop.  Tells D3D where
-		//to draw the mouse cursor.
-		LPDIRECT3DDEVICE8 m_pDev=DX8Wrapper::_Get_D3D_Device8();
-		if (m_pDev)
-		{	m_pDev->ShowCursor(TRUE);	//Enable DX8 cursor
-
-			if (TheDisplay && !TheDisplay->getWindowed())
-			{	//if we're full-screen, need to manually move cursor image
-				POINT ptCursor;
-
-				GetCursorPos( &ptCursor );
-				ScreenToClient( ApplicationHWnd, &ptCursor );
-#if !defined(RTS_EVOLUTION_X64)
-				m_pDev->SetCursorPosition( ptCursor.x, ptCursor.y, D3DCURSOR_IMMEDIATE_UPDATE);
-#endif
-			}
+		// D3D12: hardware cursor retired; keep animation timing CPU-side and rely on
+		// the Windows cursor for movement. Gate on backend readiness to preserve
+		// device lifetime semantics without touching the D3D device.
+		IRenderBackend *drawBackend = WW3D::Get_Render_Backend();
+		if (drawBackend != nullptr && drawBackend->Is_Device_Ready())
+		{
+			// Fullscreen manual cursor positioning retired; OS cursor tracks natively.
+			// Preserve an output query for device-lifetime parity (no side effect).
+			int outWidth = 0, outHeight = 0, outBits = 0;
+			bool outWindowed = true;
+			drawBackend->Get_Output_Description(outWidth, outHeight, outBits, outWindowed);
+			(void)outWidth; (void)outHeight; (void)outBits; (void)outWindowed;
 			//Check if animated cursor and new frame
 			if (m_currentFrames > 1)
 			{
@@ -510,7 +493,7 @@ void W3DMouse::draw()
 				if ((Int)m_currentAnimFrame != m_currentD3DFrame)
 				{
 					m_currentD3DFrame=(Int)m_currentAnimFrame;
-					m_pDev->SetCursorProperties(m_currentHotSpot.x,m_currentHotSpot.y,m_currentD3DSurface[m_currentD3DFrame]->Peek_D3D_Surface());
+					// No hardware cursor update; animation frame tracked CPU-side.
 				}
 			}
 		}

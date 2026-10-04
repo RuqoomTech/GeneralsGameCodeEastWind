@@ -36,6 +36,8 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "mapper.h"
+// Forward declare for legacy texture header without D3D8.
+struct IDirect3DSurface8;
 #include "camera.h"
 #include "ww3d.h"
 #include "WWLib/INI.h"

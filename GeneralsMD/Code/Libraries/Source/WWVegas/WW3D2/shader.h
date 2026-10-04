@@ -38,6 +38,7 @@
 
 #include "WWLib/always.h"
 
+class DX8Wrapper;
 struct RenderBackendMaterialState;
 struct W3dMaterial3Struct;
 class StringClass;
@@ -76,6 +77,7 @@ enum ShaderShiftConstants
 
 class ShaderClass
 {
+	friend class DX8Wrapper;
 
 	void	Apply();
 public:

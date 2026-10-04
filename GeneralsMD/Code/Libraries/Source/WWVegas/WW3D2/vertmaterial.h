@@ -76,6 +76,8 @@ class VertexMaterialClass : public RefCountClass
 {
 	W3DMPO_CODE(VertexMaterialClass)
 
+	friend class DX8Wrapper;
+
 public:
 	/*
 	** Similar to the TextureClass, these enumerations are set up to be exactly the same as

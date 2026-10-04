@@ -18,6 +18,7 @@
 
 // 08/05/02 KM Texture class redesign
 #include "missingtexture.h"
+#include "bitmaphandler.h"
 #include <cstring>
 
 static unsigned missing_image_width=128;
@@ -26,6 +27,11 @@ static unsigned missing_image_depth=24;
 
 extern unsigned int missing_image_palette[];
 extern unsigned int missing_image_pixels[];
+
+// Evolution missing-texture mip generation uses the existing CPU bitmap
+// helper (BitmapHandlerClass::Create_Mipmap_B8G8R8A8) during RGBA8 decode;
+// no native texture is pre-created. The single-level magenta image below is
+// expanded to full mip chains CPU-side by the texture loader.
 
 void MissingTexture::Create_RGBA8_Image(unsigned &width, unsigned &height, std::vector<unsigned char> &pixels)
 {

@@ -388,7 +388,7 @@ void LensflareTypeClass::Generate_Vertex_Buffers(
 		if (col[0]>1.0f) col[0]=1.0f;
 		if (col[1]>1.0f) col[1]=1.0f;
 		if (col[2]>1.0f) col[2]=1.0f;
-		// D3D12: preserve legacy packed-diffuse quantization without DX8 helper.
+		// D3D12: preserve legacy packed-diffuse quantization without legacy helper.
 		const uint32_t packed = col.Convert_To_ARGB(1.0f);
 		const float r = ((packed >> 16) & 255) / 255.0f;
 		const float g = ((packed >> 8) & 255) / 255.0f;
@@ -937,7 +937,7 @@ void DazzleRenderObjClass::Render(RenderInfoClass & rinfo)
 			Vector3 camera_dir = rinfo.Camera.Get_Forward_Dir();
 
 			Vector3 loc=Get_Position();
-			// D3D12: DX8 view/projection transforms retired. Use camera view/projection
+			// D3D12: legacy view/projection transforms retired. Use camera view/projection
 			// directly (same matrices Camera::Apply submits to the backend).
 			Vector3 camera_space;
 			rinfo.Camera.Transform_To_View_Space(camera_space, loc);

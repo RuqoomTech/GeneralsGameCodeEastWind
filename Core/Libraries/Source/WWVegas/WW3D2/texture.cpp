@@ -41,22 +41,19 @@
 
 #include "texture.h"
 
-#include <d3d8.h>
-#include "dx8wrapper.h"
 #include "WWLib/TARGA.h"
 #include <WWLib/nstrdup.h>
 #include "w3d_file.h"
 #include "assetmgr.h"
 #include "bitmaphandler.h"
-#include "formconv.h"
 #include "textureloader.h"
 #include "missingtexture.h"
 #include "WWLib/ffactory.h"
-#include "dx8caps.h"
-#include "dx8texman.h"
-#include "meshmatdesc.h"
 #include "texturethumbnail.h"
 #include "WWDebug/wwprofile.h"
+#include "ww3d.h"
+#include <cstring>
+#include <vector>
 
 const unsigned DEFAULT_INACTIVATION_TIME=20000;
 
@@ -84,7 +81,6 @@ TextureBaseClass::TextureBaseClass
 	bool reducible
 )
 :	MipLevelCount(mip_level_count),
-	D3DTexture(nullptr),
 	Initialized(false),
    Name(""),
 	FullPath(""),
@@ -119,18 +115,13 @@ TextureBaseClass::~TextureBaseClass()
 	delete ThumbnailLoadTask;
 	ThumbnailLoadTask=nullptr;
 
-	if (D3DTexture)
-	{
-		D3DTexture->Release();
-		D3DTexture = nullptr;
-	}
-
 	if (RendererTexture.Is_Valid()) {
 		// WW3D may already have shut down. A new backend rejects the old generation.
 		if (RendererOwner == WW3D::Get_Render_Backend())
 			RendererOwner->Release_Texture(RendererTexture);
-	} else {
-		DX8TextureManagerClass::Remove(this);
+		RendererTexture = {};
+		RendererOwner = nullptr;
+		RendererMipLevelCount = 0;
 	}
 }
 
@@ -241,7 +232,6 @@ void TextureBaseClass::Invalidate_Old_Unused_Textures(unsigned invalidation_time
 
 
 
-
 //**********************************************************************************************
 //! Invalidate this texture
 /*!
@@ -260,12 +250,6 @@ void TextureBaseClass::Invalidate()
 		return;
 	}
 
-	if (D3DTexture)
-	{
-		D3DTexture->Release();
-		D3DTexture = nullptr;
-	}
-
 	if (RendererTexture.Is_Valid()) {
 		if (RendererOwner == WW3D::Get_Render_Backend()) RendererOwner->Release_Texture(RendererTexture);
 		RendererTexture = {}; RendererOwner = nullptr; RendererMipLevelCount = 0;
@@ -273,76 +257,7 @@ void TextureBaseClass::Invalidate()
 	Initialized=false;
 
 	LastAccessed=WW3D::Get_Sync_Time();
-/*	was battlefield version// If the texture has already been initialised we should exit now
-	if (Initialized) return;
-
-	WWPROFILE(("TextureClass::Init()"));
-
-	// If the texture has recently been inactivated, increase the inactivation time (this texture obviously
-	// should not have been inactivated yet).
-
-	if (InactivationTime && LastInactivationSyncTime) {
-		if ((WW3D::Get_Sync_Time()-LastInactivationSyncTime)<InactivationTime) {
-			ExtendedInactivationTime=3*InactivationTime;
-		}
-		LastInactivationSyncTime=0;
-	}
-
-	if (ThumbnailLoadTask)
-	{
-		return;
-	}
-
-	// Don't invalidate procedural textures
-	if (IsProcedural)
-	{
-		return;
-	}
-
-	if (D3DTexture)
-	{
-		D3DTexture->Release();
-		D3DTexture = nullptr;
-	}
-
-	if (RendererTexture.Is_Valid()) {
-		if (RendererOwner == WW3D::Get_Render_Backend()) RendererOwner->Release_Texture(RendererTexture);
-		RendererTexture = {}; RendererOwner = nullptr; RendererMipLevelCount = 0;
-	}
-	Initialized=false;
-
-	LastAccessed=WW3D::Get_Sync_Time();*/
 }
-
-//**********************************************************************************************
-//! Returns a pointer to the d3d texture
-/*!
-*/
-IDirect3DBaseTexture8 * TextureBaseClass::Peek_D3D_Base_Texture() const
-{
-	LastAccessed=WW3D::Get_Sync_Time();
-	return D3DTexture;
-}
-
-//**********************************************************************************************
-//! Set the d3d texture pointer.  Handles ref counts properly.
-/*!
-*/
-void TextureBaseClass::Set_D3D_Base_Texture(IDirect3DBaseTexture8* tex)
-{
-	// (gth) Generals does stuff directly with the D3DTexture pointer so lets
-	// reset the access timer whenever someon messes with this pointer.
-	LastAccessed=WW3D::Get_Sync_Time();
-
-	if (D3DTexture != nullptr) {
-		D3DTexture->Release();
-	}
-	D3DTexture = tex;
-	if (D3DTexture != nullptr) {
-		D3DTexture->AddRef();
-	}
-}
-
 
 //**********************************************************************************************
 //! Load locked surface
@@ -351,8 +266,6 @@ void TextureBaseClass::Set_D3D_Base_Texture(IDirect3DBaseTexture8* tex)
 void TextureBaseClass::Load_Locked_Surface()
 {
 	WWPROFILE(("TextureClass::Load_Locked_Surface()"));
-	if (D3DTexture) D3DTexture->Release();
-	D3DTexture=nullptr;
 	TextureLoader::Request_Thumbnail(this);
 	Initialized=false;
 }
@@ -365,18 +278,7 @@ void TextureBaseClass::Load_Locked_Surface()
 bool TextureBaseClass::Is_Missing_Texture()
 {
 	if (RendererTexture.Is_Valid()) return RendererTextureMissing;
-	bool flag = false;
-	IDirect3DBaseTexture8 *missing_texture = MissingTexture::_Get_Missing_Texture();
-
-	if (D3DTexture == missing_texture)
-		flag = true;
-
-	if (missing_texture)
-	{
-		missing_texture->Release();
-	}
-
-	return flag;
+	return false;
 }
 
 
@@ -398,13 +300,7 @@ void TextureBaseClass::Set_Texture_Name(const char * name)
 */
 unsigned int TextureBaseClass::Get_Priority()
 {
-	if (!D3DTexture)
-	{
-		WWASSERT_PRINT(0, "Get_Priority: D3DTexture is null!");
-		return 0;
-	}
-
-	return D3DTexture->GetPriority();
+	return 0;
 }
 
 
@@ -414,13 +310,8 @@ unsigned int TextureBaseClass::Get_Priority()
 */
 unsigned int TextureBaseClass::Set_Priority(unsigned int priority)
 {
-	if (!D3DTexture)
-	{
-		WWASSERT_PRINT(0, "Set_Priority: D3DTexture is null!");
-		return 0;
-	}
-
-	return D3DTexture->SetPriority(priority);
+	(void)priority;
+	return 0;
 }
 
 
@@ -455,8 +346,9 @@ unsigned TextureBaseClass::Get_Reduction() const
 */
 void TextureBaseClass::Apply_Null(unsigned int stage)
 {
-	// This function sets the render states for a "null" texture
-	DX8Wrapper::Set_DX8_Texture(stage, nullptr);
+	// Renderer-neutral: no fixed-function null texture. Sampler state is
+	// consumed via Get_Render_Sampler during backend draws.
+	(void)stage;
 }
 
 // ----------------------------------------------------------------------------
@@ -679,41 +571,35 @@ TextureClass::TextureClass
 	default : break;
 	}
 
-	D3DPOOL d3dpool=(D3DPOOL)0;
-	switch(pool)
-	{
-	case POOL_DEFAULT		: d3dpool=D3DPOOL_DEFAULT; break;
-	case POOL_MANAGED		: d3dpool=D3DPOOL_MANAGED; break;
-	case POOL_SYSTEMMEM	: d3dpool=D3DPOOL_SYSTEMMEM; break;
-	default: WWASSERT(0);
+	// Signed bump data is not a color image; retain format with no upload.
+	if (format == WW3D_FORMAT_U8V8 || format == WW3D_FORMAT_L6V5U5 ||
+		format == WW3D_FORMAT_X8L8V8U8) {
+		LastAccessed=WW3D::Get_Sync_Time();
+		return;
 	}
 
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Texture
-		(
-			width,
-			height,
-			format,
-			mip_level_count,
-			d3dpool,
-			rendertarget
-		)
-	);
-
-	if (pool==POOL_DEFAULT)
-	{
-		Set_Dirty();
-		DX8TextureTrackerClass *track=new DX8TextureTrackerClass
-		(
-			width,
-			height,
-			format,
-			mip_level_count,
-			this,
-			rendertarget
-		);
-		DX8TextureManagerClass::Add(track);
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend != nullptr && TextureLoader::Is_Render_Thread()) {
+		if (rendertarget) {
+			const auto handle = backend->Create_Render_Texture(width, height);
+			if (handle.Is_Valid()) {
+				RendererOwner = backend;
+				RendererTexture = handle;
+				RendererMipLevelCount = 1;
+				RendererTextureMissing = false;
+			}
+		} else if (width != 0 && height != 0) {
+			std::vector<unsigned char> blank(static_cast<std::size_t>(width) * height * 4, 0);
+			RenderBackendTextureMipLevel level{width, height, width*4, blank.data()};
+			const auto handle = backend->Create_Static_RGBA8_Texture(&level, 1);
+			if (handle.Is_Valid()) {
+				RendererOwner = backend;
+				RendererTexture = handle;
+				RendererMipLevelCount = 1;
+				RendererTextureMissing = false;
+				TextureFormat = WW3D_FORMAT_A8R8G8B8;
+			}
+		}
 	}
 	LastAccessed=WW3D::Get_Sync_Time();
 }
@@ -780,7 +666,6 @@ TextureClass::TextureClass
 	if (!WW3D::Is_Texturing_Enabled())
 	{
 		Initialized=true;
-		Poke_Texture(nullptr);
 	}
 
 	// Find original size from the thumbnail (but don't create thumbnail texture yet!)
@@ -813,16 +698,27 @@ TextureClass::TextureClass
 )
 :  TextureBaseClass(0,0,mip_level_count),
 	Filter(mip_level_count),
-	TextureFormat(surface->Get_Surface_Format())
+	TextureFormat(WW3D_FORMAT_A8R8G8B8)
 {
 	IsProcedural=true;
 	Initialized=true;
 	IsReducible=false;
 
+	if (surface == nullptr) {
+		LastAccessed=WW3D::Get_Sync_Time();
+		return;
+	}
 	SurfaceClass::SurfaceDescription sd;
 	surface->Get_Description(sd);
 	Width=sd.Width;
 	Height=sd.Height;
+	// Signed bump surfaces are not color images; retain metadata without upload.
+	if (sd.Format == WW3D_FORMAT_U8V8 || sd.Format == WW3D_FORMAT_L6V5U5 ||
+		sd.Format == WW3D_FORMAT_X8L8V8U8) {
+		TextureFormat = sd.Format;
+		LastAccessed=WW3D::Get_Sync_Time();
+		return;
+	}
 	switch (sd.Format)
 	{
 	case WW3D_FORMAT_DXT1:
@@ -835,52 +731,62 @@ TextureClass::TextureClass
 	default: break;
 	}
 
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Texture
-		(
-			surface->Peek_D3D_Surface(),
-			mip_level_count
-		)
-	);
-	LastAccessed=WW3D::Get_Sync_Time();
-}
-
-// ----------------------------------------------------------------------------
-TextureClass::TextureClass(IDirect3DBaseTexture8* d3d_texture)
-:	TextureBaseClass
-	(
-		0,
-		0,
-		((MipCountType)d3d_texture->GetLevelCount())
-	),
-	Filter((MipCountType)d3d_texture->GetLevelCount())
-{
-	Initialized=true;
-	IsProcedural=true;
-	IsReducible=false;
-
-	Set_D3D_Base_Texture(d3d_texture);
-	IDirect3DSurface8* surface;
-	DX8_ErrorCode(Peek_D3D_Texture()->GetSurfaceLevel(0,&surface));
-	D3DSURFACE_DESC d3d_desc;
-	::ZeroMemory(&d3d_desc, sizeof(D3DSURFACE_DESC));
-	DX8_ErrorCode(surface->GetDesc(&d3d_desc));
-	Width=d3d_desc.Width;
-	Height=d3d_desc.Height;
-	TextureFormat=D3DFormat_To_WW3DFormat(d3d_desc.Format);
-	switch (TextureFormat)
-	{
-	case WW3D_FORMAT_DXT1:
-	case WW3D_FORMAT_DXT2:
-	case WW3D_FORMAT_DXT3:
-	case WW3D_FORMAT_DXT4:
-	case WW3D_FORMAT_DXT5:
-		IsCompressionAllowed=true;
-		break;
-	default: break;
+	int pitch = 0;
+	const unsigned char *pixels = surface->Peek_CPU_Pixels(&pitch);
+	const unsigned src_bpp = ::Get_Bytes_Per_Pixel(sd.Format);
+	if (pixels != nullptr && src_bpp != 0 && Width > 0 && Height > 0) {
+		std::vector<unsigned char> rgba(static_cast<std::size_t>(Width) * Height * 4);
+		if (sd.Format == WW3D_FORMAT_A8R8G8B8) {
+			for (int y = 0; y < Height; ++y) {
+				memcpy(rgba.data() + static_cast<std::size_t>(y) * Width * 4,
+					pixels + static_cast<std::size_t>(y) * pitch, static_cast<std::size_t>(Width) * 4);
+			}
+		} else {
+			BitmapHandlerClass::Copy_Image(
+				rgba.data(), Width, Height, Width*4, WW3D_FORMAT_A8R8G8B8,
+				const_cast<unsigned char*>(pixels), Width, Height, static_cast<unsigned>(pitch), sd.Format,
+				nullptr, 0, false);
+		}
+		// Procedural mip chains reuse the shared CPU box filter.
+		std::vector<std::vector<unsigned char>> mip_pixels;
+		std::vector<unsigned> mip_widths, mip_heights;
+		mip_pixels.push_back(std::move(rgba));
+		mip_widths.push_back(static_cast<unsigned>(Width));
+		mip_heights.push_back(static_cast<unsigned>(Height));
+		if (mip_level_count != MIP_LEVELS_1) {
+			const unsigned requested = mip_level_count == MIP_LEVELS_ALL ? 12u : static_cast<unsigned>(mip_level_count);
+			for (unsigned i = 1; i < requested; ++i) {
+				const unsigned prev_w = mip_widths.back();
+				const unsigned prev_h = mip_heights.back();
+				if (prev_w <= 1 && prev_h <= 1) break;
+				const unsigned next_w = prev_w > 1 ? prev_w / 2 : 1;
+				const unsigned next_h = prev_h > 1 ? prev_h / 2 : 1;
+				std::vector<unsigned char> next(static_cast<std::size_t>(next_w) * next_h * 4);
+				BitmapHandlerClass::Create_Mipmap(
+					next.data(), next_w*4, WW3D_FORMAT_A8R8G8B8,
+					mip_pixels.back().data(), prev_w*4, WW3D_FORMAT_A8R8G8B8,
+					prev_w, prev_h);
+				mip_pixels.push_back(std::move(next));
+				mip_widths.push_back(next_w);
+				mip_heights.push_back(next_h);
+			}
+		}
+		IRenderBackend *backend = WW3D::Get_Render_Backend();
+		if (backend != nullptr && TextureLoader::Is_Render_Thread()) {
+			std::vector<RenderBackendTextureMipLevel> levels;
+			levels.reserve(mip_pixels.size());
+			for (std::size_t i = 0; i < mip_pixels.size(); ++i) {
+				levels.push_back({mip_widths[i], mip_heights[i], mip_widths[i]*4, mip_pixels[i].data()});
+			}
+			const auto handle = backend->Create_Static_RGBA8_Texture(levels.data(), static_cast<unsigned>(levels.size()));
+			if (handle.Is_Valid()) {
+				RendererOwner = backend;
+				RendererTexture = handle;
+				RendererMipLevelCount = static_cast<unsigned>(levels.size());
+				RendererTextureMissing = false;
+			}
+		}
 	}
-
 	LastAccessed=WW3D::Get_Sync_Time();
 }
 
@@ -911,11 +817,10 @@ void TextureClass::Init()
 	}
 
 
-	if (!Peek_D3D_Base_Texture())
+	if (!Get_Renderer_Texture().Is_Valid())
 	{
 		if (!WW3D::Get_Thumbnail_Enabled() || MipLevelCount==MIP_LEVELS_1)
 		{
-//		if (MipLevelCount==MIP_LEVELS_1) {
 			TextureLoader::Request_Foreground_Loading(this);
 		}
 		else
@@ -935,40 +840,40 @@ void TextureClass::Init()
 }
 
 //**********************************************************************************************
-//! Apply new surface to texture
+//! Apply CPU RGBA8 mip chain to texture
 /*!
 */
-void TextureClass::Apply_New_Surface
-(
-	IDirect3DBaseTexture8* d3d_texture,
+void TextureClass::Apply_RGBA8_Mip_Chain(
+	const std::vector<TextureRGBA8MipLevel> &levels,
+	bool missing,
 	bool initialized,
 	bool disable_auto_invalidation
 )
 {
-	IDirect3DBaseTexture8* d3d_tex=Peek_D3D_Base_Texture();
-
-	if (d3d_tex) d3d_tex->Release();
-
-	Poke_Texture(d3d_texture);//TextureLoadTask->Peek_D3D_Texture();
-	d3d_texture->AddRef();
+	if (levels.empty()) return;
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr) return;
+	std::vector<RenderBackendTextureMipLevel> uploads;
+	uploads.reserve(levels.size());
+	for (const auto &image : levels) {
+		if (image.pixels.empty() || image.width == 0 || image.height == 0) return;
+		uploads.push_back({image.width, image.height, image.width*4, image.pixels.data()});
+	}
+	const auto handle = backend->Create_Static_RGBA8_Texture(uploads.data(), static_cast<unsigned>(uploads.size()));
+	if (!handle.Is_Valid()) return;
+	if (RendererTexture.Is_Valid() && RendererOwner == backend) RendererOwner->Release_Texture(RendererTexture);
+	RendererOwner = backend;
+	RendererTexture = handle;
+	RendererTextureMissing = missing;
+	RendererMipLevelCount = static_cast<unsigned>(levels.size());
+	Width = levels[0].width;
+	Height = levels[0].height;
+	TextureFormat = WW3D_FORMAT_A8R8G8B8;
 
 	if (initialized) Initialized=true;
 	if (disable_auto_invalidation) InactivationTime = 0;
 
-	WWASSERT(d3d_texture);
-	IDirect3DSurface8* surface;
-	DX8_ErrorCode(Peek_D3D_Texture()->GetSurfaceLevel(0,&surface));
-	D3DSURFACE_DESC d3d_desc;
-	::ZeroMemory(&d3d_desc, sizeof(D3DSURFACE_DESC));
-	DX8_ErrorCode(surface->GetDesc(&d3d_desc));
-	if (initialized)
-	{
-		TextureFormat=D3DFormat_To_WW3DFormat(d3d_desc.Format);
-		Width=d3d_desc.Width;
-		Height=d3d_desc.Height;
-	}
-	surface->Release();
-
+	LastAccessed=WW3D::Get_Sync_Time();
 }
 
 
@@ -979,49 +884,17 @@ void TextureClass::Apply_New_Surface
 void TextureClass::Apply(unsigned int stage)
 {
 	// Initialization needs to be done when texture is used if it hasn't been done before.
-	// XBOX always initializes textures at creation time.
 	if (!Initialized)
 	{
 		Init();
-
-		/* was in battlefield// Non-thumbnailed textures are always initialized when used
-		if (MipLevelCount==MIP_LEVELS_1)
-		{
-		}
-		// Thumbnailed textures have delayed initialization and a background loading system
-		else
-		{
-			// Limit the number of texture initializations per frame to reduce stuttering
-			if (TexturesAppliedPerFrame<MAX_TEXTURES_APPLIED_PER_FRAME)
-			{
-				TexturesAppliedPerFrame++;
-				Init();
-			}
-			else
-			{
-				// If texture can't be initialized in this frame, at least make sure we have the thumbnail.
-				if (!Peek_Texture())
-				{
-					WW3DFormat format=TextureFormat;
-					Load_Locked_Surface();
-					TextureFormat=format;
-				}
-			}
-		}*/
 	}
 	LastAccessed=WW3D::Get_Sync_Time();
 
 	RENDER_RECORD_TEXTURE(this);
 
-	// Set texture itself
-	if (WW3D::Is_Texturing_Enabled())
-	{
-		DX8Wrapper::Set_DX8_Texture(stage, Peek_D3D_Base_Texture());
-	}
-	else
-	{
-		DX8Wrapper::Set_DX8_Texture(stage, nullptr);
-	}
+	// Renderer-neutral: texture binding happens via Get_Renderer_Texture()
+	// in backend draws. Filter state is consumed via Get_Render_Sampler().
+	(void)stage;
 
 	Filter.Apply(stage);
 }
@@ -1032,73 +905,7 @@ void TextureClass::Apply(unsigned int stage)
 */
 bool TextureClass::Generate_Mipmaps()
 {
-	IDirect3DTexture8* texture = Peek_D3D_Texture();
-	if (texture == nullptr) {
-		return false;
-	}
-
-	const unsigned level_count = texture->GetLevelCount();
-	if (level_count <= 1) {
-		return true;
-	}
-
-	// Keep this transition helper deliberately narrow: the active procedural
-	// terrain/tree atlases use these two CPU-addressable formats.
-	if (TextureFormat != WW3D_FORMAT_A1R5G5B5 && TextureFormat != WW3D_FORMAT_A8R8G8B8) {
-		return false;
-	}
-
-	for (unsigned level = 0; level + 1 < level_count; ++level) {
-		D3DSURFACE_DESC src_desc = {};
-		D3DSURFACE_DESC dest_desc = {};
-
-		HRESULT result = texture->GetLevelDesc(level, &src_desc);
-		if (FAILED(result)) {
-			DX8_ErrorCode(result);
-			return false;
-		}
-
-		result = texture->GetLevelDesc(level + 1, &dest_desc);
-		if (FAILED(result)) {
-			DX8_ErrorCode(result);
-			return false;
-		}
-
-		const unsigned expected_width = src_desc.Width > 1 ? src_desc.Width / 2 : 1;
-		const unsigned expected_height = src_desc.Height > 1 ? src_desc.Height / 2 : 1;
-		if (dest_desc.Width != expected_width || dest_desc.Height != expected_height) {
-			return false;
-		}
-
-		D3DLOCKED_RECT src_lock = {};
-		D3DLOCKED_RECT dest_lock = {};
-		result = texture->LockRect(level, &src_lock, nullptr, D3DLOCK_READONLY);
-		if (FAILED(result)) {
-			DX8_ErrorCode(result);
-			return false;
-		}
-
-		result = texture->LockRect(level + 1, &dest_lock, nullptr, 0);
-		if (FAILED(result)) {
-			DX8_ErrorCode(result);
-			DX8_ErrorCode(texture->UnlockRect(level));
-			return false;
-		}
-
-		BitmapHandlerClass::Create_Mipmap(
-			static_cast<unsigned char*>(dest_lock.pBits),
-			dest_lock.Pitch,
-			TextureFormat,
-			static_cast<const unsigned char*>(src_lock.pBits),
-			src_lock.Pitch,
-			TextureFormat,
-			src_desc.Width,
-			src_desc.Height);
-
-		DX8_ErrorCode(texture->UnlockRect(level + 1));
-		DX8_ErrorCode(texture->UnlockRect(level));
-	}
-
+	// Mipmaps are generated on the CPU during RGBA8 decode.
 	return true;
 }
 
@@ -1108,17 +915,23 @@ bool TextureClass::Generate_Mipmaps()
 */
 SurfaceClass *TextureClass::Get_Surface_Level(unsigned int level)
 {
-	if (!Peek_D3D_Texture())
-	{
-		WWASSERT_PRINT(0, "Get_Surface_Level: D3DTexture is null!");
-		return nullptr;
+	(void)level;
+	// Renderer-neutral: decode the top-level CPU image for 2D callers.
+	// Only level 0 is supported; backend resources have no CPU readback.
+	unsigned width = 0, height = 0;
+	std::vector<unsigned char> pixels;
+	Vector3 hsv(0.0f, 0.0f, 0.0f);
+	if (!Get_Texture_Name().Is_Empty() && !IsProcedural &&
+		TextureLoader::Load_RGBA8_Image(Get_Full_Path(), width, height, pixels, hsv) &&
+		width != 0 && height != 0) {
+		SurfaceClass *surface = NEW_REF(SurfaceClass, (width, height, WW3D_FORMAT_A8R8G8B8));
+		surface->Copy(pixels.data());
+		return surface;
 	}
-
-	IDirect3DSurface8 *d3d_surface = nullptr;
-	DX8_ErrorCode(Peek_D3D_Texture()->GetSurfaceLevel(level, &d3d_surface));
-	SurfaceClass *surface = new SurfaceClass(d3d_surface);
-	d3d_surface->Release();
-
+	const unsigned w = Width > 0 ? static_cast<unsigned>(Width) : 4;
+	const unsigned h = Height > 0 ? static_cast<unsigned>(Height) : 4;
+	SurfaceClass *surface = NEW_REF(SurfaceClass, (w, h, WW3D_FORMAT_A8R8G8B8));
+	surface->Clear();
 	return surface;
 }
 
@@ -1142,38 +955,13 @@ void TextureClass::Get_Level_Description( SurfaceClass::SurfaceDescription & des
 }
 
 //**********************************************************************************************
-//! Get D3D surface from mip level
-/*!
-*/
-IDirect3DSurface8 *TextureClass::Get_D3D_Surface_Level(unsigned int level)
-{
-	if (!Peek_D3D_Texture())
-	{
-		WWASSERT_PRINT(0, "Get_D3D_Surface_Level: D3DTexture is null!");
-		return nullptr;
-	}
-
-	IDirect3DSurface8 *d3d_surface = nullptr;
-	DX8_ErrorCode(Peek_D3D_Texture()->GetSurfaceLevel(level, &d3d_surface));
-	return d3d_surface;
-}
-
-//**********************************************************************************************
 //! Get texture memory usage
 /*!
 */
 unsigned TextureClass::Get_Texture_Memory_Usage() const
 {
-	if (RendererTexture.Is_Valid()) return static_cast<unsigned>(Width) * static_cast<unsigned>(Height) * 4u;
-	int size=0;
-	if (!Peek_D3D_Texture()) return 0;
-	for (unsigned i=0;i<Peek_D3D_Texture()->GetLevelCount();++i)
-	{
-		D3DSURFACE_DESC desc;
-		DX8_ErrorCode(Peek_D3D_Texture()->GetLevelDesc(i,&desc));
-		size+=desc.Size;
-	}
-	return size;
+	if (Width <= 0 || Height <= 0) return 0;
+	return static_cast<unsigned>(Width) * static_cast<unsigned>(Height) * 4u;
 }
 
 
@@ -1341,40 +1129,8 @@ ZTextureClass::ZTextureClass
 :	TextureBaseClass(width,height, mip_level_count, pool),
 	DepthStencilTextureFormat(zformat)
 {
-	D3DPOOL d3dpool=(D3DPOOL)0;
-	switch (pool)
-	{
-	case POOL_DEFAULT: d3dpool=D3DPOOL_DEFAULT; break;
-	case POOL_MANAGED: d3dpool=D3DPOOL_MANAGED; break;
-	case POOL_SYSTEMMEM: d3dpool=D3DPOOL_SYSTEMMEM;	break;
-	default:	WWASSERT(0);
-	}
-
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_ZTexture
-		(
-			width,
-			height,
-			zformat,
-			mip_level_count,
-			d3dpool
-		)
-	);
-
-	if (pool==POOL_DEFAULT)
-	{
-		Set_Dirty();
-		DX8ZTextureTrackerClass *track=new DX8ZTextureTrackerClass
-		(
-			width,
-			height,
-			zformat,
-			mip_level_count,
-			this
-		);
-		DX8TextureManagerClass::Add(track);
-	}
+	// Renderer-neutral: depth targets are owned by the D3D12 backend.
+	// Preserve dimensions/format for asset compatibility without a color upload.
 	Initialized=true;
 	IsProcedural=true;
 	IsReducible=false;
@@ -1389,60 +1145,28 @@ ZTextureClass::ZTextureClass
 */
 void ZTextureClass::Apply(unsigned int stage)
 {
-	DX8Wrapper::Set_DX8_Texture(stage, Peek_D3D_Base_Texture());
+	(void)stage;
 }
 
 //**********************************************************************************************
-//! Apply new surface to texture
+//! Apply CPU mip chain to depth texture (no color upload)
 /*! KM
 */
-void ZTextureClass::Apply_New_Surface
-(
-	IDirect3DBaseTexture8* d3d_texture,
+void ZTextureClass::Apply_RGBA8_Mip_Chain(
+	const std::vector<TextureRGBA8MipLevel> &levels,
+	bool missing,
 	bool initialized,
 	bool disable_auto_invalidation
 )
 {
-	IDirect3DBaseTexture8* d3d_tex=Peek_D3D_Base_Texture();
-
-	if (d3d_tex) d3d_tex->Release();
-
-	Poke_Texture(d3d_texture);//TextureLoadTask->Peek_D3D_Texture();
-	d3d_texture->AddRef();
-
+	(void)missing;
+	if (!levels.empty()) {
+		Width = levels[0].width;
+		Height = levels[0].height;
+	}
 	if (initialized) Initialized=true;
 	if (disable_auto_invalidation) InactivationTime = 0;
-
-	WWASSERT(Peek_D3D_Texture());
-	IDirect3DSurface8* surface;
-	DX8_ErrorCode(Peek_D3D_Texture()->GetSurfaceLevel(0,&surface));
-	D3DSURFACE_DESC d3d_desc;
-	::ZeroMemory(&d3d_desc, sizeof(D3DSURFACE_DESC));
-	DX8_ErrorCode(surface->GetDesc(&d3d_desc));
-	if (initialized)
-	{
-		DepthStencilTextureFormat=D3DFormat_To_WW3DZFormat(d3d_desc.Format);
-		Width=d3d_desc.Width;
-		Height=d3d_desc.Height;
-	}
-	surface->Release();
-}
-
-//**********************************************************************************************
-//! Get D3D surface from mip level
-/*!
-*/
-IDirect3DSurface8* ZTextureClass::Get_D3D_Surface_Level(unsigned int level)
-{
-	if (!Peek_D3D_Texture())
-	{
-		WWASSERT_PRINT(0, "Get_D3D_Surface_Level: D3DTexture is null!");
-		return nullptr;
-	}
-
-	IDirect3DSurface8 *d3d_surface = nullptr;
-	DX8_ErrorCode(Peek_D3D_Texture()->GetSurfaceLevel(level, &d3d_surface));
-	return d3d_surface;
+	LastAccessed=WW3D::Get_Sync_Time();
 }
 
 //**********************************************************************************************
@@ -1451,15 +1175,8 @@ IDirect3DSurface8* ZTextureClass::Get_D3D_Surface_Level(unsigned int level)
 */
 unsigned ZTextureClass::Get_Texture_Memory_Usage() const
 {
-	int size=0;
-	if (!Peek_D3D_Texture()) return 0;
-	for (unsigned i=0;i<Peek_D3D_Texture()->GetLevelCount();++i)
-	{
-		D3DSURFACE_DESC desc;
-		DX8_ErrorCode(Peek_D3D_Texture()->GetLevelDesc(i,&desc));
-		size+=desc.Size;
-	}
-	return size;
+	if (Width <= 0 || Height <= 0) return 0;
+	return static_cast<unsigned>(Width) * static_cast<unsigned>(Height) * 4u;
 }
 
 
@@ -1495,41 +1212,36 @@ CubeTextureClass::CubeTextureClass
 	default : break;
 	}
 
-	D3DPOOL d3dpool=(D3DPOOL)0;
-	switch(pool)
-	{
-	case POOL_DEFAULT		: d3dpool=D3DPOOL_DEFAULT; break;
-	case POOL_MANAGED		: d3dpool=D3DPOOL_MANAGED; break;
-	case POOL_SYSTEMMEM	: d3dpool=D3DPOOL_SYSTEMMEM; break;
-	default: WWASSERT(0);
+	// Cube faces have no dedicated backend resource yet; keep a 2D RGBA8
+	// placeholder so procedural callers remain functional. File loads resolve
+	// through Ensure/Copy paths with magenta fallback when unsupported.
+	if (format == WW3D_FORMAT_U8V8 || format == WW3D_FORMAT_L6V5U5 ||
+		format == WW3D_FORMAT_X8L8V8U8) {
+		LastAccessed=WW3D::Get_Sync_Time();
+		return;
 	}
-
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Cube_Texture
-		(
-			width,
-			height,
-			format,
-			mip_level_count,
-			d3dpool,
-			rendertarget
-		)
-	);
-
-	if (pool==POOL_DEFAULT)
-	{
-		Set_Dirty();
-		DX8TextureTrackerClass *track=new DX8TextureTrackerClass
-		(
-			width,
-			height,
-			format,
-			mip_level_count,
-			this,
-			rendertarget
-		);
-		DX8TextureManagerClass::Add(track);
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend != nullptr && TextureLoader::Is_Render_Thread() && width != 0 && height != 0) {
+		if (rendertarget) {
+			const auto handle = backend->Create_Render_Texture(width, height);
+			if (handle.Is_Valid()) {
+				RendererOwner = backend;
+				RendererTexture = handle;
+				RendererMipLevelCount = 1;
+				RendererTextureMissing = false;
+			}
+		} else {
+			std::vector<unsigned char> blank(static_cast<std::size_t>(width) * height * 4, 0);
+			RenderBackendTextureMipLevel level{width, height, width*4, blank.data()};
+			const auto handle = backend->Create_Static_RGBA8_Texture(&level, 1);
+			if (handle.Is_Valid()) {
+				RendererOwner = backend;
+				RendererTexture = handle;
+				RendererMipLevelCount = 1;
+				RendererTextureMissing = false;
+				TextureFormat = WW3D_FORMAT_A8R8G8B8;
+			}
+		}
 	}
 	LastAccessed=WW3D::Get_Sync_Time();
 }
@@ -1563,21 +1275,10 @@ CubeTextureClass::CubeTextureClass
 	case WW3D_FORMAT_U8V8:		// Bumpmap
 	case WW3D_FORMAT_L6V5U5:	// Bumpmap
 	case WW3D_FORMAT_X8L8V8U8:	// Bumpmap
-		// If requesting bumpmap format that isn't available we'll just return the surface in whatever color
-		// format the texture file is in. (This is illegal case, the format support should always be queried
-		// before creating a bump texture!)
-		if (!DX8Wrapper::Is_Initted() || !DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(TextureFormat))
-		{
-			TextureFormat=WW3D_FORMAT_UNKNOWN;
-		}
-		// If bump format is valid, make sure compression is not allowed so that we don't even attempt to load
-		// from a compressed file (quality isn't good enough for bump map). Also disable mipmapping.
-		else
-		{
-			IsCompressionAllowed=false;
-			MipLevelCount=MIP_LEVELS_1;
-			Filter.Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
-		}
+		// Retain the signed format so an unported bump caller cannot become a color texture.
+		IsCompressionAllowed=false;
+		MipLevelCount=MIP_LEVELS_1;
+		Filter.Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
 		break;
 	default:	break;
 	}
@@ -1604,7 +1305,6 @@ CubeTextureClass::CubeTextureClass
 	if (!WW3D::Is_Texturing_Enabled())
 	{
 		Initialized=true;
-		Poke_Texture(nullptr);
 	}
 
 	// Find original size from the thumbnail (but don't create thumbnail texture yet!)
@@ -1613,9 +1313,6 @@ CubeTextureClass::CubeTextureClass
 	{
 		Width=thumb->Get_Original_Texture_Width();
 		Height=thumb->Get_Original_Texture_Height();
- 		if (MipLevelCount!=MIP_LEVELS_1) {
- 			MipLevelCount=(MipCountType)thumb->Get_Original_Texture_Mip_Level_Count();
- 		}
 	}
 
 	LastAccessed=WW3D::Get_Sync_Time();
@@ -1631,24 +1328,27 @@ CubeTextureClass::CubeTextureClass
 	}
 }
 
-// don't know if these are needed
-#if 0
 // ----------------------------------------------------------------------------
 CubeTextureClass::CubeTextureClass
 (
 	SurfaceClass *surface,
 	MipCountType mip_level_count
 )
-:	TextureClass(0,0,mip_level_count, POOL_MANAGED, false, surface->Get_Surface_Format())
+:	TextureClass(0,0,mip_level_count, POOL_MANAGED, false, WW3D_FORMAT_A8R8G8B8)
 {
 	IsProcedural=true;
 	Initialized=true;
 	IsReducible=false;
 
+	if (surface == nullptr) {
+		LastAccessed=WW3D::Get_Sync_Time();
+		return;
+	}
 	SurfaceClass::SurfaceDescription sd;
 	surface->Get_Description(sd);
 	Width=sd.Width;
 	Height=sd.Height;
+	TextureFormat = WW3D_FORMAT_A8R8G8B8;
 	switch (sd.Format)
 	{
 	case WW3D_FORMAT_DXT1:
@@ -1661,88 +1361,49 @@ CubeTextureClass::CubeTextureClass
 	default: break;
 	}
 
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Cube_Texture
-		(
-			surface->Peek_D3D_Surface(),
-			mip_level_count
-		)
-	);
-	LastAccessed=WW3D::Get_Sync_Time();
-}
-
-// ----------------------------------------------------------------------------
-CubeTextureClass::CubeTextureClass(IDirect3DBaseTexture8* d3d_texture)
-:	TextureBaseClass
-	(
-		0,
-		0,
-		((MipCountType)d3d_texture->GetLevelCount())
-	),
-	Filter((MipCountType)d3d_texture->GetLevelCount())
-{
-	Initialized=true;
-	IsProcedural=true;
-	IsReducible=false;
-
-	Peek_Texture()->AddRef();
-	IDirect3DSurface8* surface;
-	DX8_ErrorCode(Peek_D3D_Texture()->GetSurfaceLevel(0,&surface));
-	D3DSURFACE_DESC d3d_desc;
-	::ZeroMemory(&d3d_desc, sizeof(D3DSURFACE_DESC));
-	DX8_ErrorCode(surface->GetDesc(&d3d_desc));
-	Width=d3d_desc.Width;
-	Height=d3d_desc.Height;
-	TextureFormat=D3DFormat_To_WW3DFormat(d3d_desc.Format);
-	switch (TextureFormat)
-	{
-	case WW3D_FORMAT_DXT1:
-	case WW3D_FORMAT_DXT2:
-	case WW3D_FORMAT_DXT3:
-	case WW3D_FORMAT_DXT4:
-	case WW3D_FORMAT_DXT5:
-		IsCompressionAllowed=true;
-		break;
-	default: break;
+	int pitch = 0;
+	const unsigned char *pixels = surface->Peek_CPU_Pixels(&pitch);
+	const unsigned src_bpp = ::Get_Bytes_Per_Pixel(sd.Format);
+	if (pixels != nullptr && src_bpp != 0 && Width > 0 && Height > 0) {
+		std::vector<unsigned char> rgba(static_cast<std::size_t>(Width) * Height * 4);
+		if (sd.Format == WW3D_FORMAT_A8R8G8B8) {
+			for (int y = 0; y < Height; ++y) {
+				memcpy(rgba.data() + static_cast<std::size_t>(y) * Width * 4,
+					pixels + static_cast<std::size_t>(y) * pitch, static_cast<std::size_t>(Width) * 4);
+			}
+		} else {
+			BitmapHandlerClass::Copy_Image(
+				rgba.data(), Width, Height, Width*4, WW3D_FORMAT_A8R8G8B8,
+				const_cast<unsigned char*>(pixels), Width, Height, static_cast<unsigned>(pitch), sd.Format,
+				nullptr, 0, false);
+		}
+		IRenderBackend *backend = WW3D::Get_Render_Backend();
+		if (backend != nullptr && TextureLoader::Is_Render_Thread()) {
+			RenderBackendTextureMipLevel level{static_cast<unsigned>(Width), static_cast<unsigned>(Height), static_cast<unsigned>(Width)*4, rgba.data()};
+			const auto handle = backend->Create_Static_RGBA8_Texture(&level, 1);
+			if (handle.Is_Valid()) {
+				RendererOwner = backend;
+				RendererTexture = handle;
+				RendererMipLevelCount = 1;
+				RendererTextureMissing = false;
+			}
+		}
 	}
-
 	LastAccessed=WW3D::Get_Sync_Time();
 }
-#endif
 
 //**********************************************************************************************
-//! Apply new surface to texture
+//! Apply CPU mip chain to cube texture (2D placeholder)
 /*!
 */
-void CubeTextureClass::Apply_New_Surface
-(
-	IDirect3DBaseTexture8* d3d_texture,
+void CubeTextureClass::Apply_RGBA8_Mip_Chain(
+	const std::vector<TextureRGBA8MipLevel> &levels,
+	bool missing,
 	bool initialized,
 	bool disable_auto_invalidation
 )
 {
-	IDirect3DBaseTexture8* d3d_tex=Peek_D3D_Base_Texture();
-
-	if (d3d_tex) d3d_tex->Release();
-
-	Poke_Texture(d3d_texture);//TextureLoadTask->Peek_D3D_Texture();
-	d3d_texture->AddRef();
-
-	if (initialized) Initialized=true;
-	if (disable_auto_invalidation) InactivationTime = 0;
-
-	WWASSERT(d3d_texture);
-	D3DSURFACE_DESC d3d_desc;
-	::ZeroMemory(&d3d_desc, sizeof(D3DSURFACE_DESC));
-	DX8_ErrorCode(Peek_D3D_CubeTexture()->GetLevelDesc(0,&d3d_desc));
-
-	if (initialized)
-	{
-		TextureFormat=D3DFormat_To_WW3DFormat(d3d_desc.Format);
-		Width=d3d_desc.Width;
-		Height=d3d_desc.Height;
-	}
+	TextureClass::Apply_RGBA8_Mip_Chain(levels, missing, initialized, disable_auto_invalidation);
 }
 
 
@@ -1779,41 +1440,35 @@ VolumeTextureClass::VolumeTextureClass
 	default : break;
 	}
 
-	D3DPOOL d3dpool=(D3DPOOL)0;
-	switch(pool)
-	{
-	case POOL_DEFAULT		: d3dpool=D3DPOOL_DEFAULT; break;
-	case POOL_MANAGED		: d3dpool=D3DPOOL_MANAGED; break;
-	case POOL_SYSTEMMEM	: d3dpool=D3DPOOL_SYSTEMMEM; break;
-	default: WWASSERT(0);
+	// Volume slices have no dedicated backend resource yet; keep a 2D RGBA8
+	// placeholder. File loads resolve with magenta fallback when unsupported.
+	if (format == WW3D_FORMAT_U8V8 || format == WW3D_FORMAT_L6V5U5 ||
+		format == WW3D_FORMAT_X8L8V8U8) {
+		LastAccessed=WW3D::Get_Sync_Time();
+		return;
 	}
-
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Volume_Texture
-		(
-			width,
-			height,
-			depth,
-			format,
-			mip_level_count,
-			d3dpool
-		)
-	);
-
-	if (pool==POOL_DEFAULT)
-	{
-		Set_Dirty();
-		DX8TextureTrackerClass *track=new DX8TextureTrackerClass
-		(
-			width,
-			height,
-			format,
-			mip_level_count,
-			this,
-			rendertarget
-		);
-		DX8TextureManagerClass::Add(track);
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend != nullptr && TextureLoader::Is_Render_Thread() && width != 0 && height != 0) {
+		if (rendertarget) {
+			const auto handle = backend->Create_Render_Texture(width, height);
+			if (handle.Is_Valid()) {
+				RendererOwner = backend;
+				RendererTexture = handle;
+				RendererMipLevelCount = 1;
+				RendererTextureMissing = false;
+			}
+		} else {
+			std::vector<unsigned char> blank(static_cast<std::size_t>(width) * height * 4, 0);
+			RenderBackendTextureMipLevel level{width, height, width*4, blank.data()};
+			const auto handle = backend->Create_Static_RGBA8_Texture(&level, 1);
+			if (handle.Is_Valid()) {
+				RendererOwner = backend;
+				RendererTexture = handle;
+				RendererMipLevelCount = 1;
+				RendererTextureMissing = false;
+				TextureFormat = WW3D_FORMAT_A8R8G8B8;
+			}
+		}
 	}
 	LastAccessed=WW3D::Get_Sync_Time();
 }
@@ -1848,21 +1503,10 @@ VolumeTextureClass::VolumeTextureClass
 	case WW3D_FORMAT_U8V8:		// Bumpmap
 	case WW3D_FORMAT_L6V5U5:	// Bumpmap
 	case WW3D_FORMAT_X8L8V8U8:	// Bumpmap
-		// If requesting bumpmap format that isn't available we'll just return the surface in whatever color
-		// format the texture file is in. (This is illegal case, the format support should always be queried
-		// before creating a bump texture!)
-		if (!DX8Wrapper::Is_Initted() || !DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(TextureFormat))
-		{
-			TextureFormat=WW3D_FORMAT_UNKNOWN;
-		}
-		// If bump format is valid, make sure compression is not allowed so that we don't even attempt to load
-		// from a compressed file (quality isn't good enough for bump map). Also disable mipmapping.
-		else
-		{
-			IsCompressionAllowed=false;
-			MipLevelCount=MIP_LEVELS_1;
-			Filter.Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
-		}
+		// Retain the signed format so an unported bump caller cannot become a color texture.
+		IsCompressionAllowed=false;
+		MipLevelCount=MIP_LEVELS_1;
+		Filter.Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
 		break;
 	default:	break;
 	}
@@ -1889,7 +1533,6 @@ VolumeTextureClass::VolumeTextureClass
 	if (!WW3D::Is_Texturing_Enabled())
 	{
 		Initialized=true;
-		Poke_Texture(nullptr);
 	}
 
 	// Find original size from the thumbnail (but don't create thumbnail texture yet!)
@@ -1898,9 +1541,6 @@ VolumeTextureClass::VolumeTextureClass
 	{
 		Width=thumb->Get_Original_Texture_Width();
 		Height=thumb->Get_Original_Texture_Height();
- 		if (MipLevelCount!=MIP_LEVELS_1) {
- 			MipLevelCount=(MipCountType)thumb->Get_Original_Texture_Mip_Level_Count();
- 		}
 	}
 
 	LastAccessed=WW3D::Get_Sync_Time();
@@ -1916,121 +1556,70 @@ VolumeTextureClass::VolumeTextureClass
 	}
 }
 
-// don't know if these are needed
-#if 0
 // ----------------------------------------------------------------------------
-CubeTextureClass::CubeTextureClass
+VolumeTextureClass::VolumeTextureClass
 (
 	SurfaceClass *surface,
 	MipCountType mip_level_count
 )
-:	TextureClass(0,0,mip_level_count, POOL_MANAGED, false, surface->Get_Surface_Format())
+:	TextureClass(0,0,mip_level_count, POOL_MANAGED, false, WW3D_FORMAT_A8R8G8B8),
+	Depth(1)
 {
 	IsProcedural=true;
 	Initialized=true;
 	IsReducible=false;
 
+	if (surface == nullptr) {
+		LastAccessed=WW3D::Get_Sync_Time();
+		return;
+	}
 	SurfaceClass::SurfaceDescription sd;
 	surface->Get_Description(sd);
 	Width=sd.Width;
 	Height=sd.Height;
-	switch (sd.Format)
-	{
-	case WW3D_FORMAT_DXT1:
-	case WW3D_FORMAT_DXT2:
-	case WW3D_FORMAT_DXT3:
-	case WW3D_FORMAT_DXT4:
-	case WW3D_FORMAT_DXT5:
-		IsCompressionAllowed=true;
-		break;
-	default: break;
-	}
+	TextureFormat = WW3D_FORMAT_A8R8G8B8;
 
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Cube_Texture
-		(
-			surface->Peek_D3D_Surface(),
-			mip_level_count
-		)
-	);
+	int pitch = 0;
+	const unsigned char *pixels = surface->Peek_CPU_Pixels(&pitch);
+	const unsigned src_bpp = ::Get_Bytes_Per_Pixel(sd.Format);
+	if (pixels != nullptr && src_bpp != 0 && Width > 0 && Height > 0) {
+		std::vector<unsigned char> rgba(static_cast<std::size_t>(Width) * Height * 4);
+		if (sd.Format == WW3D_FORMAT_A8R8G8B8) {
+			for (int y = 0; y < Height; ++y) {
+				memcpy(rgba.data() + static_cast<std::size_t>(y) * Width * 4,
+					pixels + static_cast<std::size_t>(y) * pitch, static_cast<std::size_t>(Width) * 4);
+			}
+		} else {
+			BitmapHandlerClass::Copy_Image(
+				rgba.data(), Width, Height, Width*4, WW3D_FORMAT_A8R8G8B8,
+				const_cast<unsigned char*>(pixels), Width, Height, static_cast<unsigned>(pitch), sd.Format,
+				nullptr, 0, false);
+		}
+		IRenderBackend *backend = WW3D::Get_Render_Backend();
+		if (backend != nullptr && TextureLoader::Is_Render_Thread()) {
+			RenderBackendTextureMipLevel level{static_cast<unsigned>(Width), static_cast<unsigned>(Height), static_cast<unsigned>(Width)*4, rgba.data()};
+			const auto handle = backend->Create_Static_RGBA8_Texture(&level, 1);
+			if (handle.Is_Valid()) {
+				RendererOwner = backend;
+				RendererTexture = handle;
+				RendererMipLevelCount = 1;
+				RendererTextureMissing = false;
+			}
+		}
+	}
 	LastAccessed=WW3D::Get_Sync_Time();
 }
-
-// ----------------------------------------------------------------------------
-CubeTextureClass::CubeTextureClass(IDirect3DBaseTexture8* d3d_texture)
-:	TextureBaseClass
-	(
-		0,
-		0,
-		((MipCountType)d3d_texture->GetLevelCount())
-	),
-	Filter((MipCountType)d3d_texture->GetLevelCount())
-{
-	Initialized=true;
-	IsProcedural=true;
-	IsReducible=false;
-
-	Peek_Texture()->AddRef();
-	IDirect3DSurface8* surface;
-	DX8_ErrorCode(Peek_D3D_Texture()->GetSurfaceLevel(0,&surface));
-	D3DSURFACE_DESC d3d_desc;
-	::ZeroMemory(&d3d_desc, sizeof(D3DSURFACE_DESC));
-	DX8_ErrorCode(surface->GetDesc(&d3d_desc));
-	Width=d3d_desc.Width;
-	Height=d3d_desc.Height;
-	TextureFormat=D3DFormat_To_WW3DFormat(d3d_desc.Format);
-	switch (TextureFormat)
-	{
-	case WW3D_FORMAT_DXT1:
-	case WW3D_FORMAT_DXT2:
-	case WW3D_FORMAT_DXT3:
-	case WW3D_FORMAT_DXT4:
-	case WW3D_FORMAT_DXT5:
-		IsCompressionAllowed=true;
-		break;
-	default: break;
-	}
-
-	LastAccessed=WW3D::Get_Sync_Time();
-}
-#endif
-
-
-
 
 //**********************************************************************************************
-//! Apply new surface to texture
+//! Apply CPU mip chain to volume texture (2D placeholder)
 /*!
 */
-void VolumeTextureClass::Apply_New_Surface
-(
-	IDirect3DBaseTexture8* d3d_texture,
+void VolumeTextureClass::Apply_RGBA8_Mip_Chain(
+	const std::vector<TextureRGBA8MipLevel> &levels,
+	bool missing,
 	bool initialized,
 	bool disable_auto_invalidation
 )
 {
-	IDirect3DBaseTexture8* d3d_tex=Peek_D3D_Base_Texture();
-
-	if (d3d_tex) d3d_tex->Release();
-
-	Poke_Texture(d3d_texture);//TextureLoadTask->Peek_D3D_Texture();
-	d3d_texture->AddRef();
-
-	if (initialized) Initialized=true;
-	if (disable_auto_invalidation) InactivationTime = 0;
-
-	WWASSERT(d3d_texture);
-	D3DVOLUME_DESC d3d_desc;
-	::ZeroMemory(&d3d_desc, sizeof(D3DVOLUME_DESC));
-
-	DX8_ErrorCode(Peek_D3D_VolumeTexture()->GetLevelDesc(0,&d3d_desc));
-
-	if (initialized)
-	{
-		TextureFormat=D3DFormat_To_WW3DFormat(d3d_desc.Format);
-		Width=d3d_desc.Width;
-		Height=d3d_desc.Height;
-		Depth=d3d_desc.Depth;
-	}
+	TextureClass::Apply_RGBA8_Mip_Chain(levels, missing, initialized, disable_auto_invalidation);
 }

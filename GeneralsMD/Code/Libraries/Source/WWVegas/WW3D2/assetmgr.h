@@ -42,6 +42,9 @@
 #include "htreemgr.h"
 #include "hanimmgr.h"
 #include "WWLib/SLIST.h"
+// Forward declare for legacy texture header without pulling in D3D8.
+// Texture ownership stays in texture.* ; this only unblocks compilation.
+struct IDirect3DSurface8;
 #include "WW3D2/texture.h"
 #include "WWLib/hashtemplate.h"
 #include "WWLib/simplevec.h"

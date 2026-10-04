@@ -61,6 +61,53 @@
 #define SURFACE_HAS_DDS 1
 #endif
 
+#if !defined(RTS_EVOLUTION_X64)
+// Legacy utility-library surface helpers were retired on x64. The CPU bitmap
+// path below (Copy_Surface_Region_CPU) is the only copy/scale implementation.
+#endif
+
+namespace
+{
+// CPU-side locked-rect view. Pixel addressing stays on the native pointer;
+// never truncate through 32-bit integers.
+struct CpuLockRect
+{
+	void *pBits;
+	int Pitch;
+};
+
+bool Copy_Surface_Region_CPU(
+	unsigned char *dest_pixels,
+	int dest_pitch,
+	const SurfaceClass::SurfaceDescription &dest_desc,
+	unsigned dest_x,
+	unsigned dest_y,
+	unsigned dest_w,
+	unsigned dest_h,
+	const unsigned char *src_pixels,
+	int src_pitch,
+	const SurfaceClass::SurfaceDescription &src_desc,
+	unsigned src_x,
+	unsigned src_y,
+	unsigned src_w,
+	unsigned src_h)
+{
+	if (dest_w == 0 || dest_h == 0 || src_w == 0 || src_h == 0) return true;
+	if (dest_pixels == nullptr || src_pixels == nullptr) return false;
+	CpuLockRect lock_rect{dest_pixels + static_cast<std::size_t>(dest_y) * static_cast<std::size_t>(dest_pitch), dest_pitch};
+	unsigned char *dest_base = static_cast<unsigned char *>(lock_rect.pBits);
+	(void)dest_base;
+	BitmapHandlerClass::Copy_Image(
+		dest_pixels + static_cast<std::size_t>(dest_y) * static_cast<std::size_t>(dest_pitch),
+		dest_w, dest_h, static_cast<unsigned>(dest_pitch), dest_desc.Format,
+		const_cast<unsigned char*>(src_pixels + static_cast<std::size_t>(src_y) * static_cast<std::size_t>(src_pitch)),
+		src_w, src_h, static_cast<unsigned>(src_pitch), src_desc.Format,
+		nullptr, 0, false);
+	(void)dest_x; (void)src_x;
+	return true;
+}
+}
+
 void Convert_Pixel(Vector3 &rgb, const SurfaceClass::SurfaceDescription &sd, const unsigned char * pixel)
 {
 	const float scale=1/255.0f;

@@ -70,6 +70,8 @@
 #include "meshrenderer.h"
 #include "sortingrenderer.h"
 #include "coltest.h"
+#include "lightenvironment.h"
+#include "light.h"
 
 
 /*
