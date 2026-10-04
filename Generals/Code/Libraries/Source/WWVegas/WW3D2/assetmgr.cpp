@@ -105,13 +105,11 @@
 #include "WWLib/wwstring.h"
 #include "WWDebug/wwmemlog.h"
 #include "dazzle.h"
-#include "dx8wrapper.h"
 #include "meshrenderer.h"
 #include "metalmap.h"
 #include "w3dexclusionlist.h"
 #include <WWLib/INI.h>
 #include <windows.h>
-#include <d3dx8core.h>
 #include "WWDebug/wwprofile.h"
 #include "assetstatus.h"
 #include "ringobj.h"
@@ -295,56 +293,17 @@ void	WW3DAssetManager::Load_Procedural_Textures()
 
 static void Log_Textures(bool inited,unsigned& total_count, unsigned& total_mem)
 {
+	// D3D12 migration: debug-only texture listing without D3D8 queries.
+	// Uses renderer-neutral size/format/memory; no device state.
 	HashTemplateIterator<StringClass,TextureClass*> ite(WW3DAssetManager::Get_Instance()->Texture_Hash());
 	for (ite.First();!ite.Is_Done();ite.Next()) {
 		TextureClass * tex=ite.Peek_Value();
 		if (tex->Is_Initialized()!=inited) continue;
 
-		D3DSURFACE_DESC desc;
-		IDirect3DTexture8* d3d_texture=tex->Peek_D3D_Texture();
-		if (!d3d_texture) continue;
-		DX8_ErrorCode(d3d_texture->GetLevelDesc(0,&desc));
-
-		StringClass tex_format="Unknown";
-		switch (desc.Format) {
-		case D3DFMT_A8R8G8B8: tex_format="D3DFMT_A8R8G8B8"; break;
-		case D3DFMT_R8G8B8: tex_format="D3DFMT_R8G8B8"; break;
-		case D3DFMT_A4R4G4B4: tex_format="D3DFMT_A4R4G4B4"; break;
-		case D3DFMT_A1R5G5B5: tex_format="D3DFMT_A1R5G5B5"; break;
-		case D3DFMT_R5G6B5: tex_format="D3DFMT_R5G6B5"; break;
-		case D3DFMT_L8: tex_format="D3DFMT_L8"; break;
-		case D3DFMT_A8: tex_format="D3DFMT_A8"; break;
-		case D3DFMT_P8: tex_format="D3DFMT_P8"; break;
-		case D3DFMT_X8R8G8B8: tex_format="D3DFMT_X8R8G8B8"; break;
-		case D3DFMT_X1R5G5B5: tex_format="D3DFMT_X1R5G5B5"; break;
-		case D3DFMT_R3G3B2: tex_format="D3DFMT_R3G3B2"; break;
-		case D3DFMT_A8R3G3B2: tex_format="D3DFMT_A8R3G3B2"; break;
-		case D3DFMT_X4R4G4B4: tex_format="D3DFMT_X4R4G4B4"; break;
-		case D3DFMT_A8P8: tex_format="D3DFMT_A8P8"; break;
-		case D3DFMT_A8L8: tex_format="D3DFMT_A8L8"; break;
-		case D3DFMT_A4L4: tex_format="D3DFMT_A4L4"; break;
-		case D3DFMT_V8U8: tex_format="D3DFMT_V8U8"; break;
-		case D3DFMT_L6V5U5: tex_format="D3DFMT_L6V5U5"; break;
-		case D3DFMT_X8L8V8U8: tex_format="D3DFMT_X8L8V8U8"; break;
-		case D3DFMT_Q8W8V8U8: tex_format="D3DFMT_Q8W8V8U8"; break;
-		case D3DFMT_V16U16: tex_format="D3DFMT_V16U16"; break;
-		case D3DFMT_W11V11U10: tex_format="D3DFMT_W11V11U10"; break;
-		case D3DFMT_UYVY: tex_format="D3DFMT_UYVY"; break;
-		case D3DFMT_YUY2: tex_format="D3DFMT_YUY2"; break;
-		case D3DFMT_DXT1: tex_format="D3DFMT_DXT1"; break;
-		case D3DFMT_DXT2: tex_format="D3DFMT_DXT2"; break;
-		case D3DFMT_DXT3: tex_format="D3DFMT_DXT3"; break;
-		case D3DFMT_DXT4: tex_format="D3DFMT_DXT4"; break;
-		case D3DFMT_DXT5: tex_format="D3DFMT_DXT5"; break;
-		case D3DFMT_D16_LOCKABLE: tex_format="D3DFMT_D16_LOCKABLE"; break;
-		case D3DFMT_D32: tex_format="D3DFMT_D32"; break;
-		case D3DFMT_D15S1: tex_format="D3DFMT_D15S1"; break;
-		case D3DFMT_D24S8: tex_format="D3DFMT_D24S8"; break;
-		case D3DFMT_D16: tex_format="D3DFMT_D16"; break;
-		case D3DFMT_D24X8: tex_format="D3DFMT_D24X8"; break;
-		case D3DFMT_D24X4S4: tex_format="D3DFMT_D24X4S4"; break;
-		default:	break;
-		}
+		const int tex_width = tex->Get_Width();
+		const int tex_height = tex->Get_Height();
+		StringClass tex_format(true);
+		tex_format.Format("WW3D_FORMAT_%d", (int)tex->Get_Texture_Format());
 
 		unsigned texmem=tex->Get_Texture_Memory_Usage();
 		total_mem+=texmem;
@@ -354,8 +313,8 @@ static void Log_Textures(bool inited,unsigned& total_count, unsigned& total_mem)
 
 		WWDEBUG_SAY(("%32s	%4d * %4d (%15s), init %d, size: %14s bytes, refs: %d",
 			tex->Get_Texture_Name().str(),
-			desc.Width,
-			desc.Height,
+			tex_width,
+			tex_height,
 			tex_format.str(),
 			tex->Is_Initialized(),
 			number.str(),
@@ -794,7 +753,7 @@ RenderObjClass * WW3DAssetManager::Create_Render_Obj(const char * name)
 		char filename [MAX_PATH];
 		const char *mesh_name = ::strchr (name, '.');
 		if (mesh_name != nullptr) {
-			::lstrcpyn (filename, name, ((int)mesh_name) - ((int)name) + 1);
+			::lstrcpyn(filename, name, static_cast<int>(mesh_name - name) + 1);
 			::lstrcat (filename, ".w3d");
 		} else {
 			snprintf( filename, ARRAY_SIZE(filename), "%s.w3d", name);
