@@ -27,10 +27,10 @@
 #include "WW3D2/w3derr.h"
 #include "shader.h"
 #include "WWMath/matrix4.h"
+#include "IRenderBackend.h"
 
 class CameraClass;
 class DazzleVisibilityClass;
-struct VertexFormatXYZNDUV2;
 
 class DazzleInitClass
 {
@@ -211,7 +211,7 @@ public:
 	TextureClass* Get_Texture();
 
 	void Generate_Vertex_Buffers(
-		VertexFormatXYZNDUV2* vertex,
+		RenderBackendTexturedVertex* vertex,
 		int& vertex_count,
 		float screen_x_scale,
 		float screen_y_scale,

@@ -57,9 +57,7 @@
 #include "WWLib/inisup.h"
 #include "WWSaveLoad/persistfactory.h"
 #include "ww3dids.h"
-#include "dx8wrapper.h"
-#include "dx8vertexbuffer.h"
-#include "dx8indexbuffer.h"
+#include "IRenderBackend.h"
 #include "sortingrenderer.h"
 #include "texture.h"
 #include "scene.h"
@@ -67,6 +65,9 @@
 #include "visrasterizer.h"
 #include <limits.h>
 #include <WWDebug/wwprofile.h>
+#include <cstdint>
+#include <cstdio>
+#include <vector>
 
 
 // All dazzle types appear under Dazzles_List in the dazzle.ini file.
@@ -364,7 +365,7 @@ TextureClass* LensflareTypeClass::Get_Texture()
 }
 
 void LensflareTypeClass::Generate_Vertex_Buffers(
-	VertexFormatXYZNDUV2* vertex,
+	RenderBackendTexturedVertex* vertex,
 	int& vertex_count,
 	float screen_x_scale,
 	float screen_y_scale,
@@ -389,38 +390,59 @@ void LensflareTypeClass::Generate_Vertex_Buffers(
 		if (col[0]>1.0f) col[0]=1.0f;
 		if (col[1]>1.0f) col[1]=1.0f;
 		if (col[2]>1.0f) col[2]=1.0f;
-		unsigned color=DX8Wrapper::Convert_Color(col,1.0f);
+		// D3D12: preserve legacy packed-diffuse quantization without DX8 helper.
+		const uint32_t packed = col.Convert_To_ARGB(1.0f);
+		const float r = ((packed >> 16) & 255) / 255.0f;
+		const float g = ((packed >> 8) & 255) / 255.0f;
+		const float b = (packed & 255) / 255.0f;
+		const float a = ((packed >> 24) & 255) / 255.0f;
 
 		vertex->x=x+ix;
 		vertex->y=y-iy;
 		vertex->z=z;
-		vertex->u1=lic.flare_uv[a][0];
-		vertex->v1=lic.flare_uv[a][1];
-		vertex->diffuse=color;
+		vertex->r=r;
+		vertex->g=g;
+		vertex->b=b;
+		vertex->a=a;
+		vertex->u=lic.flare_uv[a][0];
+		vertex->v=lic.flare_uv[a][1];
+		vertex->q=1.0f;
 		vertex++;
 
 		vertex->x=x+ix;
 		vertex->y=y+iy;
 		vertex->z=z;
-		vertex->u1=lic.flare_uv[a][2];
-		vertex->v1=lic.flare_uv[a][1];
-		vertex->diffuse=color;
+		vertex->r=r;
+		vertex->g=g;
+		vertex->b=b;
+		vertex->a=a;
+		vertex->u=lic.flare_uv[a][2];
+		vertex->v=lic.flare_uv[a][1];
+		vertex->q=1.0f;
 		vertex++;
 
 		vertex->x=x-ix;
 		vertex->y=y+iy;
 		vertex->z=z;
-		vertex->u1=lic.flare_uv[a][2];
-		vertex->v1=lic.flare_uv[a][3];
-		vertex->diffuse=color;
+		vertex->r=r;
+		vertex->g=g;
+		vertex->b=b;
+		vertex->a=a;
+		vertex->u=lic.flare_uv[a][2];
+		vertex->v=lic.flare_uv[a][3];
+		vertex->q=1.0f;
 		vertex++;
 
 		vertex->x=x-ix;
 		vertex->y=y-iy;
 		vertex->z=z;
-		vertex->u1=lic.flare_uv[a][0];
-		vertex->v1=lic.flare_uv[a][3];
-		vertex->diffuse=color;
+		vertex->r=r;
+		vertex->g=g;
+		vertex->b=b;
+		vertex->a=a;
+		vertex->u=lic.flare_uv[a][0];
+		vertex->v=lic.flare_uv[a][3];
+		vertex->q=1.0f;
 		vertex++;
 
 		vertex_count+=4;
@@ -917,9 +939,30 @@ void DazzleRenderObjClass::Render(RenderInfoClass & rinfo)
 {
 	WWPROFILE("Dazzle::Render");
 
+	// D3D12: Is_Render_To_Texture retired. Dazzles are a final-screen effect and
+	// never render into offscreen targets; detect that via render-target size vs
+	// output size using backend queries. Device readiness gates the query.
+	bool render_to_texture = false;
+	if (IRenderBackend *queryBackend = WW3D::Get_Render_Backend()) {
+		if (!queryBackend->Is_Device_Ready()) {
+			visibility=0.0f;
+			return;
+		}
+		int outW=0,outH=0,outBits=0;
+		bool outWindowed=true;
+		int tgtW=0,tgtH=0;
+		if (queryBackend->Get_Output_Description(outW,outH,outBits,outWindowed) &&
+			queryBackend->Get_Render_Target_Size(tgtW,tgtH)) {
+			render_to_texture = (tgtW != outW || tgtH != outH);
+		}
+	} else {
+		visibility=0.0f;
+		return;
+	}
+
 	if (	Is_Not_Hidden_At_All() &&
 			_dazzle_rendering_enabled &&
-			!DX8Wrapper::Is_Render_To_Texture()	)
+			!render_to_texture	)
 	{
 		// First check if the dazzle is blinking and is "off"
 		bool is_on = true;
@@ -943,21 +986,26 @@ void DazzleRenderObjClass::Render(RenderInfoClass & rinfo)
 //			Get_Transform().Get_Translation(&position);
 //			visibility = _VisibilityHandler->Compute_Dazzle_Visibility(rinfo,this,position);
 
-			Matrix4x4 view_transform,projection_transform;
-			DX8Wrapper::Get_Transform(D3DTS_VIEW,view_transform);
-			DX8Wrapper::Get_Transform(D3DTS_PROJECTION,projection_transform);
+			Matrix4x4 projection_transform;
+			rinfo.Camera.Get_Projection_Matrix(&projection_transform);
 			Vector3 camera_loc(rinfo.Camera.Get_Position());
-			Vector3 camera_dir(-view_transform[2][0],-view_transform[2][1],-view_transform[2][2]);
-//			const Matrix3D& cam = rinfo.Camera.Get_Transform();
-//			Vector3 camera_dir(-cam[2][0],-cam[2][1],-cam[2][2]);
-//			camera_dir.Normalize();
+			Vector3 camera_dir = rinfo.Camera.Get_Forward_Dir();
 
 			Vector3 loc=Get_Position();
-			transformed_loc=view_transform*loc;
-			transformed_loc=projection_transform*transformed_loc;
-			transformed_loc[0]/=transformed_loc[3];
-			transformed_loc[1]/=transformed_loc[3];
-			transformed_loc[2]/=transformed_loc[3];
+			// D3D12: DX8 view/projection transforms retired. Use camera view/projection
+			// directly (same matrices Camera::Apply submits to the backend).
+			Vector3 camera_space;
+			rinfo.Camera.Transform_To_View_Space(camera_space, loc);
+			Vector4 clip = projection_transform * camera_space;
+			if (clip.W != 0.0f) {
+				transformed_loc[0]=clip.X/clip.W;
+				transformed_loc[1]=clip.Y/clip.W;
+				transformed_loc[2]=clip.Z/clip.W;
+			} else {
+				transformed_loc[0]=0.0f;
+				transformed_loc[1]=0.0f;
+				transformed_loc[2]=0.0f;
+			}
 			transformed_loc[3]=1.0f;
 			current_vloc=Vector3(transformed_loc[0],transformed_loc[1],transformed_loc[2]);
 
@@ -1015,24 +1063,18 @@ void DazzleRenderObjClass::Render(RenderInfoClass & rinfo)
 void DazzleRenderObjClass::Render_Dazzle(CameraClass* camera)
 {
 	WWPROFILE("Dazzle::Render");
-	Matrix4x4 old_view_transform;
-	Matrix4x4 old_world_transform;
-	Matrix4x4 old_projection_transform;
-	Matrix4x4 view_transform;
-	Matrix4x4 world_transform;
-	Matrix4x4 projection_transform;
-	DX8Wrapper::Get_Transform(D3DTS_VIEW,view_transform);
-	DX8Wrapper::Get_Transform(D3DTS_WORLD,world_transform);
-	DX8Wrapper::Get_Transform(D3DTS_PROJECTION,projection_transform);
-	old_view_transform=view_transform;
-	old_world_transform=world_transform;
-	old_projection_transform=projection_transform;
-	Vector3 camera_loc(camera->Get_Position());
-	Vector3 camera_dir(-view_transform[2][0],-view_transform[2][1],-view_transform[2][2]);
+	if (camera == nullptr || type >= type_count || types[type] == nullptr) return;
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr || !backend->Is_Device_Ready()) return;
 
-	int display_width,display_height,display_bits;
-	bool windowed;
-	WW3D::Get_Device_Resolution(display_width,display_height,display_bits,windowed);
+	// D3D12: world/view/projection save-restore retired. Dazzle quads are built
+	// CPU-side in clip space (current_vloc/transformed_loc from Render()) and
+	// submitted with screen_space materials (line3d precedent for bypassing camera).
+
+	int display_width = 0, display_height = 0, display_bits = 0;
+	bool windowed = true;
+	if (!backend->Get_Output_Description(display_width, display_height, display_bits, windowed) ||
+		display_width <= 0 || display_height <= 0) return;
 	float w=float(display_width);
 	float h=float(display_height);
 	float screen_x_scale=1.0f;
@@ -1053,8 +1095,7 @@ void DazzleRenderObjClass::Render_Dazzle(CameraClass* camera)
 	float dazzle_scale_x=types[type]->ic.dazzle_scale_x * current_scale;
 	float dazzle_scale_y=types[type]->ic.dazzle_scale_y * current_scale;
 
-	// Allocate some arrays for the dazzle rendering
-	int vertex_count=4;
+	// Allocate CPU backend geometry for the dazzle rendering (vectors replace transient buffers)
 
 	const DazzleTypeClass* params=types[type];
 

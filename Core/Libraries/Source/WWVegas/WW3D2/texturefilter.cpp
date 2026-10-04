@@ -40,7 +40,6 @@
 #include "texturefilter.h"
 #include "IRenderBackend.h"
 #include <algorithm>
-#include "dx8wrapper.h"
 
 const char* const TextureFilterClass::TextureFilterModeString[TEXTURE_FILTER_COUNT] = {
 	"None",
@@ -100,34 +99,10 @@ TextureFilterClass::TextureFilterClass(MipCountType mip_level_count)
 */
 void TextureFilterClass::Apply(unsigned int stage)
 {
+    // Renderer-neutral: sampler state is consumed via Get_Render_Sampler()
+    // during backend draws. Legacy fixed-function stage state no longer exists.
     ensureFilters();
     if (stage>=FilterStages) return;
-    static const unsigned native_filter[]={D3DTEXF_NONE,D3DTEXF_POINT,D3DTEXF_LINEAR,D3DTEXF_ANISOTROPIC};
-	DX8Wrapper::Set_DX8_Texture_Stage_State(stage,D3DTSS_MINFILTER,native_filter[static_cast<unsigned>(_MinTextureFilters[stage][TextureMinFilter])]);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(stage,D3DTSS_MAGFILTER,native_filter[static_cast<unsigned>(_MagTextureFilters[stage][TextureMagFilter])]);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(stage,D3DTSS_MIPFILTER,native_filter[static_cast<unsigned>(_MipMapFilters[stage][MipMapFilter])]);
-
-	switch (Get_U_Addr_Mode())
-	{
-	case TEXTURE_ADDRESS_REPEAT:
-		DX8Wrapper::Set_DX8_Texture_Stage_State(stage, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP);
-		break;
-
-	case TEXTURE_ADDRESS_CLAMP:
-		DX8Wrapper::Set_DX8_Texture_Stage_State(stage, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP);
-		break;
-	}
-
-	switch (Get_V_Addr_Mode())
-	{
-	case TEXTURE_ADDRESS_REPEAT:
-		DX8Wrapper::Set_DX8_Texture_Stage_State(stage, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
-		break;
-
-	case TEXTURE_ADDRESS_CLAMP:
-		DX8Wrapper::Set_DX8_Texture_Stage_State(stage, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-		break;
-	}
 }
 
 //**********************************************************************************************

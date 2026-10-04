@@ -40,10 +40,6 @@
 #pragma once
 struct RenderBackendSamplerState;
 
-#ifndef DX8_WRAPPER_H
-//#include "dx8wrapper.h"
-#endif
-
 enum MipCountType
 {
 	MIP_LEVELS_ALL=0,		// generate all mipmap levels down to 1x1 size

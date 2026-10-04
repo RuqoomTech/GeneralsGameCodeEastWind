@@ -42,7 +42,6 @@
 #include "WWLib/chunkio.h"
 #include "w3derr.h"
 #include "meshmatdesc.h"
-#include "dx8wrapper.h"
 #include "WWDebug/wwdebug.h"
 #include "matinfo.h"
 #include "rendobj.h"
@@ -52,8 +51,9 @@
 
 Random4Class rand4;
 
-inline DWORD F2DW( FLOAT f ) { return *((DWORD*)&f); }
-
+// D3D12 migration: UV transforms stay CPU-side and are consumed via
+// Get_Render_Mapping during backend submission. Apply() only advances
+// deterministic time state; it emits no device state.
 
 // HY 1/26/01
 // Rewritten to use DX 8 texture matrices
@@ -88,16 +88,12 @@ ScaleTextureMapperClass::ScaleTextureMapperClass(const ScaleTextureMapperClass &
 
 void ScaleTextureMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: advance deterministic UV state. The texture matrix is
+	// consumed via Get_Render_Mapping by the D3D12 material path.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Disable Texgen
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | uv_array_index);
-
-	// Tell rasterizer to expect 2D texture coordinates
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+	(void)m;
 }
 
 void ScaleTextureMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
@@ -226,16 +222,11 @@ GridTextureMapperClass::GridTextureMapperClass(const GridTextureMapperClass & sr
 
 void GridTextureMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: advance deterministic grid state.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage), m);
-
-	// Disable Texgen
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_PASSTHRU | uv_array_index);
-
-	// Tell rasterizer to expect 2D texture coordinates
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT2);
+	(void)m;
 }
 
 void GridTextureMapperClass::Reset()
@@ -621,16 +612,11 @@ void ZigZagLinearOffsetTextureMapperClass::Calculate_Texture_Matrix(Matrix4x4 &t
 
 void ClassicEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: canonical environment matrix via Calculate_Texture_Matrix.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Get camera normals
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACENORMAL);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+	(void)m;
 
 }
 
@@ -647,16 +633,11 @@ void ClassicEnvironmentMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matr
 
 void EnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: canonical environment matrix via Calculate_Texture_Matrix.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Get camera reflection vector
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+	(void)m;
 
 }
 
@@ -703,19 +684,11 @@ EdgeMapperClass::EdgeMapperClass(const EdgeMapperClass & src):
 
 void EdgeMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: edge matrix via Calculate_Texture_Matrix.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Get camera reflection vector
-	if (UseReflect)
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
-	else
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACENORMAL);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+	(void)m;
 
 }
 
@@ -770,53 +743,39 @@ WSEnvMapperClass::WSEnvMapperClass(const INIClass &ini, const char *section, uns
 
 void WSEnvMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
 {
-    Matrix4x4 view;
-    DX8Wrapper::Get_Transform(D3DTS_VIEW, view);
+    // Device-independent fallback: identity view. The camera-correct matrix is
+    // produced via Calculate_Render_Texture_Matrix / Get_Render_Mapping.
+    Matrix4x4 view(true);
     Calculate_With_View(tex_matrix, view);
 }
 
 void WSClassicEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: advance deterministic state.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Get camera normals
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACENORMAL);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+	(void)m;
 
 }
 
 void WSEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: advance deterministic state.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Get camera reflection
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+	(void)m;
 
 }
 
 void GridClassicEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: advance deterministic grid state.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Get camera normals
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACENORMAL);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+	(void)m;
 }
 
 void GridClassicEnvironmentMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
@@ -836,16 +795,11 @@ void GridClassicEnvironmentMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_
 
 void GridEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: advance deterministic grid state.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Get camera space reflection
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+	(void)m;
 }
 
 void GridEnvironmentMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
@@ -865,22 +819,18 @@ void GridEnvironmentMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
 
 void ScreenMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: advance deterministic offset state.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Get camera space position
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEPOSITION);
-
-	// Tell rasterizer what to expect
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_PROJECTED | D3DTTFF_COUNT3);
+	(void)m;
 }
 
 void ScreenMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
 {
-    Matrix4x4 projection;
-    DX8Wrapper::Get_Transform(D3DTS_PROJECTION, projection);
+    // Device-independent fallback: identity projection. The camera-correct
+    // matrix is produced via Calculate_With_Projection / Get_Render_Mapping.
+    Matrix4x4 projection(true);
     Calculate_With_Projection(tex_matrix, projection);
 }
 
@@ -1001,6 +951,9 @@ BumpEnvTextureMapperClass::BumpEnvTextureMapperClass(const BumpEnvTextureMapperC
 
 void BumpEnvTextureMapperClass::Apply(int uv_array_index)
 {
+	// CPU-side only: advance UV offset and bump rotation clocks. The bump
+	// environment matrix has no D3D12 backend equivalent and is retired;
+	// UV scrolling remains deterministic via the base mapper.
 	LinearOffsetTextureMapperClass::Apply(uv_array_index);
 
 	unsigned int now = WW3D::Get_Sync_Time();
@@ -1009,17 +962,8 @@ void BumpEnvTextureMapperClass::Apply(int uv_array_index)
 
 	CurrentAngle+=RadiansPerSecond * delta * 0.001f;
 	CurrentAngle=fmodf(CurrentAngle,2*WWMATH_PI);
-
-	// Compute the sine and cosine for the bump matrix
-	float c,s;
-	c=ScaleFactor * WWMath::Fast_Cos(CurrentAngle);
-	s=ScaleFactor * WWMath::Fast_Sin(CurrentAngle);
-
-	// Set the Bump Environment Matrix
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_BUMPENVMAT00, F2DW(c));
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_BUMPENVMAT01, F2DW(-s));
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_BUMPENVMAT10, F2DW(s));
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_BUMPENVMAT11, F2DW(c));
+	// Bump scale/rotation discarded: no fixed-function bump stage on D3D12.
+	(void)ScaleFactor;
 }
 
 /*
@@ -1093,8 +1037,8 @@ GridWSEnvMapperClass::GridWSEnvMapperClass(const INIClass &ini, const char *sect
 
 void GridWSEnvMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
 {
-    Matrix4x4 view;
-    DX8Wrapper::Get_Transform(D3DTS_VIEW, view);
+    // Device-independent fallback: identity view. Camera-correct matrix via Get_Render_Mapping.
+    Matrix4x4 view(true);
     Calculate_With_View(tex_matrix, view);
 }
 
@@ -1129,16 +1073,11 @@ GridWSClassicEnvironmentMapperClass::GridWSClassicEnvironmentMapperClass(const G
 
 void GridWSClassicEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: advance deterministic grid state.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Get camera normals
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACENORMAL);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+	(void)m;
 }
 
 /***********************************************************************************************
@@ -1173,16 +1112,11 @@ GridWSEnvironmentMapperClass::GridWSEnvironmentMapperClass(const GridWSEnvMapper
 
 void GridWSEnvironmentMapperClass::Apply(int uv_array_index)
 {
-	// Set up the texture matrix
+	// CPU-side only: advance deterministic grid state.
+	(void)uv_array_index;
 	Matrix4x4 m;
 	Calculate_Texture_Matrix(m);
-	DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE) (D3DTS_TEXTURE0+Stage),m);
-
-	// Get camera space reflection
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
-
-	// Tell rasterizer to expect 2D matrices
-	DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
+	(void)m;
 }
 
 Vector3 TextureMapperRenderMapping::Map_Coordinate(const Vector2 &uv,

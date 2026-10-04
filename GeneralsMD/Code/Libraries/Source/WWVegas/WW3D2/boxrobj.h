@@ -98,7 +98,7 @@ public:
 protected:
 
 	virtual void						update_cached_box() = 0;
-	void									render_box(RenderInfoClass & rinfo,const Vector3 & center,const Vector3 & extent);
+	void									render_box(RenderInfoClass & rinfo,const Vector3 & center,const Vector3 & extent,const Matrix3D & world);
 	void									vis_render_box(SpecialRenderInfoClass & rinfo,const Vector3 & center,const Vector3 & extent);
 
 	char									Name[2*W3D_NAME_LEN];

@@ -68,7 +68,6 @@
 #include "rinfo.h"
 #include "WWLib/chunkio.h"
 #include "meshrenderer.h"
-#include "dx8wrapper.h"
 #include "sortingrenderer.h"
 #include "coltest.h"
 
@@ -215,7 +214,14 @@ void SceneClass::Render(RenderInfoClass & rinfo)
 	// Any stuff that needs to get done before anything else
 	Pre_Render_Processing(rinfo);
 
-	DX8Wrapper::Set_Fog(FogEnabled, FogColor, FogStart, FogEnd);
+	// D3D12 migration: fog is retired with fixed-function material state.
+	// FogEnabled/FogColor/FogStart/FogEnd remain as asset state (save/load)
+	// but have no backend effect; shaders with fog are rejected via
+	// Get_Render_Backend_State.
+	(void)FogEnabled;
+	(void)FogColor;
+	(void)FogStart;
+	(void)FogEnd;
 
 	if (Get_Extra_Pass_Polygon_Mode()==EXTRA_PASS_DISABLE) {
 		Customized_Render(rinfo);
@@ -223,20 +229,20 @@ void SceneClass::Render(RenderInfoClass & rinfo)
 	else {
 		bool old_enable=WW3D::Is_Texturing_Enabled();
 
-		DX8Wrapper::Set_DX8_Render_State (D3DRS_ZBIAS, 0);
+		// D3D12 migration: ZBIAS and wireframe fillmode have no backend
+		// equivalent and are retired. Extra-pass debug modes render again
+		// without additional state.
 		Customized_Render(rinfo);
 		switch (Get_Extra_Pass_Polygon_Mode()) {
 		case EXTRA_PASS_LINE:
 			WW3D::Enable_Texturing(false);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_WIREFRAME);
-			DX8Wrapper::Set_DX8_Render_State (D3DRS_ZBIAS, 7);
 			Customized_Render(rinfo);
 			break;
 		case EXTRA_PASS_CLEAR_LINE:
-			DX8Wrapper::Clear(true, false, Vector3(0.0f,0.0f,0.0f));	// Clear color but not z
+			if (WW3D::Get_Render_Backend() != nullptr) {
+				WW3D::Get_Render_Backend()->Clear(true, false, Vector3(0.0f,0.0f,0.0f));	// Clear color but not z
+			}
 			WW3D::Enable_Texturing(false);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_WIREFRAME);
-			DX8Wrapper::Set_DX8_Render_State (D3DRS_ZBIAS, 7);
 			Customized_Render(rinfo);
 			break;
 		}
@@ -556,11 +562,9 @@ void SimpleSceneClass::Customized_Render(RenderInfoClass & rinfo)
 	// derived classes should use light environment
 	WWASSERT(rinfo.light_environment==nullptr);
 	int count=0;
-	// Turn off lights in case we have none
-	DX8Wrapper::Set_Light(0,nullptr);
-	DX8Wrapper::Set_Light(1,nullptr);
-	DX8Wrapper::Set_Light(2,nullptr);
-	DX8Wrapper::Set_Light(3,nullptr);
+	// D3D12 migration: fixed-function Set_Light is retired. Lighting flows
+	// via the light environment below and Set_Light_Environment/Set_Ambient.
+	(void)count;
 
 // (gth) WWShade only works with light environments.  We need to upgrade LightEnvironment to
 // support real point lights, etc.  It will likely just evolve into "the n most important" lights
@@ -570,7 +574,7 @@ void SimpleSceneClass::Customized_Render(RenderInfoClass & rinfo)
 	{
 		if (count<4)
 		{
-			DX8Wrapper::Set_Light(count,*(LightClass*)it.Peek_Obj());
+			// Retired fixed-function light path.
 		} else
 		{
 			// Simple scene only supports 4 global lights

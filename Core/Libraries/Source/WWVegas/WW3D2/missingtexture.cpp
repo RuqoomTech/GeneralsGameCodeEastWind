@@ -18,9 +18,7 @@
 
 // 08/05/02 KM Texture class redesign
 #include "missingtexture.h"
-#include "texture.h"
-#include "dx8wrapper.h"
-#include "bitmaphandler.h"
+#include <cstring>
 
 static unsigned missing_image_width=128;
 static unsigned missing_image_height=128;
@@ -28,34 +26,6 @@ static unsigned missing_image_depth=24;
 
 extern unsigned int missing_image_palette[];
 extern unsigned int missing_image_pixels[];
-
-static IDirect3DTexture8 * _MissingTexture = nullptr;
-
-IDirect3DTexture8* MissingTexture::_Get_Missing_Texture()
-{
-	WWASSERT(_MissingTexture);
-	_MissingTexture->AddRef();
-	return _MissingTexture;
-}
-
-IDirect3DSurface8* MissingTexture::_Create_Missing_Surface()
-{
-	IDirect3DSurface8 *texture_surface = nullptr;
-	DX8_ErrorCode(_MissingTexture->GetSurfaceLevel(0, &texture_surface));
-	D3DSURFACE_DESC texture_surface_desc;
-	::ZeroMemory(&texture_surface_desc, sizeof(D3DSURFACE_DESC));
-	DX8_ErrorCode(texture_surface->GetDesc(&texture_surface_desc));
-
-	IDirect3DSurface8 *surface = nullptr;
-	DX8CALL(CreateImageSurface(
-		texture_surface_desc.Width,
-		texture_surface_desc.Height,
-		texture_surface_desc.Format,
-		&surface));
-	DX8CALL(CopyRects(texture_surface, nullptr, 0, surface, nullptr));
-	texture_surface->Release();
-	return surface;
-}
 
 void MissingTexture::Create_RGBA8_Image(unsigned &width, unsigned &height, std::vector<unsigned char> &pixels)
 {
@@ -68,107 +38,13 @@ void MissingTexture::Create_RGBA8_Image(unsigned &width, unsigned &height, std::
 
 void MissingTexture::_Init()
 {
-	WWASSERT(!_MissingTexture);
-
-	IDirect3DTexture8* tex=DX8Wrapper::_Create_DX8_Texture
-	(
-		missing_image_width,
-		missing_image_height,
-		WW3D_FORMAT_A8R8G8B8,
-		MIP_LEVELS_ALL
-	);
-
-	D3DLOCKED_RECT locked_rect;
-	RECT rect;
-	rect.left=0;
-	rect.right=missing_image_width;
-	rect.top=0;
-	rect.bottom=missing_image_height;
-	DX8_ErrorCode(
-		tex->LockRect(
-			0,
-			&locked_rect,
-			&rect,
-			0));
-
-	std::vector<unsigned char> pixels;
-	unsigned width, height;
-	Create_RGBA8_Image(width, height, pixels);
-	for (unsigned y = 0; y < height; ++y)
-		memcpy(static_cast<unsigned char *>(locked_rect.pBits)+y*locked_rect.Pitch, pixels.data()+y*width*4, width*4);
-
-	DX8_ErrorCode(tex->UnlockRect(0));
-
-	for (unsigned i=1;i<tex->GetLevelCount();++i) {
-		IDirect3DSurface8 *src,*dst;
-		DX8_ErrorCode(tex->GetSurfaceLevel(i-1,&src));
-		DX8_ErrorCode(tex->GetSurfaceLevel(i,&dst));
-
-		D3DSURFACE_DESC src_desc;
-		D3DLOCKED_RECT src_lock;
-		D3DLOCKED_RECT dst_lock;
-		DX8_ErrorCode(src->GetDesc(&src_desc));
-		DX8_ErrorCode(src->LockRect(&src_lock,nullptr,D3DLOCK_READONLY));
-		DX8_ErrorCode(dst->LockRect(&dst_lock,nullptr,0));
-
-		BitmapHandlerClass::Create_Mipmap_B8G8R8A8(
-			static_cast<unsigned char *>(dst_lock.pBits),
-			static_cast<unsigned>(dst_lock.Pitch),
-			static_cast<unsigned char *>(src_lock.pBits),
-			static_cast<unsigned>(src_lock.Pitch),
-			src_desc.Width,
-			src_desc.Height);
-
-		DX8_ErrorCode(dst->UnlockRect());
-		DX8_ErrorCode(src->UnlockRect());
-		src->Release();
-		dst->Release();
-	}
-
-	_MissingTexture=tex;
-/*
-	//Load an 8-bit tga and generate text representation
-	FILE *fp;
-	fp=fopen("missing.tga","rb");
-	if (fp)
-	{
-		char image[128*128];	//make enough storage for image and palette
-		char palette[256*3];
-		fread(image,18,1,fp);	//skip over the header
-		fread(palette,256,3,fp);	//read the palette
-		fread(image,1,128*128,fp);
-		FILE *output=fopen("missing.txt","w");
-		fprintf(output,"palette:\n");
-		for (int i=0; i<256; i++)
-		{	int color=(((int)palette[i*3+0] & 0x000000ff)|(((int)palette[i*3+1] << 8)&0x0000ff00)|(((int)palette[i*3+2] << 16)&0x00ff0000)) | 0x7f000000;
-			fprintf(output,"0x%.8X",color);
-			if ((i&7) == 7)	//check for end of 8 element line
-				fprintf(output,",\n");	//new line
-			else
-				fprintf(output,",");	//continue existing line
-		}
-		fprintf(output,"image:\n");
-		for (int y=0; y<128; y++)
-		{
-			for (int x=0; x<32; x++)
-			{	int color=*((int *)(&image[y*128+x*4]));
-				fprintf(output,"0x%.8X",color);
-				if ((x&7)==7)	//check for end of 8 element line
-					fprintf(output,",\n");	//new line
-				else
-					fprintf(output,",");	//continue existing line
-			}
-		}
-		fclose(output);
-		fclose(fp);
-	}
-*/
+	// Renderer-neutral: missing content is provided on demand as CPU RGBA8
+	// via Create_RGBA8_Image and uploaded through IRenderBackend. No native
+	// texture is pre-created here.
 }
 
 void MissingTexture::_Deinit()
 {
-	_MissingTexture->Release();
-	_MissingTexture=nullptr;
 }
 
 unsigned int missing_image_palette[]={

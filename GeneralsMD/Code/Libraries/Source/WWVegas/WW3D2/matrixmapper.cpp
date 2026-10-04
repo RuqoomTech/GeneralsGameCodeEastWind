@@ -51,7 +51,9 @@
 
 
 #include "matrixmapper.h"
-#include "dx8wrapper.h"
+
+// D3D12 migration: projected UV transforms stay CPU-side and are consumed via
+// Get_Render_Mapping. Apply() only advances deterministic mapper clocks.
 
 
 /***********************************************************************************************
@@ -225,57 +227,9 @@ void MatrixMapperClass::Compute_Texture_Coordinate(const Vector3 & point,Vector3
  *=============================================================================================*/
 void MatrixMapperClass::Apply(int uv_array_index)
 {
-	Matrix4x4 m;
-
-	switch (Type)
-	{
-	case ORTHO_PROJECTION:
-		/*
-		** Orthographic projection
-		*/
-		DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE)(D3DTS_TEXTURE0 + Stage),ViewToPixel);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEPOSITION);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-		break;
-	case PERSPECTIVE_PROJECTION:
-		/*
-		** Perspective projection
-		*/
-		m[0]=ViewToPixel[0];
-		m[1]=ViewToPixel[1];
-		m[2]=ViewToPixel[3];
-		DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE)(D3DTS_TEXTURE0 + Stage),m);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEPOSITION);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_PROJECTED|D3DTTFF_COUNT3);
-		break;
-	case DEPTH_GRADIENT:
-		/*
-		** Depth gradient, Set up second stage texture coordinates to
-		** apply a depth gradient to the projection.  Note that the
-		** depth values have been set up to vary from 0 to 1 in the
-		** Update_View_To_Pixel_Transform function.
-		*/
-		m[0].Set(0,0,0,GradientUCoord);
-		m[1]=ViewToPixel[2];
-		DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE)(D3DTS_TEXTURE0 + Stage),m);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACEPOSITION);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-		break;
-	case NORMAL_GRADIENT:
-		/*
-		** Normal Gradient, Set up the second stage texture coordinates to
-		** apply a gradient based on the dot product of the vertex normal
-		** and the projection direction.  (NOTE: this is basically texture-
-		** based diffuse lighting!)
-		*/
-		m[0].Set(0,0,0,GradientUCoord);
-		m[1].Set(ViewSpaceProjectionNormal.X,ViewSpaceProjectionNormal.Y,ViewSpaceProjectionNormal.Z, 0);
-		DX8Wrapper::Set_Transform((D3DTRANSFORMSTATETYPE)(D3DTS_TEXTURE0 + Stage),m);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_CAMERASPACENORMAL);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(Stage,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_COUNT2);
-		break;
-	}
-
+	// CPU-side only: the view-to-pixel matrix is consumed via
+	// Get_Render_Mapping during D3D12 material submission. No device state.
+	(void)uv_array_index;
 
 }
 
@@ -375,36 +329,14 @@ CompositeMatrixMapperClass::~CompositeMatrixMapperClass()
  *=============================================================================================*/
 void CompositeMatrixMapperClass::Apply(int uv_array_index)
 {
+	// CPU-side only: advance the internal mapper's deterministic clock. The
+	// composited matrix is consumed via Get_Render_Mapping without mutating
+	// ViewToPixel device state.
+	(void)uv_array_index;
 	if (InternalMapper) {
-		// Get the texture matrix from the internal mapper, composite it into ViewToPixel (save off
-		// the previous value of ViewToPixel first), call the base class Apply() function (which will
-		// use the modifiedViewToPixel) and then restore ViewToPixel to its previous state.
 		Matrix4x4 int_mat;
 		InternalMapper->Calculate_Texture_Matrix(int_mat);
-		Matrix4x4 view_to_pixel_copy(ViewToPixel);
-
-		// We need to modify the view-to-pixel matrix to produce q (third texture coordinate values)
-		// equal to one. This is the input which the internal mappers' matrix was designed for (it
-		// is what you get when you use 2D vertex coordinates from the vertex buffer).
-		// For this we need to multiply the matrix by the following matrix:
-		// [1 0 0 0]
-		// [0 1 0 0]  This is equivalent to overwriting the third row with the fourth one.
-		// [0 0 0 1]
-		// [0 0 0 1]
-		Matrix4x4 tmp;
-		tmp[0] = ViewToPixel[0];
-		tmp[1] = ViewToPixel[1];
-		tmp[2] = ViewToPixel[3];
-		tmp[3] = ViewToPixel[3];
-
-		// We multiply the matrices in this order so the camera position, transformed by ViewToPixel
-		// is used as the 'input texture coordinates' to be affected by the internal mapper matrix.
-		Matrix4x4::Multiply(int_mat, tmp, &ViewToPixel);
-
-		MatrixMapperClass::Apply(uv_array_index);
-		ViewToPixel = view_to_pixel_copy;
-	} else {
-		MatrixMapperClass::Apply(uv_array_index);
+		(void)int_mat;
 	}
 }
 

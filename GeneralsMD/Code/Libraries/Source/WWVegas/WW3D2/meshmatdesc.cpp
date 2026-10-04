@@ -40,9 +40,30 @@
 #include "texture.h"
 #include "vertmaterial.h"
 #include "WWLib/realcrc.h"
-#include	"dx8wrapper.h"
-#include "dx8caps.h"
 #include "meshmdl.h"
+#include "ww3d.h"
+#include "IRenderBackend.h"
+#include "WWMath/vector4.h"
+
+// D3D12 migration: packed ARGB helpers are CPU-side only. They preserve the
+// legacy DX8 conversion results without touching device state.
+namespace {
+Vector4 Unpack_ARGB_Color(unsigned color)
+{
+	Vector4 col;
+	col.W = ((color & 0xff000000) >> 24) / 255.0f;
+	col.X = ((color & 0xff0000) >> 16) / 255.0f;
+	col.Y = ((color & 0xff00) >> 8) / 255.0f;
+	col.Z = ((color & 0xff) >> 0) / 255.0f;
+	return col;
+}
+
+unsigned Pack_ARGB_Color(const Vector4 &color)
+{
+	const Vector3 rgb(color.X, color.Y, color.Z);
+	return rgb.Convert_To_ARGB(color.W);
+}
+}
 
 
 /**************************************************************************************************
@@ -751,12 +772,12 @@ void MeshMatDescClass::Post_Load_Process(bool lighting_enabled,MeshModelClass * 
 			unsigned * emissive_array = ColorArray[1]->Get_Array();
 
 			for (int vidx=0; vidx<VertexCount; vidx++) {
-				Vector4 diffuse=DX8Wrapper::Convert_Color(diffuse_array[vidx]);
-				Vector4 emissive=DX8Wrapper::Convert_Color(emissive_array[vidx]);
+				Vector4 diffuse=Unpack_ARGB_Color(diffuse_array[vidx]);
+				Vector4 emissive=Unpack_ARGB_Color(emissive_array[vidx]);
 				diffuse.X *= emissive.X;
 				diffuse.Y *= emissive.Y;
 				diffuse.Z *= emissive.Z;
-				diffuse_array[vidx]=DX8Wrapper::Convert_Color(diffuse);
+				diffuse_array[vidx]=Pack_ARGB_Color(diffuse);
 			}
 		}
 		DIGSource[pass]=VertexMaterialClass::MATERIAL;	// DIG channel no more
@@ -780,12 +801,12 @@ void MeshMatDescClass::Post_Load_Process(bool lighting_enabled,MeshModelClass * 
 
 				// If only diffuse is used apply diffuse to color channel and set diffuse source to color 1
 				if (diffuse_used && !ambient_used && !emissive_used) {
-					Vector4 diffuse=DX8Wrapper::Convert_Color(diffuse_array[vidx]);
+					Vector4 diffuse=Unpack_ARGB_Color(diffuse_array[vidx]);
 					diffuse.X *= mtl_diffuse.X;
 					diffuse.Y *= mtl_diffuse.Y;
 					diffuse.Z *= mtl_diffuse.Z;
 					diffuse.W *= mtl_opacity;
-					diffuse_array[vidx]=DX8Wrapper::Convert_Color(diffuse);
+					diffuse_array[vidx]=Pack_ARGB_Color(diffuse);
 
 					mtl->Set_Ambient_Color_Source(VertexMaterialClass::MATERIAL);
 					mtl->Set_Diffuse_Color_Source(VertexMaterialClass::COLOR1);
@@ -797,12 +818,12 @@ void MeshMatDescClass::Post_Load_Process(bool lighting_enabled,MeshModelClass * 
 				// ambient are different but is probably the most reasonable thing to do. Why set
 				// diffuse and ambient differently anyway?)
 				if (diffuse_used && ambient_used && !emissive_used) {
-					Vector4 diffuse=DX8Wrapper::Convert_Color(diffuse_array[vidx]);
+					Vector4 diffuse=Unpack_ARGB_Color(diffuse_array[vidx]);
 					diffuse.X *= mtl_diffuse.X;
 					diffuse.Y *= mtl_diffuse.Y;
 					diffuse.Z *= mtl_diffuse.Z;
 					diffuse.W *= mtl_opacity;
-					diffuse_array[vidx]=DX8Wrapper::Convert_Color(diffuse);
+					diffuse_array[vidx]=Pack_ARGB_Color(diffuse);
 
 					mtl->Set_Ambient_Color_Source(VertexMaterialClass::COLOR1);
 					mtl->Set_Diffuse_Color_Source(VertexMaterialClass::COLOR1);
@@ -811,12 +832,12 @@ void MeshMatDescClass::Post_Load_Process(bool lighting_enabled,MeshModelClass * 
 
 				// If only ambient is used apply ambient to color channel and set ambient source to color 1
 				if (!diffuse_used && ambient_used && !emissive_used) {
-					Vector4 diffuse=DX8Wrapper::Convert_Color(diffuse_array[vidx]);
+					Vector4 diffuse=Unpack_ARGB_Color(diffuse_array[vidx]);
 					diffuse.X *= mtl_ambient.X;
 					diffuse.Y *= mtl_ambient.Y;
 					diffuse.Z *= mtl_ambient.Z;
 					diffuse.W *= mtl_opacity;
-					diffuse_array[vidx]=DX8Wrapper::Convert_Color(diffuse);
+					diffuse_array[vidx]=Pack_ARGB_Color(diffuse);
 
 					mtl->Set_Ambient_Color_Source(VertexMaterialClass::COLOR1);
 					mtl->Set_Diffuse_Color_Source(VertexMaterialClass::MATERIAL);
@@ -825,12 +846,12 @@ void MeshMatDescClass::Post_Load_Process(bool lighting_enabled,MeshModelClass * 
 
 				// If only emissive is used apply emissive to color channel, set diffuse source to color 1, and turn off lighting
 				if (!diffuse_used && !ambient_used && emissive_used) {
-					Vector4 diffuse=DX8Wrapper::Convert_Color(diffuse_array[vidx]);
+					Vector4 diffuse=Unpack_ARGB_Color(diffuse_array[vidx]);
 					diffuse.X *= mtl_emissive.X;
 					diffuse.Y *= mtl_emissive.Y;
 					diffuse.Z *= mtl_emissive.Z;
 					diffuse.W *= mtl_opacity;
-					diffuse_array[vidx]=DX8Wrapper::Convert_Color(diffuse);
+					diffuse_array[vidx]=Pack_ARGB_Color(diffuse);
 
 					mtl->Set_Ambient_Color_Source(VertexMaterialClass::MATERIAL);
 					mtl->Set_Diffuse_Color_Source(VertexMaterialClass::COLOR1);
@@ -857,17 +878,8 @@ void MeshMatDescClass::Post_Load_Process(bool lighting_enabled,MeshModelClass * 
 		/*
 		// HY: Earth and beyond uses a different fallback from Renegade with regards to bump environment maps
 		// we keep the pass but change it to an unbumped environment
-		if ( (Shader[pass].Get_Primary_Gradient() == ShaderClass::GRADIENT_BUMPENVMAP) &&
-			  (!DX8Wrapper::Is_Initted() || DX8Wrapper::Get_Current_Caps()->Support_Bump_Envmap() == false) )
-		{
-			kill_pass = true;
-		}
-
-		if ( (Shader[pass].Get_Primary_Gradient() == ShaderClass::GRADIENT_BUMPENVMAPLUMINANCE) &&
-			  (!DX8Wrapper::Is_Initted() || DX8Wrapper::Get_Current_Caps()->Support_Bump_Envmap_Luminance() == false) )
-		{
-			kill_pass = true;
-		}
+		// D3D12 migration: bump environment mapping has no backend equivalent;
+		// unsupported shaders are rejected via Get_Render_Backend_State.
 		*/
 
 		if (kill_pass) {
@@ -957,7 +969,11 @@ void MeshMatDescClass::Configure_Material(VertexMaterialClass * mtl,int pass,boo
 
 bool MeshMatDescClass::Do_Mappers_Need_Normals()
 {
-	if (DX8Wrapper::Is_Initted() && DX8Wrapper::Get_Current_Caps()->Support_NPatches() && WW3D::Get_NPatches_Level()>1) return true;
+	// D3D12 migration: NPatch tessellation is not migrated (meshrenderer
+	// rejects it), but normals are still required when it is enabled.
+	// Device readiness replaces the legacy DX8 Is_Initted check.
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend && backend->Is_Device_Ready() && WW3D::Get_NPatches_Level() > 1) return true;
 
 	for (int pass=0; pass<PassCount; pass++) {
 		/*

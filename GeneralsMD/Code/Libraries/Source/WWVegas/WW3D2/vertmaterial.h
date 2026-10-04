@@ -48,12 +48,24 @@
 class ChunkLoadClass;
 class ChunkSaveClass;
 
-#define DYN_MAT8
-#ifdef DYN_MAT8
-class DynD3DMATERIAL8;
-#else
-struct _D3DMATERIAL8;
-#endif
+// D3D12 migration: renderer-neutral vertex material storage. Fixed-width
+// float32 colors preserve asset CRC and determinism without D3D8 types.
+struct W3DMaterialColorValue
+{
+	float r = 0.0f;
+	float g = 0.0f;
+	float b = 0.0f;
+	float a = 0.0f;
+};
+
+struct W3DVertexMaterialData
+{
+	W3DMaterialColorValue Diffuse;
+	W3DMaterialColorValue Ambient;
+	W3DMaterialColorValue Specular;
+	W3DMaterialColorValue Emissive;
+	float Power = 0.0f;
+};
 
 /**
 ** VertexMaterialClass
@@ -63,8 +75,6 @@ struct _D3DMATERIAL8;
 class VertexMaterialClass : public RefCountClass
 {
 	W3DMPO_CODE(VertexMaterialClass)
-
-	friend class DX8Wrapper;
 
 public:
 	/*
@@ -86,9 +96,9 @@ public:
 	};
 
 	enum ColorSourceType {
-		MATERIAL = 0,				// D3DMCS_MATERIAL - the color source should be taken from the material setting
-		COLOR1,						// D3DMCS_COLOR1 - the color should be taken from per-vertex color array 1 (aka D3DFVF_DIFFUSE)
-		COLOR2,						// D3DMCS_COLOR2 - the color should be taken from per-vertex color array 2 (aka D3DFVF_SPECULAR)
+		MATERIAL = 0,				// material color setting
+		COLOR1,						// per-vertex color array 1 (diffuse)
+		COLOR2,						// per-vertex color array 2 (specular)
 	};
 
 	enum PresetType
@@ -177,7 +187,7 @@ public:
 	ColorSourceType	Get_Diffuse_Color_Source();
 
 	/*
-	** UV source control.  The DX8 FVF can support up to 8 uv-arrays.  The vertex
+	** UV source control.  The backend supports up to 8 uv-arrays.  The vertex
 	** material can/must be configured to index to the uv-arrays that you want to
 	** use for the two texture stages.
 	*/
@@ -236,13 +246,8 @@ public:
 	void Make_Unique();
 
 private:
-	// We're using the pointer instead of the actual structure
-	// so we don't have to include the d3d header - HY
-#ifdef DYN_MAT8
-	DynD3DMATERIAL8 *			MaterialDyn;
-#else
-	_D3DMATERIAL8 *				MaterialOld;
-#endif
+	// Renderer-neutral material storage (fixed-width float32, see above).
+	W3DVertexMaterialData *			MaterialData;
 	unsigned int					Flags;
 	unsigned int					AmbientColorSource;
 	unsigned int					EmissiveColorSource;
@@ -257,11 +262,11 @@ private:
 
 private:
 	/*
-	** Apply the render states to D3D
+	** Apply the render states to the backend (CPU-side only; retired DX8 path)
 	*/
 	void					Apply() const;
 	/*
-	** Apply the render states corresponding to a nullptr vertex material to D3D
+	** Apply the render states corresponding to a nullptr vertex material (retired)
 	*/
 	static void			Apply_Null();
 	unsigned long		Compute_CRC() const;

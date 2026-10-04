@@ -21,8 +21,6 @@
 #include "ddsfile.h"
 #include "WWLib/ffactory.h"
 #include "WWLib/bufffile.h"
-#include "formconv.h"
-#include "dx8wrapper.h"
 #include "bitmaphandler.h"
 #include "colorspace.h"
 #include <ddraw.h>
@@ -88,7 +86,15 @@ DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor,bool retai
 		return;
 	}
 
-	Format=D3DFormat_To_WW3DFormat((D3DFORMAT)SurfaceDesc.PixelFormat.FourCC);
+	// Renderer-neutral FourCC decode: DDS files only carry DXT1-5 here.
+	// Fixed-width file values; never a native renderer format.
+	const unsigned fourcc = SurfaceDesc.PixelFormat.FourCC;
+	if (fourcc == 0x31545844u) Format = WW3D_FORMAT_DXT1; // 'DXT1'
+	else if (fourcc == 0x32545844u) Format = WW3D_FORMAT_DXT2; // 'DXT2'
+	else if (fourcc == 0x33545844u) Format = WW3D_FORMAT_DXT3; // 'DXT3'
+	else if (fourcc == 0x34545844u) Format = WW3D_FORMAT_DXT4; // 'DXT4'
+	else if (fourcc == 0x35545844u) Format = WW3D_FORMAT_DXT5; // 'DXT5'
+	else Format = WW3D_FORMAT_UNKNOWN;
 	WWASSERT(
 		Format==WW3D_FORMAT_DXT1 ||
 		Format==WW3D_FORMAT_DXT2 ||
@@ -329,37 +335,6 @@ WWINLINE static unsigned short ARGB8888_To_RGB565(unsigned argb_)
 	return rgb;
 }
 
-
-// ----------------------------------------------------------------------------
-//
-// Copy mipmap level to D3D surface. The copying is performed using another
-// Copy_Level_To_Surface function (see below).
-//
-// ----------------------------------------------------------------------------
-
-void DDSFileClass::Copy_Level_To_Surface(unsigned level,IDirect3DSurface8* d3d_surface,const Vector3& hsv_shift)
-{
-	WWASSERT(d3d_surface);
-	// Verify that the destination surface size matches the source surface size
-	D3DSURFACE_DESC surface_desc;
-	DX8_ErrorCode(d3d_surface->GetDesc(&surface_desc));
-
-	// First lock the surface
-	D3DLOCKED_RECT locked_rect;
-	DX8_ErrorCode(d3d_surface->LockRect(&locked_rect,nullptr,0));
-
-	Copy_Level_To_Surface(
-		level,
-		D3DFormat_To_WW3DFormat(surface_desc.Format),
-		surface_desc.Width,
-		surface_desc.Height,
-		reinterpret_cast<unsigned char*>(locked_rect.pBits),
-		locked_rect.Pitch,
-		hsv_shift);
-
-	// Finally, unlock the surface
-	DX8_ErrorCode(d3d_surface->UnlockRect());
-}
 
 // ----------------------------------------------------------------------------
 //

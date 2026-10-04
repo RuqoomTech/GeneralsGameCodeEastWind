@@ -47,40 +47,25 @@
 #include "w3derr.h"
 #include "WWLib/INI.h"
 #include "WWLib/XSTRAW.h"
-#include "dx8wrapper.h"
 
 
 static unsigned int unique=1;
 
 VertexMaterialClass* VertexMaterialClass::Presets[VertexMaterialClass::PRESET_COUNT];
 
-#ifdef DYN_MAT8
-class DynD3DMATERIAL8
-{
-	W3DMPO_CODE(DynD3DMATERIAL8)
-public:
-	D3DMATERIAL8 Mat;
-};
-#define Material				(&MaterialDyn->Mat)
-#define SRCMATPTR(src)	(&(src)->MaterialDyn->Mat)
-#else
-#define Material				(MaterialOld)
-#define SRCMATPTR(src)	((src)->MaterialOld)
-#endif
+// D3D12 migration: neutral material access without D3D8 types.
+#define Material				(MaterialData)
+#define SRCMATPTR(src)	((src)->MaterialData)
 
 /*
 ** VertexMaterialClass Implementation
 */
 VertexMaterialClass::VertexMaterialClass():
-#ifdef DYN_MAT8
-	MaterialDyn(nullptr),
-#else
-	MaterialOld(nullptr),
-#endif
+	MaterialData(nullptr),
 	Flags(0),
-	AmbientColorSource(D3DMCS_MATERIAL),
-	EmissiveColorSource(D3DMCS_MATERIAL),
-	DiffuseColorSource(D3DMCS_MATERIAL),
+	AmbientColorSource(MATERIAL),
+	EmissiveColorSource(MATERIAL),
+	DiffuseColorSource(MATERIAL),
 	UseLighting(false),
 	UniqueID(0),
 	CRCDirty(true)
@@ -93,12 +78,8 @@ VertexMaterialClass::VertexMaterialClass():
 		UVSource[i] = i;
 	}
 
-#ifdef DYN_MAT8
-	MaterialDyn=W3DNEW DynD3DMATERIAL8;
-#else
-	MaterialOld=W3DNEW D3DMATERIAL8;
-#endif
-	memset(Material,0,sizeof(D3DMATERIAL8));
+	MaterialData=W3DNEW W3DVertexMaterialData;
+	memset(Material,0,sizeof(W3DVertexMaterialData));
 	Set_Ambient(1.0f,1.0f,1.0f);
 	Set_Diffuse(1.0f,1.0f,1.0f);
 
@@ -106,11 +87,7 @@ VertexMaterialClass::VertexMaterialClass():
 }
 
 VertexMaterialClass::VertexMaterialClass(const VertexMaterialClass & src) :
-#ifdef DYN_MAT8
-	MaterialDyn(nullptr),
-#else
-	MaterialOld(nullptr),
-#endif
+	MaterialData(nullptr),
 	Flags(src.Flags),
 	AmbientColorSource(src.AmbientColorSource),
 	EmissiveColorSource(src.EmissiveColorSource),
@@ -134,12 +111,8 @@ VertexMaterialClass::VertexMaterialClass(const VertexMaterialClass & src) :
 		UVSource[i] = src.UVSource[i];
 	}
 
-#ifdef DYN_MAT8
-	MaterialDyn=W3DNEW DynD3DMATERIAL8;
-#else
-	MaterialOld=W3DNEW D3DMATERIAL8;
-#endif
-	memcpy(Material, SRCMATPTR(&src), sizeof(D3DMATERIAL8));
+	MaterialData=W3DNEW W3DVertexMaterialData;
+	memcpy(Material, SRCMATPTR(&src), sizeof(W3DVertexMaterialData));
 }
 
 void VertexMaterialClass::Make_Unique()
@@ -162,11 +135,7 @@ VertexMaterialClass::~VertexMaterialClass()
 		}
 	}
 
-#ifdef DYN_MAT8
-	delete MaterialDyn;
-#else
-	delete MaterialOld;
-#endif
+	delete MaterialData;
 }
 
 VertexMaterialClass & VertexMaterialClass::operator = (const VertexMaterialClass &src)
@@ -204,9 +173,9 @@ VertexMaterialClass & VertexMaterialClass::operator = (const VertexMaterialClass
 
 
 namespace {
-void Material_Components(const D3DMATERIAL8 &material, float (&values)[17])
+void Material_Components(const W3DVertexMaterialData &material, float (&values)[17])
 {
-    const D3DCOLORVALUE colors[] = {material.Diffuse, material.Ambient, material.Specular, material.Emissive};
+    const W3DMaterialColorValue colors[] = {material.Diffuse, material.Ambient, material.Specular, material.Emissive};
     for (unsigned int i = 0; i < 4; ++i) {
         values[4*i] = colors[i].r; values[4*i+1] = colors[i].g;
         values[4*i+2] = colors[i].b; values[4*i+3] = colors[i].a;
@@ -386,9 +355,9 @@ void	VertexMaterialClass::Set_Ambient_Color_Source(ColorSourceType src)
 	CRCDirty=true;
 	switch (src)
 	{
-	case	COLOR1:		AmbientColorSource = D3DMCS_COLOR1; break;
-	case	COLOR2:		AmbientColorSource = D3DMCS_COLOR2; break;
-	default:				AmbientColorSource = D3DMCS_MATERIAL; break;
+	case	COLOR1:		AmbientColorSource = COLOR1; break;
+	case	COLOR2:		AmbientColorSource = COLOR2; break;
+	default:				AmbientColorSource = MATERIAL; break;
 	}
 }
 
@@ -397,9 +366,9 @@ void	VertexMaterialClass::Set_Emissive_Color_Source(ColorSourceType src)
 	CRCDirty=true;
 	switch (src)
 	{
-	case	COLOR1:		EmissiveColorSource = D3DMCS_COLOR1; break;
-	case	COLOR2:		EmissiveColorSource = D3DMCS_COLOR2; break;
-	default:				EmissiveColorSource = D3DMCS_MATERIAL; break;
+	case	COLOR1:		EmissiveColorSource = COLOR1; break;
+	case	COLOR2:		EmissiveColorSource = COLOR2; break;
+	default:				EmissiveColorSource = MATERIAL; break;
 	}
 }
 
@@ -408,9 +377,9 @@ void	VertexMaterialClass::Set_Diffuse_Color_Source(ColorSourceType src)
 	CRCDirty=true;
 	switch (src)
 	{
-	case	COLOR1:		DiffuseColorSource = D3DMCS_COLOR1; break;
-	case	COLOR2:		DiffuseColorSource = D3DMCS_COLOR2; break;
-	default:				DiffuseColorSource = D3DMCS_MATERIAL; break;
+	case	COLOR1:		DiffuseColorSource = COLOR1; break;
+	case	COLOR2:		DiffuseColorSource = COLOR2; break;
+	default:				DiffuseColorSource = MATERIAL; break;
 	}
 }
 
@@ -419,8 +388,8 @@ VertexMaterialClass::Get_Ambient_Color_Source()
 {
 	switch(AmbientColorSource)
 	{
-	case D3DMCS_COLOR1:	return COLOR1;
-	case D3DMCS_COLOR2:	return COLOR2;
+	case COLOR1:	return COLOR1;
+	case COLOR2:	return COLOR2;
 	default:					return MATERIAL;
 	}
 }
@@ -430,8 +399,8 @@ VertexMaterialClass::Get_Emissive_Color_Source()
 {
 	switch(EmissiveColorSource)
 	{
-	case D3DMCS_COLOR1:	return COLOR1;
-	case D3DMCS_COLOR2:	return COLOR2;
+	case COLOR1:	return COLOR1;
+	case COLOR2:	return COLOR2;
 	default:					return MATERIAL;
 	}
 }
@@ -441,8 +410,8 @@ VertexMaterialClass::Get_Diffuse_Color_Source()
 {
 	switch(DiffuseColorSource)
 	{
-	case D3DMCS_COLOR1:	return COLOR1;
-	case D3DMCS_COLOR2:	return COLOR2;
+	case COLOR1:	return COLOR1;
+	case COLOR2:	return COLOR2;
 	default:					return MATERIAL;
 	}
 }
@@ -983,53 +952,25 @@ WW3DErrorType VertexMaterialClass::Save_W3D(ChunkSaveClass & csave)
 
 void VertexMaterialClass::Apply() const
 {
-	int i;
-
-	DX8Wrapper::Set_DX8_Material(Material);
-
-	if (WW3D::Is_Coloring_Enabled())
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING,FALSE);
-	else
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING,UseLighting);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_AMBIENTMATERIALSOURCE,AmbientColorSource);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_DIFFUSEMATERIALSOURCE,DiffuseColorSource);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_EMISSIVEMATERIALSOURCE,EmissiveColorSource);
-
-	// set to default values if no mappers
-	for (i=0; i<MeshBuilderClass::MAX_STAGES; i++) {
+	// D3D12 migration: material state is consumed CPU-side via meshrenderer
+	// shading and Get_Render_Backend_State. Retain deterministic mapper clocks
+	// without emitting fixed-function device state.
+	for (int i = 0; i < MeshBuilderClass::MAX_STAGES; i++) {
 		if (Mapper[i]) {
 			Mapper[i]->Apply(UVSource[i]);
-		} else {
-			DX8Wrapper::Set_DX8_Texture_Stage_State(i,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | UVSource[i]);
-			DX8Wrapper::Set_DX8_Texture_Stage_State(i,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_DISABLE);
 		}
 	}
+	(void)Material;
+	(void)UseLighting;
+	(void)AmbientColorSource;
+	(void)DiffuseColorSource;
+	(void)EmissiveColorSource;
 }
 
 void VertexMaterialClass::Apply_Null()
 {
-	int i;
-	static D3DMATERIAL8 default_settings =
-	{
-		{ 1.0f, 1.0f, 1.0f, 1.0f },	// diffuse
-		{ 1.0f, 1.0f, 1.0f, 1.0f },	// ambient
-		{ 0.0f, 0.0f, 0.0f, 0.0f },	// specular
-		{ 0.0f, 0.0f, 0.0f, 0.0f },	// emissive
-		1.0f									// power
-	};
-
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING,FALSE);
-	DX8Wrapper::Set_DX8_Material(&default_settings);
-
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_AMBIENTMATERIALSOURCE,D3DMCS_MATERIAL);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_DIFFUSEMATERIALSOURCE,D3DMCS_MATERIAL);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_EMISSIVEMATERIALSOURCE,D3DMCS_MATERIAL);
-
-	// set to default values if no mappers
-	for (i=0; i<MeshBuilderClass::MAX_STAGES; i++) {
-		DX8Wrapper::Set_DX8_Texture_Stage_State(i,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | i);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(i,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_DISABLE);
-	}
+	// D3D12 migration: null material has no device state. Retained as no-op
+	// for legacy callers (actual null handling is via backend material PSO).
 }
 
 
