@@ -55,6 +55,7 @@
 
 #include "WW3D2/ww3d.h"
 #include "WW3D2/IRenderBackend.h"
+#include "WWLib/cpudetect.h"
 #include "WW3D2/assetmgr.h"
 #include "WW3D2/shader.h"
 #include "Lib/BaseType.h"

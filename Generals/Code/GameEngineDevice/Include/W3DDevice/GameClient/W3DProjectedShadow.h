@@ -34,6 +34,7 @@
 #pragma once
 
 #include "WW3D2/IRenderBackend.h"
+#include "WW3D2/lightenvironment.h"
 #include <vector>
 
 #include "GameClient/Shadow.h"

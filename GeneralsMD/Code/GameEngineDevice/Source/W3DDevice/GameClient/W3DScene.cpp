@@ -1511,7 +1511,6 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 
 		// D3D12: STENCILENABLE off has no backend effect (see note above).
 	}
-	}
 	else
 	if (m_numNonOccluderOrOccludee || m_numPotentialOccluders || m_numPotentialOccludees)
 	{

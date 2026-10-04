@@ -53,7 +53,6 @@
 #include "W3DDevice/GameClient/HeightMap.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "WW3D2/texture.h"
-#include "WW3D2/dx8caps.h"
 #include "WWMath/vector2i.h"
 
 
@@ -78,16 +77,12 @@ inline Bool legalRadarPoint( Int px, Int py )
 // ------------------------------------------------------------------------------------------------
 static WW3DFormat findFormat(const WW3DFormat formats[])
 {
-	for( Int i = 0; formats[ i ] != WW3D_FORMAT_UNKNOWN; i++ )
+	// D3D12: radar textures upload as RGBA8 through the neutral TextureClass
+	// path, so every listed format maps to a supported backend texture.
+	// Keep the historical preference order and return the first choice.
+	if (formats[0] != WW3D_FORMAT_UNKNOWN)
 	{
-
-		if( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( formats[ i ] ) )
-		{
-
-			return formats[ i ];
-
-		}
-
+		return formats[0];
 	}
 	DEBUG_CRASH(("WW3DRadar: No appropriate texture format") );
 	return WW3D_FORMAT_UNKNOWN;

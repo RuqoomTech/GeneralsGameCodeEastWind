@@ -43,6 +43,7 @@
 #include "WW3D2/camera.h"
 #include "WW3D2/scene.h"
 #include "WW3D2/ww3d.h"
+#include "WW3D2/statistics.h"
 #include "WW3D2/IRenderBackend.h"
 #include "WW3D2/light.h"
 #include "WW3D2/shader.h"
