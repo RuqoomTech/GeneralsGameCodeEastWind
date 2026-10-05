@@ -88,7 +88,15 @@ DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor,bool retai
 		return;
 	}
 
-	Format=D3DFormat_To_WW3DFormat((D3DFORMAT)SurfaceDesc.PixelFormat.FourCC);
+	// DDS FourCC values are file identifiers, independent of native renderer formats.
+	switch (SurfaceDesc.PixelFormat.FourCC) {
+		case 0x31545844u: Format = WW3D_FORMAT_DXT1; break;
+		case 0x32545844u: Format = WW3D_FORMAT_DXT2; break;
+		case 0x33545844u: Format = WW3D_FORMAT_DXT3; break;
+		case 0x34545844u: Format = WW3D_FORMAT_DXT4; break;
+		case 0x35545844u: Format = WW3D_FORMAT_DXT5; break;
+		default: Format = WW3D_FORMAT_UNKNOWN; break;
+	}
 	WWASSERT(
 		Format==WW3D_FORMAT_DXT1 ||
 		Format==WW3D_FORMAT_DXT2 ||

@@ -47,6 +47,7 @@
 #include "WWLib/wwstring.h"
 #include "WWMath/vp.h"
 #include "meshmatdesc.h"
+#include "ww3dformat.h"
 #include <stdlib.h>
 
 /*
@@ -70,21 +71,7 @@
 #define BPT_EPSILON					0.0001f
 #define BPT_COINCIDENCE_EPSILON	0.000001f
 
-namespace {
-Vector4 Unpack_ARGB_Color(unsigned color)
-{
-	return Vector4(
-		((color >> 16) & 0xff) / 255.0f,
-		((color >> 8) & 0xff) / 255.0f,
-		(color & 0xff) / 255.0f,
-		((color >> 24) & 0xff) / 255.0f);
-}
 
-unsigned Pack_ARGB_Color(const Vector4 &color)
-{
-	return Vector3(color.X, color.Y, color.Z).Convert_To_ARGB(color.W);
-}
-}
 
 
 /**

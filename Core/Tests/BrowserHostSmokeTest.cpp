@@ -90,6 +90,37 @@ int main() {
     while(okay && (dispatch->calls == 0 || BrowserHost::GetState("real") == BrowserHost::State::Pending) && GetTickCount64() < deadline && BrowserHost::GetState("real") != BrowserHost::State::Failed) pump();
     okay = okay && dispatch->calls == 1 && BrowserHost::GetState("real") == BrowserHost::State::Ready;
     if(!okay) std::fprintf(stderr, "Real browser/IDispatch bridge failed: state=%d error=%08lx calls=%d\n", static_cast<int>(BrowserHost::GetState("real")), static_cast<unsigned long>(BrowserHost::GetError("real")), dispatch->calls);
+    if(okay) {
+        // A controller that already exists must return to Pending on navigation;
+        // its Ready state belongs to the completed document, not request acceptance.
+        okay = BrowserHost::Navigate("real", page_url.c_str()) &&
+            BrowserHost::GetState("real") == BrowserHost::State::Pending;
+        const ULONGLONG reload_deadline = GetTickCount64() + 15000;
+        while(okay && BrowserHost::GetState("real") == BrowserHost::State::Pending && GetTickCount64() < reload_deadline) pump();
+        okay = okay && BrowserHost::GetState("real") == BrowserHost::State::Ready &&
+            SUCCEEDED(BrowserHost::GetError("real")) && dispatch->calls == 2;
+        if(!okay) std::fprintf(stderr, "Existing browser reload failed: state=%d error=%08lx calls=%d\n", static_cast<int>(BrowserHost::GetState("real")), static_cast<unsigned long>(BrowserHost::GetError("real")), dispatch->calls);
+    }
+    if(okay) {
+        // Supersede a failing request before pumping its events. An obsolete
+        // completion must not fail the new page or skip its native bridge call.
+        const std::string superseded = page_url + ".superseded";
+        okay = BrowserHost::Navigate("real", superseded.c_str()) &&
+            BrowserHost::Navigate("real", page_url.c_str());
+        const ULONGLONG replace_deadline = GetTickCount64() + 15000;
+        while(okay && BrowserHost::GetState("real") == BrowserHost::State::Pending && GetTickCount64() < replace_deadline) pump();
+        okay = okay && BrowserHost::GetState("real") == BrowserHost::State::Ready &&
+            SUCCEEDED(BrowserHost::GetError("real")) && dispatch->calls == 3;
+        if(!okay) std::fprintf(stderr, "Superseded navigation changed current state: state=%d error=%08lx calls=%d\n", static_cast<int>(BrowserHost::GetState("real")), static_cast<unsigned long>(BrowserHost::GetError("real")), dispatch->calls);
+    }
+    if(okay) {
+        const std::string missing = page_url + ".missing";
+        okay = BrowserHost::Navigate("real", missing.c_str());
+        const ULONGLONG failure_deadline = GetTickCount64() + 15000;
+        while(okay && BrowserHost::GetState("real") == BrowserHost::State::Pending && GetTickCount64() < failure_deadline) pump();
+        okay = okay && BrowserHost::GetState("real") == BrowserHost::State::Failed && FAILED(BrowserHost::GetError("real"));
+        if(!okay) std::fprintf(stderr, "Existing browser missing-page failure lost: state=%d error=%08lx\n", static_cast<int>(BrowserHost::GetState("real")), static_cast<unsigned long>(BrowserHost::GetError("real")));
+    }
     BrowserHost::DestroyBrowser("real");
     okay = okay && BrowserHost::GetState("real") == BrowserHost::State::Closed;
     if(okay) {
@@ -99,7 +130,7 @@ int main() {
         const ULONGLONG failure_deadline = GetTickCount64() + 15000;
         while(okay && BrowserHost::GetState("missing") != BrowserHost::State::Failed && GetTickCount64() < failure_deadline) pump();
         okay = okay && BrowserHost::GetState("missing") == BrowserHost::State::Failed && FAILED(BrowserHost::GetError("missing"));
-        if(!okay) std::fprintf(stderr, "Missing page did not report Failed and HRESULT error\n");
+        if(!okay) std::fprintf(stderr, "Missing page did not report Failed and HRESULT error: state=%d error=%08lx\n", static_cast<int>(BrowserHost::GetState("missing")), static_cast<unsigned long>(BrowserHost::GetError("missing")));
         BrowserHost::DestroyBrowser("missing");
     }
     BrowserHost::Shutdown();

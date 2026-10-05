@@ -1,14 +1,14 @@
 # Project state
 
-Updated: 2026-10-03
+Updated: 2026-10-05
 
 ## Current baseline
 
-The authoritative working tree is the user-provided `GeneralsGameCodeEastWind(4).zip` (SHA-256 `d379a84ce5c0779fec06d846c3ef325898ae50efe78d6db96f0f7126d8b7c8c9`). It materially supersedes the older H1X/H1Z package notes retained below: the source has already retired `dx8renderer.*`, `dx8polygonrenderer.*`, `dx8webbrowser.*`, and the old EABrowserEngine implementation files, introduced renderer-neutral `meshrenderer.*` and `BrowserHost`, and contains broader D3D12 migration work. Historical unresolved-symbol counts in older sections are therefore not the active queue.
+The current checked-out baseline is `main` at `2c81f9922beb5c5379c6d695c0e14ea3f15f55b3`; its existing shatter ARGB fix supersedes the older October 3 compiler receipt. A fresh normal Windows MinGW-w64 GCC 16.2 build on October 5 compiled the game graph and reached the executable linker, which failed with 65 unique unresolved legacy renderer symbols.
 
-The real Windows MinGW-w64 GCC 16.2 `mingw64-game` continuation on 2026-10-03 configured successfully and stopped at **2/107** compiling `Core/Libraries/Source/WWVegas/WW3D2/shattersystem.cpp`. The hard error is seven uses of `DX8Wrapper::Convert_Color` in CPU-side shatter vertex/material color interpolation after `DX8Wrapper` ceased to be a complete dependency in that translation unit. H1AA replaces those calls with local renderer-neutral ARGB unpack/pack helpers that preserve the exact legacy `0xAARRGGBB` decode and GCC `Vector3::Convert_To_ARGB(alpha)` encode semantics. It does not change shatter interpolation, mesh rendering, deterministic simulation, wire/replay/CRC/Xfer/RNG state, or introduce a compatibility renderer.
+The `late` branch is fourteen commits ahead of this baseline. Three agents reviewed texture/resource ownership, rendering behavior, and x64 alignment. Its historical game-link log is useful provenance but lacks a pinned source/invocation and boot/frame evidence. Blank procedural text textures, disconnected shader state, lost stencil marking and other behavior gaps make a wholesale merge unsuitable.
 
-Host focused validation for H1AA rebuilds 46/46 actions and passes 26/26 tests, including the D3D12 source-policy gate. Windows sign-off remains pending the user's next exact `cmake --build --preset mingw64-game --target z_generals -- -j1` continuation. If the build advances, its next first hard compiler/link/runtime failure becomes the queue.
+The working candidate selectively reuses paired box rendering and DDS FourCC decoding; shared CPU ARGB/format utilities remove device dependencies from mesh material preprocessing. The first candidate game rerun compiled successfully and reached the linker with 64 unresolved symbols, no newly introduced symbols. The detailed reuse/repair queue is recorded in `Modernization/CURRENT_STATE.md`. Additional renderer migration and regression validation remain in progress. No linked/booted current game, visible game frame, sealed milestone or user Windows sign-off is claimed.
 
 ## Step 05H1U candidate — D3D12-only build and output ownership
 

@@ -24,11 +24,11 @@ public:
 };
 
 // WebView2 invokes these completion handlers on the creating STA thread.
-template<class Interface, class Argument, const IID *InterfaceId> class Completion final : public Interface {
+template<class Interface, class Argument, const IID *InterfaceId, class Result = HRESULT> class Completion final : public Interface {
     LONG references = 1;
-    std::function<HRESULT(HRESULT, Argument)> action;
+    std::function<HRESULT(Result, Argument)> action;
 public:
-    explicit Completion(std::function<HRESULT(HRESULT, Argument)> fn) : action(std::move(fn)) {}
+    explicit Completion(std::function<HRESULT(Result, Argument)> fn) : action(std::move(fn)) {}
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override {
         if(!out) return E_POINTER;
         *out = nullptr;
@@ -39,12 +39,20 @@ public:
     }
     ULONG STDMETHODCALLTYPE AddRef() override { return static_cast<ULONG>(InterlockedIncrement(&references)); }
     ULONG STDMETHODCALLTYPE Release() override { const ULONG n = static_cast<ULONG>(InterlockedDecrement(&references)); if(!n) delete this; return n; }
-    HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, Argument value) override { return action(result, value); }
+    HRESULT STDMETHODCALLTYPE Invoke(Result result, Argument value) override {
+        // A navigation failure can remove this event handler during its callback.
+        AddRef();
+        const HRESULT hr = action(result, value);
+        Release();
+        return hr;
+    }
 };
 
 using EnvironmentDone = Completion<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler, ICoreWebView2Environment *, &IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>;
 using ControllerDone = Completion<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler, ICoreWebView2Controller *, &IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>;
 using ScriptDone = Completion<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler, LPCWSTR, &IID_ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>;
+using NavigationStarted = Completion<ICoreWebView2NavigationStartingEventHandler, ICoreWebView2NavigationStartingEventArgs *, &IID_ICoreWebView2NavigationStartingEventHandler, ICoreWebView2 *>;
+using NavigationDone = Completion<ICoreWebView2NavigationCompletedEventHandler, ICoreWebView2NavigationCompletedEventArgs *, &IID_ICoreWebView2NavigationCompletedEventHandler, ICoreWebView2 *>;
 
 struct Browser {
     HWND window = nullptr;
@@ -55,8 +63,19 @@ struct Browser {
     ComPtr<IDispatch> dispatch;
     ComPtr<ICoreWebView2Controller> controller;
     ComPtr<ICoreWebView2> webview;
+    EventRegistrationToken starting_token{}, completed_token{};
+    bool starting_registered = false, completed_registered = false;
+    UINT64 navigation_id = 0;
+    void disconnect_events() {
+        if(webview.get()) {
+            if(starting_registered) webview->remove_NavigationStarting(starting_token);
+            if(completed_registered) webview->remove_NavigationCompleted(completed_token);
+        }
+        starting_registered = completed_registered = false;
+    }
     void close() {
         cancelled = true;
+        disconnect_events();
         if(controller.get()) controller->Close();
         webview.reset(); controller.reset(); dispatch.reset();
         if(window) DestroyWindow(window);
@@ -98,6 +117,7 @@ void fail(const std::shared_ptr<Browser> &browser, HRESULT error, const char *st
     browser->error = FAILED(error) ? error : E_FAIL;
     browser->state = BrowserHost::State::Failed;
     std::fprintf(stderr, "Native browser %s failed (HRESULT %08lx)\n", stage, static_cast<unsigned long>(browser->error));
+    browser->disconnect_events();
     if(browser->controller.get()) browser->controller->Close();
     browser->webview.reset(); browser->controller.reset();
     if(browser->window) ShowWindow(browser->window, SW_HIDE);
@@ -119,6 +139,54 @@ void create_controller(const std::shared_ptr<Host> &owner, const std::shared_ptr
             hr = browser->webview->AddHostObjectToScript(L"gameinterface", &object);
         }
         if(FAILED(hr)) { fail(browser, hr); return S_OK; }
+        // Navigate accepts a request before its content has loaded. Observe the
+        // actual completion, and ignore old completions superseded by a new page.
+        const std::weak_ptr<Host> weak_owner(owner);
+        const std::weak_ptr<Browser> weak_browser(browser);
+        auto *starting = new NavigationStarted([weak_owner, weak_browser](ICoreWebView2 *, ICoreWebView2NavigationStartingEventArgs *args) {
+            const auto current_owner = weak_owner.lock();
+            const auto current = weak_browser.lock();
+            if(!current_owner || !current_owner->alive || !current || current->cancelled) return S_OK;
+            const HRESULT result = args ? args->get_NavigationId(&current->navigation_id) : E_POINTER;
+            if(FAILED(result)) { fail(current, result, "navigation starting"); return S_OK; }
+            current->state = BrowserHost::State::Pending;
+            current->error = S_OK;
+            return S_OK;
+        });
+        hr = browser->webview->add_NavigationStarting(starting, &browser->starting_token);
+        starting->Release();
+        browser->starting_registered = SUCCEEDED(hr);
+        if(FAILED(hr)) { fail(browser, hr, "navigation subscription"); return S_OK; }
+        auto *completed = new NavigationDone([weak_owner, weak_browser](ICoreWebView2 *, ICoreWebView2NavigationCompletedEventArgs *args) {
+            const auto current_owner = weak_owner.lock();
+            const auto current = weak_browser.lock();
+            if(!current_owner || !current_owner->alive || !current || current->cancelled) return S_OK;
+            UINT64 id = 0;
+            HRESULT result = args ? args->get_NavigationId(&id) : E_POINTER;
+            if(FAILED(result)) { fail(current, result, "navigation completion"); return S_OK; }
+            if(id != current->navigation_id) return S_OK;
+            BOOL succeeded = FALSE;
+            result = args->get_IsSuccess(&succeeded);
+            if(FAILED(result)) { fail(current, result, "navigation completion"); return S_OK; }
+            if(!succeeded) {
+                COREWEBVIEW2_WEB_ERROR_STATUS status = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
+                result = args->get_WebErrorStatus(&status);
+                if(SUCCEEDED(result)) {
+                    std::fprintf(stderr, "Native browser navigation error status %d\n", static_cast<int>(status));
+                    result = E_FAIL;
+                }
+                fail(current, result, "page load");
+                return S_OK;
+            }
+            current->state = BrowserHost::State::Ready;
+            current->error = S_OK;
+            ShowWindow(current->window, SW_SHOW);
+            return S_OK;
+        });
+        hr = browser->webview->add_NavigationCompleted(completed, &browser->completed_token);
+        completed->Release();
+        browser->completed_registered = SUCCEEDED(hr);
+        if(FAILED(hr)) { fail(browser, hr, "navigation subscription"); return S_OK; }
         // BrowserEngine exposed game commands as window.external.gameinterface.
         // Keep that page contract while the original FEBDispatch remains native.
         const wchar_t *bridge = LR"JS((()=>{const g=chrome.webview.hostObjects.sync.gameinterface;
@@ -129,8 +197,6 @@ void create_controller(const std::shared_ptr<Host> &owner, const std::shared_ptr
             if(FAILED(installed)) { fail(browser, installed, "bridge script"); return S_OK; }
             const HRESULT navigated = browser->webview->Navigate(browser->url.c_str());
             if(FAILED(navigated)) { fail(browser, navigated, "navigation request"); return S_OK; }
-            browser->state = BrowserHost::State::Ready;
-            ShowWindow(browser->window, SW_SHOW);
             return S_OK;
         });
         hr = browser->webview->AddScriptToExecuteOnDocumentCreated(bridge, script);
@@ -224,7 +290,12 @@ bool BrowserHost::Navigate(const char *name, const char *url) {
     const std::wstring location = wide(url);
     if(found == host->browsers.end() || location.empty() || found->second->state == State::Failed) return false;
     found->second->url = location;
-    if(found->second->state == State::Pending) return true;
+    if(!found->second->webview.get()) return true;
+    found->second->state = State::Pending;
+    found->second->error = S_OK;
+    // The previous document may complete before the new NavigationStarting
+    // event arrives. It must not satisfy or fail this accepted request.
+    found->second->navigation_id = 0;
     const HRESULT hr = found->second->webview->Navigate(location.c_str());
     if(FAILED(hr)) fail(found->second, hr);
     return SUCCEEDED(hr);

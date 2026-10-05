@@ -1,5 +1,6 @@
 #include "WW3D2/ddsfile.h"
 #include "WW3D2/bitmaphandler.h"
+#include "WWMath/vector4.h"
 
 #include <array>
 #include <cstddef>
@@ -97,6 +98,70 @@ static bool Test_Authored_DDS_Mips()
                 ok = clipped[y*16+x*4+channel] == expected[y == 4 ? 1 : 0][channel] && ok;
         for (unsigned channel = 12; channel < 16; ++channel) ok = clipped[y*16+channel] == 0xab && ok;
     }
+    // Exercise the production constructor's file FourCC mapping for every supported
+    // encoding, followed by an unknown identifier that must not produce an image.
+    header.Width = 4; header.Height = 4; header.MipMapCount = 1;
+    const WW3DFormat formats[] = {WW3D_FORMAT_DXT1, WW3D_FORMAT_DXT2, WW3D_FORMAT_DXT3,
+        WW3D_FORMAT_DXT4, WW3D_FORMAT_DXT5};
+    for (unsigned encoding = 0; encoding < 5; ++encoding) {
+        header.PixelFormat.FourCC = 0x31545844u + (encoding << 24);
+        payload.assign(encoding == 0 ? 8 : 16, 0);
+        const unsigned color_offset = encoding == 0 ? 0 : 8;
+        payload[color_offset+1] = 0xf8; // red RGB565 endpoint, color indices all zero
+        if (encoding == 1 || encoding == 2)
+            for (unsigned i = 0; i < 8; ++i) payload[i] = 0xff;
+        else if (encoding != 0)
+            payload[0] = 0xff; // DXT4/5 alpha endpoint, alpha indices all zero
+        if (!write()) return false;
+        DDSFileClass encoded(name.c_str(), 0, true);
+        std::array<unsigned char, 64> decoded{};
+        ok = encoded.Get_Format() == formats[encoding] && encoded.Load() &&
+            encoded.Copy_Level_RGBA8(0, decoded.data(), 16) && ok;
+        for (std::size_t offset = 0; offset < decoded.size(); ++offset)
+            ok = decoded[offset] == expected[0][offset%4] && ok;
+    }
+    header.PixelFormat.FourCC = 0x44434241u; // unsupported 'ABCD'
+    if (!write()) return false;
+    DDSFileClass unknown(name.c_str(), 0, true);
+    std::array<unsigned char, 64> unchanged;
+    unchanged.fill(0xab);
+    ok = unknown.Get_Format() == WW3D_FORMAT_UNKNOWN && unknown.Get_Mip_Level_Count() == 0 &&
+        !unknown.Load() && !unknown.Copy_Level_RGBA8(0, unchanged.data(), 16) && ok;
+    for (const unsigned char value : unchanged) ok = value == 0xab && ok;
+    return ok;
+}
+
+static bool Test_CPU_Format_Policy()
+{
+    const Vector4 unpacked = Unpack_ARGB_Color(0x80402010u);
+    bool ok = unpacked.X == 64.0f/255.0f && unpacked.Y == 32.0f/255.0f &&
+        unpacked.Z == 16.0f/255.0f && unpacked.W == 128.0f/255.0f;
+    ok = Pack_ARGB_Color(Vector4(1.0f, 0.5f, 0.25f, 0.75f)) == 0xbfFF7f3fu && ok;
+    ok = Pack_ARGB_Color(Vector4(0, 0, 0, 0)) == 0 &&
+        Pack_ARGB_Color(Vector4(1, 1, 1, 1)) == 0xffffffffu && ok;
+    unsigned packed = 0;
+    Vector4_to_Color(&packed, Vector4(1.0f, 0.5f, 0.25f, 0.75f), WW3D_FORMAT_A8R8G8B8);
+    ok = packed == 0xbfFF7f3fu && ok;
+    // Selecting storage must work before a renderer exists. DXT is a CPU
+    // source encoding; disabling compression chooses an uncompressed target.
+    for (const auto format : {WW3D_FORMAT_DXT1, WW3D_FORMAT_DXT2, WW3D_FORMAT_DXT3,
+            WW3D_FORMAT_DXT4, WW3D_FORMAT_DXT5}) {
+        ok = Get_Valid_Texture_Format(format, true) == format && ok;
+        ok = Get_Valid_Texture_Format(format, false) ==
+            (format == WW3D_FORMAT_DXT1 ? WW3D_FORMAT_X8R8G8B8 : WW3D_FORMAT_A8R8G8B8) && ok;
+    }
+    ok = Get_Valid_Texture_Format(WW3D_FORMAT_R8G8B8, false) == WW3D_FORMAT_X8R8G8B8 && ok;
+    for (const auto format : {WW3D_FORMAT_A8R8G8B8, WW3D_FORMAT_X8R8G8B8,
+            WW3D_FORMAT_R5G6B5, WW3D_FORMAT_A1R5G5B5, WW3D_FORMAT_A4R4G4B4,
+            WW3D_FORMAT_A8, WW3D_FORMAT_L8})
+        ok = Get_Valid_Texture_Format(format, false) == format && ok;
+    for (const auto format : {WW3D_FORMAT_X1R5G5B5, WW3D_FORMAT_R3G3B2,
+            WW3D_FORMAT_A8R3G3B2, WW3D_FORMAT_X4R4G4B4, WW3D_FORMAT_A8P8,
+            WW3D_FORMAT_P8, WW3D_FORMAT_A8L8, WW3D_FORMAT_A4L4})
+        ok = Get_Valid_Texture_Format(format, false) == WW3D_FORMAT_A8R8G8B8 && ok;
+    for (const auto format : {WW3D_FORMAT_UNKNOWN, WW3D_FORMAT_U8V8,
+            WW3D_FORMAT_L6V5U5, WW3D_FORMAT_X8L8V8U8})
+        ok = Get_Valid_Texture_Format(format, true) == WW3D_FORMAT_UNKNOWN && ok;
     return ok;
 }
 
@@ -107,7 +172,7 @@ int main()
     // Red/blue endpoints with each of the four color codes in every row.
     block[1] = 0xf8; block[2] = 0x1f;
     for (unsigned i = 4; i < 8; ++i) block[i] = 0xe4;
-    bool ok = Test_Authored_DDS_Mips();
+    bool ok = Test_CPU_Format_Policy() && Test_Authored_DDS_Mips();
     ok = BitmapHandlerClass::Decode_DXT_Block_RGBA8(WW3D_FORMAT_DXT1, block.data(), pixels.data()) && ok;
     const unsigned expected[4][4] = {{255,0,0,255},{0,0,255,255},{170,0,85,255},{85,0,170,255}};
     for (unsigned i = 0; i < 16; ++i)

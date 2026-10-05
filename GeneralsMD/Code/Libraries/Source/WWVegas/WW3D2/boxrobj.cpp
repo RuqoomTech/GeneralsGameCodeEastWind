@@ -91,19 +91,17 @@
 #include "boxrobj.h"
 #include "w3d_util.h"
 #include "WWDebug/wwdebug.h"
-#include "vertmaterial.h"
 #include "ww3d.h"
 #include "WWLib/chunkio.h"
 #include "rinfo.h"
 #include "coltest.h"
 #include "inttest.h"
-#include "dx8wrapper.h"
-#include "dx8indexbuffer.h"
-#include "dx8vertexbuffer.h"
-#include "dx8fvf.h"
-#include "sortingrenderer.h"
+#include "camera.h"
+#include "IRenderBackend.h"
 #include "visrasterizer.h"
 #include "meshgeometry.h"
+#include <cstdint>
+#include <cstdio>
 
 
 #define NUM_BOX_VERTS	8
@@ -140,25 +138,11 @@ static Vector3						_BoxVerts[NUM_BOX_VERTS] =
 	Vector3(  1.0f,-1.0f,-1.0f ),
 };
 
-// Vertex Normals
-static Vector3						_BoxVertexNormals[NUM_BOX_VERTS] =
-{
-	Vector3( WWMATH_OOSQRT3, WWMATH_OOSQRT3, WWMATH_OOSQRT3 ),
-	Vector3(-WWMATH_OOSQRT3, WWMATH_OOSQRT3, WWMATH_OOSQRT3 ),
-	Vector3(-WWMATH_OOSQRT3,-WWMATH_OOSQRT3, WWMATH_OOSQRT3 ),
-	Vector3( WWMATH_OOSQRT3,-WWMATH_OOSQRT3, WWMATH_OOSQRT3 ),
-
-	Vector3( WWMATH_OOSQRT3, WWMATH_OOSQRT3,-WWMATH_OOSQRT3 ),
-	Vector3(-WWMATH_OOSQRT3, WWMATH_OOSQRT3,-WWMATH_OOSQRT3 ),
-	Vector3(-WWMATH_OOSQRT3,-WWMATH_OOSQRT3,-WWMATH_OOSQRT3 ),
-	Vector3( WWMATH_OOSQRT3,-WWMATH_OOSQRT3,-WWMATH_OOSQRT3 ),
-};
 
 
 
 bool										BoxRenderObjClass::IsInitted			= false;
 int										BoxRenderObjClass::DisplayMask		= 0;
-static VertexMaterialClass *		_BoxMaterial								= nullptr;
 static ShaderClass					_BoxShader;
 
 
@@ -348,17 +332,9 @@ void BoxRenderObjClass::Init()
 {
 	WWASSERT(IsInitted == false);
 
-	/*
-	** Set up the materials
-	*/
-	WWASSERT(_BoxMaterial == nullptr);
-	_BoxMaterial = NEW_REF(VertexMaterialClass,());
-	_BoxMaterial->Set_Ambient(0,0,0);
-	_BoxMaterial->Set_Diffuse(0,0,0);
-	_BoxMaterial->Set_Specular(0,0,0);
-	_BoxMaterial->Set_Emissive(1,1,1);
-	_BoxMaterial->Set_Opacity(1.0f);		// uses vertex alpha...
-	_BoxMaterial->Set_Shininess(0.0f);
+	// The original material is white emissive with zero ambient/diffuse/specular.
+	// Box color and opacity therefore come entirely from vertex RGBA; normals
+	// cannot contribute to lighting. The backend receives that prelit color.
 
 	_BoxShader = ShaderClass::_PresetAlphaSolidShader; //_PresetAdditiveSolidShader;
 
@@ -384,7 +360,6 @@ void BoxRenderObjClass::Init()
 void BoxRenderObjClass::Shutdown()
 {
 	WWASSERT(IsInitted == true);
-	REF_PTR_RELEASE(_BoxMaterial);
 
 	IsInitted = false;
 }
@@ -441,77 +416,64 @@ int BoxRenderObjClass::Get_Box_Display_Mask()
  * HISTORY:                                                                                    *
  *   1/19/00    gth : Created.                                                                 *
  *=============================================================================================*/
-void BoxRenderObjClass::render_box(RenderInfoClass & rinfo,const Vector3 & center,const Vector3 & extent)
+void BoxRenderObjClass::render_box(RenderInfoClass & rinfo,const Vector3 & center,const Vector3 & extent,const Matrix3D & world)
 {
 	if (!IsInitted) return;
 	if (DisplayMask & Get_Collision_Type()) {
 
-		static Vector3 verts[NUM_BOX_VERTS];
+		Vector3 verts[NUM_BOX_VERTS];
 
-		// compute the vertex positions
+		// compute the vertex positions (object space, preserved CPU box math)
 		for (int ivert=0; ivert<NUM_BOX_VERTS; ivert++) {
 			verts[ivert].X = center.X + _BoxVerts[ivert][0] * extent.X;
 			verts[ivert].Y = center.Y + _BoxVerts[ivert][1] * extent.Y;
 			verts[ivert].Z = center.Z + _BoxVerts[ivert][2] * extent.Z;
 		}
 
-		/*
-		** Dump the box vertices into the sorting dynamic vertex buffer.
-		*/
-		DWORD color = DX8Wrapper::Convert_Color(Color,Opacity);
-
-		int buffer_type = BUFFER_TYPE_DYNAMIC_DX8;
-
-		DynamicVBAccessClass vbaccess(buffer_type,dynamic_fvf_type,NUM_BOX_VERTS);
-		{
-			DynamicVBAccessClass::WriteLockClass lock(&vbaccess);
-			//unsigned char *vb=(unsigned char *) lock.Get_Vertex_Array();
-			VertexFormatXYZNDUV2* vb=lock.Get_Formatted_Vertex_Array();
-
-			for (int i=0; i<NUM_BOX_VERTS; i++) {
-
-				// Locations
-				vb->x=verts[i][0];
-				vb->y=verts[i][1];
-				vb->z=verts[i][2];
-
-				// Normals
-				vb->nx=_BoxVertexNormals[i][0];
-				vb->ny=_BoxVertexNormals[i][1];
-				vb->nz=_BoxVertexNormals[i][2];
-
-				// Colors
-				vb->diffuse=color;
-
-				vb++;
-			}
+		// D3D12: transient vertex/index buffers retired. Build CPU backend vertices with
+		// world transform baked (line3d precedent) and submit as material triangles.
+		// Preserve legacy packed-diffuse quantization for color/opacity.
+		IRenderBackend *backend = WW3D::Get_Render_Backend();
+		if (backend == nullptr) return;
+		RenderBackendMaterialState material;
+		if (!_BoxShader.Get_Render_Backend_State(material)) {
+			std::fprintf(stderr, "BoxRenderObj: material translation rejected\n");
+			return;
 		}
 
-		/*
-		** Dump the faces into the sorting dynamic index buffer.
-		*/
-		DynamicIBAccessClass ibaccess(buffer_type,NUM_BOX_FACES*3);
-		{
-			DynamicIBAccessClass::WriteLockClass lock(&ibaccess);
-			unsigned short * indices = lock.Get_Index_Array();
-			for (int i=0; i<NUM_BOX_FACES; i++) {
-				indices[3*i] = _BoxFaces[i][0];
-				indices[3*i+1] = _BoxFaces[i][1];
-				indices[3*i+2] = _BoxFaces[i][2];
-			}
+		const uint32_t packed = Color.Convert_To_ARGB(Opacity);
+		const float red = ((packed >> 16) & 255) / 255.0f;
+		const float green = ((packed >> 8) & 255) / 255.0f;
+		const float blue = (packed & 255) / 255.0f;
+		const float alpha = ((packed >> 24) & 255) / 255.0f;
+
+		RenderBackendTexturedVertex backendVerts[NUM_BOX_VERTS];
+		for (int i=0; i<NUM_BOX_VERTS; i++) {
+			Vector3 worldPos;
+			Matrix3D::Transform_Vector(world, verts[i], &worldPos);
+			backendVerts[i].x = worldPos.X;
+			backendVerts[i].y = worldPos.Y;
+			backendVerts[i].z = worldPos.Z;
+			backendVerts[i].r = red;
+			backendVerts[i].g = green;
+			backendVerts[i].b = blue;
+			backendVerts[i].a = alpha;
+			backendVerts[i].u = 0.0f;
+			backendVerts[i].v = 0.0f;
+			backendVerts[i].q = 1.0f;
 		}
 
-		/*
-		** Apply the shader and material
-		*/
-		DX8Wrapper::Set_Material(_BoxMaterial);
-		DX8Wrapper::Set_Shader(_BoxShader);
-		DX8Wrapper::Set_Texture(0,nullptr);
+		unsigned short backendIndices[NUM_BOX_FACES*3];
+		for (int i=0; i<NUM_BOX_FACES; i++) {
+			backendIndices[3*i] = _BoxFaces[i][0];
+			backendIndices[3*i+1] = _BoxFaces[i][1];
+			backendIndices[3*i+2] = _BoxFaces[i][2];
+		}
 
-		DX8Wrapper::Set_Index_Buffer(ibaccess,0);
-		DX8Wrapper::Set_Vertex_Buffer(vbaccess);
-
-		DX8Wrapper::Draw_Triangles(buffer_type,0,NUM_BOX_FACES,0,NUM_BOX_VERTS);
+		rinfo.Camera.Apply();
+		if (!backend->Draw_Indexed_Material_Triangles(backendVerts, NUM_BOX_VERTS, backendIndices, NUM_BOX_FACES*3, {}, material)) {
+			std::fprintf(stderr, "BoxRenderObj: D3D12 material submission rejected\n");
+		}
 	}
 }
 
@@ -701,8 +663,8 @@ void AABoxRenderObjClass::Render(RenderInfoClass & rinfo)
 {
 	Matrix3D temp(1);
 	temp.Translate(Transform.Get_Translation());
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,temp);
-	render_box(rinfo,ObjSpaceCenter,ObjSpaceExtent);
+	// D3D12: world transform baked into backend vertices inside render_box.
+	render_box(rinfo,ObjSpaceCenter,ObjSpaceExtent,temp);
 }
 
 
@@ -1085,8 +1047,8 @@ int OBBoxRenderObjClass::Class_ID() const
  *=============================================================================================*/
 void OBBoxRenderObjClass::Render(RenderInfoClass & rinfo)
 {
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Transform);
-	render_box(rinfo,ObjSpaceCenter,ObjSpaceExtent);
+	// D3D12: world transform baked into backend vertices inside render_box.
+	render_box(rinfo,ObjSpaceCenter,ObjSpaceExtent,Transform);
 }
 
 

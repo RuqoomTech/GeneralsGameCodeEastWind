@@ -49,17 +49,25 @@
 #include "Common/GlobalData.h"
 #include "Common/Debug.h"
 #include "WW3D2/texture.h"
+#include "WW3D2/ww3dformat.h"
 #include "WWMath/colmath.h"
 #include "WW3D2/coltest.h"
 #include "WW3D2/rinfo.h"
 #include "WW3D2/camera.h"
 #include "WW3D2/assetmgr.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
+#include "WW3D2/texture.h"
 #include "WW3D2/scene.h"
 #include "GameLogic/TerrainLogic.h"
 #include "GameLogic/Object.h"
 #include "GameClient/Drawable.h"
+#include <vector>
+#include <cstdio>
 
+// Track endpoints are generated in world coordinates. Flush retains the
+// original packed lighting, fading, topology and module order while submitting
+// explicit single-texture materials through the renderer backend.
 
 #define BRIDGE_OFFSET_FACTOR	0.25f	//amount to raise tracks above bridges.
 //=============================================================================
@@ -554,9 +562,6 @@ TerrainTracksRenderObjClassSystem::TerrainTracksRenderObjClassSystem()
 	m_freeModules = nullptr;
 	m_TerrainTracksScene = nullptr;
 	m_edgesToFlush = 0;
-	m_indexBuffer = nullptr;
-	m_vertexMaterialClass = nullptr;
-	m_vertexBuffer = nullptr;
 
 	m_maxTankTrackEdges=TheGlobalData->m_maxTankTrackEdges;
 	m_maxTankTrackOpaqueEdges=TheGlobalData->m_maxTankTrackOpaqueEdges;
@@ -574,7 +579,6 @@ TerrainTracksRenderObjClassSystem::~TerrainTracksRenderObjClassSystem()
 	// free all data
 	shutdown();
 
-	m_vertexMaterialClass=nullptr;
 	m_TerrainTracksScene=nullptr;
 
 }
@@ -586,34 +590,26 @@ TerrainTracksRenderObjClassSystem::~TerrainTracksRenderObjClassSystem()
 //=============================================================================
 void TerrainTracksRenderObjClassSystem::ReAcquireResources()
 {
-	Int i;
 	const Int numModules=TheGlobalData->m_maxTerrainTracks;
 
-	// just for paranoia's sake.
-	REF_PTR_RELEASE(m_indexBuffer);
-	REF_PTR_RELEASE(m_vertexBuffer);
-
-	//Create static index buffers.  These will index the vertex buffers holding the track segments
-	m_indexBuffer=NEW_REF(DX8IndexBufferClass,((m_maxTankTrackEdges-1)*6));
-
-	// Fill up the IB
-	{
-		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBuffer);
-		UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
-
-		for (i=0; i<(m_maxTankTrackEdges-1); i++)
-		{
-			ib[3]=ib[0]=i*2;
-			ib[1]=i*2+1;
-			ib[4]=ib[2]=(i+1)*2+1;
-			ib[5]=(i+1)*2;
-			ib+=6;	//skip the 6 indices we just filled
-		}
-	}
+	// Retain the shared 16-bit strip topology; each module draws a prefix
+	// with indices relative to its own vertex range.
+	m_trackIndices.clear();
+	m_trackVertices.clear();
 
 	DEBUG_ASSERTCRASH(numModules*m_maxTankTrackEdges*2 < 65535, ("Too many terrain track edges"));
 
-	m_vertexBuffer=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,numModules*m_maxTankTrackEdges*2,DX8VertexBufferClass::USAGE_DYNAMIC));
+	if (numModules > 0 && m_maxTankTrackEdges > 0) {
+		m_trackVertices.reserve((size_t)numModules * (size_t)m_maxTankTrackEdges * 2);
+		m_trackIndices.reserve(static_cast<size_t>(m_maxTankTrackEdges - 1) * 6);
+		for (Int edge = 0; edge < m_maxTankTrackEdges - 1; ++edge) {
+			const UnsignedShort left = static_cast<UnsignedShort>(edge * 2);
+			const UnsignedShort right = static_cast<UnsignedShort>(edge * 2 + 1);
+			const UnsignedShort nextRight = static_cast<UnsignedShort>((edge + 1) * 2 + 1);
+			const UnsignedShort nextLeft = static_cast<UnsignedShort>((edge + 1) * 2);
+			m_trackIndices.insert(m_trackIndices.end(), { left, right, nextRight, left, nextRight, nextLeft });
+		}
+	}
 }
 
 //=============================================================================
@@ -623,10 +619,8 @@ void TerrainTracksRenderObjClassSystem::ReAcquireResources()
 //=============================================================================
 void TerrainTracksRenderObjClassSystem::ReleaseResources()
 {
-	REF_PTR_RELEASE(m_indexBuffer);
-	REF_PTR_RELEASE(m_vertexBuffer);
-	// Note - it is ok to not release the material, as it is a w3d object that
-	// has no dx8 resources. jba.
+	m_trackIndices.clear();
+	m_trackVertices.clear();
 }
 
 //=============================================================================
@@ -644,10 +638,9 @@ void TerrainTracksRenderObjClassSystem::init( SceneClass *TerrainTracksScene )
 	m_TerrainTracksScene=TerrainTracksScene;
 
 	ReAcquireResources();
-	//go with a preset material for now.
-	m_vertexMaterialClass=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
+	// The original PRELIT_DIFFUSE material contributes no normal-based lighting.
 
-	//use a multi-texture shader: (text1*diffuse)*text2.
+	// Each track uses one alpha-blended texture.
 	m_shaderClass = ShaderClass::_PresetAlphaShader;//_PresetATestSpriteShader;//_PresetOpaqueShader;
 
 	// we cannot initialize a system that is already initialized
@@ -721,9 +714,8 @@ void TerrainTracksRenderObjClassSystem::shutdown()
 
 	}
 
-	REF_PTR_RELEASE(m_indexBuffer);
-	REF_PTR_RELEASE(m_vertexMaterialClass);
-	REF_PTR_RELEASE(m_vertexBuffer);
+	m_trackIndices.clear();
+	m_trackVertices.clear();
 
 }
 
@@ -794,18 +786,21 @@ May also try rendering all tracks with one call to W3D/D3D by grouping them by t
 Try improving the fit to vertical surfaces like cliffs.
 */
 
-	Int	diffuseLight;
+	UnsignedInt diffuseLight;
 	TerrainTracksRenderObjClass *mod=m_usedModules;
-	if (!mod)
+	if (!mod) {
+		m_edgesToFlush=0;
 		return;	//nothing to render
+	}
 
-	Int	trackStartIndex;
 	Real distanceFade;
 
-	if (ShaderClass::Is_Backface_Culling_Inverted())
+	if (ShaderClass::Is_Backface_Culling_Inverted()) {
+		m_edgesToFlush=0;
 		return;	//don't render track marks in reflections.
+	}
 
-	// adjust shading for time of day.
+	// adjust shading for time of day. (CPU gen preserved identical)
 	Real shadeR, shadeG, shadeB;
 	shadeR = TheGlobalData->m_terrainAmbient[0].red;
 	shadeG = TheGlobalData->m_terrainAmbient[0].green;
@@ -817,18 +812,33 @@ Try improving the fit to vertical surfaces like cliffs.
 	shadeG*=255.0f;
 	shadeB*=255.0f;
 
-	diffuseLight = REAL_TO_INT(shadeB) | (REAL_TO_INT(shadeG) << 8) | (REAL_TO_INT(shadeR) << 16);
-	Real numFadedEdges=m_maxTankTrackEdges-m_maxTankTrackOpaqueEdges;
+	diffuseLight = static_cast<UnsignedInt>(REAL_TO_INT(shadeB)) |
+		(static_cast<UnsignedInt>(REAL_TO_INT(shadeG)) << 8) |
+		(static_cast<UnsignedInt>(REAL_TO_INT(shadeR)) << 16);
+	Real numFadedEdges=(Real)(m_maxTankTrackEdges-m_maxTankTrackOpaqueEdges);
 
-	//check if there is anything to draw and fill vertex buffer
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	RenderBackendMaterialState baseState;
+	if (backend == nullptr) {
+		m_edgesToFlush=0;
+		return;
+	}
+	if (!m_shaderClass.Get_Render_Backend_State(baseState)) {
+		std::fprintf(stderr, "TerrainTracks: material translation rejected\n");
+		m_edgesToFlush=0;
+		return;
+	}
+	// Preserve LessEqual depth test from the legacy alpha shader via baseState.
+
+	//check if there is anything to draw and fill CPU staging vectors.
+	//This preserves the legacy fill order; submissions below preserve draw order
+	//with one backend batch per module (replacing Set_Index_Buffer_Index_Offset).
 	if (m_edgesToFlush >= 2)
 	{
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexBuffer);
-		VertexFormatXYZDUV1 *verts = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-		trackStartIndex=0;
+		m_trackVertices.clear();
 
 		mod=m_usedModules;
-		//Fill our vertex buffer with all the tracks
+		//Fill our CPU staging with all the tracks (positions/UVs/alpha math unchanged)
 		while( mod )
 		{
 			Int i,index;
@@ -855,56 +865,70 @@ Try improving the fit to vertical surfaces like cliffs.
 
 					distanceFade *= mod->m_edges[index].alpha;	//adjust fade with distance from start of track
 
-					verts->x=endPoint->X;
-					verts->y=endPoint->Y;
-					verts->z=endPoint->Z;
-
-					verts->u1=endPointUV->X;
-					verts->v1=endPointUV->Y;
-
-					//fade the alpha channel with distance
-					verts->diffuse=diffuseLight | ( REAL_TO_INT(distanceFade*255.0f) <<24);
-					verts++;
+					UnsignedInt packed = diffuseLight |
+						(static_cast<UnsignedInt>(REAL_TO_INT(distanceFade*255.0f)) << 24);
+					const Vector4 color = Unpack_ARGB_Color(packed);
+					RenderBackendTexturedVertex v;
+					Vector3 worldEndPoint;
+					Matrix3D::Transform_Vector(mod->Get_Transform(), *endPoint, &worldEndPoint);
+					v.x=worldEndPoint.X;
+					v.y=worldEndPoint.Y;
+					v.z=worldEndPoint.Z;
+					v.r=color.X; v.g=color.Y; v.b=color.Z; v.a=color.W;
+					v.u=endPointUV->X;
+					v.v=endPointUV->Y;
+					v.q=1.0f;
+					m_trackVertices.push_back(v);
 
 					endPoint=&mod->m_edges[index].endPointPos[1];	//right endpoint
 					endPointUV=&mod->m_edges[index].endPointUV[1];
 
-					verts->x=endPoint->X;
-					verts->y=endPoint->Y;
-					verts->z=endPoint->Z;
-
-					verts->u1=endPointUV->X;
-					verts->v1=endPointUV->Y;			///@todo: Add diffuse lighting.
-
-					verts->diffuse=diffuseLight | ( REAL_TO_INT(distanceFade*255.0f) <<24);
-					verts++;
+					Matrix3D::Transform_Vector(mod->Get_Transform(), *endPoint, &worldEndPoint);
+					v.x=worldEndPoint.X;
+					v.y=worldEndPoint.Y;
+					v.z=worldEndPoint.Z;
+					v.r=color.X; v.g=color.Y; v.b=color.Z; v.a=color.W;
+					v.u=endPointUV->X;
+					v.v=endPointUV->Y;			///@todo: Add diffuse lighting.
+					v.q=1.0f;
+					m_trackVertices.push_back(v);
 				}
 			}
 			mod = mod->m_nextSystem;
 		}
-	}
 
-	//draw the filled vertex buffers
-	if (m_edgesToFlush >= 2)
-	{
-		ShaderClass::Invalidate();
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
-		DX8Wrapper::Set_Shader(m_shaderClass);
-		DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
-		DX8Wrapper::Set_Vertex_Buffer(m_vertexBuffer);
-
-		trackStartIndex=0;
+		//draw via backend: one submission per module to replace index-offset draws.
+		Int trackStartIndex=0;
 		mod=m_usedModules;
-		DX8Wrapper::Set_Transform(D3DTS_WORLD,mod->Transform);
 		while (mod)
 		{
 			if (mod->m_activeEdgeCount >= 2 && mod->Is_Really_Visible())
 			{
-				DX8Wrapper::Set_Texture(0,mod->m_stageZeroTexture);
-				DX8Wrapper::Set_Index_Buffer_Index_Offset(trackStartIndex);
-				DX8Wrapper::Draw_Triangles(	0,(mod->m_activeEdgeCount-1)*2, 0, mod->m_activeEdgeCount*2);
-
-				trackStartIndex += mod->m_activeEdgeCount*2;
+				const Int vertCount = mod->m_activeEdgeCount*2;
+				const size_t indexCount = static_cast<size_t>(mod->m_activeEdgeCount - 1) * 6;
+				if (trackStartIndex + vertCount <= (Int)m_trackVertices.size() && vertCount <= 65535 && indexCount <= m_trackIndices.size()) {
+					RenderBackendMaterialState batch = baseState;
+					RenderBackendTextureHandle handle;
+					if (mod->m_stageZeroTexture != nullptr) {
+						if (mod->m_stageZeroTexture->Get_Filter().Get_Render_Sampler(batch.sampler)
+							&& mod->m_stageZeroTexture->Ensure_Renderer_Texture()) {
+							handle = mod->m_stageZeroTexture->Get_Renderer_Texture();
+						} else {
+							std::fprintf(stderr, "TerrainTracks: texture or sampler preparation rejected\n");
+							trackStartIndex += vertCount;
+							mod = mod->m_nextSystem;
+							continue;
+						}
+					}
+					if (!backend->Draw_Indexed_Material_Triangles(
+						m_trackVertices.data() + trackStartIndex, (unsigned int)vertCount,
+						m_trackIndices.data(), static_cast<unsigned int>(indexCount), handle, batch)) {
+						std::fprintf(stderr, "TerrainTracks: backend submission rejected\n");
+					}
+				} else {
+					std::fprintf(stderr, "TerrainTracks: vertex or index range invalid\n");
+				}
+				trackStartIndex += vertCount;
 			}
 			mod=mod->m_nextSystem;
 		}

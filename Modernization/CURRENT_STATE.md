@@ -1,6 +1,32 @@
 # Current Source State
 
-This document records verified source facts through the Step 05H1N point-orientation/runtime-pointer/ownership candidate on 2026-09-19. Steps 05D through 05G are Windows-signed-off. Step 05H is the active normal-game x64 migration: successive real `mingw64-game` builds have cleared WWSaveLoad pointer identity, crash/debug diagnostics, registry/native-handle width, WWMath D3D8 leakage, profiler/debug pointer identities, compression pointer arithmetic, and now the first active D3DX8 dependency cluster. H1L is locally sealed only; Windows sign-off requires the real `z_generals` build to advance past the updated WW3D asset/name paths.
+## Step05H continuation and late branch reuse - 2026-10-05
+
+Current reviewed baseline is `2c81f9922beb5c5379c6d695c0e14ea3f15f55b3`. The normal `cmake --build --preset mingw64-game --target z_generals -- -j1` invocation compiled the current game graph and reached the executable link; it failed with 65 unique unresolved legacy renderer symbols. This is compile evidence only. No current game boot, visible frame, or user Windows sign-off is recorded here.
+
+`late` is fourteen commits ahead of that baseline. Its historical `build/zlink16.log` records a normal game link, but does not pin an invocation, source SHA, or boot/frame result. Review found behavior losses, so the branch is being reused by responsibility rather than merged wholesale.
+
+Selected reuse in the working candidate:
+
+- Paired box render objects submit the original eight vertices and twelve triangles through the current material backend. Axis-aligned boxes retain translation-only positioning; oriented boxes retain full transforms. The original white-emissive material is preserved as prelit vertex RGBA.
+- Paired DDS constructors decode fixed DXT1-5 FourCC identifiers on the CPU; file layouts and native overloads still needed by staged callers remain intact.
+- Packed ARGB conversion is consolidated in the existing `ww3dformat` owner for mesh material preprocessing and shatter interpolation. It retains channel shifts and the established WWMath quantization.
+- Texture format selection describes actual CPU conversion support rather than querying the retired native device. Unsupported signed bump formats are rejected for their future complete material migration.
+
+Outstanding repairs before larger `late` imports:
+
+| Owner | Evidence requiring repair |
+| --- | --- |
+| Texture/surface | Detached procedural surfaces never upload font/video/radar writes; RGBA/BGRA is inconsistent; mip queries and generation report incomplete results. Cube/volume/depth placeholders do not preserve resource behavior. |
+| Shader manager/scene | Stored shader state has no draw consumers; cloud/shroud/noise/monochrome logic is omitted; scene stencil marking is removed and masks exceed the backend's eight-bit contract. |
+| Smudge/tree/water | Smudge indices are rebased twice and background capture is unpopulated; ordinary tree breeze can freeze; water effects and matrix conventions need complete migration. |
+| Terrain/roads/bridges | CPU topology can be reused, but secondary UVs, blend stages, cloud/shroud and lighting must reach actual submissions. |
+
+Scorch, terrain tracks and bibs are promising subsequent CPU geometry ports after their texture, transform and failure-propagation contracts are verified. SDL3 remains Step06 after normal D3D12 game boot/frame; W3X runtime work remains deferred to the same gate.
+
+## Historical baseline through Step05H1N
+
+The remaining baseline notes record verified source facts through the Step 05H1N point-orientation/runtime-pointer/ownership candidate on 2026-09-19. Steps 05D through 05G are Windows-signed-off. Step 05H is the active normal-game x64 migration: successive real `mingw64-game` builds have cleared WWSaveLoad pointer identity, crash/debug diagnostics, registry/native-handle width, WWMath D3D8 leakage, profiler/debug pointer identities, compression pointer arithmetic, and now the first active D3DX8 dependency cluster. H1L is locally sealed only; Windows sign-off requires the real `z_generals` build to advance past the updated WW3D asset/name paths.
 
 ## Build system
 

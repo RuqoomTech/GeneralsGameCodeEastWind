@@ -47,6 +47,11 @@
 class Vector4;
 class Targa;
 
+// CPU packed ARGB conversion. Packing expects channels in [0, 1] and truncates
+// to bytes using the existing WWMath conversion, independent of a device.
+Vector4 Unpack_ARGB_Color(unsigned color);
+unsigned Pack_ARGB_Color(const Vector4 &color);
+
 /*
 ** Enum for possible surface formats. This is a small subset of the D3DFORMAT
 ** enum which lists the formats supported by DX8; we will add new members to
