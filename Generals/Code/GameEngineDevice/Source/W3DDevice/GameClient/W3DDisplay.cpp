@@ -35,7 +35,9 @@ static void drawFramerateBar();
 
 // SYSTEM INCLUDES ////////////////////////////////////////////////////////////
 #include <numeric>
+#include <limits>
 #include <stdlib.h>
+#include <vector>
 #include <windows.h>
 #include <io.h>
 #include <time.h>
@@ -86,6 +88,7 @@ static void drawFramerateBar();
 #include "WWLib/registry.h"
 #include "WW3D2/ww3d.h"
 #include "WW3D2/statistics.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/predlod.h"
 #include "WW3D2/part_emt.h"
 #include "WW3D2/part_ldr.h"
@@ -432,16 +435,71 @@ W3DDisplay::~W3DDisplay()
 }
 
 // TheSuperHackers @tweak valeronm 20/03/2025 No longer filters resolutions by a 4:3 aspect ratio.
+#if defined(RTS_EVOLUTION_X64)
+namespace
+{
+struct PlatformDisplayMode
+{
+	Int width;
+	Int height;
+	Int bitDepth;
+};
+
+std::vector<PlatformDisplayMode> enumeratePlatformDisplayModes()
+{
+	MONITORINFOEXW monitorInfo{};
+	monitorInfo.cbSize = sizeof(monitorInfo);
+	const wchar_t *deviceName = nullptr;
+	if (ApplicationHWnd != nullptr &&
+		GetMonitorInfoW(MonitorFromWindow(ApplicationHWnd, MONITOR_DEFAULTTOPRIMARY),
+			reinterpret_cast<MONITORINFO *>(&monitorInfo))) {
+		deviceName = monitorInfo.szDevice;
+	}
+
+	std::vector<PlatformDisplayMode> modes;
+	for (DWORD index = 0;; ++index) {
+		DEVMODEW mode{};
+		mode.dmSize = sizeof(mode);
+		if (!EnumDisplaySettingsExW(deviceName, index, &mode, 0)) {
+			break;
+		}
+		if (mode.dmPelsWidth < DEFAULT_DISPLAY_WIDTH || mode.dmBitsPerPel < 24) {
+			continue;
+		}
+		const PlatformDisplayMode candidate{
+			static_cast<Int>(mode.dmPelsWidth),
+			static_cast<Int>(mode.dmPelsHeight),
+			static_cast<Int>(mode.dmBitsPerPel)};
+		bool duplicate = false;
+		for (const PlatformDisplayMode &existing : modes) {
+			if (existing.width == candidate.width && existing.height == candidate.height &&
+				existing.bitDepth == candidate.bitDepth) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate) {
+			modes.push_back(candidate);
+		}
+	}
+	return modes;
+}
+}
+#else
 inline Bool isResolutionSupported(const ResolutionDescClass &res)
 {
 	static const Int minBitDepth = 24;
 
 	return res.Width >= DEFAULT_DISPLAY_WIDTH && res.BitDepth >= minBitDepth;
 }
+#endif
 
 /*Return number of screen modes supported by the current device*/
 Int W3DDisplay::getDisplayModeCount()
 {
+#if defined(RTS_EVOLUTION_X64)
+	return static_cast<Int>(enumeratePlatformDisplayModes().size());
+#else
 	const RenderDeviceDescClass &devDesc=WW3D::Get_Render_Device_Desc(0);
 	const DynamicVectorClass <ResolutionDescClass> &resolutions=devDesc.Enumerate_Resolutions();
 
@@ -469,10 +527,20 @@ Int W3DDisplay::getDisplayModeCount()
 	}
 
 	return numResolutions;
+#endif
 }
 
 void W3DDisplay::getDisplayModeDescription(Int modeIndex, Int *xres, Int *yres, Int *bitDepth)
 {
+#if defined(RTS_EVOLUTION_X64)
+	const std::vector<PlatformDisplayMode> modes = enumeratePlatformDisplayModes();
+	if (modeIndex < 0 || static_cast<std::size_t>(modeIndex) >= modes.size()) {
+		return;
+	}
+	*xres = modes[modeIndex].width;
+	*yres = modes[modeIndex].height;
+	*bitDepth = modes[modeIndex].bitDepth;
+#else
 	Int numResolutions=0;
 	const RenderDeviceDescClass &devDesc=WW3D::Get_Render_Device_Desc(0);
 	const DynamicVectorClass <ResolutionDescClass> &resolutions=devDesc.Enumerate_Resolutions();
@@ -492,6 +560,7 @@ void W3DDisplay::getDisplayModeDescription(Int modeIndex, Int *xres, Int *yres, 
 			numResolutions++;
 		}
 	}
+#endif
 }
 
 void W3DDisplay::setGamma(Real gamma, Real bright, Real contrast, Bool calibrate)
@@ -499,7 +568,8 @@ void W3DDisplay::setGamma(Real gamma, Real bright, Real contrast, Bool calibrate
 	if (m_windowed)
 		return;	//we don't allow gamma to change in window because it would affect desktop.
 
-	DX8Wrapper::Set_Gamma(gamma,bright,contrast,calibrate, false);
+	if (WW3D::Get_Render_Backend())
+		WW3D::Get_Render_Backend()->Set_Gamma(gamma,bright,contrast,calibrate, false);
 }
 
 /** Set resolution of display */
@@ -767,12 +837,14 @@ void W3DDisplay::init()
 	if (!TheGlobalData->m_headless)
 	{
 
+#if !defined(RTS_EVOLUTION_X64)
 		if (TheGlobalData->m_incrementalAGPBuf)
 		{
 			SortingRendererClass::SetMinVertexBufferSize(1);
 		}
+#endif
 		if (WW3D::Init( ApplicationHWnd ) != WW3D_ERROR_OK)
-			throw ERROR_INVALID_D3D;	//failed to initialize.  User probably doesn't have DX 8.1
+			throw ERROR_INVALID_D3D;
 
 		WW3D::Set_Prelit_Mode( WW3D::PRELIT_MODE_LIGHTMAP_MULTI_PASS );
 		WW3D::Set_Collision_Box_Display_Mask(0x00);	///<set to 0xff to make collision boxes visible
@@ -788,6 +860,12 @@ void W3DDisplay::init()
 
 		WW3DErrorType renderDeviceError;
 		Int attempt = 0;
+		const Int maxAttempts =
+#if defined(RTS_EVOLUTION_X64)
+			1;
+#else
+			3;
+#endif
 		do
 		{
 			switch (attempt)
@@ -800,6 +878,7 @@ void W3DDisplay::init()
 				setBitDepth( DEFAULT_DISPLAY_BIT_DEPTH );
 				break;
 			}
+#if !defined(RTS_EVOLUTION_X64)
 			case 1:
 			{
 				// Getting the device at the default bit depth (32) didn't work, so try
@@ -831,11 +910,34 @@ void W3DDisplay::init()
 				setBitDepth( bitDepth );
 				break;
 			}
+#endif
 			}
 
 			// TheSuperHackers @feature Mauller 13/03/2026 Add native MSAA support, must be set before creating render device
 			WW3D::Set_MSAA_Mode((WW3D::MultiSampleModeEnum)TheWritableGlobalData->m_antiAliasLevel);
 
+#if defined(RTS_EVOLUTION_X64)
+			// The current Win32 platform owns the HWND until Step 06 moves it to SDL3.
+			// Resize its client area before DXGI resizes the swapchain buffers.
+			const UnsignedInt max_client_extent = static_cast<UnsignedInt>(std::numeric_limits<LONG>::max() / 2);
+			if (getWidth() == 0 || getHeight() == 0 ||
+				getWidth() > max_client_extent || getHeight() > max_client_extent) {
+				renderDeviceError = WW3D_ERROR_INITIALIZATION_FAILED;
+				break;
+			}
+			RECT window_rect = {0, 0,
+				static_cast<LONG>(getWidth()), static_cast<LONG>(getHeight())};
+			const DWORD window_style = static_cast<DWORD>(GetWindowLongPtr(ApplicationHWnd, GWL_STYLE));
+			const DWORD window_ex_style = static_cast<DWORD>(GetWindowLongPtr(ApplicationHWnd, GWL_EXSTYLE));
+			if (!AdjustWindowRectEx(&window_rect, window_style, FALSE, window_ex_style) ||
+				!SetWindowPos(ApplicationHWnd, nullptr, 0, 0,
+					window_rect.right - window_rect.left,
+					window_rect.bottom - window_rect.top,
+					SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE)) {
+				renderDeviceError = WW3D_ERROR_INITIALIZATION_FAILED;
+				break;
+			}
+#endif
 			renderDeviceError = WW3D::Set_Render_Device(
 				0,
 				getWidth(),
@@ -857,13 +959,13 @@ void W3DDisplay::init()
 
 			++attempt;
 		}
-		while (attempt < 3 && renderDeviceError != WW3D_ERROR_OK);
+		while (attempt < maxAttempts && renderDeviceError != WW3D_ERROR_OK);
 
 		if (renderDeviceError != WW3D_ERROR_OK)
 		{
 			WW3D::Shutdown();
 			WWMath::Shutdown();
-			throw ERROR_INVALID_D3D;	//failed to initialize.  User probably doesn't have DX 8.1
+			throw ERROR_INVALID_D3D;
 			DEBUG_CRASH( ("Unable to set render device") );
 			return;
 		}
@@ -1867,7 +1969,8 @@ AGAIN:
 	do {
 
 		// update all views of the world - recomputes data which will affect drawing
-		if (DX8Wrapper::_Get_D3D_Device8() && (DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()) == D3D_OK)
+		if (WW3D::Get_Render_Backend() != nullptr &&
+			WW3D::Get_Render_Backend()->Is_Device_Ready())
 		{	//Checking if we have the device before updating views because the heightmap crashes otherwise while
 			//trying to refresh the visible terrain geometry.
 //			if(TheGlobalData->m_loadScreenRender != TRUE)
@@ -2792,43 +2895,10 @@ void W3DDisplay::drawImage( const Image *image, Int startX, Int startY,
 
 VideoBuffer*	W3DDisplay::createVideoBuffer()
 {
-	VideoBuffer::Type format = VideoBuffer::TYPE_UNKNOWN;
-
-	/// @todo query video player for supported formats - we assume bink formats here
-
-	// first try to use the native format
-
-	WW3DFormat displayFormat = DX8Wrapper::getBackBufferFormat();
-
-	if ( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( displayFormat ))
-	{
-		format = W3DVideoBuffer::W3DFormatToType( displayFormat );
-	}
-
-	if ( format == VideoBuffer::TYPE_UNKNOWN )
-	{
-		if ( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( WW3D_FORMAT_X8R8G8B8 ))
-		{
-			format = VideoBuffer::TYPE_X8R8G8B8;
-		}
-		else if ( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( WW3D_FORMAT_R8G8B8 ))
-		{
-			format = VideoBuffer::TYPE_R8G8B8;
-		}
-		else if ( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( WW3D_FORMAT_R5G6B5 ))
-		{
-			format = VideoBuffer::TYPE_R5G6B5;
-		}
-		else if ( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( WW3D_FORMAT_X1R5G5B5 ))
-		{
-			format = VideoBuffer::TYPE_X1R5G5B5;
-		}
-		else
-		{
-			// card does not support any of the formats we need
-			return nullptr;
-		}
-	}
+	// D3D12: output is RGBA8 by construction and the backend texture path
+	// carries X8R8G8B8 video frames, so per-format capability branching is
+	// retired (legacy getBackBufferFormat/Support_Texture_Format chain).
+	VideoBuffer::Type format = VideoBuffer::TYPE_X8R8G8B8;
 	// on low mem machines, render every video in 16bit
 	if (TheGameLODManager && (!TheGameLODManager->didMemPass() || W3DShaderManager::getChipset() == DC_GEFORCE2))
 		format = VideoBuffer::TYPE_R5G6B5;

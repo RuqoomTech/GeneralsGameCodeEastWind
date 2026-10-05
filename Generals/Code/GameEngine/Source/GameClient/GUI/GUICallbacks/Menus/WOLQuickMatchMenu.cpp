@@ -247,7 +247,7 @@ void UpdateStartButton()
 	Int index;
 	Int selected;
 	GadgetComboBoxGetSelectedPos( comboBoxLadder, &selected );
-	index = (Int)GadgetComboBoxGetItemData( comboBoxLadder, selected );
+	index = static_cast<Int>(GadgetComboBoxGetItemIntegerData( comboBoxLadder, selected ));
 	const LadderInfo *li = TheLadderList->findLadderByIndex( index );
 	if (li)
 	{
@@ -258,7 +258,7 @@ void UpdateStartButton()
 	Int numMaps = GadgetListBoxGetNumEntries(listboxMapSelect);
 	for ( Int i=0; i<numMaps; ++i )
 	{
-		if ((Bool)GadgetListBoxGetItemData(listboxMapSelect, i, 0))
+		if (static_cast<Bool>(GadgetListBoxGetItemIntegerData(listboxMapSelect, i, 0)))
 		{
 			buttonStart->winEnable(TRUE);
 			return;
@@ -278,7 +278,7 @@ static void populateQMColorComboBox(QuickMatchPreferences& pref)
 
 	MultiplayerColorDefinition *def = TheMultiplayerSettings->getColor(PLAYERTEMPLATE_RANDOM);
 	Int newIndex = GadgetComboBoxAddEntry(comboBoxColor, TheGameText->fetch("GUI:???"), def->getColor());
-	GadgetComboBoxSetItemData(comboBoxColor, newIndex, (void *)-1);
+	GadgetComboBoxSetItemIntegerData(comboBoxColor, newIndex, -1);
 
 	for (Int c=0; c<numColors; ++c)
 	{
@@ -288,7 +288,7 @@ static void populateQMColorComboBox(QuickMatchPreferences& pref)
 
 		colorName = TheGameText->fetch(def->getTooltipName().str());
 		newIndex = GadgetComboBoxAddEntry(comboBoxColor, colorName, def->getColor());
-		GadgetComboBoxSetItemData(comboBoxColor, newIndex, (void *)c);
+		GadgetComboBoxSetItemIntegerData(comboBoxColor, newIndex, c);
 	}
 	GadgetComboBoxSetSelectedPos(comboBoxColor, pref.getColor());
 }
@@ -304,7 +304,7 @@ static void populateQMSideComboBox(Int favSide, const LadderInfo *li = nullptr)
 
 	MultiplayerColorDefinition *def = TheMultiplayerSettings->getColor(PLAYERTEMPLATE_RANDOM);
 	Int newIndex = GadgetComboBoxAddEntry(comboBoxSide, TheGameText->fetch("GUI:Random"), def->getColor());
-	GadgetComboBoxSetItemData(comboBoxSide, newIndex, (void *)PLAYERTEMPLATE_RANDOM);
+	GadgetComboBoxSetItemIntegerData(comboBoxSide, newIndex, PLAYERTEMPLATE_RANDOM);
 
 	std::set<AsciiString> seenSides;
 
@@ -487,7 +487,7 @@ static const LadderInfo * getLadderInfo()
 	Int index;
 	Int selected;
 	GadgetComboBoxGetSelectedPos( comboBoxLadder, &selected );
-	index = (Int)GadgetComboBoxGetItemData( comboBoxLadder, selected );
+	index = static_cast<Int>(GadgetComboBoxGetItemIntegerData( comboBoxLadder, selected ));
 	const LadderInfo *li = TheLadderList->findLadderByIndex( index );
 	return li;
 }
@@ -566,7 +566,7 @@ static void populateQuickMatchMapSelectListbox( QuickMatchPreferences& pref )
 	Int index;
 	Int selected;
 	GadgetComboBoxGetSelectedPos( comboBoxLadder, &selected );
-	index = (Int)GadgetComboBoxGetItemData( comboBoxLadder, selected );
+	index = static_cast<Int>(GadgetComboBoxGetItemIntegerData( comboBoxLadder, selected ));
 	const LadderInfo *li = TheLadderList->findLadderByIndex( index );
 	//listboxMapSelect->winEnable( li == nullptr || li->randomMaps == FALSE );
 
@@ -641,7 +641,7 @@ static void saveQuickMatchOptions()
 	Int index;
 	Int selected;
 	GadgetComboBoxGetSelectedPos( comboBoxLadder, &selected );
-	index = (Int)GadgetComboBoxGetItemData( comboBoxLadder, selected );
+	index = static_cast<Int>(GadgetComboBoxGetItemIntegerData( comboBoxLadder, selected ));
 	const LadderInfo *li = TheLadderList->findLadderByIndex( index );
 	Int numPlayers = 0;
 

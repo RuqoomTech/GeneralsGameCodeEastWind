@@ -60,7 +60,6 @@ struct W3dMeshHeaderStruct;
 struct W3dTexCoordStruct;
 class TextureClass;
 class VertexMaterialClass;
-struct VertexFormatXYZNDUV2;
 
 /**
 ** MeshClass -- Render3DObject for rendering meshes.
@@ -132,11 +131,6 @@ public:
 
 	bool								Contains(const Vector3 &point);
 
-	void								Compose_Deformed_Vertex_Buffer(
-											VertexFormatXYZNDUV2* verts,
-											const Vector2* uv0,
-											const Vector2* uv1,
-											const unsigned* diffuse);
 	void								Get_Deformed_Vertices(Vector3 *dst_vert, Vector3 *dst_norm);
 	void								Get_Deformed_Vertices(Vector3 *dst_vert);
 

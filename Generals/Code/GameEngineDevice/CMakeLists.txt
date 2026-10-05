@@ -195,6 +195,7 @@ target_precompile_headers(g_gameenginedevice PRIVATE
 )
 
 target_link_libraries(g_gameenginedevice PRIVATE
+    core_browserhost
     corei_gameenginedevice_private
     gi_always
     gi_main

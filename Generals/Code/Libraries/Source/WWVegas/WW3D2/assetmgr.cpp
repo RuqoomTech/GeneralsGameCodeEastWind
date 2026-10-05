@@ -469,7 +469,7 @@ void WW3DAssetManager::Release_Unused_Assets()
  *=============================================================================================*/
 void WW3DAssetManager::Free_Assets_With_Exclusion_List(const DynamicVectorClass<StringClass> & exclusion_names)
 {
-	// Reset the dx8 mesh renderer
+	// Reset the mesh renderer
 	TheMeshRenderer.Invalidate();
 
 	// Build an exclusion list object that will do the real filtering work for us

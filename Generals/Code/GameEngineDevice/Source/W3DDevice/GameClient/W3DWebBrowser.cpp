@@ -27,7 +27,6 @@
 
 #include "W3DDevice/GameClient/W3DWebBrowser.h"
 #include "GameClient/GameWindow.h"
-#include <d3dx8.h>
 #include "browserhost.h"
 
 W3DWebBrowser::W3DWebBrowser() : WebBrowser() {

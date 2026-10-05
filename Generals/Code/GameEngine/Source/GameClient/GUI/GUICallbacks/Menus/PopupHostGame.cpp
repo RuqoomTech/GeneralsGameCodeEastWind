@@ -173,7 +173,7 @@ void PopulateCustomLadderListBox( GameWindow *win )
 	{
 		usedLadders.insert(info);
 		index = GadgetListBoxAddEntryText( win, info->name, favoriteColor, -1 );
-		GadgetListBoxSetItemData( win, (void *)(info->index), index );
+		GadgetListBoxSetItemIntegerData( win, info->index, index );
 		selectedPos = index;
 	}
 
@@ -192,7 +192,7 @@ void PopulateCustomLadderListBox( GameWindow *win )
 		{
 			usedLadders.insert(info);
 			index = GadgetListBoxAddEntryText( win, info->name, favoriteColor, -1 );
-			GadgetListBoxSetItemData( win, (void *)(info->index), index );
+			GadgetListBoxSetItemIntegerData( win, info->index, index );
 		}
 	}
 
@@ -206,7 +206,7 @@ void PopulateCustomLadderListBox( GameWindow *win )
 		{
 			usedLadders.insert(info);
 			index = GadgetListBoxAddEntryText( win, info->name, localColor, -1 );
-			GadgetListBoxSetItemData( win, (void *)(info->index), index );
+			GadgetListBoxSetItemIntegerData( win, info->index, index );
 		}
 	}
 
@@ -219,7 +219,7 @@ void PopulateCustomLadderListBox( GameWindow *win )
 		{
 			usedLadders.insert(info);
 			index = GadgetListBoxAddEntryText( win, info->name, specialColor, -1 );
-			GadgetListBoxSetItemData( win, (void *)(info->index), index );
+			GadgetListBoxSetItemIntegerData( win, info->index, index );
 		}
 	}
 
@@ -232,7 +232,7 @@ void PopulateCustomLadderListBox( GameWindow *win )
 		{
 			usedLadders.insert(info);
 			index = GadgetListBoxAddEntryText( win, info->name, normalColor, -1 );
-			GadgetListBoxSetItemData( win, (void *)(info->index), index );
+			GadgetListBoxSetItemIntegerData( win, info->index, index );
 		}
 	}
 
@@ -270,7 +270,7 @@ void PopulateCustomLadderComboBox()
 	{
 		usedLadders.insert(info);
 		index = GadgetComboBoxAddEntry( comboBoxLadderName, info->name, specialColor );
-		GadgetComboBoxSetItemData( comboBoxLadderName, index, (void *)(info->index) );
+		GadgetComboBoxSetItemIntegerData( comboBoxLadderName, index, info->index );
 		selectedPos = index;
 	}
 
@@ -288,12 +288,12 @@ void PopulateCustomLadderComboBox()
 		{
 			usedLadders.insert(info);
 			index = GadgetComboBoxAddEntry( comboBoxLadderName, info->name, normalColor );
-			GadgetComboBoxSetItemData( comboBoxLadderName, index, (void *)(info->index) );
+			GadgetComboBoxSetItemIntegerData( comboBoxLadderName, index, info->index );
 		}
 	}
 
 	index = GadgetComboBoxAddEntry( comboBoxLadderName, TheGameText->fetch("GUI:ChooseLadder"), normalColor );
-	GadgetComboBoxSetItemData( comboBoxLadderName, index, (void *)-1 );
+	GadgetComboBoxSetItemIntegerData( comboBoxLadderName, index, -1 );
 
 	GadgetComboBoxSetSelectedPos( comboBoxLadderName, selectedPos );
 	isPopulatingLadderBox = false;
@@ -475,7 +475,7 @@ WindowMsgHandledType PopupHostGameSystem( GameWindow *window, UnsignedInt msg, W
 				{
 					if (pos >= 0)
 					{
-						Int ladderID = (Int)GadgetComboBoxGetItemData(control, pos);
+						Int ladderID = static_cast<Int>(GadgetComboBoxGetItemIntegerData(control, pos));
 						if (ladderID < 0)
 						{
 							// "Choose a ladder" selected - open overlay
@@ -564,7 +564,7 @@ void createGame()
 	req.stagingRoomCreation.ladPort = 0;
 	if (ladderSelectPos >= 0)
 	{
-		ladderID = (Int)GadgetComboBoxGetItemData(comboBoxLadderName, ladderSelectPos);
+		ladderID = static_cast<Int>(GadgetComboBoxGetItemIntegerData(comboBoxLadderName, ladderSelectPos));
 		if (ladderID != 0)
 		{
 			// actual ladder
