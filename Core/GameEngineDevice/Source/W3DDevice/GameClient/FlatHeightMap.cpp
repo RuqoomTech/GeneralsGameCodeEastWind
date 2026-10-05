@@ -81,6 +81,8 @@
 #include "W3DDevice/GameClient/W3DWater.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/light.h"
 #include "WW3D2/scene.h"
 #include "W3DDevice/GameClient/W3DPoly.h"
@@ -456,8 +458,6 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 {
 	//USE_PERF_TIMER(Terrain_Render)
 
-	Int devicePasses;
-	W3DShaderManager::ShaderTypes st;
 	const Bool doCloud = useCloud();
 
 	if (doCloud)
@@ -478,89 +478,58 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	return;
 #endif
 
-#ifdef EXTENDED_STATS
-	if (DX8Wrapper::stats.m_disableTerrain) {
-		return;
-	}
-#endif
+    IRenderBackend *backend = WW3D::Get_Render_Backend();
+    if (!backend || !backend->Is_Device_Ready()) return;
+    rinfo.Camera.Apply();
+    RenderBackendMaterialState material;
+    // The old detail color is the shroud modulation now performed explicitly
+    // by the terrain shader, not an implicit second texture stage.
+    ShaderClass terrainShader = m_disableTextures ? ShaderClass::_PresetOpaque2DShader : m_shaderClass;
+    terrainShader.Set_Post_Detail_Color_Func(ShaderClass::DETAILCOLOR_DISABLE);
+    terrainShader.Set_Post_Detail_Alpha_Func(ShaderClass::DETAILALPHA_DISABLE);
+    if (!terrainShader.Get_Render_Backend_State(material)) {
+        DEBUG_ASSERTCRASH(false, ("Unsupported flat terrain material"));
+        return;
+    }
+    material.color_write_mask = 7; // Preserve the destination alpha used by water.
+    RenderBackendTerrainState terrain;
+    auto layer = [](TextureClass *texture, RenderBackendTextureHandle &handle,
+                    RenderBackendSamplerState &sampler, unsigned stage, bool clamp) {
+        if (!texture || !texture->Ensure_Renderer_Texture() ||
+            !texture->Get_Filter().Get_Render_Sampler(sampler,stage)) return false;
+        handle = texture->Peek_Renderer_Texture();
+        sampler.min_filter = sampler.mag_filter = RenderBackendTextureFilter::Linear;
+        sampler.max_anisotropy = 1;
+        sampler.address_u = sampler.address_v = clamp ?
+            RenderBackendTextureAddress::Clamp : RenderBackendTextureAddress::Wrap;
+        return handle.Is_Valid();
+    };
+    if (!m_disableTextures) {
+        // The original pixel shader selected this projection whenever shroud
+        // existed; its native SetTexture overrode the stage-zero placeholder.
+        if (m_shroud && (m_shroud->getCellWidth()<=0 || m_shroud->getCellHeight()<=0 ||
+            m_shroud->getTextureWidth()<=0 || m_shroud->getTextureHeight()<=0 ||
+            !layer(m_shroud->getShroudTexture(),terrain.shroud_texture,terrain.shroud_sampler,0,true))) {
+            DEBUG_ASSERTCRASH(false, ("Terrain shroud upload/projection failed")); return;
+        }
+        if (doCloud && !layer(m_stageTwoTexture,terrain.cloud_texture,terrain.cloud_sampler,2,false)) {
+            DEBUG_ASSERTCRASH(false, ("Terrain cloud upload failed")); return;
+        }
+        if (TheGlobalData->m_useLightMap && !layer(m_stageThreeTexture,terrain.noise_texture,terrain.noise_sampler,3,false)) {
+            DEBUG_ASSERTCRASH(false, ("Terrain noise upload failed")); return;
+        }
+    }
 
-	DX8Wrapper::Set_Light_Environment(rinfo.light_environment);
-
-	// Force shaders to update.
-	m_stageTwoTexture->restore();
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	ShaderClass::Invalidate();
-
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Transform);
-
-
-	DX8Wrapper::Set_Material(m_vertexMaterialClass);
-	DX8Wrapper::Set_Shader(m_shaderClass);
-
- 	st=W3DShaderManager::ST_FLAT_TERRAIN_BASE; //set default shader
-
- 	//set correct shader based on current settings
- 	if (TheGlobalData->m_useLightMap && doCloud)
- 	{	st=W3DShaderManager::ST_FLAT_TERRAIN_BASE_NOISE12;
- 	}
- 	else
- 	if (TheGlobalData->m_useLightMap)
- 	{	//lightmap only
- 		st=W3DShaderManager::ST_FLAT_TERRAIN_BASE_NOISE2;
- 	}
- 	else
- 	if (doCloud)
- 	{	//cloudmap only
- 		st=W3DShaderManager::ST_FLAT_TERRAIN_BASE_NOISE1;
- 	}
-
-
-
-	//Find number of passes required to render current shader
- 	devicePasses=W3DShaderManager::getShaderPasses(st);
-
- 	if (m_disableTextures)
- 		devicePasses=1;	//force to 1 lighting-only pass
-
- 	//Specify all textures that this shader may need.
- 	W3DShaderManager::setTexture(0,m_stageZeroTexture);
-	if (m_shroud && rinfo.Additional_Pass_Count() && !m_disableTextures)
-	{
-		W3DShaderManager::setTexture(0,TheTerrainRenderObject->getShroud()->getShroudTexture());
-	}
-
- 	W3DShaderManager::setTexture(1,nullptr);	// Set by the tile later. [3/31/2003]
- 	W3DShaderManager::setTexture(2,m_stageTwoTexture);	//cloud
- 	W3DShaderManager::setTexture(3,m_stageThreeTexture);//noise
-	//Disable writes to destination alpha channel (if there is one)
-	if (DX8Wrapper::getBackBufferFormat() == WW3D_FORMAT_A8R8G8B8) {
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
-	}
-
-	Int pass;
 	Int yCoordMax = 0;
 	Int yCoordMin = m_map->getXExtent();
 	Int xCoordMax = 0;
 	Int xCoordMin = m_map->getYExtent();
- 	for (pass=0; pass<devicePasses; pass++) {
-		Bool disableTex = m_disableTextures;
-		if (m_disableTextures ) {
-			DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaque2DShader);
-			DX8Wrapper::Set_Texture(0,nullptr);
-		} else {
-			W3DShaderManager::setShader(st, pass);
-		}
-
 		Int i, j;
 		for	(i=0; i<m_tilesWidth; i++) {
 			for (j=0; j<m_tilesHeight; j++) {
 				W3DTerrainBackground *tile = m_tiles+j*m_tilesWidth+i;
-				if (pass>0) {
-					disableTex = TRUE; // doing cloud/noise
-				}
 				if (!tile->isCulled()) {
-					tile->drawVisiblePolys(rinfo, disableTex);
+					tile->drawVisiblePolys(rinfo,m_disableTextures,Transform,material,terrain,m_shroud);
 					if (i*CELLS_PER_TILE<xCoordMin) {
 						xCoordMin = i*CELLS_PER_TILE;
 					}
@@ -576,10 +545,8 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 				}
 			}
 		}
-	}
 
-	if (pass)	//shader was applied at least once?
- 		W3DShaderManager::resetShader(st);
+
 #if 1
 
 	//Draw feathered shorelines

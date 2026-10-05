@@ -51,8 +51,6 @@
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
 #include "WW3D2/texture.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
 #include "Lib/BaseType.h"
@@ -154,8 +152,6 @@ class W3DTreeBuffer : public Snapshot
 	class W3DTreeTextureClass : public TextureClass
 	{
 		W3DMPO_CODE(W3DTreeTextureClass)
-	protected:
-		virtual void Apply(unsigned int stage) override;
 
 	public:
 			/// Create texture.
@@ -164,7 +160,6 @@ class W3DTreeBuffer : public Snapshot
 			// just use default destructor. ~TerrainTextureClass();
 	public:
 		int update(W3DTreeBuffer *buffer); ///< Sets the pixels, and returns the actual height of the texture.
-		void setLOD(Int LOD) const;
 	};
 
 public:
@@ -197,7 +192,7 @@ public:
 	/// Empties the tree buffer.
 	void setBounds(const Region2D &bounds) {m_bounds = bounds;}
 	/// Draws the trees.  Uses camera for culling.
-	void drawTrees(CameraClass * camera, RefRenderObjListIterator *pDynamicLightsIterator);
+	void drawTrees(CameraClass * camera, RefRenderObjListIterator *pDynamicLightsIterator, const Matrix3D &worldTransform);
 	/// Called when the view changes, and sort key needs to be recalculated.
 	/// Normally sortKey gets calculated when a tree becomes visible.
 	void doFullUpdate() {m_updateAllKeys = true;};
@@ -220,10 +215,8 @@ private:
 				MAX_BUFFERS = 1,
 				SORT_ITERATIONS_PER_FRAME=10};
 	enum {PARTITION_WIDTH_HEIGHT = 100};
-	DX8VertexBufferClass	*m_vertexTree[MAX_BUFFERS];	///<Tree vertex buffer.
-	DX8IndexBufferClass			*m_indexTree[MAX_BUFFERS];	///<indices defining a triangles for the tree drawing.
-	DWORD					m_dwTreePixelShader;	///<handle to D3D pixel shader
-	DWORD					m_dwTreeVertexShader;	///<handle to D3D vertex shader
+	struct TreeGeometryState;
+	TreeGeometryState *m_geometry; // CPU geometry and shader inputs; owned implementation in .cpp.
 
 	Short		m_areaPartition[PARTITION_WIDTH_HEIGHT*PARTITION_WIDTH_HEIGHT];
 	Region2D m_bounds;
@@ -231,8 +224,8 @@ private:
 	TextureClass *m_treeTexture;	///<Trees texture
 	Int			m_textureWidth;				///<Width in pixels m_treeTexture;
 	Int			m_textureHeight;				///<Width in pixels m_treeTexture;
-	Int			m_curNumTreeVertices[MAX_BUFFERS]; ///<Number of vertices used in m_vertexTree.
-	Int			m_curNumTreeIndices[MAX_BUFFERS];	///<Number of indices used in b_indexTree;
+	Int			m_curNumTreeVertices[MAX_BUFFERS]; ///<Number of vertices in CPU tree batches.
+	Int			m_curNumTreeIndices[MAX_BUFFERS];	///<Number of indices in CPU tree batches;
 	TTree	m_trees[MAX_TREES];			///< The tree buffer.  All trees are stored here.
 	Int			m_numTrees;						///< Number of trees in m_trees.
 	Bool		m_anythingChanged;	///< Set to true if visibility or sorting changed.

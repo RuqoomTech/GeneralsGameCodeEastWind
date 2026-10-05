@@ -29,7 +29,6 @@
 #include "WW3D2/w3d_file.h"
 #include "WW3D2/dx8vertexbuffer.h"
 #include "WW3D2/dx8indexbuffer.h"
-#include "WW3D2/dx8wrapper.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
 #include "Lib/BaseType.h"
@@ -80,7 +79,7 @@ Custom W3D render object that's used to process the terrain.  It handles
 virtually everything to do with the terrain, including: drawing, lighting,
 scorchmarks and intersection tests.
 */
-class BaseHeightMapRenderObjClass : public RenderObjClass, public DX8_CleanupHook, public Snapshot
+class BaseHeightMapRenderObjClass : public RenderObjClass, public Snapshot
 {
 
 public:
@@ -88,9 +87,9 @@ public:
 	BaseHeightMapRenderObjClass();
 	virtual ~BaseHeightMapRenderObjClass() override;
 
-	// DX8_CleanupHook methods
-	virtual void ReleaseResources() override;	///< Release all dx8 resources so the device can be reset.
-	virtual void ReAcquireResources() override;  ///< Reacquire all resources after device reset.
+	// Explicit terrain resource lifecycle; D3D12 output resize retains assets.
+	virtual void ReleaseResources();
+	virtual void ReAcquireResources();
 
 
 	/////////////////////////////////////////////////////////////////////////////

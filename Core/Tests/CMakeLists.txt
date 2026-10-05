@@ -515,6 +515,7 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     if(MINGW)
         add_executable(dds_texture_decode_test
             ${CMAKE_CURRENT_SOURCE_DIR}/DDSTextureDecodeTest.cpp
+            ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp
             ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/ddsfile.cpp
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/formconv.cpp
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/bitmaphandler.cpp
@@ -532,6 +533,7 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2
         )
         target_link_libraries(dds_texture_decode_test PRIVATE core_config core_utility_no_pch)
+        target_compile_definitions(dds_texture_decode_test PRIVATE DISABLE_GAMEMEMORY=1)
         target_compile_options(dds_texture_decode_test PRIVATE
             -ffunction-sections -fdata-sections -fno-exceptions -fno-asynchronous-unwind-tables
             -fno-unwind-tables -include Utility/CppMacros.h)
@@ -552,6 +554,7 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             add_executable(${shader_test}
                 ${CMAKE_CURRENT_SOURCE_DIR}/ShaderMaterialStateTest.cpp
                 ${CMAKE_SOURCE_DIR}/${shader_game}/Code/Libraries/Source/WWVegas/WW3D2/shader.cpp
+                ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/texturefilter.cpp
             )
             target_include_directories(${shader_test} PRIVATE
                 ${CMAKE_SOURCE_DIR}/Core/Libraries/Include

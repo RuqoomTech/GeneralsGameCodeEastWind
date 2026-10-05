@@ -15,7 +15,7 @@ add_library(core_browserhost STATIC browserhost.cpp browserhost.h)
 target_compile_features(core_browserhost PRIVATE cxx_std_17)
 target_include_directories(core_browserhost PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(core_browserhost SYSTEM PRIVATE "${webview2_sdk_SOURCE_DIR}/build/native/include")
-target_link_libraries(core_browserhost PUBLIC ole32 oleaut32 user32 uuid)
+target_link_libraries(core_browserhost PUBLIC ole32 oleaut32 user32 uuid urlmon)
 set_property(TARGET core_browserhost PROPERTY RTS_BROWSER_LOADER "${webview2_sdk_SOURCE_DIR}/build/native/x64/WebView2Loader.dll")
 
 function(rts_stage_browser_loader target_name)

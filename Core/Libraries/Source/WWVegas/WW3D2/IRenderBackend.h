@@ -72,12 +72,14 @@ struct RenderBackendTexturedVertex
     float u;
     float v;
     float q = 1.0f; // Undivided projected coordinate; ordinary UVs use q=1.
+    float u2 = 0.0f;
+    float v2 = 0.0f;
 
     bool operator == (const RenderBackendTexturedVertex &other) const
     {
         return x == other.x && y == other.y && z == other.z &&
                r == other.r && g == other.g && b == other.b && a == other.a &&
-               u == other.u && v == other.v && q == other.q;
+               u == other.u && v == other.v && q == other.q && u2 == other.u2 && v2 == other.v2;
     }
 
     bool operator != (const RenderBackendTexturedVertex &other) const
@@ -94,6 +96,18 @@ struct RenderBackendViewport
     unsigned int height;
     float min_z;
     float max_z;
+};
+
+// Flat terrain carries independent tile, shroud, cloud and noise coordinates.
+// Values belong to the local renderer, never persisted simulation state.
+struct RenderBackendTerrainVertex
+{
+    float x, y, z;
+    float r, g, b, a;
+    float u, v;
+    float u2, v2;
+    float u3, v3;
+    float u4, v4;
 };
 
 enum class RenderBackend2DBlendMode
@@ -129,6 +143,7 @@ struct RenderBackendSamplerState
     RenderBackendTextureAddress address_v = RenderBackendTextureAddress::Wrap;
     bool mipmaps = true;
     unsigned int max_anisotropy = 1;
+    unsigned int min_mip_level = 0;
 };
 enum class RenderBackendStencilCompare { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always };
 enum class RenderBackendStencilOperation { Keep, Zero, Replace, IncrementSaturate, DecrementSaturate, Invert, Increment, Decrement };
@@ -162,9 +177,13 @@ struct RenderBackendMaterialState
     float alpha_reference = 96.0f / 255.0f;
     bool depth_write = true;
     bool color_write = true;
+    unsigned int color_write_mask = 15; // R=1, G=2, B=4, A=8
     bool clamp_texture = false;
     bool screen_space = false; // Caller supplies clip/NDC coordinates, bypassing the camera.
     RenderBackendSamplerState sampler;
+    // Tree shroud modulates RGB after the base texture operation; alpha survives.
+    bool secondary_rgb_modulate = false;
+    RenderBackendSamplerState secondary_sampler;
     RenderBackendStencilState stencil;
 };
 
@@ -188,6 +207,16 @@ struct RenderBackendTextureHandle
     RenderBackendTextureHandle(unsigned int slot_value, unsigned int generation_value)
         : slot(slot_value), generation(generation_value) {}
     bool Is_Valid() const { return slot != 0 && generation != 0; }
+};
+
+struct RenderBackendTerrainState
+{
+    RenderBackendTextureHandle shroud_texture;
+    RenderBackendTextureHandle cloud_texture;
+    RenderBackendTextureHandle noise_texture;
+    RenderBackendSamplerState shroud_sampler;
+    RenderBackendSamplerState cloud_sampler;
+    RenderBackendSamplerState noise_sampler;
 };
 
 // Non-owning CPU views valid for the duration of texture creation.
@@ -380,7 +409,13 @@ public:
     virtual bool Draw_Indexed_Material_Triangles(
         const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
         const unsigned short *indices, unsigned int index_count,
-        RenderBackendTextureHandle texture, const RenderBackendMaterialState &material) = 0;
+        RenderBackendTextureHandle texture, const RenderBackendMaterialState &material,
+        RenderBackendTextureHandle secondary_texture = {}) = 0;
+    virtual bool Draw_Indexed_Terrain_Triangles(
+        const RenderBackendTerrainVertex *vertices, unsigned int vertex_count,
+        const unsigned short *indices, unsigned int index_count,
+        RenderBackendTextureHandle base_texture, const RenderBackendMaterialState &material,
+        const RenderBackendTerrainState &terrain) = 0;
     virtual void Release_Texture(RenderBackendTextureHandle texture) = 0;
 
     virtual void Set_Ambient(const Vector3 & color) = 0;

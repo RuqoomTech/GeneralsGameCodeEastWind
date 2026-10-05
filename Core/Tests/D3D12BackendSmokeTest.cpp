@@ -10,6 +10,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <array>
 
 namespace
 {
@@ -399,8 +400,18 @@ bool verifySamplers(IRenderBackend &backend)
     ok=verify(mips,255,0,0) && ok;
     material.sampler.mip_filter=RenderBackendTextureFilter::Linear;
     ok=verify(mips,191,64,0) && ok;
+    for (auto &vertex:quad) vertex.u=.5f;
+    material.sampler.min_mip_level=1;
+    ok=verify(mips,0,255,0) && ok;
+    material.sampler.min_mip_level=2;
+    ok=verify(mips,0,0,255) && ok;
+    material.sampler.min_mip_level=0;
+    ok=verify(mips,255,0,0) && ok;
     // Malformed runtime sampler state must never index outside the fixed heap.
-    backend.Begin_Scene(); material.sampler.max_anisotropy=0;
+    backend.Begin_Scene(); material.sampler.min_mip_level=16;
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material) && ok;
+    material.sampler.min_mip_level=0;
+    material.sampler.max_anisotropy=0;
     ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material) && ok;
     material.sampler.max_anisotropy=17;
     ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material) && ok;
@@ -410,6 +421,260 @@ bool verifySamplers(IRenderBackend &backend)
     backend.End_Scene(false); backend.Flip_To_Primary();
     backend.Release_Texture(texture); backend.Release_Texture(mips);
     if (!ok) std::cerr << "Material sampler state checks failed.\n";
+    return ok;
+}
+
+bool verifyTreeShroud(IRenderBackend &backend)
+{
+    const unsigned char basePixels[]={128,64,192,128, 255,0,0,255};
+    const unsigned char shroudPixels[]={255,255,255,0, 128,255,64,0};
+    const auto base=backend.Create_Static_RGBA8_Texture(2,1,basePixels,8);
+    const auto shroud=backend.Create_Static_RGBA8_Texture(2,1,shroudPixels,8);
+    RenderBackendTexturedVertex quad[]={
+        {-.8f,-.8f,.5f,1,1,1,1,.25f,.5f,1,.75f,.5f},
+        {-.8f,.8f,.5f,1,1,1,1,.25f,.5f,1,.75f,.5f},
+        {.8f,.8f,.5f,1,1,1,1,.25f,.5f,1,.75f,.5f},
+        {.8f,-.8f,.5f,1,1,1,1,.25f,.5f,1,.75f,.5f}};
+    const unsigned short indices[]={0,2,1,0,3,2};
+    RenderBackendMaterialState material;
+    material.depth_write=false;
+    material.secondary_rgb_modulate=true;
+    material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    material.secondary_sampler.mag_filter=RenderBackendTextureFilter::Point;
+    backend.Set_Viewport({0,0,640,480,0,1}); backend.Set_View_Projection(Matrix4x4(true));
+    bool ok=base.Is_Valid() && shroud.Is_Valid();
+    auto verify=[&](int r,int g,int b,int a,bool layered=true) {
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        material.secondary_rgb_modulate=layered;
+        const bool drew=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,base,material,layered ? shroud : RenderBackendTextureHandle{});
+        backend.End_Scene(false);
+        unsigned width=0,height=0; std::vector<unsigned char> pixels;
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        const unsigned center=(240*640+320)*4;
+        const bool match=read && std::abs(int(pixels[center])-r)<=2 && std::abs(int(pixels[center+1])-g)<=2 &&
+            std::abs(int(pixels[center+2])-b)<=2 && std::abs(int(pixels[center+3])-a)<=2;
+        backend.Flip_To_Primary(); return drew && match;
+    };
+    ok=verify(64,64,48,128) && ok; // Independent UVs; shroud alpha zero must not erase tree alpha.
+    ok=verify(128,64,192,128,false) && ok; // A following ordinary material must not retain the layer.
+    for (auto &vertex:quad) vertex.u2=1.75f;
+    material.secondary_sampler.address_u=RenderBackendTextureAddress::Wrap;
+    ok=verify(64,64,48,128) && ok;
+    for (auto &vertex:quad) vertex.u2=-.25f;
+    material.secondary_sampler.address_u=RenderBackendTextureAddress::Clamp;
+    ok=verify(128,64,192,128) && ok;
+    for (auto &vertex:quad) vertex.u2=.5f;
+    material.secondary_sampler.mag_filter=RenderBackendTextureFilter::Linear;
+    ok=verify(96,64,120,128) && ok;
+    material.alpha_test=RenderBackendAlphaTest::GreaterEqual;
+    material.alpha_reference=96.f/255.f;
+    ok=verify(96,64,120,128) && ok;
+    material.alpha_reference=129.f/255.f;
+    ok=verify(0,0,0,0) && ok;
+    material.alpha_test=RenderBackendAlphaTest::Disabled;
+    backend.Begin_Scene();
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,base,material) && ok;
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material,shroud) && ok;
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,base,material,{0,1}) && ok;
+    material.secondary_sampler.max_anisotropy=17;
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,base,material,shroud) && ok;
+    material.secondary_sampler.max_anisotropy=1;
+    backend.Release_Texture(shroud);
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,base,material,shroud) && ok;
+    backend.End_Scene(false); backend.Flip_To_Primary();
+    const auto target=backend.Create_Render_Texture(32,32);
+    ok=backend.Set_Render_Texture(target) && ok;
+    material.depth_test=RenderBackendDepthTest::Disabled;
+    backend.Begin_Scene();
+    ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,base,material,target) && ok;
+    backend.End_Scene(false); backend.Set_Render_Texture({});
+    backend.Release_Texture(target); backend.Release_Texture(base);
+    if (!ok) std::cerr << "Tree RGB shroud, independent UV/sampler, alpha, or resource validation failed.\n";
+    return ok;
+}
+
+bool verifyTerrain(IRenderBackend &backend)
+{
+    const unsigned char texels[4][16]={
+        {192,128,64,224, 32,255,64,32, 64,32,255,64, 16,96,192,96},
+        {255,64,192,255, 128,192,64,96, 64,255,32,64, 32,96,255,32},
+        {192,64,128,64, 255,192,32,96, 64,128,192,160, 128,32,255,192},
+        {64,255,192,255, 255,32,64,192, 128,192,32,160, 192,96,128,80}};
+    RenderBackendTextureHandle textures[4];
+    bool ok=true;
+    for (unsigned i=0;i<4;++i) {
+        textures[i]=backend.Create_Static_RGBA8_Texture(2,2,texels[i],8);
+        ok=textures[i].Is_Valid() && ok;
+    }
+    RenderBackendTerrainVertex quad[]={
+        {-.8f,-.8f,.5f,1.5f,1.25f,.75f,.5f,.25f,.25f,.75f,.25f,.25f,.75f,.75f,.75f},
+        {-.8f,.8f,.5f,1.5f,1.25f,.75f,.5f,.25f,.25f,.75f,.25f,.25f,.75f,.75f,.75f},
+        {.8f,.8f,.5f,1.5f,1.25f,.75f,.5f,.25f,.25f,.75f,.25f,.25f,.75f,.75f,.75f},
+        {.8f,-.8f,.5f,1.5f,1.25f,.75f,.5f,.25f,.25f,.75f,.25f,.25f,.75f,.75f,.75f}};
+    const unsigned short front[]={0,2,1,0,3,2},back[]={0,1,2,0,2,3};
+    RenderBackendMaterialState material;
+    material.depth_write=false;
+    material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    RenderBackendTerrainState terrain;
+    terrain.shroud_sampler.mag_filter=RenderBackendTextureFilter::Point;
+    terrain.cloud_sampler.mag_filter=RenderBackendTextureFilter::Point;
+    terrain.noise_sampler.mag_filter=RenderBackendTextureFilter::Point;
+    auto setLayers=[&](unsigned mask) {
+        terrain.shroud_texture=mask&1 ? textures[1] : RenderBackendTextureHandle{};
+        terrain.cloud_texture=mask&2 ? textures[2] : RenderBackendTextureHandle{};
+        terrain.noise_texture=mask&4 ? textures[3] : RenderBackendTextureHandle{};
+    };
+    auto sample=[&](unsigned texture,unsigned texel) {
+        std::array<float,4> value{};
+        for(unsigned c=0;c<4;++c) value[c]=texels[texture][4*texel+c]/255.f;
+        return value;
+    };
+    std::array<std::array<float,4>,4> sampled={sample(0,0),sample(1,1),sample(2,2),sample(3,3)};
+    auto expected=[&](unsigned mask) {
+        std::array<float,4> value{};
+        const float diffuse[]={quad[0].r,quad[0].g,quad[0].b,quad[0].a};
+        for(unsigned c=0;c<4;++c) {
+            value[c]=sampled[0][c];
+            if(mask&1) value[c]*=sampled[1][c];
+            value[c]*=diffuse[c];
+            if(mask&2) value[c]*=sampled[2][c];
+            if(mask&4) value[c]*=sampled[3][c];
+        }
+        return value;
+    };
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    auto capture=[&]() {
+        backend.End_Scene(false);
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        backend.Flip_To_Primary(); return read;
+    };
+    auto matches=[&](unsigned x,unsigned y,const std::array<float,4> &value) {
+        const unsigned offset=(y*width+x)*4;
+        for(unsigned c=0;c<4;++c)
+            if(std::abs(int(pixels[offset+c])-int(std::lround(std::clamp(value[c],0.f,1.f)*255.f)))>2) return false;
+        return true;
+    };
+    unsigned terrainCase=0;
+    auto verify=[&](const std::array<float,4> &value,RenderBackendTextureHandle base) {
+        ++terrainCase;
+        backend.Clear(true,true,Vector3(0,0,0),.3f,1,0); backend.Begin_Scene();
+        const bool drew=backend.Draw_Indexed_Terrain_Triangles(quad,4,front,6,base,material,terrain);
+        const bool read=capture();
+        const bool passed=drew && read && matches(320,240,value);
+        if(!passed) {
+            std::cerr << "Terrain pixel case " << terrainCase << " failed (draw=" << drew << ", read=" << read << ")";
+            if(read) for(unsigned c=0;c<4;++c) std::cerr << " " << int(pixels[(240*640+320)*4+c]) << "/" << int(std::lround(std::clamp(value[c],0.f,1.f)*255.f));
+            std::cerr << "\n";
+        }
+        return passed;
+    };
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Set_View_Projection(Matrix4x4(true));
+    // Distinct UVs and non-neutral RGBA values expose swapped or retained layers.
+    // Diffuse red exceeds one before cloud attenuation: an intermediate RGBA8
+    // pass or saturate produces a different final pixel.
+    for(unsigned mask=0;mask<8;++mask) {
+        setLayers(mask); ok=verify(expected(mask),textures[0]) && ok;
+    }
+    setLayers(7);
+    RenderBackendSamplerState *samplers[]={&terrain.shroud_sampler,&terrain.cloud_sampler,&terrain.noise_sampler};
+    for(unsigned layer=0;layer<3;++layer) {
+        const unsigned texture=layer+1,originalTexel=texture;
+        auto setU=[&](float u) {
+            for(auto &v:quad) {
+                if(layer==0) v.u2=u; else if(layer==1) v.u3=u; else v.u4=u;
+            }
+        };
+        const float originalU=originalTexel&1 ? .75f : .25f;
+        setU(originalU+1.f); samplers[layer]->address_u=RenderBackendTextureAddress::Wrap;
+        ok=verify(expected(7),textures[0]) && ok;
+        setU(-.25f); samplers[layer]->address_u=RenderBackendTextureAddress::Clamp;
+        sampled[texture]=sample(texture,originalTexel&2);
+        ok=verify(expected(7),textures[0]) && ok;
+        setU(.5f); samplers[layer]->mag_filter=RenderBackendTextureFilter::Linear;
+        const auto right=sample(texture,(originalTexel&2)+1);
+        for(unsigned c=0;c<4;++c) sampled[texture][c]=(sampled[texture][c]+right[c])*.5f;
+        ok=verify(expected(7),textures[0]) && ok;
+        sampled[texture]=sample(texture,originalTexel);
+        samplers[layer]->mag_filter=RenderBackendTextureFilter::Point;
+        samplers[layer]->address_u=RenderBackendTextureAddress::Wrap; setU(originalU);
+    }
+    material.alpha_test=RenderBackendAlphaTest::GreaterEqual;
+    material.alpha_reference=.01f;
+    ok=verify(expected(7),textures[0]) && ok;
+    material.alpha_reference=.1f;
+    ok=verify({0,0,0,.3f},textures[0]) && ok;
+    material.alpha_test=RenderBackendAlphaTest::Disabled;
+    material.color_write_mask=7;
+    auto preservedAlpha=expected(7); preservedAlpha[3]=.3f;
+    ok=verify(preservedAlpha,textures[0]) && ok;
+    material.color_write_mask=15;
+    // A following texture-disabled terrain draw must select the color shader.
+    setLayers(0);
+    for(auto &v:quad) {v.r=.2f;v.g=.4f;v.b=.6f;v.a=.8f;}
+    ok=verify({.2f,.4f,.6f,.8f},{}) && ok;
+    // Terrain uses the same explicit depth/cull contracts as other materials.
+    for(unsigned scenario=0;scenario<3;++scenario) {
+        material.depth_write=scenario!=2;
+        for(auto &v:quad) {v.z=.4f;v.r=1;v.g=v.b=0;v.a=1;}
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        bool drew=backend.Draw_Indexed_Terrain_Triangles(quad,4,front,6,{},material,terrain);
+        for(auto &v:quad) {v.z=scenario==1 ? .4f : .6f;v.r=0;v.b=1;}
+        material.depth_write=false;
+        drew=backend.Draw_Indexed_Terrain_Triangles(quad,4,front,6,{},material,terrain) && drew;
+        const bool read=capture();
+        ok=drew && read && matches(320,240,scenario==0 ? std::array<float,4>{1,0,0,1} : std::array<float,4>{0,0,1,1}) && ok;
+    }
+    for(auto &v:quad) {v.z=.5f;v.r=1;v.g=v.b=0;v.a=1;}
+    for(unsigned winding=0;winding<2;++winding) {
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        const bool drew=backend.Draw_Indexed_Terrain_Triangles(quad,4,winding ? back : front,6,{},material,terrain);
+        const bool read=capture();
+        ok=drew && read && matches(320,240,winding ? std::array<float,4>{0,0,0,0} : std::array<float,4>{1,0,0,1}) && ok;
+    }
+    Matrix4x4 camera(true);camera[0][0]=camera[1][1]=.25f;camera[0][3]=.55f;camera[1][3]=-.5f;
+    backend.Set_View_Projection(camera);
+    backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+    bool drew=backend.Draw_Indexed_Terrain_Triangles(quad,4,front,6,textures[0],material,terrain);
+    camera[0][3]=-.55f;backend.Set_View_Projection(camera);
+    drew=backend.Draw_Indexed_Terrain_Triangles(quad,4,front,6,textures[0],material,terrain) && drew;
+    const bool cameraRead=capture();
+    const std::array<float,4> red={192.f/255.f,0,0,224.f/255.f};
+    ok=drew && cameraRead && matches(496,365,red) && matches(144,365,red) && matches(320,240,{0,0,0,0}) && ok;
+    backend.Set_View_Projection(Matrix4x4(true));
+    const unsigned char stalePixel[]={255,255,255,255};
+    const auto stale=backend.Create_Static_RGBA8_Texture(1,1,stalePixel,4);
+    ok=stale.Is_Valid() && ok;backend.Release_Texture(stale);
+    RenderBackendTextureHandle *layers[]={&terrain.shroud_texture,&terrain.cloud_texture,&terrain.noise_texture};
+    backend.Begin_Scene();
+    auto reject=[&](RenderBackendTextureHandle base) {
+        return !backend.Draw_Indexed_Terrain_Triangles(quad,4,front,6,base,material,terrain);
+    };
+    setLayers(0);ok=reject({0,1}) && reject(stale) && ok;
+    for(unsigned layer=0;layer<3;++layer) {
+        setLayers(0);*layers[layer]=textures[layer+1];ok=reject({}) && ok;
+        *layers[layer]={0,1};ok=reject(textures[0]) && ok;
+        *layers[layer]={textures[layer+1].slot,0};ok=reject(textures[0]) && ok;
+        *layers[layer]=stale;ok=reject(textures[0]) && ok;
+        *layers[layer]=textures[layer+1];samplers[layer]->max_anisotropy=17;
+        ok=reject(textures[0]) && ok;samplers[layer]->max_anisotropy=1;
+        samplers[layer]->min_mip_level=16;ok=reject(textures[0]) && ok;samplers[layer]->min_mip_level=0;
+        samplers[layer]->address_v=static_cast<RenderBackendTextureAddress>(2);
+        ok=reject(textures[0]) && ok;samplers[layer]->address_v=RenderBackendTextureAddress::Wrap;
+    }
+    backend.End_Scene(false);backend.Flip_To_Primary();
+    const auto target=backend.Create_Render_Texture(32,32);
+    ok=target.Is_Valid() && backend.Set_Render_Texture(target) && ok;
+    material.depth_test=RenderBackendDepthTest::Disabled;
+    backend.Begin_Scene();
+    setLayers(0);ok=reject(target) && ok;
+    for(unsigned layer=0;layer<3;++layer) {
+        setLayers(0);*layers[layer]=target;ok=reject(textures[0]) && ok;
+    }
+    backend.End_Scene(false);backend.Set_Render_Texture({});backend.Release_Texture(target);
+    for(const auto texture:textures) backend.Release_Texture(texture);
+    if(!ok) std::cerr << "Terrain layer arithmetic, UV/sampler, material state, or resource validation failed.\n";
     return ok;
 }
 
@@ -504,6 +769,18 @@ bool verifyMaterials(IRenderBackend &backend)
         const bool read=capture(); ok=read && ok;
         if (read) ok=matches(0,color && cull!=2 ? source[0] : 0) && ok;
     }
+    // Shoreline coverage writes destination alpha while preserving scene RGB.
+    // Exercise every channel mask to distinguish cached PSOs, including no writes.
+    material={}; material.depth_test=RenderBackendDepthTest::Disabled; material.cull=RenderBackendCullMode::None;
+    const float retained_channels[]={.1f,.3f,.2f,.75f};
+    for(unsigned mask=0;mask<16;++mask) {
+        material.color_write_mask=mask;
+        backend.Clear(true,true,Vector3(.1f,.3f,.2f),.75f,1,0); backend.Begin_Scene();
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},material) && ok;
+        const bool read=capture(); ok=read && ok;
+        if(read) for(unsigned channel=0;channel<4;++channel)
+            ok=matches(channel,(mask&(1u<<channel)) ? source[channel] : retained_channels[channel]) && ok;
+    }
     material={};
     for (unsigned write=0;write<2;++write) {
         backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
@@ -531,6 +808,7 @@ bool verifyMaterials(IRenderBackend &backend)
     auto rejected = [&](RenderBackendMaterialState bad) {
         return !backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},bad);
     };
+    material.color_write_mask=16; ok=rejected(material) && ok; material={};
     material.depth_test=static_cast<RenderBackendDepthTest>(9); ok=rejected(material) && ok; material={};
     material.source_blend=static_cast<RenderBackendBlendFactor>(7); ok=rejected(material) && ok; material={};
     material.destination_blend=static_cast<RenderBackendBlendFactor>(7); ok=rejected(material) && ok; material={};
@@ -959,14 +1237,19 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyTreeShroud(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;
     }
     // A width not divisible by the GPU row alignment catches padding leaks;
     // an asymmetric draw catches vertical inversion and RGBA channel swaps.
-    bool capture_ok = backend->Configure_Output(643, 479, true);
+    const unsigned char retained_pixel[] = {0,255,0,255};
+    const auto retained_texture = backend->Create_Static_RGBA8_Texture(1,1,retained_pixel,4);
+    const auto retained_target = backend->Create_Render_Texture(13,7);
+    bool capture_ok = retained_texture.Is_Valid() && retained_target.Is_Valid() &&
+        backend->Configure_Output(643, 479, true) &&
+        backend->Is_Texture_Valid(retained_texture) && backend->Is_Texture_Valid(retained_target);
     capture_ok = capture_ok && !backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels);
     backend->Set_Viewport(RenderBackendViewport{0, 0, 643, 479, 0.0f, 1.0f});
     backend->Clear(true, true, Vector3(0.25f, 0.5f, 0.75f), 1.0f, 1.0f, 0);
@@ -974,6 +1257,17 @@ int main()
     capture_ok = capture_ok && !backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels);
     capture_ok = capture_ok && backend->Draw_2D_Indexed_Triangles(
         top_left_vertices, 3, triangle_indices, 3, RenderBackend2DBlendMode::Opaque);
+    const RenderBackendTexturedVertex retained_triangle[] = {
+        {-0.25f,-0.25f,0, 1,1,1,1, 0,0},
+        {0,0.25f,0, 1,1,1,1, 0,0},
+        {0.25f,-0.25f,0, 1,1,1,1, 0,0}};
+    RenderBackendMaterialState retained_material;
+    retained_material.screen_space = true;
+    retained_material.depth_test = RenderBackendDepthTest::Disabled;
+    retained_material.depth_write = false;
+    retained_material.cull = RenderBackendCullMode::None;
+    capture_ok = capture_ok && backend->Draw_Indexed_Material_Triangles(
+        retained_triangle,3,triangle_indices,3,retained_texture,retained_material);
     backend->End_Scene(false);
     capture_ok = capture_ok && backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) &&
         captured_width == 643 && captured_height == 479 && captured_pixels.size() == 643u * 479u * 4u;
@@ -984,8 +1278,13 @@ int main()
             captured_pixels[3] == 255 && captured_pixels[lower_right] == 64 &&
             captured_pixels[lower_right + 1] == 128 && captured_pixels[lower_right + 2] == 191 &&
             captured_pixels[lower_right + 3] == 255;
+        const std::size_t center = (239u*643u+321u)*4u;
+        capture_ok = capture_ok && captured_pixels[center]==0 && captured_pixels[center+1]==255 &&
+            captured_pixels[center+2]==0 && captured_pixels[center+3]==255;
     }
     backend->Flip_To_Primary();
+    backend->Release_Texture(retained_texture);
+    backend->Release_Texture(retained_target);
     delete backend;
     // Texture owners may outlive WW3D shutdown. A replacement device must not
     // reinterpret an old slot/generation as its newly allocated render target.

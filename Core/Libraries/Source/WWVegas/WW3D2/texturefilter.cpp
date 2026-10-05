@@ -176,11 +176,17 @@ bool TextureFilterClass::Get_Render_Sampler(RenderBackendSamplerState &result, u
     sampler.mag_filter=mag==FilterChoice::Point ? RenderBackendTextureFilter::Point : RenderBackendTextureFilter::Linear;
     sampler.mip_filter=mip==FilterChoice::Linear ? RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
     sampler.mipmaps=mip!=FilterChoice::None;
+    sampler.min_mip_level=MinimumMipLevel;
     sampler.max_anisotropy=min==FilterChoice::Anisotropic || mag==FilterChoice::Anisotropic ? MaxAnisotropy : 1;
     sampler.address_u=UAddressMode==TEXTURE_ADDRESS_REPEAT ? RenderBackendTextureAddress::Wrap : RenderBackendTextureAddress::Clamp;
     sampler.address_v=VAddressMode==TEXTURE_ADDRESS_REPEAT ? RenderBackendTextureAddress::Wrap : RenderBackendTextureAddress::Clamp;
     result=sampler;
     return true;
+}
+
+void TextureFilterClass::Set_Min_Mip_Level(unsigned int level)
+{
+    MinimumMipLevel=std::min(level,15u);
 }
 
 

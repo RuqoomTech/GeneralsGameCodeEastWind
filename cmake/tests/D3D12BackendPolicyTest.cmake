@@ -331,6 +331,7 @@ foreach(_d3dx_free_source IN ITEMS
     "GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/assetmgr.cpp"
     "Core/Libraries/Source/WWVegas/WW3D2/texture.cpp"
     "Core/Libraries/Source/WWVegas/WW3D2/textureloader.cpp"
+    "Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp"
     "Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp"
     "Core/Libraries/Source/WWVegas/WW3D2/sortingrenderer.cpp"
     "Core/Libraries/Source/WWVegas/WW3D2/missingtexture.cpp")
@@ -343,14 +344,14 @@ foreach(_d3dx_free_source IN ITEMS
         "D3DX"
         "active Evolution WW3D source ${_d3dx_free_source} must not call D3DX8")
 endforeach()
+rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp"
+    "DX8Wrapper::"
+    "CPU SurfaceClass must not allocate or copy through the retired renderer")
 rts_policy_require_contains(
     "Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp"
-    "#if !defined(RTS_EVOLUTION_X64)"
-    "legacy SurfaceClass may include D3DX8 only outside the Evolution x64 graph")
-rts_policy_require_contains(
-    "Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp"
-    "Copy_Surface_Region_CPU"
-    "Evolution SurfaceClass copy/scale must use the existing CPU bitmap path instead of D3DX8")
+    "BitmapHandlerClass::Copy_Pixel"
+    "SurfaceClass conversion must use the shared CPU bitmap owner")
 rts_policy_require_contains(
     "Core/Libraries/Source/WWVegas/WW3D2/missingtexture.cpp"
     "BitmapHandlerClass::Create_Mipmap_B8G8R8A8"
@@ -408,6 +409,25 @@ foreach(_cpu_mip_source IN ITEMS
         "D3DXFilterTexture"
         "procedural terrain/tree mip generation must use the shared CPU bitmap path instead of D3DXFilterTexture")
 endforeach()
+
+foreach(_cpu_tree_shroud_source IN ITEMS
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/BaseHeightMap.cpp"
+    "Core/GameEngineDevice/Include/W3DDevice/GameClient/W3DTreeBuffer.h"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp"
+    "Generals/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DShroud.h"
+    "Generals/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DShroud.cpp"
+    "GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DShroud.h"
+    "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DShroud.cpp")
+    rts_policy_require_absent(
+        "${_cpu_tree_shroud_source}" "DX8" "migrated tree/shroud owners must not restore native DX8 resources or draws")
+    rts_policy_require_absent(
+        "${_cpu_tree_shroud_source}" "dx8" "migrated tree/shroud owners must not restore the native DX8 headers")
+    rts_policy_require_absent(
+        "${_cpu_tree_shroud_source}" "IDirect3D" "migrated tree/shroud owners must keep geometry and pixels renderer neutral")
+endforeach()
+rts_policy_require_contains(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp"
+    "Draw_Indexed_Material_Triangles" "real tree batches must submit through the active render backend")
 
 rts_policy_require_contains(
     "Core/Libraries/Source/WWVegas/WW3D2/bitmaphandler.cpp"

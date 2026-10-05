@@ -1,5 +1,31 @@
 # Current Source State
 
+## Tree and shroud continuation - 2026-10-05
+
+The current checkout remains user commit `87ac65056fd6fa20e3247ab71bb96682b7b96344` plus local changes. The user prohibits GitHub pushes.
+
+The real tree caller now submits CPU batches through `IRenderBackend` material draws. Native vertex/index buffers, assembly shader handles, declarations and tree device calls are removed from the owner and its header. Atlas pixels use retained CPU surfaces, the existing mip generator, explicit BGRA packing and backend mip selection. The original lighting, UV layout, winding, visibility, shadows, push/topple calculations and fixed-width Xfer fields remain. The `Trees.nvv` position and diffuse operations run on the CPU before the ordinary backend vertex shader: sway is applied every render, RGB darkening preserves alpha, the world transform is explicit, and shroud UVs use the unswayed position. Trees that do not fit the geometry capacity are no longer published to the update buffer. Enum-to-float conversions are explicit without changing arithmetic order. The optional atlas debug draw uses the same backend seam; the disabled archival DX8 statistics gate is retired from the tree dispatch.
+
+The existing material path now binds a second texture and independent sampler for RGB-only shroud modulation in canonical HLSL. Primary texture alpha, alpha testing, blend/depth state and subsequent unlayered draws remain explicit. Secondary resources receive the same generation and self-sampling checks as primary resources. Sampler descriptors retain stable slots in a bounded cache; minimum mip selection is owned by the existing `TextureFilterClass` and uses sampler LOD rather than native texture state. This also handles the plain `TextureClass` atlas-overflow fallback without a derived-object cast. GPU pixel checks cover distinct UV sets, wrap/clamp and point/linear filtering, zero shroud alpha, alpha-test thresholds, mip selection, interleaved unlayered drawing and invalid/stale/self-sampled resources. Both production shader-state tests also exercise filter default/copy/secondary-stage mip state.
+
+Paired Generals/Zero Hour shroud owners now retain `SurfaceClass` CPU storage and copy visible rectangles/borders to their actual destination texture surfaces. No pointer survives a native unlock. Existing fog values, interpolation, timing, projection bounds and input-to-simulation behavior are unchanged. Native shroud surface allocation/copy calls and obsolete native member types are removed. This prepares actual tree shroud sampling; other terrain/material callers still need their full rendering migrations.
+
+Validation: the focused graph builds; 31/31 non-browser tests pass (GPU smoke 3.56 seconds), and the native browser test passes separately in 1.89 seconds with approved profile/controller access. Focused source checks pass for the tree (including the optional atlas debug path), terrain dispatch and both shroud variants. A read-only agent audit found no introduced ownership, shader or determinism defect. The latest exact `cmake --build --preset mingw64-game --target z_generals -- -j1` compiles the updated game sources and reaches the executable linker, failing with 59 unique unresolved legacy symbols, down from 61, with none added. Removed symbols are the old vertex/pixel shader handle globals. Transcript: `build/mingw64-game/tree-shroud-game-build.txt`; comparison: `build/tree-shroud-link-summary.json`. Fresh reconstruction from `2c81f9922beb5c5379c6d695c0e14ea3f15f55b3` matches all 4554 candidate files byte-for-byte, with zero missing, extra or different files (`build/tree-shroud-patchcheck.txt`). The first current blockers are `FlatHeightMap` lighting/render state and actual terrain draws. Their migration must preserve terrain texture layers, cloud/noise/shroud projection and material masks with real draw consumers. No current linked game, boot, visible frame, complete DX8 removal, sealed milestone or user Windows sign-off is claimed.
+
+## CPU texture ownership and shoreline continuation - 2026-10-05
+
+Current checkout is user commit `87ac65056fd6fa20e3247ab71bb96682b7b96344` plus local changes. All work remains local; the user prohibits GitHub pushes.
+
+`SurfaceClass` now owns CPU pixels. File surfaces reuse the existing RGBA decoder, preserving Surface/BitmapHandler BGRA storage. Copies, scaling and locks update a local revision; overlapping copies read a snapshot and invalid rectangles are rejected. Backend upload expands packed 16-bit components to their normalized range, forces XRGB alpha opaque, and preserves alpha-only RGB as zero. The one-byte R3G3B2 writer no longer overwrites its neighbor. A native import bridge remains for staged callers, without creating native surfaces.
+
+Regular 2D `TextureClass` retains the exact CPU surfaces returned to procedural writers and all decoded authored mip levels. Changed revisions trigger a new generation-safe backend upload; GPU render targets remain GPU-owned, with real dimensions and mip memory accounting. Cube, volume, depth, native loader/fallback and legacy Apply paths still require their complete caller migrations. CPU ownership alone does not complete shroud, mouse or profiler paths that still request native surfaces.
+
+Both original shoreline loops now submit CPU geometry through the material backend, preserving sorted continuation, visibility, winding, depth comparison, LUT UVs and alpha-only coverage writes. D3D12 material PSOs support per-channel write masks. The font atlas copy now uses CPU SurfaceClass rather than native DX8 rectangles. Water's consumption of shoreline alpha remains staged with its full material migration.
+
+Terrain no longer inherits or registers the retired native device-reset cleanup hook. Its explicit resource methods and destructor ownership remain. D3D12 output resize retains asset resources; GPU checks confirm an uploaded texture survives resize and is sampled correctly, with a render texture remaining valid too. Terrain readiness now queries the actual backend.
+
+Local validation: 31/31 non-browser regressions pass, including production GPU pixel checks for all sixteen channel masks and rejected invalid masks; the real native browser regression passes separately with approved controller/profile access. CPU tests cover BGRA/RGBA conversion, glyph alpha, overlapping copies, scaling, revision updates and the packed-pixel sentinel. The latest exact serial `z_generals` command compiles the changed sources and fails at the executable link with 61 unique unresolved legacy symbols, down from 64, with no newly introduced symbols. Transcript: `build/mingw64-game/terrain-lifecycle-game-build.txt`. The remaining queue begins with terrain/tree DX8 draw-state ownership, then actual terrain drawing. Fresh reconstruction from `2c81f9922beb5c5379c6d695c0e14ea3f15f55b3` matches all 4554 candidate files byte-for-byte, with zero missing, extra or different files. No current game link, boot, visible frame, sealed milestone or user Windows sign-off is claimed.
+
 ## Step05H continuation and late branch reuse - 2026-10-05
 
 Current reviewed baseline is `2c81f9922beb5c5379c6d695c0e14ea3f15f55b3`. The normal `cmake --build --preset mingw64-game --target z_generals -- -j1` invocation compiled the current game graph and reached the executable link; it failed with 65 unique unresolved legacy renderer symbols. This is compile evidence only. No current game boot, visible frame, or user Windows sign-off is recorded here.
@@ -8,10 +34,14 @@ Current reviewed baseline is `2c81f9922beb5c5379c6d695c0e14ea3f15f55b3`. The nor
 
 Selected reuse in the working candidate:
 
-- Paired box render objects submit the original eight vertices and twelve triangles through the current material backend. Axis-aligned boxes retain translation-only positioning; oriented boxes retain full transforms. The original white-emissive material is preserved as prelit vertex RGBA.
+- Paired box render objects submit the original eight vertices and twelve triangles through the current material backend. Axis-aligned boxes retain translation-only positioning; oriented boxes retain full transforms. The original white-emissive material is preserved as prelit vertex RGBA. Generals retains its CPU triangle sorting queue; Zero Hour retains immediate submission.
 - Paired DDS constructors decode fixed DXT1-5 FourCC identifiers on the CPU; file layouts and native overloads still needed by staged callers remain intact.
 - Packed ARGB conversion is consolidated in the existing `ww3dformat` owner for mesh material preprocessing and shatter interpolation. It retains channel shifts and the established WWMath quantization.
 - Texture format selection describes actual CPU conversion support rather than querying the retired native device. Unsupported signed bump formats are rejected for their future complete material migration.
+- Terrain tracks retain generated edges, time/distance fade, module order, authored textures/sampler, per-module transforms and shared strip topology. Native buffers and their obsolete member names are retired; rejected draws are reported.
+- The native browser now observes actual navigation completion. Request supersession, redirect IDs, weak callback ownership and handler removal preserve lifetime safety. Real missing-file failures retain Failed/HRESULT instead of reporting success when the request is merely accepted.
+
+Local verification: the focused graph builds successfully; 31/31 non-browser tests pass including the actual D3D12 GPU smoke, and the native browser smoke passes separately with approved access to its profile/controller. Both game variants' changed WW3D source files pass focused MinGW syntax checks. The normal `z_generals` rerun compiles the candidate and fails at the executable linker with 64 unique unresolved legacy renderer symbols, no new symbols relative to the 65-symbol baseline. Game boot/frame and Windows user sign-off remain unproven.
 
 Outstanding repairs before larger `late` imports:
 
@@ -22,7 +52,7 @@ Outstanding repairs before larger `late` imports:
 | Smudge/tree/water | Smudge indices are rebased twice and background capture is unpopulated; ordinary tree breeze can freeze; water effects and matrix conventions need complete migration. |
 | Terrain/roads/bridges | CPU topology can be reused, but secondary UVs, blend stages, cloud/shroud and lighting must reach actual submissions. |
 
-Scorch, terrain tracks and bibs are promising subsequent CPU geometry ports after their texture, transform and failure-propagation contracts are verified. SDL3 remains Step06 after normal D3D12 game boot/frame; W3X runtime work remains deferred to the same gate.
+Scorch and bibs are promising subsequent CPU geometry ports after their texture, transform and failure-propagation contracts are verified. SDL3 remains Step06 after normal D3D12 game boot/frame; W3X runtime work remains deferred to the same gate.
 
 ## Historical baseline through Step05H1N
 

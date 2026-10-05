@@ -1,5 +1,6 @@
 #include "WW3D2/shader.h"
 #include "WW3D2/IRenderBackend.h"
+#include "WW3D2/texturefilter.h"
 
 #include <array>
 #include <cstdint>
@@ -232,6 +233,19 @@ void Test_Fixed_Asset_Value()
 
 int main()
 {
+    TextureFilterClass filter(MIP_LEVELS_ALL);
+    RenderBackendSamplerState sampler;
+    Check(filter.Get_Render_Sampler(sampler) && sampler.min_mip_level==0,
+        "Default texture filter imposed a mip reduction");
+    filter.Set_Min_Mip_Level(2);
+    filter.Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
+    const auto copy=filter;
+    Check(copy.Get_Render_Sampler(sampler,1) && sampler.min_mip_level==2 &&
+        sampler.address_u==RenderBackendTextureAddress::Clamp,
+        "Texture filter copy or secondary stage lost its mip/address state");
+    filter.Set_Min_Mip_Level(~0u);
+    Check(filter.Get_Render_Sampler(sampler) && sampler.min_mip_level==15,
+        "Texture filter admitted an unsupported sampler mip level");
     Test_Depth_And_Blending();
     Test_Alpha_And_Writes();
     Test_Culling_And_Primary_Texture();

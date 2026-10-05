@@ -123,6 +123,7 @@ public:
 	void Set_Min_Filter(FilterType filter) { TextureMinFilter=filter; }
 	void Set_Mag_Filter(FilterType filter) { TextureMagFilter=filter; }
 	void Set_Mip_Mapping(FilterType mipmap);
+	void Set_Min_Mip_Level(unsigned int level);
 
 	// Texture address mode
 	TxtAddrMode Get_U_Addr_Mode() const { return UAddressMode; }
@@ -145,4 +146,5 @@ private:
 	FilterType MipMapFilter;
 	TxtAddrMode UAddressMode;
 	TxtAddrMode VAddressMode;
+	unsigned int MinimumMipLevel = 0; // Local sampling state, never asset/wire data.
 };

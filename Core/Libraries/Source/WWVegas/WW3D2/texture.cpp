@@ -40,6 +40,8 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "texture.h"
+#include "WWLib/ref_ptr.h"
+#include <algorithm>
 
 #include <d3d8.h>
 #include "dx8wrapper.h"
@@ -74,6 +76,28 @@ const unsigned MAX_TEXTURES_APPLIED_PER_FRAME=2;
 /*!
  * KM General base constructor for texture classes
  */
+struct TextureClass::CpuImageState {
+    std::vector<RefCountPtr<SurfaceClass>> levels;
+    std::vector<std::uint64_t> uploaded_revisions;
+};
+namespace {
+RefCountPtr<SurfaceClass> Surface_From_RGBA(const TextureLoader::RGBA8MipLevel &image) {
+    auto surface=RefCountPtr<SurfaceClass>::Create_No_Add_Ref(new SurfaceClass(image.width,image.height,WW3D_FORMAT_A8R8G8B8));
+    int pitch=0; auto *dest=static_cast<unsigned char*>(surface->Lock(&pitch));
+    for(unsigned y=0; y<image.height; ++y) for(unsigned x=0; x<image.width; ++x) {
+        const unsigned char *source=image.pixels.data()+(static_cast<std::size_t>(y)*image.width+x)*4;
+        unsigned char *pixel=dest+static_cast<std::size_t>(y)*pitch+x*4;
+        pixel[0]=source[2]; pixel[1]=source[1]; pixel[2]=source[0]; pixel[3]=source[3];
+    }
+    surface->Unlock(); return surface;
+}
+bool Surface_To_RGBA(const SurfaceClass &surface, TextureLoader::RGBA8MipLevel &image) {
+    SurfaceClass::SurfaceDescription desc{}; surface.Get_Description(desc);
+    image.width=desc.Width; image.height=desc.Height;
+    return surface.Copy_RGBA8(image.pixels);
+}
+}
+
 TextureBaseClass::TextureBaseClass
 (
 	unsigned int width,
@@ -129,7 +153,7 @@ TextureBaseClass::~TextureBaseClass()
 		// WW3D may already have shut down. A new backend rejects the old generation.
 		if (RendererOwner == WW3D::Get_Render_Backend())
 			RendererOwner->Release_Texture(RendererTexture);
-	} else {
+	} else if (!Uses_CPU_Image) {
 		DX8TextureManagerClass::Remove(this);
 	}
 }
@@ -153,31 +177,47 @@ TextureClass::TextureClass(unsigned width, unsigned height, RenderBackendTexture
 	LastAccessed = WW3D::Get_Sync_Time();
 }
 
+TextureClass::~TextureClass() { delete CpuImage; }
+void TextureClass::Discard_CPU_Image() { delete CpuImage; CpuImage=nullptr; }
+bool TextureClass::Ensure_CPU_Image() {
+    if(Get_Asset_Type()!=TEX_REGULAR) return false;
+    if(CpuImage) return !CpuImage->levels.empty();
+    if(IsProcedural || Get_Texture_Name().Is_Empty()) return false;
+    if(TextureFormat==WW3D_FORMAT_U8V8 || TextureFormat==WW3D_FORMAT_L6V5U5 || TextureFormat==WW3D_FORMAT_X8L8V8U8) return false;
+    std::vector<TextureLoader::RGBA8MipLevel> images;
+    RendererTextureMissing=!TextureLoader::Load_RGBA8_Mip_Chain(Get_Full_Path(),MipLevelCount,IsReducible,IsCompressionAllowed,HSVShift,images);
+    if(RendererTextureMissing) {
+        images.resize(1); MissingTexture::Create_RGBA8_Image(images[0].width,images[0].height,images[0].pixels);
+    }
+    CpuImage=new CpuImageState;
+    for(const auto &image:images) CpuImage->levels.push_back(Surface_From_RGBA(image));
+    Width=images[0].width; Height=images[0].height; TextureFormat=WW3D_FORMAT_A8R8G8B8;
+    return true;
+}
+
 bool TextureClass::Ensure_Renderer_Texture()
 {
-	if (Get_Renderer_Texture().Is_Valid()) return true;
-	IRenderBackend *backend = WW3D::Get_Render_Backend();
-	if (backend == nullptr || !TextureLoader::Is_Render_Thread() || Get_Texture_Name().Is_Empty()) return false;
-	// Signed bump data needs its actual caller/shader migration; it is not a color image.
-	if (TextureFormat == WW3D_FORMAT_U8V8 || TextureFormat == WW3D_FORMAT_L6V5U5 ||
-		TextureFormat == WW3D_FORMAT_X8L8V8U8) return false;
-	std::vector<TextureLoader::RGBA8MipLevel> images;
-	const bool missing = !TextureLoader::Load_RGBA8_Mip_Chain(Get_Full_Path(), MipLevelCount,
-		IsReducible, IsCompressionAllowed, HSVShift, images);
-	if (missing) {
-		images.resize(1);
-		MissingTexture::Create_RGBA8_Image(images[0].width, images[0].height, images[0].pixels);
-	}
-	std::vector<RenderBackendTextureMipLevel> levels;
-	levels.reserve(images.size());
-	for (const auto &image : images) levels.push_back({image.width, image.height, image.width*4, image.pixels.data()});
-	const auto handle = backend->Create_Static_RGBA8_Texture(levels.data(), static_cast<unsigned>(levels.size()));
-	if (!handle.Is_Valid()) return false;
-	RendererOwner = backend; RendererTexture = handle; RendererTextureMissing = missing;
-	RendererMipLevelCount = static_cast<unsigned>(images.size());
-	Width = images[0].width; Height = images[0].height; TextureFormat = WW3D_FORMAT_A8R8G8B8;
-	Initialized = true; LastAccessed = WW3D::Get_Sync_Time();
-	return true;
+    IRenderBackend *backend=WW3D::Get_Render_Backend();
+    if(!backend || !TextureLoader::Is_Render_Thread()) return false;
+    if(!CpuImage && Get_Renderer_Texture().Is_Valid()) return true; // GPU-owned render target
+    if(!Ensure_CPU_Image()) return false;
+    bool changed=CpuImage->uploaded_revisions.size()!=CpuImage->levels.size();
+    if(!changed) for(std::size_t i=0;i<CpuImage->levels.size();++i)
+        changed=changed || CpuImage->levels[i]->Get_Revision()!=CpuImage->uploaded_revisions[i];
+    if(!changed && Get_Renderer_Texture().Is_Valid()) return true;
+    std::vector<TextureLoader::RGBA8MipLevel> images(CpuImage->levels.size());
+    std::vector<RenderBackendTextureMipLevel> levels;
+    for(std::size_t i=0;i<images.size();++i) {
+        if(!Surface_To_RGBA(*CpuImage->levels[i],images[i])) return false;
+        levels.push_back({images[i].width,images[i].height,images[i].width*4,images[i].pixels.data()});
+    }
+    const auto handle=backend->Create_Static_RGBA8_Texture(levels.data(),static_cast<unsigned>(levels.size()));
+    if(!handle.Is_Valid()) return false;
+    if(RendererTexture.Is_Valid() && RendererOwner==backend) backend->Release_Texture(RendererTexture);
+    RendererOwner=backend; RendererTexture=handle; RendererMipLevelCount=static_cast<unsigned>(levels.size());
+    CpuImage->uploaded_revisions.clear();
+    for(const auto &level:CpuImage->levels) CpuImage->uploaded_revisions.push_back(level->Get_Revision());
+    Initialized=true; LastAccessed=WW3D::Get_Sync_Time(); return true;
 }
 
 bool TextureClass::Copy_From(const TextureClass &source)
@@ -270,6 +310,7 @@ void TextureBaseClass::Invalidate()
 		if (RendererOwner == WW3D::Get_Render_Backend()) RendererOwner->Release_Texture(RendererTexture);
 		RendererTexture = {}; RendererOwner = nullptr; RendererMipLevelCount = 0;
 	}
+	if (Uses_CPU_Image) { if (TextureClass *image=As_TextureClass()) image->Discard_CPU_Image(); }
 	Initialized=false;
 
 	LastAccessed=WW3D::Get_Sync_Time();
@@ -663,59 +704,24 @@ TextureClass::TextureClass
 	Filter(mip_level_count),
 	TextureFormat(format)
 {
-	Initialized=true;
-	IsProcedural=true;
-	IsReducible=false;
-
-	switch (format)
-	{
-	case WW3D_FORMAT_DXT1:
-	case WW3D_FORMAT_DXT2:
-	case WW3D_FORMAT_DXT3:
-	case WW3D_FORMAT_DXT4:
-	case WW3D_FORMAT_DXT5:
-		IsCompressionAllowed=true;
-		break;
-	default : break;
-	}
-
-	D3DPOOL d3dpool=(D3DPOOL)0;
-	switch(pool)
-	{
-	case POOL_DEFAULT		: d3dpool=D3DPOOL_DEFAULT; break;
-	case POOL_MANAGED		: d3dpool=D3DPOOL_MANAGED; break;
-	case POOL_SYSTEMMEM	: d3dpool=D3DPOOL_SYSTEMMEM; break;
-	default: WWASSERT(0);
-	}
-
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Texture
-		(
-			width,
-			height,
-			format,
-			mip_level_count,
-			d3dpool,
-			rendertarget
-		)
-	);
-
-	if (pool==POOL_DEFAULT)
-	{
-		Set_Dirty();
-		DX8TextureTrackerClass *track=new DX8TextureTrackerClass
-		(
-			width,
-			height,
-			format,
-			mip_level_count,
-			this,
-			rendertarget
-		);
-		DX8TextureManagerClass::Add(track);
-	}
-	LastAccessed=WW3D::Get_Sync_Time();
+    Uses_CPU_Image=IsProcedural=true; IsReducible=false; Initialized=false;
+    if(rendertarget) {
+        IRenderBackend *backend=WW3D::Get_Render_Backend();
+        if(backend) {
+            RendererTexture=backend->Create_Render_Texture(width,height);
+            RendererOwner=backend; RendererMipLevelCount=1; Initialized=RendererTexture.Is_Valid();
+        }
+    } else {
+        CpuImage=new CpuImageState;
+        unsigned w=width,h=height; const unsigned requested=static_cast<unsigned>(mip_level_count);
+        while(w && h && (requested==0 || CpuImage->levels.size()<requested)) {
+            CpuImage->levels.push_back(RefCountPtr<SurfaceClass>::Create_No_Add_Ref(new SurfaceClass(w,h,format)));
+            if(w==1 && h==1) break;
+            w=std::max(1u,w/2); h=std::max(1u,h/2);
+        }
+        Initialized=!CpuImage->levels.empty();
+    }
+    LastAccessed=WW3D::Get_Sync_Time();
 }
 
 
@@ -734,6 +740,7 @@ TextureClass::TextureClass
 	Filter(mip_level_count),
 	TextureFormat(texture_format)
 {
+	Uses_CPU_Image=true;
 	IsCompressionAllowed=allow_compression;
 	InactivationTime=DEFAULT_INACTIVATION_TIME;		// Default inactivation time 30 seconds
 	IsReducible=allow_reduction;
@@ -815,35 +822,17 @@ TextureClass::TextureClass
 	Filter(mip_level_count),
 	TextureFormat(surface->Get_Surface_Format())
 {
-	IsProcedural=true;
-	Initialized=true;
-	IsReducible=false;
-
-	SurfaceClass::SurfaceDescription sd;
-	surface->Get_Description(sd);
-	Width=sd.Width;
-	Height=sd.Height;
-	switch (sd.Format)
-	{
-	case WW3D_FORMAT_DXT1:
-	case WW3D_FORMAT_DXT2:
-	case WW3D_FORMAT_DXT3:
-	case WW3D_FORMAT_DXT4:
-	case WW3D_FORMAT_DXT5:
-		IsCompressionAllowed=true;
-		break;
-	default: break;
-	}
-
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Texture
-		(
-			surface->Peek_D3D_Surface(),
-			mip_level_count
-		)
-	);
-	LastAccessed=WW3D::Get_Sync_Time();
+    Uses_CPU_Image=IsProcedural=true; IsReducible=false;
+    SurfaceClass::SurfaceDescription desc{}; surface->Get_Description(desc);
+    Width=desc.Width; Height=desc.Height;
+    CpuImage=new CpuImageState;
+    CpuImage->levels.push_back(RefCountPtr<SurfaceClass>::Create_Add_Ref(surface));
+    unsigned w=desc.Width,h=desc.Height; const unsigned requested=static_cast<unsigned>(mip_level_count);
+    while((w>1 || h>1) && (requested==0 || CpuImage->levels.size()<requested)) {
+        w=std::max(1u,w/2); h=std::max(1u,h/2);
+        CpuImage->levels.push_back(RefCountPtr<SurfaceClass>::Create_No_Add_Ref(new SurfaceClass(w,h,desc.Format)));
+    }
+    Initialized=Generate_Mipmaps(); LastAccessed=WW3D::Get_Sync_Time();
 }
 
 // ----------------------------------------------------------------------------
@@ -890,48 +879,8 @@ TextureClass::TextureClass(IDirect3DBaseTexture8* d3d_texture)
 */
 void TextureClass::Init()
 {
-	if (WW3D::Get_Render_Backend() != nullptr && !IsProcedural && !Get_Texture_Name().Is_Empty()) {
-		Ensure_Renderer_Texture();
-		return;
-	}
-	// If the texture has already been initialised we should exit now
-	if (Initialized) return;
-
-	WWPROFILE("TextureClass::Init");
-
-	// If the texture has recently been inactivated, increase the inactivation time (this texture obviously
-	// should not have been inactivated yet).
-	if (InactivationTime && LastInactivationSyncTime)
-	{
-		if ((WW3D::Get_Sync_Time()-LastInactivationSyncTime)<InactivationTime)
-		{
-			ExtendedInactivationTime=3*InactivationTime;
-		}
-		LastInactivationSyncTime=0;
-	}
-
-
-	if (!Peek_D3D_Base_Texture())
-	{
-		if (!WW3D::Get_Thumbnail_Enabled() || MipLevelCount==MIP_LEVELS_1)
-		{
-//		if (MipLevelCount==MIP_LEVELS_1) {
-			TextureLoader::Request_Foreground_Loading(this);
-		}
-		else
-		{
-			WW3DFormat format=TextureFormat;
-			Load_Locked_Surface();
-			TextureFormat=format;
-		}
-	}
-
-	if (!Initialized)
-	{
-		TextureLoader::Request_Background_Loading(this);
-	}
-
-	LastAccessed=WW3D::Get_Sync_Time();
+    if(Get_Asset_Type()==TEX_REGULAR && Uses_CPU_Image) { Ensure_Renderer_Texture(); return; }
+    if(!Initialized) TextureLoader::Request_Foreground_Loading(this);
 }
 
 //**********************************************************************************************
@@ -1032,74 +981,20 @@ void TextureClass::Apply(unsigned int stage)
 */
 bool TextureClass::Generate_Mipmaps()
 {
-	IDirect3DTexture8* texture = Peek_D3D_Texture();
-	if (texture == nullptr) {
-		return false;
-	}
-
-	const unsigned level_count = texture->GetLevelCount();
-	if (level_count <= 1) {
-		return true;
-	}
-
-	// Keep this transition helper deliberately narrow: the active procedural
-	// terrain/tree atlases use these two CPU-addressable formats.
-	if (TextureFormat != WW3D_FORMAT_A1R5G5B5 && TextureFormat != WW3D_FORMAT_A8R8G8B8) {
-		return false;
-	}
-
-	for (unsigned level = 0; level + 1 < level_count; ++level) {
-		D3DSURFACE_DESC src_desc = {};
-		D3DSURFACE_DESC dest_desc = {};
-
-		HRESULT result = texture->GetLevelDesc(level, &src_desc);
-		if (FAILED(result)) {
-			DX8_ErrorCode(result);
-			return false;
-		}
-
-		result = texture->GetLevelDesc(level + 1, &dest_desc);
-		if (FAILED(result)) {
-			DX8_ErrorCode(result);
-			return false;
-		}
-
-		const unsigned expected_width = src_desc.Width > 1 ? src_desc.Width / 2 : 1;
-		const unsigned expected_height = src_desc.Height > 1 ? src_desc.Height / 2 : 1;
-		if (dest_desc.Width != expected_width || dest_desc.Height != expected_height) {
-			return false;
-		}
-
-		D3DLOCKED_RECT src_lock = {};
-		D3DLOCKED_RECT dest_lock = {};
-		result = texture->LockRect(level, &src_lock, nullptr, D3DLOCK_READONLY);
-		if (FAILED(result)) {
-			DX8_ErrorCode(result);
-			return false;
-		}
-
-		result = texture->LockRect(level + 1, &dest_lock, nullptr, 0);
-		if (FAILED(result)) {
-			DX8_ErrorCode(result);
-			DX8_ErrorCode(texture->UnlockRect(level));
-			return false;
-		}
-
-		BitmapHandlerClass::Create_Mipmap(
-			static_cast<unsigned char*>(dest_lock.pBits),
-			dest_lock.Pitch,
-			TextureFormat,
-			static_cast<const unsigned char*>(src_lock.pBits),
-			src_lock.Pitch,
-			TextureFormat,
-			src_desc.Width,
-			src_desc.Height);
-
-		DX8_ErrorCode(texture->UnlockRect(level + 1));
-		DX8_ErrorCode(texture->UnlockRect(level));
-	}
-
-	return true;
+    if(!Ensure_CPU_Image()) return false;
+    for(std::size_t i=1;i<CpuImage->levels.size();++i) {
+        SurfaceClass *source=CpuImage->levels[i-1].Peek(), *dest=CpuImage->levels[i].Peek();
+        TextureLoader::RGBA8MipLevel check;
+        if(!Surface_To_RGBA(*source,check)) return false;
+        SurfaceClass::SurfaceDescription desc{}; source->Get_Description(desc);
+        int source_pitch=0,dest_pitch=0;
+        const unsigned char *source_pixels=static_cast<const SurfaceClass*>(source)->Peek_CPU_Pixels(&source_pitch);
+        auto *dest_pixels=static_cast<unsigned char*>(dest->Lock(&dest_pitch));
+        if(!dest_pixels) return false;
+        BitmapHandlerClass::Create_Mipmap(dest_pixels,dest_pitch,dest->Get_Surface_Format(),source_pixels,source_pitch,source->Get_Surface_Format(),desc.Width,desc.Height);
+        dest->Unlock();
+    }
+    return true;
 }
 
 //**********************************************************************************************
@@ -1108,18 +1003,8 @@ bool TextureClass::Generate_Mipmaps()
 */
 SurfaceClass *TextureClass::Get_Surface_Level(unsigned int level)
 {
-	if (!Peek_D3D_Texture())
-	{
-		WWASSERT_PRINT(0, "Get_Surface_Level: D3DTexture is null!");
-		return nullptr;
-	}
-
-	IDirect3DSurface8 *d3d_surface = nullptr;
-	DX8_ErrorCode(Peek_D3D_Texture()->GetSurfaceLevel(level, &d3d_surface));
-	SurfaceClass *surface = new SurfaceClass(d3d_surface);
-	d3d_surface->Release();
-
-	return surface;
+    if(!Ensure_CPU_Image() || level>=CpuImage->levels.size()) return nullptr;
+    SurfaceClass *surface=CpuImage->levels[level].Peek(); surface->Add_Ref(); return surface;
 }
 
 //**********************************************************************************************
@@ -1128,17 +1013,14 @@ SurfaceClass *TextureClass::Get_Surface_Level(unsigned int level)
 */
 void TextureClass::Get_Level_Description( SurfaceClass::SurfaceDescription & desc, unsigned int level )
 {
-	if (RendererTexture.Is_Valid()) {
-		desc.Format = level == 0 ? TextureFormat : WW3D_FORMAT_UNKNOWN;
-		desc.Width = level == 0 ? static_cast<unsigned>(Width) : 0;
-		desc.Height = level == 0 ? static_cast<unsigned>(Height) : 0;
-		return;
-	}
-	SurfaceClass * surf = Get_Surface_Level(level);
-	if (surf != nullptr) {
-		surf->Get_Description(desc);
-	}
-	REF_PTR_RELEASE(surf);
+    desc={WW3D_FORMAT_UNKNOWN,0,0};
+    if(!CpuImage && Get_Renderer_Texture().Is_Valid() && level<RendererMipLevelCount) {
+        desc={TextureFormat,std::max(1u,static_cast<unsigned>(Width)>>level),std::max(1u,static_cast<unsigned>(Height)>>level)};
+    } else if(CpuImage || Uses_CPU_Image) {
+        if(Ensure_CPU_Image() && level<CpuImage->levels.size()) CpuImage->levels[level]->Get_Description(desc);
+    } else if(Get_Renderer_Texture().Is_Valid() && level<RendererMipLevelCount) {
+        desc={TextureFormat,std::max(1u,static_cast<unsigned>(Width)>>level),std::max(1u,static_cast<unsigned>(Height)>>level)};
+    }
 }
 
 //**********************************************************************************************
@@ -1164,7 +1046,14 @@ IDirect3DSurface8 *TextureClass::Get_D3D_Surface_Level(unsigned int level)
 */
 unsigned TextureClass::Get_Texture_Memory_Usage() const
 {
-	if (RendererTexture.Is_Valid()) return static_cast<unsigned>(Width) * static_cast<unsigned>(Height) * 4u;
+	if (RendererTexture.Is_Valid()) {
+		unsigned size=0, width=Width, height=Height;
+		for (unsigned level=0; level<RendererMipLevelCount; ++level) {
+			size+=width*height*4u;
+			width=std::max(1u,width/2); height=std::max(1u,height/2);
+		}
+		return size;
+	}
 	int size=0;
 	if (!Peek_D3D_Texture()) return 0;
 	for (unsigned i=0;i<Peek_D3D_Texture()->GetLevelCount();++i)
@@ -1477,7 +1366,7 @@ CubeTextureClass::CubeTextureClass
 	bool rendertarget,
 	bool allow_reduction
 )
-: TextureClass(width, height, format, mip_level_count, pool, rendertarget)
+: TextureClass(width, height, mip_level_count, pool, rendertarget, format, allow_reduction)
 {
 	Initialized=true;
 	IsProcedural=true;
@@ -1760,7 +1649,7 @@ VolumeTextureClass::VolumeTextureClass
 	bool rendertarget,
 	bool allow_reduction
 )
-: TextureClass(width, height, format, mip_level_count, pool, rendertarget),
+: TextureClass(width, height, mip_level_count, pool, rendertarget, format, allow_reduction),
   Depth(depth)
 {
 	Initialized=true;

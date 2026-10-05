@@ -1,5 +1,6 @@
 #include "browserhost.h"
 #include <WebView2.h>
+#include <urlmon.h>
 #include <cstring>
 #include <cstdio>
 #include <functional>
@@ -66,6 +67,7 @@ struct Browser {
     EventRegistrationToken starting_token{}, completed_token{};
     bool starting_registered = false, completed_registered = false;
     UINT64 navigation_id = 0;
+    bool awaiting_request = true;
     void disconnect_events() {
         if(webview.get()) {
             if(starting_registered) webview->remove_NavigationStarting(starting_token);
@@ -113,6 +115,15 @@ std::wstring wide(const char *text) {
     value.resize(static_cast<std::size_t>(count - 1));
     return value;
 }
+std::wstring canonical_url(const std::wstring &url) {
+    ComPtr<IUri> parsed;
+    if(FAILED(CreateUri(url.c_str(), Uri_CREATE_CANONICALIZE, 0, parsed.put()))) return url;
+    BSTR absolute = nullptr;
+    if(FAILED(parsed->GetAbsoluteUri(&absolute))) return url;
+    const std::wstring value(absolute, SysStringLen(absolute));
+    SysFreeString(absolute);
+    return value;
+}
 void fail(const std::shared_ptr<Browser> &browser, HRESULT error, const char *stage = "controller setup") {
     browser->error = FAILED(error) ? error : E_FAIL;
     browser->state = BrowserHost::State::Failed;
@@ -147,8 +158,26 @@ void create_controller(const std::shared_ptr<Host> &owner, const std::shared_ptr
             const auto current_owner = weak_owner.lock();
             const auto current = weak_browser.lock();
             if(!current_owner || !current_owner->alive || !current || current->cancelled) return S_OK;
-            const HRESULT result = args ? args->get_NavigationId(&current->navigation_id) : E_POINTER;
+            UINT64 id = 0;
+            HRESULT result = args ? args->get_NavigationId(&id) : E_POINTER;
             if(FAILED(result)) { fail(current, result, "navigation starting"); return S_OK; }
+            BOOL redirected = FALSE;
+            result = args->get_IsRedirected(&redirected);
+            if(FAILED(result)) { fail(current, result, "navigation redirect"); return S_OK; }
+            // Redirects retain their navigation ID and cannot revive an old request.
+            if(redirected && id != current->navigation_id) return S_OK;
+            if(current->awaiting_request) {
+                LPWSTR uri = nullptr;
+                result = args->get_Uri(&uri);
+                if(FAILED(result)) { fail(current, result, "navigation URI"); return S_OK; }
+                const std::wstring location = uri ? uri : L"";
+                CoTaskMemFree(uri);
+                // Starting/completion events for a superseded request can precede
+                // the new request's Starting event. They cannot claim its state.
+                if(canonical_url(location) != canonical_url(current->url)) return S_OK;
+                current->awaiting_request = false;
+            }
+            current->navigation_id = id;
             current->state = BrowserHost::State::Pending;
             current->error = S_OK;
             return S_OK;
@@ -296,6 +325,7 @@ bool BrowserHost::Navigate(const char *name, const char *url) {
     // The previous document may complete before the new NavigationStarting
     // event arrives. It must not satisfy or fail this accepted request.
     found->second->navigation_id = 0;
+    found->second->awaiting_request = true;
     const HRESULT hr = found->second->webview->Navigate(location.c_str());
     if(FAILED(hr)) fail(found->second, hr);
     return SUCCEEDED(hr);

@@ -25,7 +25,9 @@
 #pragma once
 
 #include "WW3D2/matpass.h"
-#include "WW3D2/dx8wrapper.h"
+#include <windows.h>
+
+class SurfaceClass;
 
 class AABoxClass;
 class WorldHeightMap;
@@ -82,8 +84,8 @@ public:
 	void init(WorldHeightMap *pMap, Real worldCellSizeX, Real worldCellSizeY);
 	void reset();
 	TextureClass *getShroudTexture() { return m_pDstTexture;}	//<return shroud projection texture.
-	void ReleaseResources();	///<release resources that can't survive D3D device reset.
-	Bool ReAcquireResources();	///<allocate resources that can't survive D3D device reset.
+	void ReleaseResources();	///<release owned destination texture resources.
+	Bool ReAcquireResources();	///<allocate owned destination texture resources.
 	void fillShroudData(W3DShroudLevel level);	///<sets the state of the current shroud to some constant value
 	Int	getNumShroudCellsY()	{return m_numCellsY;}
 	Int getNumShroudCellsX()	{return m_numCellsX;}
@@ -106,7 +108,7 @@ protected:
 	Real m_cellWidth;						///<spacing between adjacent cells
 	Real m_cellHeight;						///<spacing between adjacent cells
 	Byte *m_shroudData;						///<holds amount of shroud per cell.
-	IDirect3DSurface8 *m_pSrcTexture;		///<stores sysmem copy of visible shroud.
+	SurfaceClass *m_sourceSurface;		///<stores sysmem copy of visible shroud.
 	void *m_srcTextureData;					///<pointer to shroud data
 	UnsignedInt m_srcTexturePitch;			///<width (in bytes) of shroud data buffer.
 	TextureClass *m_pDstTexture;			///<stores vidmem copy of visible shroud.

@@ -209,6 +209,7 @@ protected:
 	void Load_Locked_Surface();
 	void Poke_Texture(IDirect3DBaseTexture8* tex) { D3DTexture = tex; }
 
+	bool Uses_CPU_Image = false;
 	RenderBackendTextureHandle RendererTexture;
 	unsigned RendererMipLevelCount = 0;
 	IRenderBackend *RendererOwner = nullptr;
@@ -323,6 +324,7 @@ public:
 	)
 	: TextureBaseClass(width,height,mip_level_count,pool,rendertarget,allow_reduction), TextureFormat(format), Filter(mip_level_count) { }
 
+	virtual ~TextureClass() override;
 	virtual TexAssetType Get_Asset_Type() const override { return TEX_REGULAR; }
 
 	virtual void Init() override;
@@ -358,6 +360,13 @@ protected:
 	TextureFilterClass	Filter;
 
 private:
+    friend class TextureBaseClass;
+    struct CpuImageState;
+    CpuImageState *CpuImage = nullptr;
+    bool Ensure_CPU_Image();
+    void Discard_CPU_Image();
+    TextureClass(const TextureClass &) = delete;
+    TextureClass &operator=(const TextureClass &) = delete;
 	friend class WW3D;
 	TextureClass(unsigned width, unsigned height, RenderBackendTextureHandle texture, IRenderBackend *owner);
 };

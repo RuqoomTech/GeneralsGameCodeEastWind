@@ -106,7 +106,13 @@ public:
     bool Draw_Indexed_Material_Triangles(
         const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
         const unsigned short *indices, unsigned int index_count,
-        RenderBackendTextureHandle texture, const RenderBackendMaterialState &material) override;
+        RenderBackendTextureHandle texture, const RenderBackendMaterialState &material,
+        RenderBackendTextureHandle secondary_texture = {}) override;
+    bool Draw_Indexed_Terrain_Triangles(
+        const RenderBackendTerrainVertex *vertices, unsigned int vertex_count,
+        const unsigned short *indices, unsigned int index_count,
+        RenderBackendTextureHandle base_texture, const RenderBackendMaterialState &material,
+        const RenderBackendTerrainState &terrain) override;
     void Release_Texture(RenderBackendTextureHandle texture) override;
 
     void Set_Ambient(const Vector3 &color) override;
@@ -114,7 +120,7 @@ public:
 
 private:
     static constexpr std::uint32_t FrameCount = 2;
-    static constexpr unsigned int MaterialSamplerCount = 1024;
+    static constexpr unsigned int MaterialSamplerCount = 2048;
 
     struct StaticGeometryResource
     {
@@ -160,8 +166,10 @@ private:
         ID3D12PipelineState *pipeline,
         bool screen_space,
         RenderBackendTextureHandle texture = {},
-        const RenderBackendMaterialState *material = nullptr);
-    ID3D12PipelineState *materialPipeline(const RenderBackendMaterialState &material, bool textured);
+        const RenderBackendMaterialState *material = nullptr,
+        RenderBackendTextureHandle secondary_texture = {},
+        const RenderBackendTerrainState *terrain = nullptr);
+    ID3D12PipelineState *materialPipeline(const RenderBackendMaterialState &material, bool textured, bool terrain = false);
     RenderBackendGeometryHandle createStaticGeometry(
         const void *vertices,
         unsigned int vertex_count,
@@ -199,7 +207,7 @@ private:
     ID3D12DescriptorHeap *m_dsv_heap = nullptr;
     ID3D12DescriptorHeap *m_texture_srv_heap = nullptr;
     ID3D12DescriptorHeap *m_material_sampler_heap = nullptr;
-    bool m_material_sampler_initialized[MaterialSamplerCount]{};
+    std::vector<unsigned int> m_material_sampler_keys;
     unsigned int materialSampler(const RenderBackendSamplerState &sampler);
     ID3D12Resource *m_render_targets[FrameCount]{};
     ID3D12Resource *m_depth_stencil = nullptr;
@@ -219,6 +227,9 @@ private:
     ID3D10Blob *m_material_vertex_shader = nullptr;
     ID3D10Blob *m_material_color_shader = nullptr;
     ID3D10Blob *m_material_texture_shader = nullptr;
+    ID3D10Blob *m_terrain_vertex_shader = nullptr;
+    ID3D10Blob *m_terrain_color_shader = nullptr;
+    ID3D10Blob *m_terrain_texture_shader = nullptr;
     ID3D12PipelineState *m_textured_pipeline = nullptr;
     ID3D12PipelineState *m_textured_color_only_pipeline = nullptr;
     ID3D12Fence *m_fence = nullptr;

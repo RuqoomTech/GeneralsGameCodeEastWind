@@ -172,7 +172,7 @@ rts_policy_forbid_text("${_huffencode_source}" "(long) bptr1" "Huffman encoding 
 rts_policy_forbid_text("${_huffencode_source}" "(long) EC->buffer" "Huffman encoding regressed to pointer-to-long truncation")
 
 rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp" _surface_source)
-rts_policy_require_text("${_surface_source}" "static_cast<unsigned char *>(lock_rect.pBits)" "surface pixel addressing must operate on the native pointer")
+rts_policy_require_text("${_surface_source}" "static_cast<unsigned char *>(pBits)" "surface pixel addressing must operate on the native pointer")
 rts_policy_forbid_text("${_surface_source}" "(unsigned int)lock_rect.pBits" "surface pixel addressing regressed to 32-bit pointer truncation")
 
 rts_policy_read("Core/Libraries/Source/WWVegas/WW3D2/sphereobj.cpp" _sphere_source)

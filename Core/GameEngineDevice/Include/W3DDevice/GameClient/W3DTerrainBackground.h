@@ -50,8 +50,6 @@
 #include "WWLib/always.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
 #include "Lib/BaseType.h"
@@ -64,6 +62,9 @@
 class MeshClass;
 class WorldHeightMap;
 class TerrainTextureClass;
+class W3DShroud;
+struct RenderBackendMaterialState;
+struct RenderBackendTerrainState;
 
 //-----------------------------------------------------------------------------
 //           Type Defines
@@ -81,7 +82,9 @@ public:
 	W3DTerrainBackground();
 	~W3DTerrainBackground();
 	/// Draws the terrain.
-	void drawVisiblePolys(RenderInfoClass & rinfo, Bool disableTextures);
+	void drawVisiblePolys(RenderInfoClass &rinfo, Bool disableTextures,
+		const Matrix3D &worldTransform, const RenderBackendMaterialState &material,
+		const RenderBackendTerrainState &terrain, W3DShroud *shroud);
 	void setFlip(WorldHeightMap *htMap); ///< Sets the flip bit for required vertices.
 	void doPartialUpdate(const IRegion2D &partialRange, WorldHeightMap *htMap, Bool doTextures );
 	void doTesselatedUpdate(const IRegion2D &partialRange, WorldHeightMap *htMap, Bool doTextures );
@@ -94,16 +97,14 @@ protected:
 	enum {CULL_STATUS_UNKNOWN, CULL_STATUS_VISIBLE, CULL_STATUS_INVISIBLE} m_cullStatus;
 	AABoxClass						m_bounds;
 
-	DX8VertexBufferClass	*m_vertexTerrain;	///<Terrain vertex buffer.
-	Int										m_vertexTerrainSize; ///< Num vertices in bib buffer.
-	DX8IndexBufferClass		*m_indexTerrain;	///<indices defining a triangles for the bib drawing.
-	Int							  		m_indexTerrainSize;	///<indices available in m_indexTerrain.
+	struct TerrainGeometryState;
+	TerrainGeometryState *m_geometry; // CPU tessellation, independent of device resources.
 	TerrainTextureClass *m_terrainTexture;	///<Terrain texture
 	TerrainTextureClass *m_terrainTexture2X;	///<Terrain texture
 	TerrainTextureClass *m_terrainTexture4X;	///<Terrain texture
 	enum {TEX4X=4, TEX2X=2, TEX1X=1} m_texMultiplier;
-	Int			m_curNumTerrainVertices; ///<Number of vertices used in m_vertexTerrain.
-	Int			m_curNumTerrainIndices;	///<Number of indices used in b_indexTerrain;
+	Int			m_curNumTerrainVertices; ///<Number of vertices used in the CPU geometry.
+	Int			m_curNumTerrainIndices;	///<Number of indices used in the CPU geometry.
 
 	Int			m_xOrigin;
 	Int			m_yOrigin;

@@ -54,21 +54,25 @@
 #include "GameClient/View.h"
 #include "W3DDevice/GameClient/TerrainTex.h"
 #include "W3DDevice/GameClient/HeightMap.h"
-#include "WW3D2/dx8wrapper.h"
-#include "WW3D2/meshrenderer.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
+#include "WWMath/colmath.h"
+#include "W3DDevice/GameClient/W3DShaderManager.h"
+#include "W3DDevice/GameClient/W3DShroud.h"
+#include <vector>
 #include "WW3D2/camera.h"
 
 
 //-----------------------------------------------------------------------------
 //         Private Data
 //-----------------------------------------------------------------------------
-// A W3D shader that does alpha, texturing, tests zbuffer, doesn't update zbuffer.
-#define SC_DETAIL ( SHADE_CNST(ShaderClass::PASS_LEQUAL, ShaderClass::DEPTH_WRITE_ENABLE, ShaderClass::COLOR_WRITE_ENABLE, ShaderClass::SRCBLEND_ONE, \
-	ShaderClass::DSTBLEND_ZERO, ShaderClass::FOG_DISABLE, ShaderClass::GRADIENT_MODULATE, ShaderClass::SECONDARY_GRADIENT_DISABLE, ShaderClass::TEXTURING_ENABLE, \
-	ShaderClass::ALPHATEST_DISABLE, ShaderClass::CULL_MODE_DISABLE, \
-	ShaderClass::DETAILCOLOR_DISABLE, ShaderClass::DETAILALPHA_DISABLE) )
-
-static ShaderClass detailShader(SC_DETAIL);
+struct W3DTerrainBackground::TerrainGeometryState
+{
+    struct Vertex { float x,y,z; UnsignedInt diffuse; float u1,v1; };
+    std::vector<Vertex> vertices;
+    std::vector<UnsignedShort> indices;
+    std::vector<RenderBackendTerrainVertex> drawVertices;
+};
 
 const Int PIXELS_PER_GRID = 8; // default tex resolution allocated for each tile. jba. [3/24/2003]
 
@@ -118,112 +122,6 @@ void W3DTerrainBackground::doPartialUpdate(const IRegion2D &partialRange, WorldH
 	}
 	doTesselatedUpdate(partialRange, htMap, doTextures);
 
-	return;
-
-	Int requiredVertexSize = (m_width+1) * (m_width+1) + 6;
-	if (m_vertexTerrainSize<requiredVertexSize || m_vertexTerrain==nullptr) {
-		m_vertexTerrainSize = requiredVertexSize;
-		REF_PTR_RELEASE(m_vertexTerrain);
-		REF_PTR_RELEASE(m_indexTerrain);
-		m_vertexTerrain=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,m_vertexTerrainSize+4,DX8VertexBufferClass::USAGE_DEFAULT));
-	}
-
-	Int requiredIndexSize = (m_width+1) * (m_width+1) + 6;
-	if (m_indexTerrainSize<requiredIndexSize || m_indexTerrain==nullptr) {
-		m_indexTerrainSize = requiredIndexSize;
-		REF_PTR_RELEASE(m_indexTerrain);
-		m_indexTerrain=NEW_REF(DX8IndexBufferClass,(m_indexTerrainSize+4,DX8IndexBufferClass::USAGE_DEFAULT));
-	}
-	Int minX = m_xOrigin;
-	Int minY = m_yOrigin;
-	Int maxX = m_xOrigin + m_width;
-	Int maxY = m_yOrigin + m_width;
-	Int limitX = m_map->getXExtent()-1;
-	Int limitY = m_map->getYExtent()-1;
-	if (maxX>limitX) maxX = limitX;
-	if (maxY>limitY) maxY = limitY;
-
-	if (partialRange.lo.x > maxX) return;
-	if (partialRange.lo.y > maxY) return;
-	if (partialRange.hi.x < minX) return;
-	if (partialRange.hi.y < minY) return;
-
-	m_curNumTerrainVertices = 0;
-	//m_curNumTerrainIndices = 0;
-	VertexFormatXYZDUV2 *vb;
-	UnsignedShort *ib;
-	// Lock the buffer.
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexTerrain);
-	vb=(VertexFormatXYZDUV2*)lockVtxBuffer.Get_Vertex_Array();
-	// Add to the vertex buffer.
-
-	VertexFormatXYZDUV2 *curVb = vb;
-	MinMaxAABoxClass bounds;
-	bounds.Init_Empty();
-
-	Int i, j;
-	for (j=minY; j<=maxY; j+=STEP) {
-		for (i=minX; i<=maxX; i+=STEP) {
-			if (m_curNumTerrainVertices >= m_vertexTerrainSize) return;
-			curVb->diffuse = (0<<24)|TheTerrainRenderObject->getStaticDiffuse(i,j);
-			Vector3 pos;
-			pos.Z = ((float)m_map->getHeight(i,j)*MAP_HEIGHT_SCALE);
-			pos.X = (i)*MAP_XY_FACTOR - m_map->getBorderSizeInline()*MAP_XY_FACTOR;
-			pos.Y = (j)*MAP_XY_FACTOR - m_map->getBorderSizeInline()*MAP_XY_FACTOR;
-			curVb->u1 = (float)(i-minX)/(float)(m_width);
-			curVb->v1 = 1.0f - (float)(j-minY)/(float)(m_width);
-			curVb->x = pos.X;
-			curVb->y = pos.Y;
-			curVb->z = pos.Z;
-			curVb++;
-			m_curNumTerrainVertices++;
-			bounds.Add_Point(pos);
-		}
-	}
-	m_bounds.Init(bounds);
-
-	if (m_terrainTexture == nullptr || doTextures) {
-		REF_PTR_RELEASE(m_terrainTexture);
-		REF_PTR_RELEASE(m_terrainTexture2X);
-		REF_PTR_RELEASE(m_terrainTexture4X);
-		m_terrainTexture = m_map->getFlatTexture(m_xOrigin, m_yOrigin, m_width, PIXELS_PER_GRID);
-		//	DEBUG ONLY. jba. m_terrainTexture =  (TerrainTextureClass *)NEW_REF(TextureClass, ("TBBib.tga"));
-		m_terrainTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
-		m_terrainTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
-	}
-
-	if (m_curNumTerrainIndices == 0) {
-		// Only do the index buffer if it has never been done.  Index values don't change. jba.
-		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexTerrain);
-		ib = lockIdxBuffer.Get_Index_Array();
-		UnsignedShort *curIb = ib;
-		Int yOffset = ((maxX - minX)/STEP+1);
-		Int width = yOffset;
-		Int height = (maxY - minY)/STEP;
-		*curIb++ = width-1;
-		m_curNumTerrainIndices++;
-		for (j=0; j<height; j++) {
-			*curIb++ = j*yOffset + yOffset + width-1;
-			m_curNumTerrainIndices++;
-			for (i=width-2; i>=0; i--) {
-				if (m_curNumTerrainIndices+2 > m_indexTerrainSize) return;
-				*curIb++ = j*yOffset + i;
-				*curIb++ = j*yOffset + i+yOffset;
-				m_curNumTerrainIndices+=2;
-			}
-			j++;
-			if (j<height) {
-				*curIb++ = j*yOffset + yOffset;
-				m_curNumTerrainIndices++;
-				for (i=1; i<width; i++) {
-					if (m_curNumTerrainIndices+2 > m_indexTerrainSize) return;
-					*curIb++ = j*yOffset + i;
-					*curIb++ = j*yOffset + i+yOffset;
-					m_curNumTerrainIndices+=2;
-				}
-			}
-		}
-	}
 }
 
 //=============================================================================
@@ -503,18 +401,15 @@ void W3DTerrainBackground::doTesselatedUpdate(const IRegion2D &partialRange, Wor
 		}
 	}
 
-	if (m_vertexTerrainSize<requiredVertex || m_vertexTerrain==nullptr) {
-		m_vertexTerrainSize = requiredVertex;
-		REF_PTR_RELEASE(m_vertexTerrain);
-		m_vertexTerrain=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV2,m_vertexTerrainSize+4,DX8VertexBufferClass::USAGE_DEFAULT));
-	}
-
-	m_curNumTerrainVertices = 0;
-	VertexFormatXYZDUV2 *vb;
-	// Lock the buffer.
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexTerrain);
-	vb=(VertexFormatXYZDUV2*)lockVtxBuffer.Get_Vertex_Array();
-	VertexFormatXYZDUV2 *curVb = vb;
+    if (requiredVertex > 65536) {
+        DEBUG_ASSERTCRASH(false, ("Terrain tile exceeds 16-bit vertex indices"));
+        delete[] ndx;
+        m_curNumTerrainVertices = m_curNumTerrainIndices = 0;
+        return;
+    }
+    m_geometry->vertices.resize(requiredVertex);
+    m_curNumTerrainVertices = 0;
+    TerrainGeometryState::Vertex *curVb = m_geometry->vertices.data();
 	// Add to the vertex buffer.
 	for (j=minY; j<=maxY; j++) {
 		for (i=minX; i<=maxX; i++) {
@@ -544,18 +439,9 @@ void W3DTerrainBackground::doTesselatedUpdate(const IRegion2D &partialRange, Wor
 
 	fillVBRecursive(nullptr, 0, 0, m_width, ndx, requiredIndex);
 
-	if (m_indexTerrainSize<requiredIndex || m_indexTerrain==nullptr) {
-		m_indexTerrainSize = requiredIndex;
-		REF_PTR_RELEASE(m_indexTerrain);
-		m_indexTerrain=NEW_REF(DX8IndexBufferClass,(m_indexTerrainSize+4,DX8IndexBufferClass::USAGE_DEFAULT));
-	}
-
-	m_curNumTerrainIndices = 0;
-
-	UnsignedShort *ib;
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexTerrain);
-	ib = lockIdxBuffer.Get_Index_Array();
-	fillVBRecursive(ib, 0, 0, m_width, ndx, m_curNumTerrainIndices);
+    m_geometry->indices.resize(requiredIndex);
+    m_curNumTerrainIndices = 0;
+    fillVBRecursive(m_geometry->indices.data(), 0, 0, m_width, ndx, m_curNumTerrainIndices);
 	delete[] ndx;
 	ndx = nullptr;
 
@@ -602,6 +488,7 @@ W3DTerrainBackground::~W3DTerrainBackground()
 	REF_PTR_RELEASE(m_terrainTexture);
 	REF_PTR_RELEASE(m_terrainTexture2X);
 	REF_PTR_RELEASE(m_terrainTexture4X);
+	delete m_geometry;
 }
 
 //=============================================================================
@@ -611,16 +498,12 @@ W3DTerrainBackground::~W3DTerrainBackground()
 for the bibs. */
 //=============================================================================
 W3DTerrainBackground::W3DTerrainBackground():
-m_vertexTerrain(nullptr),
-m_vertexTerrainSize(0),
-m_initialized(FALSE),
-m_indexTerrain(nullptr),
-m_indexTerrainSize(0),
-m_terrainTexture(nullptr),
-m_terrainTexture2X(nullptr),
-m_terrainTexture4X(nullptr),
 m_cullStatus(CULL_STATUS_UNKNOWN),
-m_texMultiplier(TEX1X)
+m_geometry(new TerrainGeometryState),
+m_terrainTexture(nullptr), m_terrainTexture2X(nullptr), m_terrainTexture4X(nullptr),
+m_texMultiplier(TEX1X), m_curNumTerrainVertices(0), m_curNumTerrainIndices(0),
+m_xOrigin(0), m_yOrigin(0), m_width(0), m_map(nullptr),
+m_anythingChanged(FALSE), m_initialized(FALSE)
 {
 }
 
@@ -631,12 +514,12 @@ m_texMultiplier(TEX1X)
 //=============================================================================
 void W3DTerrainBackground::freeTerrainBuffers()
 {
-	REF_PTR_RELEASE(m_vertexTerrain);
-	REF_PTR_RELEASE(m_indexTerrain);
+	m_geometry->vertices.clear();
+	m_geometry->indices.clear();
+	m_geometry->drawVertices.clear();
 	m_curNumTerrainVertices=0;
 	m_curNumTerrainIndices=0;
 	m_initialized = false;
-	REF_PTR_RELEASE(m_map);
 	REF_PTR_RELEASE(m_map);
 }
 
@@ -647,7 +530,7 @@ void W3DTerrainBackground::freeTerrainBuffers()
 //=============================================================================
 void W3DTerrainBackground::allocateTerrainBuffers(WorldHeightMap *htMap, Int xOrigin, Int yOrigin, Int width)
 {
-	if (htMap==nullptr) return;
+	if (htMap==nullptr || width<=0) return;
 	freeTerrainBuffers(); // in case already allocated. jba [3/24/2003]
 	m_curNumTerrainVertices=0;
 	m_curNumTerrainIndices=0;
@@ -753,52 +636,52 @@ void W3DTerrainBackground::updateTexture()
 // W3DTerrainBackground::renderTerrain
 //=============================================================================
 //=============================================================================
-void W3DTerrainBackground::drawVisiblePolys(RenderInfoClass & rinfo, Bool disableTextures)
+void W3DTerrainBackground::drawVisiblePolys(RenderInfoClass &rinfo, Bool disableTextures,
+    const Matrix3D &worldTransform, const RenderBackendMaterialState &requestedMaterial,
+    const RenderBackendTerrainState &terrain, W3DShroud *shroud)
 {
-#if 1
-	if (m_curNumTerrainIndices == 0) {
-		return;
-	}
-	if (m_cullStatus==CULL_STATUS_INVISIBLE) {
-		return;
-	}
-	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Index_Buffer(m_indexTerrain,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexTerrain);
-  if (!disableTextures) {
-		if (m_terrainTexture4X) {
-			DX8Wrapper::Set_Texture(1, m_terrainTexture4X);
-		}	else if (m_terrainTexture2X) {
-			DX8Wrapper::Set_Texture(1, m_terrainTexture2X);
-		}	else {
-			DX8Wrapper::Set_Texture(1, m_terrainTexture);
-		}
-	}
-	DX8Wrapper::Draw_Triangles(	0, m_curNumTerrainIndices/3, 0,	m_curNumTerrainVertices);
-#else
-	if (m_curNumTerrainIndices == 0) {
-		return;
-	}
-	if (m_cullStatus==CULL_STATUS_INVISIBLE) {
-		return;
-	}
-	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Index_Buffer(m_indexTerrain,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexTerrain);
-  if (!disableTextures) {
-		if (m_terrainTexture4X) {
-			DX8Wrapper::Set_Texture(0, m_terrainTexture4X);
-		}	else if (m_terrainTexture2X) {
-			DX8Wrapper::Set_Texture(0, m_terrainTexture2X);
-		}	else {
-			DX8Wrapper::Set_Texture(0, m_terrainTexture);
-		}
-	}
-	DX8Wrapper::Draw_Triangles(	0, m_curNumTerrainIndices/3, 0,	m_curNumTerrainVertices);
-#endif
+    if (m_curNumTerrainIndices == 0 || m_cullStatus == CULL_STATUS_INVISIBLE) return;
+    IRenderBackend *backend = WW3D::Get_Render_Backend();
+    if (!backend) return;
+    RenderBackendMaterialState material = requestedMaterial;
+    RenderBackendTextureHandle texture;
+    if (!disableTextures) {
+        TerrainTextureClass *atlas = m_terrainTexture4X ? m_terrainTexture4X :
+            (m_terrainTexture2X ? m_terrainTexture2X : m_terrainTexture);
+        if (!atlas || !atlas->Ensure_Renderer_Texture() ||
+            !atlas->Get_Filter().Get_Render_Sampler(material.sampler, 1)) {
+            DEBUG_ASSERTCRASH(false, ("Terrain tile texture upload failed"));
+            return;
+        }
+        texture = atlas->Peek_Renderer_Texture();
+        const bool linear = TheGlobalData && (TheGlobalData->m_bilinearTerrainTex || TheGlobalData->m_trilinearTerrainTex);
+        material.sampler.min_filter = material.sampler.mag_filter = linear ?
+            RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
+        material.sampler.mip_filter = TheGlobalData && TheGlobalData->m_trilinearTerrainTex ?
+            RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
+        material.sampler.max_anisotropy = 1;
+        material.sampler.address_u = material.sampler.address_v = RenderBackendTextureAddress::Clamp;
+    }
+    m_geometry->drawVertices.resize(m_curNumTerrainVertices);
+    for (Int i=0; i<m_curNumTerrainVertices; ++i) {
+        const auto &source = m_geometry->vertices[i];
+        const Vector3 world = worldTransform * Vector3(source.x,source.y,source.z);
+        const Vector4 color = Unpack_Color(source.diffuse);
+        auto &vertex = m_geometry->drawVertices[i];
+        vertex = {world.X,world.Y,world.Z,color.X,color.Y,color.Z,color.W,source.u1,source.v1,0,0,0,0,0,0};
+        if (terrain.shroud_texture.Is_Valid() && shroud) {
+            vertex.u2 = (world.X - shroud->getDrawOriginX() + shroud->getCellWidth()) /
+                (shroud->getCellWidth() * shroud->getTextureWidth());
+            vertex.v2 = (world.Y - shroud->getDrawOriginY() + shroud->getCellHeight()) /
+                (shroud->getCellHeight() * shroud->getTextureHeight());
+        }
+        Vector2 cloud, noise;
+        W3DShaderManager::getTerrainNoiseCoordinates(world, cloud, noise);
+        vertex.u3 = cloud.X; vertex.v3 = cloud.Y;
+        vertex.u4 = noise.X; vertex.v4 = noise.Y;
+    }
+    // The caller supplies the real camera, CPU tessellation and explicit material.
+    if (!backend->Draw_Indexed_Terrain_Triangles(m_geometry->drawVertices.data(),
+        m_curNumTerrainVertices,m_geometry->indices.data(),m_curNumTerrainIndices,texture,material,terrain))
+        DEBUG_ASSERTCRASH(false, ("Terrain tile draw failed"));
 }
-
-
-
-
-

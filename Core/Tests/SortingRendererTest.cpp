@@ -36,7 +36,7 @@ public:
     void Reset_Trace() { order.clear(); matrices.clear(); alphas.clear(); coordinates.clear(); reject=false; }
     bool Draw_Indexed_Material_Triangles(const RenderBackendTexturedVertex *vertices, unsigned,
         const unsigned short *indices, unsigned count, RenderBackendTextureHandle,
-        const RenderBackendMaterialState &state) override
+        const RenderBackendMaterialState &state, RenderBackendTextureHandle) override
     {
         for (unsigned i=0;i<count;i+=3) {
             order.push_back(vertices[indices[i]].r);
@@ -69,6 +69,9 @@ public:
     bool Is_Texture_Valid(RenderBackendTextureHandle) const override { return false; }
     bool Draw_Indexed_Decal_Triangles(const RenderBackendTexturedVertex*,unsigned,
         const unsigned short*,unsigned,RenderBackendTextureHandle,RenderBackendDecalBlendMode) override { return false; }
+    bool Draw_Indexed_Terrain_Triangles(const RenderBackendTerrainVertex*,unsigned,
+        const unsigned short*,unsigned,RenderBackendTextureHandle,const RenderBackendMaterialState&,
+        const RenderBackendTerrainState&) override { return false; }
     void Release_Texture(RenderBackendTextureHandle) override {}
     void Set_Ambient(const Vector3&) override {}
     void Set_Light_Environment(LightEnvironmentClass*) override {}

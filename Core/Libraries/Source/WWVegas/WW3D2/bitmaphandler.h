@@ -349,7 +349,7 @@ WWINLINE void BitmapHandlerClass::Write_B8G8R8A8(
 			tmp=((argb[2])&0xe0);
 			tmp|=((argb[1])&0xe0)>>3;
 			tmp|=((argb[0])&0xc0)>>6;
-			*(unsigned short*)dest_ptr=tmp;
+			*dest_ptr=tmp;
 		}
 		break;
 	case WW3D_FORMAT_L8:

@@ -1,5 +1,7 @@
 #include "WW3D2/ddsfile.h"
 #include "WW3D2/bitmaphandler.h"
+#include "WW3D2/surfaceclass.h"
+#include "WWMath/vector2i.h"
 #include "WWMath/vector4.h"
 
 #include <array>
@@ -165,6 +167,56 @@ static bool Test_CPU_Format_Policy()
     return ok;
 }
 
+static bool Test_CPU_Surface()
+{
+    SurfaceClass source(2, 2, WW3D_FORMAT_A8R8G8B8);
+    const unsigned char bgra[] = {0x10,0x20,0x40,0x80, 0xff,0,0,0xff, 0,0,0xff,0xff, 0xff,0xff,0xff,0xff};
+    const auto initial_revision=source.Get_Revision();
+    source.Copy(bgra);
+    std::vector<unsigned char> rgba;
+    bool ok=source.Get_Revision()!=initial_revision && source.Copy_RGBA8(rgba) && rgba.size()==16 &&
+        rgba[0]==0x40 && rgba[1]==0x20 && rgba[2]==0x10 && rgba[3]==0x80;
+    SurfaceClass copy(2,2,WW3D_FORMAT_A8R8G8B8);
+    copy.Copy(0,0,0,0,2,2,&source);
+    std::vector<unsigned char> copied;
+    ok=copy.Copy_RGBA8(copied) && copied==rgba && ok;
+    const auto before_lock=copy.Get_Revision();
+    int pitch=0; auto *data=static_cast<unsigned char*>(copy.Lock(&pitch));
+    data[0]=0; data[1]=0xff; data[2]=0; data[3]=0xff; copy.Unlock();
+    ok=copy.Get_Revision()!=before_lock && copy.Copy_RGBA8(copied) && copied[0]==0 && copied[1]==255 && copied[2]==0 && ok;
+    SurfaceClass scaled(1,1,WW3D_FORMAT_A8R8G8B8);
+    scaled.Stretch_Copy(0,0,1,1,0,0,2,2,&source);
+    std::vector<unsigned char> result;
+    ok=scaled.Copy_RGBA8(result) && result.size()==4 && result[0]==0x40 && result[3]==0x80 && ok;
+    const auto retained=result;
+    scaled.Stretch_Copy(2,0,1,1,0,0,2,2,&source);
+    scaled.Copy(0,0,0xffffffffu,0,1,1,&source);
+    ok=scaled.Copy_RGBA8(result) && result==retained && ok;
+    // A shifted self-copy reads the original image, including overlapping rows.
+    copy.Copy(bgra);
+    copy.Copy(1,1,0,0,1,1,&copy);
+    ok=copy.Copy_RGBA8(copied) && copied[12]==0x40 && copied[13]==0x20 && copied[14]==0x10 && ok;
+    copy.Copy(bgra);
+    copy.Copy(1,0,0,0,1,2,&copy);
+    ok=copy.Copy_RGBA8(copied) && copied[4]==0x40 && copied[12]==0xff && copied[14]==0 && ok;
+    const auto before_invalid=copied;
+    copy.Copy(Vector2i(-1,0),Vector2i(1,1),bgra);
+    ok=copy.Lock(&pitch,Vector2i(-1,0),Vector2i(1,1))==nullptr &&
+        copy.Copy_RGBA8(copied) && copied==before_invalid && ok;
+    SurfaceClass glyph(2,2,WW3D_FORMAT_A4R4G4B4);
+    glyph.Copy(0,0,0,0,2,2,&source);
+    ok=glyph.Copy_RGBA8(copied) && copied[0]==68 && copied[1]==34 &&
+        copied[2]==17 && copied[3]==136 && copied[12]==255 && copied[15]==255 && ok;
+    SurfaceClass alpha_only(1,1,WW3D_FORMAT_A8);
+    const unsigned char coverage=128; alpha_only.Copy(&coverage);
+    ok=alpha_only.Copy_RGBA8(copied) && copied[0]==0 && copied[1]==0 && copied[2]==0 && copied[3]==128 && ok;
+    // A one-byte packed destination may not overwrite its sentinel neighbor.
+    unsigned char packed[2]={0xab,0xcd}; const unsigned argb=0xffff00ffu;
+    BitmapHandlerClass::Write_B8G8R8A8(packed,WW3D_FORMAT_R3G3B2,argb);
+    ok=packed[0]==0xe3 && packed[1]==0xcd && ok;
+    return ok;
+}
+
 int main()
 {
     std::array<unsigned char, 16> block{};
@@ -172,7 +224,7 @@ int main()
     // Red/blue endpoints with each of the four color codes in every row.
     block[1] = 0xf8; block[2] = 0x1f;
     for (unsigned i = 4; i < 8; ++i) block[i] = 0xe4;
-    bool ok = Test_CPU_Format_Policy() && Test_Authored_DDS_Mips();
+    bool ok = Test_CPU_Surface() && Test_CPU_Format_Policy() && Test_Authored_DDS_Mips();
     ok = BitmapHandlerClass::Decode_DXT_Block_RGBA8(WW3D_FORMAT_DXT1, block.data(), pixels.data()) && ok;
     const unsigned expected[4][4] = {{255,0,0,255},{0,0,255,255},{170,0,85,255},{85,0,170,255}};
     for (unsigned i = 0; i < 16; ++i)

@@ -25,13 +25,58 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <cstddef>
 #include <limits>
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 namespace
 {
+static_assert(std::is_trivially_copyable<RenderBackendTexturedVertex>::value,
+    "Backend vertex upload must copy values without native ownership");
+static_assert(std::is_standard_layout<RenderBackendTexturedVertex>::value &&
+    offsetof(RenderBackendTexturedVertex, x)==0 && offsetof(RenderBackendTexturedVertex, r)==12 &&
+    offsetof(RenderBackendTexturedVertex, u)==28 && offsetof(RenderBackendTexturedVertex, u2)==40,
+    "Textured input layout must match the CPU upload offsets");
+static_assert(std::is_trivially_copyable<RenderBackendTerrainVertex>::value &&
+    std::is_standard_layout<RenderBackendTerrainVertex>::value && sizeof(RenderBackendTerrainVertex) == 60 &&
+    offsetof(RenderBackendTerrainVertex, x) == 0 && offsetof(RenderBackendTerrainVertex, r) == 12 &&
+    offsetof(RenderBackendTerrainVertex, u) == 28 && offsetof(RenderBackendTerrainVertex, u2) == 36 &&
+    offsetof(RenderBackendTerrainVertex, u3) == 44 && offsetof(RenderBackendTerrainVertex, u4) == 52,
+    "Terrain input layout must match the CPU upload offsets");
+
+bool validMaterialSampler(const RenderBackendSamplerState &sampler)
+{
+    return static_cast<unsigned int>(sampler.min_filter) <= 1 &&
+        static_cast<unsigned int>(sampler.mag_filter) <= 1 &&
+        static_cast<unsigned int>(sampler.mip_filter) <= 1 &&
+        static_cast<unsigned int>(sampler.address_u) <= 1 &&
+        static_cast<unsigned int>(sampler.address_v) <= 1 &&
+        sampler.max_anisotropy >= 1 && sampler.max_anisotropy <= 16 && sampler.min_mip_level <= 15;
+}
+
+bool validMaterialState(const RenderBackendMaterialState &material)
+{
+    auto valid_face = [](const RenderBackendStencilFace &face) {
+        return static_cast<unsigned int>(face.comparison) < 8 &&
+            static_cast<unsigned int>(face.stencil_fail) < 8 &&
+            static_cast<unsigned int>(face.depth_fail) < 8 &&
+            static_cast<unsigned int>(face.pass) < 8;
+    };
+    return validMaterialSampler(material.sampler) && material.color_write_mask <= 15 &&
+        static_cast<unsigned int>(material.depth_test) <= 8 &&
+        static_cast<unsigned int>(material.source_blend) <= 6 &&
+        static_cast<unsigned int>(material.destination_blend) <= 6 &&
+        static_cast<unsigned int>(material.cull) <= 2 &&
+        static_cast<unsigned int>(material.texture_combine) <= 3 &&
+        static_cast<unsigned int>(material.alpha_test) <= 2 &&
+        material.alpha_reference >= 0.0f && material.alpha_reference <= 1.0f &&
+        material.stencil.reference <= 255 && material.stencil.read_mask <= 255 && material.stencil.write_mask <= 255 &&
+        valid_face(material.stencil.front) && valid_face(material.stencil.back);
+}
+
 constexpr float IdentityTransform[16]{
     1.0f, 0.0f, 0.0f, 0.0f,
     0.0f, 1.0f, 0.0f, 0.0f,
@@ -369,7 +414,7 @@ void D3D12Backend::createPrimitivePipeline()
     texture_range.RegisterSpace = 0;
     texture_range.OffsetInDescriptorsFromTableStart = 0;
 
-    D3D12_ROOT_PARAMETER parameters[4]{};
+    D3D12_ROOT_PARAMETER parameters[10]{};
     D3D12_ROOT_PARAMETER &texture_parameter = parameters[0];
     texture_parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     texture_parameter.DescriptorTable.NumDescriptorRanges = 1;
@@ -385,7 +430,7 @@ void D3D12Backend::createPrimitivePipeline()
     auto &material_parameter = parameters[2];
     material_parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
     material_parameter.Constants.ShaderRegister = 1;
-    material_parameter.Constants.Num32BitValues = 4;
+    material_parameter.Constants.Num32BitValues = 8;
     material_parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     D3D12_DESCRIPTOR_RANGE sampler_range{};
     sampler_range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
@@ -395,6 +440,32 @@ void D3D12Backend::createPrimitivePipeline()
     parameters[3].DescriptorTable.NumDescriptorRanges = 1;
     parameters[3].DescriptorTable.pDescriptorRanges = &sampler_range;
     parameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    D3D12_DESCRIPTOR_RANGE secondary_texture_range = texture_range;
+    secondary_texture_range.BaseShaderRegister = 1;
+    parameters[4] = parameters[0];
+    parameters[4].DescriptorTable.pDescriptorRanges = &secondary_texture_range;
+    D3D12_DESCRIPTOR_RANGE secondary_sampler_range = sampler_range;
+    secondary_sampler_range.BaseShaderRegister = 3;
+    parameters[5] = parameters[3];
+    parameters[5].DescriptorTable.pDescriptorRanges = &secondary_sampler_range;
+
+    D3D12_DESCRIPTOR_RANGE cloud_texture_range = texture_range;
+    cloud_texture_range.BaseShaderRegister = 2;
+    parameters[6] = parameters[0];
+    parameters[6].DescriptorTable.pDescriptorRanges = &cloud_texture_range;
+    D3D12_DESCRIPTOR_RANGE cloud_sampler_range = sampler_range;
+    cloud_sampler_range.BaseShaderRegister = 4;
+    parameters[7] = parameters[3];
+    parameters[7].DescriptorTable.pDescriptorRanges = &cloud_sampler_range;
+    D3D12_DESCRIPTOR_RANGE noise_texture_range = texture_range;
+    noise_texture_range.BaseShaderRegister = 3;
+    parameters[8] = parameters[0];
+    parameters[8].DescriptorTable.pDescriptorRanges = &noise_texture_range;
+    D3D12_DESCRIPTOR_RANGE noise_sampler_range = sampler_range;
+    noise_sampler_range.BaseShaderRegister = 5;
+    parameters[9] = parameters[3];
+    parameters[9].DescriptorTable.pDescriptorRanges = &noise_sampler_range;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -412,7 +483,7 @@ void D3D12Backend::createPrimitivePipeline()
     sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC root_desc{};
-    root_desc.NumParameters = 4;
+    root_desc.NumParameters = 10;
     root_desc.pParameters = parameters;
     D3D12_STATIC_SAMPLER_DESC samplers[2]{sampler, sampler};
     samplers[1].ShaderRegister = 1;
@@ -474,6 +545,9 @@ void D3D12Backend::createPrimitivePipeline()
         textured_pixel_shader = compileShaderFromFile(shader_path.c_str(), "PSTextured", "ps_5_1");
         m_material_color_shader = compileShaderFromFile(shader_path.c_str(), "PSMaterialColor", "ps_5_1");
         m_material_texture_shader = compileShaderFromFile(shader_path.c_str(), "PSMaterialTexture", "ps_5_1");
+        m_terrain_vertex_shader = compileShaderFromFile(shader_path.c_str(), "VSTerrain", "vs_5_1");
+        m_terrain_color_shader = compileShaderFromFile(shader_path.c_str(), "PSTerrainColor", "ps_5_1");
+        m_terrain_texture_shader = compileShaderFromFile(shader_path.c_str(), "PSTerrainTexture", "ps_5_1");
         m_material_vertex_shader = textured_vertex_shader;
         m_material_vertex_shader->AddRef();
 
@@ -585,10 +659,12 @@ void D3D12Backend::createPrimitivePipeline()
              D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
             {"TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28,
              D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 1, DXGI_FORMAT_R32G32_FLOAT, 0, 40,
+             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         };
         pipeline.VS = {textured_vertex_shader->GetBufferPointer(), textured_vertex_shader->GetBufferSize()};
         pipeline.PS = {textured_pixel_shader->GetBufferPointer(), textured_pixel_shader->GetBufferSize()};
-        pipeline.InputLayout = {textured_elements, 3};
+        pipeline.InputLayout = {textured_elements, 4};
         checkHresult(
             "ID3D12Device::CreateGraphicsPipelineState(textured)",
             m_device->CreateGraphicsPipelineState(&pipeline, IID_PPV_ARGS(&m_textured_pipeline)));
@@ -1398,7 +1474,9 @@ bool D3D12Backend::drawDynamicGeometry(
     ID3D12PipelineState *pipeline,
     bool screen_space,
     RenderBackendTextureHandle texture_handle,
-    const RenderBackendMaterialState *material)
+    const RenderBackendMaterialState *material,
+    RenderBackendTextureHandle secondary_texture,
+    const RenderBackendTerrainState *terrain)
 {
     if (!m_scene_open || pipeline == nullptr || vertices == nullptr || indices == nullptr ||
         vertex_count == 0 || vertex_stride == 0 || index_count < 3 || (index_count % 3) != 0)
@@ -1464,12 +1542,18 @@ bool D3D12Backend::drawDynamicGeometry(
         m_command_list->SetPipelineState(pipeline);
         if (material != nullptr)
         {
-            struct Constants { unsigned int combine, alpha_test; float alpha_reference; unsigned int clamp; };
+            struct Constants {
+                unsigned int combine, alpha_test; float alpha_reference; unsigned int clamp;
+                unsigned int secondary_rgb_modulate, terrain_layers; unsigned int padding[2];
+            };
             const Constants constants{static_cast<unsigned int>(material->texture_combine),
                 static_cast<unsigned int>(material->alpha_test), material->alpha_reference,
-                material->clamp_texture ? 1u : 0u};
-            static_assert(sizeof(Constants) == 4 * sizeof(unsigned int), "Material root constants");
-            m_command_list->SetGraphicsRoot32BitConstants(2, 4, &constants, 0);
+                material->clamp_texture ? 1u : 0u, material->secondary_rgb_modulate ? 1u : 0u,
+                terrain ? (terrain->shroud_texture.Is_Valid() ? 1u : 0u) |
+                    (terrain->cloud_texture.Is_Valid() ? 2u : 0u) |
+                    (terrain->noise_texture.Is_Valid() ? 4u : 0u) : 0u, {0,0}};
+            static_assert(sizeof(Constants) == 8 * sizeof(unsigned int), "Material root constants");
+            m_command_list->SetGraphicsRoot32BitConstants(2, 8, &constants, 0);
             m_command_list->OMSetStencilRef(material->stencil.reference);
         }
         if (texture_handle.Is_Valid())
@@ -1492,6 +1576,30 @@ bool D3D12Backend::drawDynamicGeometry(
                 descriptor.ptr += static_cast<std::size_t>(slot) *
                     m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
                 m_command_list->SetGraphicsRootDescriptorTable(3, descriptor);
+                auto bind_layer = [&](unsigned int root_index, RenderBackendTextureHandle layer,
+                                      const RenderBackendSamplerState &layer_sampler) {
+                    auto srv = m_texture_srv_heap->GetGPUDescriptorHandleForHeapStart();
+                    srv.ptr += static_cast<std::size_t>(layer.slot - 1) * m_srv_descriptor_size;
+                    m_command_list->SetGraphicsRootDescriptorTable(root_index, srv);
+                    const auto layer_slot = materialSampler(layer_sampler);
+                    auto descriptor = m_material_sampler_heap->GetGPUDescriptorHandleForHeapStart();
+                    descriptor.ptr += static_cast<std::size_t>(layer_slot) *
+                        m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+                    m_command_list->SetGraphicsRootDescriptorTable(root_index + 1, descriptor);
+                };
+                // Bind every declared texture, including optional disabled layers.
+                if (terrain)
+                {
+                    bind_layer(4, terrain->shroud_texture.Is_Valid() ? terrain->shroud_texture : texture_handle,
+                        terrain->shroud_texture.Is_Valid() ? terrain->shroud_sampler : sampler);
+                    bind_layer(6, terrain->cloud_texture.Is_Valid() ? terrain->cloud_texture : texture_handle,
+                        terrain->cloud_texture.Is_Valid() ? terrain->cloud_sampler : sampler);
+                    bind_layer(8, terrain->noise_texture.Is_Valid() ? terrain->noise_texture : texture_handle,
+                        terrain->noise_texture.Is_Valid() ? terrain->noise_sampler : sampler);
+                }
+                else
+                    bind_layer(4, material->secondary_rgb_modulate ? secondary_texture : texture_handle,
+                        material->secondary_rgb_modulate ? material->secondary_sampler : sampler);
             }
         }
         m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -2015,8 +2123,12 @@ unsigned int D3D12Backend::materialSampler(const RenderBackendSamplerState &stat
         (static_cast<unsigned int>(state.mip_filter) << 2) |
         (static_cast<unsigned int>(state.address_u) << 3) |
         (static_cast<unsigned int>(state.address_v) << 4) |
-        (static_cast<unsigned int>(state.mipmaps) << 5) | ((state.max_anisotropy-1) << 6);
-    if (!m_material_sampler_initialized[key])
+        (static_cast<unsigned int>(state.mipmaps) << 5) | ((state.max_anisotropy-1) << 6) | (state.min_mip_level << 10);
+    for (unsigned int slot = 0; slot < m_material_sampler_keys.size(); ++slot)
+        if (m_material_sampler_keys[slot] == key) return slot;
+    if (m_material_sampler_keys.size() >= MaterialSamplerCount)
+        throw std::runtime_error("Material sampler heap exhausted");
+    const unsigned int slot = static_cast<unsigned int>(m_material_sampler_keys.size());
     {
         D3D12_SAMPLER_DESC sampler{};
         sampler.Filter = state.max_anisotropy > 1 ? D3D12_FILTER_ANISOTROPIC :
@@ -2029,17 +2141,18 @@ unsigned int D3D12Backend::materialSampler(const RenderBackendSamplerState &stat
         sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
         sampler.MaxAnisotropy = state.max_anisotropy;
         sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+        sampler.MinLOD = state.mipmaps ? static_cast<float>(state.min_mip_level) : 0.0f;
         sampler.MaxLOD = state.mipmaps ? D3D12_FLOAT32_MAX : 0.0f;
         auto descriptor = m_material_sampler_heap->GetCPUDescriptorHandleForHeapStart();
-        descriptor.ptr += static_cast<std::size_t>(key) *
+        descriptor.ptr += static_cast<std::size_t>(slot) *
             m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
         m_device->CreateSampler(&sampler, descriptor);
-        m_material_sampler_initialized[key] = true;
+        m_material_sampler_keys.push_back(key);
     }
-    return key;
+    return slot;
 }
 
-ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialState &material, bool textured)
+ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialState &material, bool textured, bool terrain)
 {
     const unsigned int depth = static_cast<unsigned int>(material.depth_test);
     const unsigned int source = static_cast<unsigned int>(material.source_blend);
@@ -2059,7 +2172,9 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
         (static_cast<std::uint64_t>(material.stencil.enabled) << 16) |
         (static_cast<std::uint64_t>(material.stencil.read_mask) << 17) |
         (static_cast<std::uint64_t>(material.stencil.write_mask) << 25) |
-        (face_key(material.stencil.front) << 33) | (face_key(material.stencil.back) << 45);
+        (face_key(material.stencil.front) << 33) | (face_key(material.stencil.back) << 45) |
+        (static_cast<std::uint64_t>(material.color_write_mask) << 57) |
+        (static_cast<std::uint64_t>(terrain) << 61);
     for (const auto &entry : m_material_pipelines)
         if (entry.key == key) return entry.pipeline;
 
@@ -2069,14 +2184,25 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
         D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA};
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline{};
     pipeline.pRootSignature = m_primitive_root_signature;
-    pipeline.VS = {m_material_vertex_shader->GetBufferPointer(), m_material_vertex_shader->GetBufferSize()};
-    auto *pixel_shader = textured ? m_material_texture_shader : m_material_color_shader;
+    auto *vertex_shader = terrain ? m_terrain_vertex_shader : m_material_vertex_shader;
+    pipeline.VS = {vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize()};
+    auto *pixel_shader = terrain ? (textured ? m_terrain_texture_shader : m_terrain_color_shader) :
+        (textured ? m_material_texture_shader : m_material_color_shader);
     pipeline.PS = {pixel_shader->GetBufferPointer(), pixel_shader->GetBufferSize()};
     const D3D12_INPUT_ELEMENT_DESC elements[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
-    pipeline.InputLayout = {elements, 3};
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 1, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+    pipeline.InputLayout = {elements, 4};
+    const D3D12_INPUT_ELEMENT_DESC terrain_elements[] = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 1, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 2, DXGI_FORMAT_R32G32_FLOAT, 0, 44, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 3, DXGI_FORMAT_R32G32_FLOAT, 0, 52, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+    if (terrain) pipeline.InputLayout = {terrain_elements, 6};
     auto &blend = pipeline.BlendState.RenderTarget[0];
     blend.BlendEnable = source != 1 || destination != 0;
     blend.SrcBlend = factors[source];
@@ -2085,7 +2211,7 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
     blend.DestBlendAlpha = alpha_factors[destination];
     blend.BlendOp = blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
     blend.LogicOp = D3D12_LOGIC_OP_NOOP;
-    blend.RenderTargetWriteMask = material.color_write ? D3D12_COLOR_WRITE_ENABLE_ALL : 0;
+    blend.RenderTargetWriteMask = material.color_write ? static_cast<UINT8>(material.color_write_mask) : 0;
     pipeline.SampleMask = std::numeric_limits<UINT>::max();
     pipeline.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
     pipeline.RasterizerState.CullMode = cull == 0 ? D3D12_CULL_MODE_NONE : D3D12_CULL_MODE_BACK;
@@ -2122,29 +2248,18 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
 bool D3D12Backend::Draw_Indexed_Material_Triangles(
     const RenderBackendTexturedVertex *vertices, unsigned int vertex_count,
     const unsigned short *indices, unsigned int index_count,
-    RenderBackendTextureHandle texture, const RenderBackendMaterialState &material)
+    RenderBackendTextureHandle texture, const RenderBackendMaterialState &material,
+    RenderBackendTextureHandle secondary_texture)
 {
-    auto valid_face = [](const RenderBackendStencilFace &face) {
-        return static_cast<unsigned int>(face.comparison) < 8 &&
-            static_cast<unsigned int>(face.stencil_fail) < 8 &&
-            static_cast<unsigned int>(face.depth_fail) < 8 &&
-            static_cast<unsigned int>(face.pass) < 8;
+    auto valid_texture = [&](RenderBackendTextureHandle handle) {
+        return Is_Texture_Valid(handle) &&
+            !(handle.slot == m_selected_texture.slot && handle.generation == m_selected_texture.generation);
     };
-    if (!m_scene_open || static_cast<unsigned int>(material.depth_test) > 8 ||
-        static_cast<unsigned int>(material.source_blend) > 6 ||
-        static_cast<unsigned int>(material.destination_blend) > 6 ||
-        static_cast<unsigned int>(material.cull) > 2 ||
-        static_cast<unsigned int>(material.texture_combine) > 3 ||
-        static_cast<unsigned int>(material.alpha_test) > 2 ||
-        !(material.alpha_reference >= 0.0f && material.alpha_reference <= 1.0f) ||
-        material.stencil.reference > 255 || material.stencil.read_mask > 255 || material.stencil.write_mask > 255 ||
-        !valid_face(material.stencil.front) || !valid_face(material.stencil.back) ||
-        static_cast<unsigned int>(material.sampler.min_filter) > 1 ||
-        static_cast<unsigned int>(material.sampler.mag_filter) > 1 ||
-        static_cast<unsigned int>(material.sampler.mip_filter) > 1 ||
-        static_cast<unsigned int>(material.sampler.address_u) > 1 ||
-        static_cast<unsigned int>(material.sampler.address_v) > 1 ||
-        material.sampler.max_anisotropy < 1 || material.sampler.max_anisotropy > 16 ||
+    if ((secondary_texture.slot != 0 || secondary_texture.generation != 0) &&
+        (!material.secondary_rgb_modulate || !valid_texture(secondary_texture))) return false;
+    if (material.secondary_rgb_modulate &&
+        (!valid_texture(texture) || !valid_texture(secondary_texture) || !validMaterialSampler(material.secondary_sampler))) return false;
+    if (!m_scene_open || !validMaterialState(material) ||
         ((texture.slot != 0 || texture.generation != 0) && !texture.Is_Valid()) ||
         (m_selected_texture.Is_Valid() && (material.depth_test != RenderBackendDepthTest::Disabled || material.stencil.enabled)) ||
         (texture.Is_Valid() && (!Is_Texture_Valid(texture) ||
@@ -2153,7 +2268,38 @@ bool D3D12Backend::Draw_Indexed_Material_Triangles(
     try
     {
         return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendTexturedVertex),
-            indices, index_count, materialPipeline(material, texture.Is_Valid()), material.screen_space, texture, &material);
+            indices, index_count, materialPipeline(material, texture.Is_Valid()), material.screen_space, texture, &material, secondary_texture);
+    }
+    catch (...) { return false; }
+}
+
+bool D3D12Backend::Draw_Indexed_Terrain_Triangles(
+    const RenderBackendTerrainVertex *vertices, unsigned int vertex_count,
+    const unsigned short *indices, unsigned int index_count,
+    RenderBackendTextureHandle base_texture, const RenderBackendMaterialState &material,
+    const RenderBackendTerrainState &terrain)
+{
+    auto valid_texture = [&](RenderBackendTextureHandle texture) {
+        return Is_Texture_Valid(texture) &&
+            !(texture.slot == m_selected_texture.slot && texture.generation == m_selected_texture.generation);
+    };
+    auto valid_layer = [&](RenderBackendTextureHandle texture, const RenderBackendSamplerState &sampler) {
+        return validMaterialSampler(sampler) &&
+            ((texture.slot == 0 && texture.generation == 0) || valid_texture(texture));
+    };
+    const bool textured = base_texture.Is_Valid();
+    if (!m_scene_open || !validMaterialState(material) || material.secondary_rgb_modulate ||
+        ((base_texture.slot != 0 || base_texture.generation != 0) && !valid_texture(base_texture)) ||
+        !valid_layer(terrain.shroud_texture, terrain.shroud_sampler) ||
+        !valid_layer(terrain.cloud_texture, terrain.cloud_sampler) ||
+        !valid_layer(terrain.noise_texture, terrain.noise_sampler) ||
+        (!textured && (terrain.shroud_texture.Is_Valid() || terrain.cloud_texture.Is_Valid() || terrain.noise_texture.Is_Valid())) ||
+        (m_selected_texture.Is_Valid() && (material.depth_test != RenderBackendDepthTest::Disabled || material.stencil.enabled)))
+        return false;
+    try
+    {
+        return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendTerrainVertex), indices, index_count,
+            materialPipeline(material, textured, true), material.screen_space, base_texture, &material, {}, &terrain);
     }
     catch (...) { return false; }
 }
@@ -2385,6 +2531,9 @@ void D3D12Backend::releaseObjects() noexcept
     releaseCom(m_color_only_additive_pipeline);
     for (auto &entry : m_material_pipelines) releaseCom(entry.pipeline);
     m_material_pipelines.clear();
+    releaseCom(m_terrain_texture_shader);
+    releaseCom(m_terrain_color_shader);
+    releaseCom(m_terrain_vertex_shader);
     releaseCom(m_material_texture_shader);
     releaseCom(m_material_color_shader);
     releaseCom(m_material_vertex_shader);
@@ -2408,6 +2557,7 @@ void D3D12Backend::releaseObjects() noexcept
     }
     releaseCom(m_texture_srv_heap);
     releaseCom(m_material_sampler_heap);
+    m_material_sampler_keys.clear();
     releaseCom(m_dsv_heap);
     releaseCom(m_rtv_heap);
     releaseCom(m_swap_chain);
