@@ -63,21 +63,43 @@ static TriggerFunc		_CurTriggerHandler = nullptr;
 static ProfileFunc		_CurProfileStartHandler = nullptr;
 static ProfileFunc		_CurProfileStopHandler = nullptr;
 
-// Convert the latest system error into a string and return a pointer to
-// a static buffer containing the error string.
-
+// Convert a system error to text when the platform supplies a message.
+// Unknown results leave an empty buffer so numeric diagnostics remain usable.
 void Convert_System_Error_To_String(int id, char* buffer, int buf_len)
 {
-#ifndef _UNIX
-	FormatMessage(
-		FORMAT_MESSAGE_FROM_SYSTEM,
-		nullptr,
-		id,
-		0,
-		buffer,
-		buf_len,
-		nullptr);
+	if (buffer == nullptr || buf_len <= 0) return;
+	buffer[0] = '\0';
+#ifdef _WIN32
+	DWORD length = FormatMessageA(
+		FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+		nullptr, static_cast<DWORD>(id), 0, buffer,
+		static_cast<DWORD>(buf_len), nullptr);
+	while (length != 0 && (buffer[length - 1] == '\r' || buffer[length - 1] == '\n')) {
+		buffer[--length] = '\0';
+	}
+#else
+	(void)id;
 #endif
+	buffer[buf_len - 1] = '\0';
+}
+
+void WWDebug_Log_Result_Error(std::uint32_t result, const char* file, int line)
+{
+	if (result == 0) return;
+	char message[256] = "";
+	Convert_System_Error_To_String(static_cast<int>(result), message, sizeof(message));
+	WWDEBUG_SAY(("Result 0x%08X%s%s, File: %s, Line: %d\n",
+		static_cast<unsigned>(result), message[0] ? ": " : "", message,
+		file ? file : "?", line));
+	(void)file;
+	(void)line;
+}
+
+void WWDebug_Check_Result(std::uint32_t result, const char* file, int line)
+{
+	if (result == 0) return;
+	WWDebug_Log_Result_Error(result, file, line);
+	WWASSERT(0);
 }
 
 int Get_Last_System_Error()

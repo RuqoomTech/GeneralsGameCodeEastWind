@@ -220,6 +220,7 @@ struct RenderBackendTerrainState
     RenderBackendSamplerState noise_sampler;
     bool project_world_coordinates = false;
     bool diffuse_after_layers = false;
+    bool project_base_to_shroud = false; // Separate bridge shroud pass; texture Replace ignores diffuse.
     float world_transform[12]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
     float shroud_projection[4]{1, 1, 0, 0};
     float cloud_noise_projection[4]{1, 0, 0, 0};

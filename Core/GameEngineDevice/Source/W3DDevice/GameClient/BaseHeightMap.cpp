@@ -170,12 +170,11 @@ Int BaseHeightMapRenderObjClass::freeMapResources()
 //=============================================================================
 /** Draws the scorch marks. */
 //=============================================================================
-void BaseHeightMapRenderObjClass::drawScorches()
+void BaseHeightMapRenderObjClass::drawScorches(CameraClass& camera, const Matrix3D& worldTransform)
 {
-	ShaderClass::Invalidate();
 	if (m_map && Is_Hidden() == 0 && !ShaderClass::Is_Backface_Culling_Inverted()) {
-		m_staticScorches->drawScorches(*m_map);
-		m_scorches->drawScorches(*m_map);
+		m_staticScorches->drawScorches(*m_map, camera, worldTransform);
+		m_scorches->drawScorches(*m_map, camera, worldTransform);
 	}
 }
 

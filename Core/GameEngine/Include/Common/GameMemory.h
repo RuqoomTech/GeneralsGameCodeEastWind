@@ -657,7 +657,6 @@ protected: \
 		DEBUG_CRASH(("This operator new should normally never be called... please use new(char*) instead.")); \
 		DEBUG_ASSERTCRASH(s == sizeof(ARGCLASS), ("The wrong operator new is being called; ensure all objects in the hierarchy have MemoryPoolGlue set up correctly")); \
 		throw ERROR_BUG; \
-		return 0; \
 	} \
 	inline void operator delete(void *p) \
 	{ \
@@ -699,7 +698,6 @@ protected: \
 		DEBUG_CRASH(("this should be impossible to call (abstract base class)")); \
 		DEBUG_ASSERTCRASH(s == sizeof(ARGCLASS), ("The wrong operator new is being called; ensure all objects in the hierarchy have MemoryPoolGlue set up correctly")); \
 		throw ERROR_BUG; \
-		return 0; \
 	} \
 protected: \
 	inline void operator delete(void *p, ARGCLASS##MagicEnum e DECLARE_LITERALSTRING_ARG2) \
@@ -712,7 +710,6 @@ protected: \
 		DEBUG_CRASH(("this should be impossible to call (abstract base class)")); \
 		DEBUG_ASSERTCRASH(s == sizeof(ARGCLASS), ("The wrong operator new is being called; ensure all objects in the hierarchy have MemoryPoolGlue set up correctly")); \
 		throw ERROR_BUG; \
-		return 0; \
 	} \
 	inline void operator delete(void *p) \
 	{ \
@@ -722,7 +719,6 @@ private: \
 	virtual MemoryPool *getObjectMemoryPool() override \
 	{ \
 		throw ERROR_BUG; \
-		return 0; \
 	} \
 public: /* include this line at the end to reset visibility to 'public' */
 
@@ -743,7 +739,7 @@ protected:
 	virtual ~MemoryPoolObject() { }
 
 protected:
-	void *operator new(size_t s) { DEBUG_CRASH(("This should be impossible")); return 0; }
+	void *operator new(size_t s) { DEBUG_CRASH(("This should be impossible")); throw ERROR_BUG; }
 	void operator delete(void *p) { DEBUG_CRASH(("This should be impossible")); }
 
 protected:

@@ -616,6 +616,96 @@ bool verifyPersistentTerrainAndMaterials(IRenderBackend &backend)
     return ok;
 }
 
+bool verifyBridgePasses(IRenderBackend &backend)
+{
+    const unsigned char basePixels[]={200,140,80,128},cloudPixels[]={160,224,96,192};
+    const unsigned char shroudPixels[]={128,192,64,80, 240,16,64,255, 16,240,64,255, 64,16,240,255};
+    const auto base=backend.Create_Static_RGBA8_Texture(1,1,basePixels,4);
+    const auto cloud=backend.Create_Static_RGBA8_Texture(1,1,cloudPixels,4);
+    const auto shroud=backend.Create_Static_RGBA8_Texture(2,2,shroudPixels,8);
+    const RenderBackendTerrainVertex quad[]={
+        {-.8f,-.8f,.4f,.8f,.6f,.4f,1,.75f,.75f,0,0,0,0,0,0},
+        {-.8f,.8f,.4f,.8f,.6f,.4f,1,.75f,.75f,0,0,0,0,0,0},
+        {.8f,.8f,.4f,.8f,.6f,.4f,1,.75f,.75f,0,0,0,0,0,0},
+        {.8f,-.8f,.4f,.8f,.6f,.4f,1,.75f,.75f,0,0,0,0,0,0}};
+    const unsigned short indices[]={0,2,1,0,3,2};
+    const auto geometry=backend.Create_Static_Indexed_Terrain_Geometry(quad,4,indices,6);
+    bool ok=base.Is_Valid() && cloud.Is_Valid() && shroud.Is_Valid() && backend.Is_Geometry_Valid(geometry);
+    RenderBackendTerrainState terrain;
+    terrain.project_world_coordinates=true;
+    terrain.world_transform[0]=terrain.world_transform[5]=.5f;
+    terrain.world_transform[3]=.3f;terrain.world_transform[7]=-.2f;terrain.world_transform[11]=.1f;
+    terrain.cloud_texture=cloud;
+    terrain.shroud_projection[0]=terrain.shroud_projection[1]=.5f;
+    terrain.shroud_projection[2]=.1f;terrain.shroud_projection[3]=.35f;
+    RenderBackendMaterialState material;
+    material.source_blend=RenderBackendBlendFactor::SourceAlpha;
+    material.destination_blend=RenderBackendBlendFactor::InverseSourceAlpha;
+    material.depth_write=true;material.cull=RenderBackendCullMode::None;
+    material.alpha_test=RenderBackendAlphaTest::GreaterEqual;
+    material.alpha_reference=96.f/255.f;material.color_write_mask=7;
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    backend.Set_Viewport({0,0,640,480,0,1});backend.Set_View_Projection(Matrix4x4(true));
+    const float background[]={.2f,.4f,.6f},diffuse[]={.8f,.6f,.4f};
+    for(unsigned scenario=0;scenario<4;++scenario) {
+        backend.Reset_Frame_Statistics();
+        backend.Clear(true,true,Vector3(background[0],background[1],background[2]),.7f,1,0);backend.Begin_Scene();
+        material.alpha_reference=scenario==1 ? .4f : 96.f/255.f;
+        bool drew=backend.Draw_Static_Indexed_Terrain_Geometry(geometry,base,material,terrain);
+        auto overlay=terrain;overlay.cloud_texture={};overlay.project_base_to_shroud=true;
+        if(scenario==2) overlay.world_transform[11]+=.1f;
+        auto overlayMaterial=material;
+        overlayMaterial.depth_test=RenderBackendDepthTest::Equal;overlayMaterial.depth_write=false;
+        overlayMaterial.cull=RenderBackendCullMode::Clockwise;overlayMaterial.alpha_test=RenderBackendAlphaTest::Disabled;
+        overlayMaterial.texture_combine=RenderBackendTextureCombine::Replace;
+        overlayMaterial.sampler.mag_filter=RenderBackendTextureFilter::Point;
+        overlayMaterial.source_blend=scenario==3 ? RenderBackendBlendFactor::SourceAlpha : RenderBackendBlendFactor::Zero;
+        overlayMaterial.destination_blend=scenario==3 ? RenderBackendBlendFactor::InverseSourceAlpha : RenderBackendBlendFactor::SourceColor;
+        drew=backend.Draw_Static_Indexed_Terrain_Geometry(geometry,shroud,overlayMaterial,overlay) && drew;
+        backend.End_Scene(false);
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        backend.Flip_To_Primary();
+        bool passed=drew && read && backend.Get_Frame_Statistics().static_geometry_uploads==0;
+        if(read) for(unsigned c=0;c<4;++c) {
+            float expected=.7f;
+            if(c<3) {
+                const float alpha=(basePixels[3]/255.f)*(cloudPixels[3]/255.f);
+                expected=scenario==1 ? background[c] :
+                    (basePixels[c]/255.f)*(cloudPixels[c]/255.f)*diffuse[c]*alpha+background[c]*(1-alpha);
+                // The overlay operates on the already quantized/blended target.
+                expected=std::lround(expected*255.f)/255.f;
+                if(scenario==0) expected*=shroudPixels[c]/255.f;
+                if(scenario==3) {
+                    const float fogAlpha=shroudPixels[3]/255.f;
+                    expected=(shroudPixels[c]/255.f)*fogAlpha+expected*(1-fogAlpha);
+                }
+            }
+            if(std::abs(int(pixels[(288*width+416)*4+c])-int(std::lround(expected*255.f)))>2) passed=false;
+        }
+        if(!passed) std::cerr << "Bridge base/shroud pass " << scenario << " failed.\n";
+        ok=passed && ok;
+    }
+    backend.Begin_Scene();
+    auto overlay=terrain;overlay.cloud_texture={};overlay.project_base_to_shroud=true;
+    auto overlayMaterial=material;overlayMaterial.texture_combine=RenderBackendTextureCombine::Replace;
+    overlay.project_world_coordinates=false;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,shroud,overlayMaterial,overlay) && ok;
+    overlay.project_world_coordinates=true;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,{},overlayMaterial,overlay) && ok;
+    overlay.cloud_texture=cloud;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,shroud,overlayMaterial,overlay) && ok;
+    overlay.cloud_texture={};overlayMaterial.texture_combine=RenderBackendTextureCombine::Modulate;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,shroud,overlayMaterial,overlay) && ok;
+    overlay.project_base_to_shroud=false;overlayMaterial.texture_combine=RenderBackendTextureCombine::Add;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,base,overlayMaterial,overlay) && ok;
+    backend.End_Scene(false);backend.Flip_To_Primary();
+    backend.Release_Static_Geometry(geometry);
+    backend.Release_Texture(base);backend.Release_Texture(cloud);backend.Release_Texture(shroud);
+    if(!ok) std::cerr << "Bridge projection, pass depth/alpha/blend, or resource contract failed.\n";
+    return ok;
+}
+
 bool verifyTerrain(IRenderBackend &backend)
 {
     const unsigned char texels[4][16]={
@@ -1375,7 +1465,7 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyTreeShroud(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyTreeShroud(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

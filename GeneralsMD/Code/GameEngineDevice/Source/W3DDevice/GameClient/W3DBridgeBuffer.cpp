@@ -65,7 +65,10 @@
 #include "W3DDevice/GameClient/W3DShaderManager.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "WW3D2/camera.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/IRenderBackend.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/shader.h"
+#include <vector>
 #include "WW3D2/meshrenderer.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/meshmdl.h"
@@ -84,14 +87,12 @@
 static ShaderClass detailAlphaShader(SC_ALPHA_DETAIL);
 
 
-#define SC_ALPHA_MIRROR ( SHADE_CNST(ShaderClass::PASS_LEQUAL, ShaderClass::DEPTH_WRITE_ENABLE, ShaderClass::COLOR_WRITE_ENABLE, ShaderClass::SRCBLEND_ONE, \
-	ShaderClass::DSTBLEND_ZERO, ShaderClass::FOG_DISABLE, ShaderClass::GRADIENT_MODULATE, ShaderClass::SECONDARY_GRADIENT_DISABLE, ShaderClass::TEXTURING_ENABLE, \
-	ShaderClass::ALPHATEST_DISABLE, ShaderClass::CULL_MODE_DISABLE, \
-	ShaderClass::DETAILCOLOR_DISABLE, ShaderClass::DETAILALPHA_DISABLE) )
-
-static ShaderClass detailShader(SC_ALPHA_MIRROR);
-
-#define NO_USE_BRIDGE_NORMALS
+struct W3DBridgeBuffer::GeometryState
+{
+    std::vector<RenderBackendTerrainVertex> vertices;
+    std::vector<UnsignedShort> indices;
+    RenderBackendGeometryHandle handles[MAX_BRIDGES];
+};
 
 //-----------------------------------------------------------------------------
 //         Private Classes
@@ -102,13 +103,18 @@ static ShaderClass detailShader(SC_ALPHA_MIRROR);
 /** Initializes pointers & values.  */
 //=============================================================================
 W3DBridge::W3DBridge() :
+m_scale(1.0),
 m_bridgeTexture(nullptr),
 m_leftMesh(nullptr),
 m_sectionMesh(nullptr),
 m_rightMesh(nullptr),
+m_firstIndex(0),
+m_numVertex(0),
+m_firstVertex(0),
+m_numPolygons(0),
 m_visible(false),
 m_curDamageState(BODY_PRISTINE),
-m_scale(1.0)
+m_enabled(false)
 {
 }
 
@@ -120,21 +126,6 @@ m_scale(1.0)
 W3DBridge::~W3DBridge()
 {
 	clearBridge();
-}
-
-//=============================================================================
-// W3DBridge::renderBridge
-//=============================================================================
-/** Renders the bride.  It is assumed that the shared vertex and index buffers
-are already set.  */
-//=============================================================================
-void W3DBridge::renderBridge(Bool wireframe)
-{
-	if (m_visible && m_numPolygons && m_numVertex) {
-		if (!wireframe) DX8Wrapper::Set_Texture(0,m_bridgeTexture);
-		// Draw all the bridges.
-		DX8Wrapper::Draw_Triangles(	m_firstIndex, m_numPolygons, m_firstVertex,	m_numVertex);
-	}
 }
 
 //=============================================================================
@@ -401,7 +392,7 @@ void W3DBridge::getBridgeInfo(BridgeInfo *pInfo)
 //=============================================================================
 /** Gets the vertex values for a section of a bridge.  */
 //=============================================================================
-Int W3DBridge::getModelVertices(VertexFormatXYZNDUV1 *destination_vb, Int curVertex, Real xOffset,
+Int W3DBridge::getModelVertices(RenderBackendTerrainVertex *destination_vb, Int curVertex, Real xOffset,
 																Vector3 &vec, Vector3 &vecNormal, Vector3 &vecZ, Vector3 &offset,
 																const Matrix3D &mtx,
 																MeshClass *pMesh, RefRenderObjListIterator *pLightsIterator)
@@ -432,7 +423,7 @@ Int W3DBridge::getModelVertices(VertexFormatXYZNDUV1 *destination_vb, Int curVer
 	}
 
 	const Vector2*uvs=pMesh->Peek_Model()->Get_UV_Array_By_Index(0);
-	VertexFormatXYZNDUV1 *curVb = destination_vb+curVertex;
+	RenderBackendTerrainVertex *curVb = destination_vb+curVertex;
 
 	for (i=0; i<numVertex; i++) {
 		Vector3 vLoc;
@@ -455,22 +446,16 @@ Int W3DBridge::getModelVertices(VertexFormatXYZNDUV1 *destination_vb, Int curVer
 
 		Vector3 normal;
 		Matrix3D::Rotate_Vector(mtx, pNormal[i], &normal);
-#ifdef USE_BRIDGE_NORMALS
-		curVb->nx = normal.X;
-		curVb->ny = normal.Y;
-		curVb->nz = normal.Z;
-		curVb->diffuse = 0xFF000000;
-#else
-		normal = (normal.X) * vec + normal.Y*vecNormal + normal.Z*vecZ;
-		normal.Normalize();
-		TheTerrainRenderObject->doTheLight(&vb, lightRay, &normal, nullptr, 1.0f);
-		curVb->nx = 0;	//will these to keep AGP write buffer happy.
-		curVb->ny = 0;
-		curVb->nz = 1;
-		curVb->diffuse = vb.diffuse | 0xFF000000;
-#endif
-		curVb->u1 = uvs[i].U;
-		curVb->v1 = uvs[i].V;
+        normal = normal.X * vec + normal.Y * vecNormal + normal.Z * vecZ;
+        normal.Normalize();
+        TheTerrainRenderObject->doTheLight(&vb, lightRay, &normal, nullptr, 1.0f);
+        const UnsignedInt diffuse = vb.diffuse | 0xFF000000u;
+        curVb->r = ((diffuse >> 16) & 255u) / 255.0f;
+        curVb->g = ((diffuse >> 8) & 255u) / 255.0f;
+        curVb->b = (diffuse & 255u) / 255.0f;
+        curVb->a = 1.0f;
+        curVb->u = uvs[i].U;
+        curVb->v = uvs[i].V;
 		curVb++;
 	}
 	return(numVertex);
@@ -481,7 +466,7 @@ Int W3DBridge::getModelVertices(VertexFormatXYZNDUV1 *destination_vb, Int curVer
 //=============================================================================
 /** Gets the vertex values for a section of a fixed bridge.  */
 //=============================================================================
-Int W3DBridge::getModelVerticesFixed(VertexFormatXYZNDUV1 *destination_vb, Int curVertex,
+Int W3DBridge::getModelVerticesFixed(RenderBackendTerrainVertex *destination_vb, Int curVertex,
 																const Matrix3D &mtx, MeshClass *pMesh, RefRenderObjListIterator *pLightsIterator)
 {
 	if (pMesh == nullptr)
@@ -509,7 +494,7 @@ Int W3DBridge::getModelVerticesFixed(VertexFormatXYZNDUV1 *destination_vb, Int c
 //=============================================================================
 /** Gets the index values and vertex values for a bridge.  */
 //=============================================================================
-void W3DBridge::getIndicesNVertices(UnsignedShort *destination_ib, VertexFormatXYZNDUV1 *destination_vb,
+void W3DBridge::getIndicesNVertices(UnsignedShort *destination_ib, RenderBackendTerrainVertex *destination_vb,
 																		Int *curIndexP, Int *curVertexP, RefRenderObjListIterator *pLightsIterator)
 {
 	Int numI;
@@ -679,35 +664,28 @@ void W3DBridgeBuffer::cull(CameraClass * camera)
 
 
 //=============================================================================
-// W3DBridgeBuffer::loadBridgesInVertexAndIndexBuffers
+// W3DBridgeBuffer::rebuildBridgeGeometry
 //=============================================================================
 /** Loads the bridges into the vertex buffer for drawing. */
 //=============================================================================
-void W3DBridgeBuffer::loadBridgesInVertexAndIndexBuffers(RefRenderObjListIterator *pLightsIterator)
+void W3DBridgeBuffer::rebuildBridgeGeometry(RefRenderObjListIterator *pLightsIterator)
 {
-	if (!m_indexBridge || !m_vertexBridge || !m_initialized) {
-		return;
-	}
-	m_curNumBridgeVertices = 0;
-	m_curNumBridgeIndices = 0;
-	VertexFormatXYZNDUV1 *vb;
-	UnsignedShort *ib;
-	// Lock the buffers.
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBridge, D3DLOCK_DISCARD);
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexBridge, D3DLOCK_DISCARD);
-	vb=(VertexFormatXYZNDUV1*)lockVtxBuffer.Get_Vertex_Array();
-	ib = lockIdxBuffer.Get_Index_Array();
-
-//	UnsignedShort *curIb = ib;
-
-//	VertexFormatXYZNDUV1 *curVb = vb;
-
-	Int curBridge;
-
-	for (curBridge=0; curBridge<m_numBridges; curBridge++) {
-		m_bridges[curBridge].getIndicesNVertices(ib, vb, &m_curNumBridgeIndices,
-			&m_curNumBridgeVertices, pLightsIterator);
-	}
+    if (!m_initialized || TheGlobalData->m_headless) return;
+    IRenderBackend *backend = WW3D::Get_Render_Backend();
+    for (auto &handle : m_geometry->handles) {
+        if (backend) backend->Release_Static_Geometry(handle);
+        handle = {};
+    }
+    m_curNumBridgeVertices = m_curNumBridgeIndices = 0;
+    m_geometry->vertices.assign(MAX_BRIDGE_VERTEX+4, {});
+    m_geometry->indices.assign(MAX_BRIDGE_INDEX+4, 0);
+    for (Int bridge=0; bridge<m_numBridges; ++bridge) {
+        m_bridges[bridge].getIndicesNVertices(m_geometry->indices.data(), m_geometry->vertices.data(),
+            &m_curNumBridgeIndices, &m_curNumBridgeVertices, pLightsIterator);
+    }
+    m_geometry->vertices.resize(m_curNumBridgeVertices);
+    m_geometry->indices.resize(m_curNumBridgeIndices);
+    m_anythingChanged = false;
 }
 
 //-----------------------------------------------------------------------------
@@ -722,6 +700,7 @@ void W3DBridgeBuffer::loadBridgesInVertexAndIndexBuffers(RefRenderObjListIterato
 W3DBridgeBuffer::~W3DBridgeBuffer()
 {
 	freeBridgeBuffers();
+	delete m_geometry;
 }
 
 //=============================================================================
@@ -733,10 +712,10 @@ for the bridges. */
 W3DBridgeBuffer::W3DBridgeBuffer()
 {
 	m_initialized = false;
-	m_vertexMaterial = nullptr;
-	m_vertexBridge = nullptr;
-	m_indexBridge = nullptr;
-	m_bridgeTexture = nullptr;
+	m_geometry = new GeometryState;
+	m_numBridges = 0;
+	m_updateVis = true;
+	m_anythingChanged = true;
 	m_curNumBridgeVertices=0;
 	m_curNumBridgeIndices=0;
 	clearAllBridges();
@@ -752,36 +731,23 @@ W3DBridgeBuffer::W3DBridgeBuffer()
 //=============================================================================
 void W3DBridgeBuffer::freeBridgeBuffers()
 {
-	REF_PTR_RELEASE(m_vertexBridge);
-	REF_PTR_RELEASE(m_indexBridge);
-	REF_PTR_RELEASE(m_vertexMaterial);
+    IRenderBackend *backend = WW3D::Get_Render_Backend();
+    for (auto &handle : m_geometry->handles) {
+        if (backend) backend->Release_Static_Geometry(handle);
+        handle = {};
+    }
+    std::vector<RenderBackendTerrainVertex>().swap(m_geometry->vertices);
+    std::vector<UnsignedShort>().swap(m_geometry->indices);
+    m_curNumBridgeVertices = m_curNumBridgeIndices = 0;
+    m_updateVis = m_anythingChanged = true;
 }
 
-//=============================================================================
-// W3DBridgeBuffer::allocateBridgeBuffers
-//=============================================================================
-/** Allocates the index and vertex buffers. */
-//=============================================================================
 void W3DBridgeBuffer::allocateBridgeBuffers()
 {
-	if (TheGlobalData->m_headless)
-		return;
-	m_vertexBridge=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZNDUV1,MAX_BRIDGE_VERTEX+4,DX8VertexBufferClass::USAGE_DYNAMIC));
-	m_indexBridge=NEW_REF(DX8IndexBufferClass,(MAX_BRIDGE_INDEX+4, DX8IndexBufferClass::USAGE_DYNAMIC));
-	m_vertexMaterial=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-#ifdef USE_BRIDGE_NORMALS
-	m_vertexMaterial= NEW VertexMaterialClass();
-	m_vertexMaterial->Set_Shininess(0.0);
-	m_vertexMaterial->Set_Ambient(1,1,1);
-	m_vertexMaterial->Set_Diffuse(1,1,1);
-	m_vertexMaterial->Set_Specular(0,0,0);
-	m_vertexMaterial->Set_Emissive(0,0,0);
-	m_vertexMaterial->Set_Opacity(1);
-	m_vertexMaterial->Set_Lighting(true);
-	m_vertexMaterial->Set_Diffuse_Color_Source(VertexMaterialClass::COLOR1);
-#endif
-	m_curNumBridgeVertices=0;
-	m_curNumBridgeIndices=0;
+    freeBridgeBuffers();
+    if (TheGlobalData->m_headless) return;
+    m_geometry->vertices.reserve(MAX_BRIDGE_VERTEX+4);
+    m_geometry->indices.reserve(MAX_BRIDGE_INDEX+4);
 }
 
 //=============================================================================
@@ -791,6 +757,7 @@ void W3DBridgeBuffer::allocateBridgeBuffers()
 //=============================================================================
 void W3DBridgeBuffer::clearAllBridges()
 {
+    freeBridgeBuffers();
 	Int curBridge;
 	for (curBridge=0; curBridge<m_numBridges; curBridge++) {
 		m_bridges[curBridge].clearBridge();
@@ -1098,7 +1065,7 @@ void W3DBridgeBuffer::updateCenter(CameraClass *camera, RefRenderObjListIterator
 {
 	cull(camera);
 	if (m_anythingChanged || m_curNumBridgeIndices == 0) {
-		loadBridgesInVertexAndIndexBuffers(pLightsIterator);
+		rebuildBridgeGeometry(pLightsIterator);
 	}
 	m_updateVis = false;
 }
@@ -1108,7 +1075,7 @@ void W3DBridgeBuffer::updateCenter(CameraClass *camera, RefRenderObjListIterator
 //=============================================================================
 /** Draws the bridges. */
 //=============================================================================
-void W3DBridgeBuffer::drawBridges(CameraClass * camera, Bool wireframe, TextureClass *cloudTexture)
+void W3DBridgeBuffer::drawBridges(CameraClass *camera, Bool disableTextures, TextureClass *cloudTexture, const Matrix3D &worldTransform)
 {
 
 	Int curBridge;
@@ -1137,7 +1104,7 @@ void W3DBridgeBuffer::drawBridges(CameraClass * camera, Bool wireframe, TextureC
 			}
 		}
 		if (changed) {
-			loadBridgesInVertexAndIndexBuffers(nullptr);
+			rebuildBridgeGeometry(nullptr);
 		}
 	}	else {
 		// In wb, all are enabled.
@@ -1152,54 +1119,90 @@ void W3DBridgeBuffer::drawBridges(CameraClass * camera, Bool wireframe, TextureC
 		return;
 	}
 
-	DX8Wrapper::Set_Material(m_vertexMaterial);
-	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Index_Buffer(m_indexBridge,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexBridge);
-	DX8Wrapper::Set_Shader(detailAlphaShader);
+    IRenderBackend *backend = WW3D::Get_Render_Backend();
+    if (!backend || !backend->Is_Device_Ready() || !camera) return;
+    camera->Apply();
+    RenderBackendTerrainState terrain;
+    terrain.project_world_coordinates = true;
+    for (unsigned row=0; row<3; ++row)
+        for (unsigned column=0; column<4; ++column)
+            terrain.world_transform[row*4+column] = worldTransform[row][column];
+    RenderBackendMaterialState material;
+    if (!detailAlphaShader.Get_Render_Backend_State(material)) return;
+    material.color_write_mask = 7; // Destination alpha belongs to terrain water.
+    auto textureHandle = [](TextureClass *texture, RenderBackendTextureHandle &handle,
+                            RenderBackendSamplerState &sampler, unsigned stage) {
+        if (!texture || !texture->Ensure_Renderer_Texture() ||
+            !texture->Get_Filter().Get_Render_Sampler(sampler, stage)) return false;
+        handle = texture->Get_Renderer_Texture();
+        return handle.Is_Valid();
+    };
+    if (!disableTextures && cloudTexture) {
+        if (!textureHandle(cloudTexture, terrain.cloud_texture, terrain.cloud_sampler, 1)) {
+            DEBUG_ASSERTCRASH(false, ("Bridge cloud texture upload failed")); return;
+        }
+        terrain.cloud_sampler.min_filter = terrain.cloud_sampler.mag_filter = RenderBackendTextureFilter::Linear;
+        terrain.cloud_sampler.max_anisotropy = 1;
+        terrain.cloud_sampler.address_u = terrain.cloud_sampler.address_v = RenderBackendTextureAddress::Wrap;
+        W3DShaderManager::getTerrainNoiseProjection(terrain.cloud_noise_projection[0],
+            terrain.cloud_noise_projection[1], terrain.cloud_noise_projection[2]);
+    }
+    for (curBridge=0; curBridge<m_numBridges; ++curBridge) {
+        W3DBridge &bridge = m_bridges[curBridge];
+        if (!bridge.isEnabled() || !bridge.isVisible() || !bridge.m_numPolygons || !bridge.m_numVertex) continue;
+        auto &geometry = m_geometry->handles[curBridge];
+        if (!backend->Is_Geometry_Valid(geometry)) {
+            std::vector<UnsignedShort> indices(bridge.m_numPolygons*3);
+            for (std::size_t i=0; i<indices.size(); ++i)
+                indices[i] = static_cast<UnsignedShort>(m_geometry->indices[bridge.m_firstIndex+i] - bridge.m_firstVertex);
+            geometry = backend->Create_Static_Indexed_Terrain_Geometry(
+                m_geometry->vertices.data()+bridge.m_firstVertex, bridge.m_numVertex,
+                indices.data(), static_cast<unsigned>(indices.size()));
+        }
+        RenderBackendTextureHandle texture;
+        if (!geometry.Is_Valid() || (!disableTextures && !textureHandle(bridge.m_bridgeTexture, texture, material.sampler, 0)) ||
+            !backend->Draw_Static_Indexed_Terrain_Geometry(geometry, texture, material, terrain)) {
+            DEBUG_ASSERTCRASH(false, ("Bridge persistent geometry draw failed")); return;
+        }
+    }
+
+    // Preserve the separate framebuffer modulation pass: its EQUAL test keeps
+    // shroud off bridge fragments rejected by the base alpha test.
+    W3DShroud *shroud = TheTerrainRenderObject->getShroud();
+    if (disableTextures || !shroud) return;
+    RenderBackendMaterialState overlay;
 #ifdef RTS_DEBUG
-	//DX8Wrapper::Set_Shader(detailShader); // shows alpha clipping.
+    const ShaderClass &overlayShader = TheGlobalData->m_fogOfWarOn ?
+        ShaderClass::_PresetAlphaSpriteShader : ShaderClass::_PresetMultiplicativeSpriteShader;
+#else
+    const ShaderClass &overlayShader = ShaderClass::_PresetMultiplicativeSpriteShader;
 #endif
-
-	DX8Wrapper::Apply_Render_State_Changes();
-
-	if (!wireframe && cloudTexture)
-	{	//Force a cloud texture projection into stage 1
-		W3DShaderManager::setTexture(1,cloudTexture);
-		W3DShaderManager::setShader(W3DShaderManager::ST_CLOUD_TEXTURE,1);
-	}
-
-	for (curBridge=0; curBridge<m_numBridges; curBridge++) {
-		if (m_bridges[curBridge].isEnabled() && m_bridges[curBridge].isVisible()) {
-			m_bridges[curBridge].renderBridge(wireframe);
-		}
-	}
-
-	if (!wireframe && cloudTexture)
-		//Force a cloud texture projection into stage 1
-		W3DShaderManager::resetShader(W3DShaderManager::ST_CLOUD_TEXTURE);
-
-	//Render shroud pass over all the bridges
-	if (!wireframe && TheTerrainRenderObject->getShroud())
-	{
-		//Reset to a known shader.
-		DX8Wrapper::Invalidate_Cached_Render_States();
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
-		DX8Wrapper::Set_Material(m_vertexMaterial);
-		DX8Wrapper::Set_Index_Buffer(m_indexBridge,0);
-		DX8Wrapper::Set_Vertex_Buffer(m_vertexBridge);
-		DX8Wrapper::Apply_Render_State_Changes();
-		//Apply custom shroud projection shader.
-		W3DShaderManager::setTexture(0,TheTerrainRenderObject->getShroud()->getShroudTexture());
-		W3DShaderManager::setShader(W3DShaderManager::ST_SHROUD_TEXTURE, 0);
-		for (curBridge=0; curBridge<m_numBridges; curBridge++) {
-			if (m_bridges[curBridge].isEnabled() && m_bridges[curBridge].isVisible()) {
-				//Pretend we're in wireframe so function doesn't reset the shroud texture.
-				m_bridges[curBridge].renderBridge(TRUE);
-			}
-		}
-		W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
-	}
+    if (!overlayShader.Get_Render_Backend_State(overlay)) return;
+    overlay.depth_test = RenderBackendDepthTest::Equal;
+    overlay.color_write_mask = 7;
+    RenderBackendTextureHandle texture;
+    if (shroud->getCellWidth()<=0 || shroud->getCellHeight()<=0 ||
+        shroud->getTextureWidth()<=0 || shroud->getTextureHeight()<=0 ||
+        !textureHandle(shroud->getShroudTexture(), texture, overlay.sampler, 0)) {
+        DEBUG_ASSERTCRASH(false, ("Bridge shroud texture/projection failed")); return;
+    }
+    terrain = {};
+    terrain.project_world_coordinates = true;
+    terrain.project_base_to_shroud = true;
+    for (unsigned row=0; row<3; ++row)
+        for (unsigned column=0; column<4; ++column)
+            terrain.world_transform[row*4+column] = worldTransform[row][column];
+    terrain.shroud_projection[0] = 1.f / (shroud->getCellWidth() * shroud->getTextureWidth());
+    terrain.shroud_projection[1] = 1.f / (shroud->getCellHeight() * shroud->getTextureHeight());
+    if (TheTerrainRenderObject->getMap()) {
+        terrain.shroud_projection[2] = (-shroud->getDrawOriginX() + shroud->getCellWidth()) * terrain.shroud_projection[0];
+        terrain.shroud_projection[3] = (-shroud->getDrawOriginY() + shroud->getCellHeight()) * terrain.shroud_projection[1];
+    }
+    for (curBridge=0; curBridge<m_numBridges; ++curBridge) {
+        W3DBridge &bridge = m_bridges[curBridge];
+        if (bridge.isEnabled() && bridge.isVisible() && bridge.m_numPolygons && bridge.m_numVertex &&
+            !backend->Draw_Static_Indexed_Terrain_Geometry(m_geometry->handles[curBridge], texture, overlay, terrain)) {
+            DEBUG_ASSERTCRASH(false, ("Bridge shroud overlay draw failed")); return;
+        }
+    }
 }
-
-

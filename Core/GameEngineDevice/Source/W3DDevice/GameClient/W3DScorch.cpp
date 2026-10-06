@@ -24,11 +24,24 @@
 #include "Common/MapObject.h"
 #include "W3DDevice/GameClient/TerrainTex.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/IRenderBackend.h"
+#include "WW3D2/camera.h"
+#include "WW3D2/shader.h"
+#include "WW3D2/ww3d.h"
+#include "WWMath/matrix4.h"
+#include <cstdio>
+#include <vector>
+
+struct W3DScorch::GeometryState
+{
+	std::vector<RenderBackendTexturedVertex> vertices;
+	std::vector<UnsignedShort> indices;
+	IRenderBackend* backend = nullptr;
+	RenderBackendGeometryHandle handle;
+};
 
 W3DScorch::W3DScorch(bool deduplicateScorches)
-  : m_vertexScorch(nullptr)
-  , m_indexScorch(nullptr)
+  : m_geometry(new GeometryState)
   , m_scorchTexture(nullptr)
   , m_curNumScorchVertices(0)
   , m_curNumScorchIndices(0)
@@ -36,21 +49,28 @@ W3DScorch::W3DScorch(bool deduplicateScorches)
   , m_deduplicateScorches(deduplicateScorches)
 {}
 
-W3DScorch::~W3DScorch() { freeBuffers(); }
+W3DScorch::~W3DScorch()
+{
+	freeBuffers();
+	delete m_geometry;
+}
 
 void W3DScorch::allocateBuffers()
 {
 	freeBuffers();
-	m_vertexScorch = NEW_REF(DX8VertexBufferClass, (DX8_FVF_XYZDUV1, MAX_SCORCH_VERTEX, DX8VertexBufferClass::USAGE_DEFAULT));
-	m_indexScorch = NEW_REF(DX8IndexBufferClass, (MAX_SCORCH_INDEX));
+	m_geometry->vertices.reserve(MAX_SCORCH_VERTEX);
+	m_geometry->indices.reserve(MAX_SCORCH_INDEX);
 	m_scorchTexture = NEW ScorchTextureClass;
 	invalidateBuffers();
 }
 
 void W3DScorch::freeBuffers()
 {
-	REF_PTR_RELEASE(m_vertexScorch);
-	REF_PTR_RELEASE(m_indexScorch);
+	releaseGeometry();
+	std::vector<RenderBackendTexturedVertex>().swap(m_geometry->vertices);
+	std::vector<UnsignedShort>().swap(m_geometry->indices);
+	m_curNumScorchVertices = m_curNumScorchIndices = 0;
+	m_needBufferRecompute = true;
 	REF_PTR_RELEASE(m_scorchTexture);
 }
 
@@ -115,19 +135,59 @@ Bool W3DScorch::isDuplicate(const TScorch& scorch) const
 	return false;
 }
 
-void W3DScorch::drawScorches(WorldHeightMap& map)
+void W3DScorch::releaseGeometry()
 {
+	// A previous device's pointer may already be dead. Global generations also
+	// prevent a recreated backend at the same address from consuming its handle.
+	IRenderBackend* backend = WW3D::Get_Render_Backend();
+	if (backend && backend == m_geometry->backend)
+		backend->Release_Static_Geometry(m_geometry->handle);
+	m_geometry->handle = {};
+	m_geometry->backend = nullptr;
+}
+
+void W3DScorch::drawScorches(WorldHeightMap& map, CameraClass& camera, const Matrix3D& worldTransform)
+{
+	IRenderBackend* backend = WW3D::Get_Render_Backend();
+	if (!backend || !m_scorchTexture) return;
 	updateScorches(map);
-	if (m_curNumScorchIndices == 0)
-	{
+	if (m_curNumScorchIndices == 0) return;
+	if (m_geometry->backend != backend || !backend->Is_Geometry_Valid(m_geometry->handle)) {
+		m_geometry->handle = {};
+		m_geometry->backend = backend;
+		m_geometry->handle = backend->Create_Static_Indexed_Textured_Geometry(
+			m_geometry->vertices.data(), static_cast<unsigned>(m_curNumScorchVertices),
+			m_geometry->indices.data(), static_cast<unsigned>(m_curNumScorchIndices));
+		if (!m_geometry->handle.Is_Valid()) {
+			std::fputs("Scorch geometry upload failed.\n", stderr);
+			return;
+		}
+	}
+	RenderBackendMaterialState material;
+	if (!ShaderClass::_PresetAlphaShader.Get_Render_Backend_State(material) ||
+		!m_scorchTexture->Ensure_Renderer_Texture() ||
+		!m_scorchTexture->Get_Filter().Get_Render_Sampler(material.sampler)) {
+		std::fputs("Scorch texture or material translation failed.\n", stderr);
 		return;
 	}
-	DX8Wrapper::Set_Index_Buffer(m_indexScorch, 0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexScorch);
-	DX8Wrapper::Set_Shader(ShaderClass::_PresetAlphaShader);
-
-	DX8Wrapper::Set_Texture(0, m_scorchTexture);
-	DX8Wrapper::Draw_Triangles(0, m_curNumScorchIndices / 3, 0, m_curNumScorchVertices);
+	material.color_write_mask = 7; // Terrain destination alpha belongs to shoreline rendering.
+	const bool linear = TheGlobalData &&
+		(TheGlobalData->m_bilinearTerrainTex || TheGlobalData->m_trilinearTerrainTex);
+	material.sampler.min_filter = material.sampler.mag_filter =
+		linear ? RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
+	material.sampler.mip_filter = TheGlobalData && TheGlobalData->m_trilinearTerrainTex ?
+		RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
+	material.sampler.address_u = material.sampler.address_v = RenderBackendTextureAddress::Clamp;
+	Matrix4x4 savedProjection;
+	backend->Get_View_Projection(savedProjection);
+	camera.Apply();
+	Matrix4x4 cameraProjection;
+	backend->Get_View_Projection(cameraProjection);
+	backend->Set_View_Projection(cameraProjection * Matrix4x4(worldTransform));
+	const bool drawn = backend->Draw_Static_Indexed_Material_Geometry(
+		m_geometry->handle, m_scorchTexture->Get_Renderer_Texture(), material);
+	backend->Set_View_Projection(savedProjection);
+	if (!drawn) std::fputs("Scorch textured material draw failed.\n", stderr);
 }
 
 static Real getMapHeight(WorldHeightMap& map, Int x, Int y)
@@ -139,25 +199,35 @@ static Real getMapHeight(WorldHeightMap& map, Int x, Int y)
 
 void W3DScorch::updateScorches(WorldHeightMap& map)
 {
-	if (!m_needBufferRecompute || m_scorches.empty() || !m_indexScorch || !m_vertexScorch)
+	if (!m_needBufferRecompute || !m_scorchTexture)
 	{
 		return;
 	}
 
+	releaseGeometry();
 	m_needBufferRecompute = false;
 	m_curNumScorchVertices = 0;
 	m_curNumScorchIndices = 0;
+	if (m_scorches.empty()) {
+		m_geometry->vertices.clear();
+		m_geometry->indices.clear();
+		return;
+	}
 
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexScorch);
-	UnsignedShort* ib = lockIdxBuffer.Get_Index_Array();
-
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexScorch);
-	VertexFormatXYZDUV1* vb = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
+	m_geometry->vertices.resize(MAX_SCORCH_VERTEX);
+	m_geometry->indices.resize(MAX_SCORCH_INDEX);
+	RenderBackendTexturedVertex* vb = m_geometry->vertices.data();
+	UnsignedShort* ib = m_geometry->indices.data();
 
 	Real shadeR = (TheGlobalData->m_terrainAmbient[0].red + TheGlobalData->m_terrainDiffuse[0].red) / 2.0f;
 	Real shadeG = (TheGlobalData->m_terrainAmbient[0].green + TheGlobalData->m_terrainDiffuse[0].green) / 2.0f;
 	Real shadeB = (TheGlobalData->m_terrainAmbient[0].blue + TheGlobalData->m_terrainDiffuse[0].blue) / 2.0f;
-	UnsignedInt diffuse = DX8Wrapper::Convert_Color_Clamp(Vector4(shadeR, shadeG, shadeB, 1.0f));
+	Vector3 shade(shadeR, shadeG, shadeB);
+	for (unsigned component = 0; component < 3; ++component) {
+		const Real nonnegative = shade[component] < 0.0f ? 0.0f : shade[component];
+		shade[component] = nonnegative > 1.0f ? 1.0f : nonnegative;
+	}
+	const UnsignedInt diffuse = static_cast<UnsignedInt>(shade.Convert_To_ARGB(1.0f));
 
 	// TheSuperHackers @info Scorches are written in reverse order to ensure that the last added scorches fit in the buffers.
 	for (std::deque<TScorch>::reverse_iterator it = m_scorches.rbegin(); it != m_scorches.rend(); ++it)
@@ -165,13 +235,15 @@ void W3DScorch::updateScorches(WorldHeightMap& map)
 		if (writeScorchToBuffer(*it, map, diffuse,
 		                        vb + m_curNumScorchVertices, ib + m_curNumScorchIndices) == SCORCH_BUFFER_FULL)
 		{
-			return;
+			break;
 		}
 	}
+	m_geometry->vertices.resize(m_curNumScorchVertices);
+	m_geometry->indices.resize(m_curNumScorchIndices);
 }
 
 W3DScorch::WriteScorchResult W3DScorch::writeScorchToBuffer(const TScorch& scorch, WorldHeightMap& map,
-                                                          UnsignedInt diffuse, VertexFormatXYZDUV1* curVb,
+                                                          UnsignedInt diffuse, RenderBackendTexturedVertex* curVb,
                                                           UnsignedShort* curIb)
 {
 	Real radius = scorch.radius;
@@ -219,15 +291,18 @@ W3DScorch::WriteScorchResult W3DScorch::writeScorchToBuffer(const TScorch& scorc
 	{
 		for (i = minX; i < maxX; i++)
 		{
-			curVb->diffuse = diffuse;
+			curVb->r = ((diffuse >> 16) & 255u) / 255.0f;
+			curVb->g = ((diffuse >> 8) & 255u) / 255.0f;
+			curVb->b = (diffuse & 255u) / 255.0f;
+			curVb->a = 1.0f;
 			Real theZ = amtToFloat + getMapHeight(map, i, j);
 			// The scorchmarks are spaced out by 1.5 in the texture.
 			Real uOffset = (type % SCORCH_PER_ROW) * 1.5f;
 			Real vOffset = (type / SCORCH_PER_ROW) * 1.5f;
 			Real X = i * MAP_XY_FACTOR;
 			Real Y = j * MAP_XY_FACTOR;
-			curVb->u1 = (uOffset + 0.5f + (X - loc.X) / (2 * radius)) / (SCORCH_PER_ROW + 1);
-			curVb->v1 = (vOffset + 0.5f + (Y - loc.Y) / (2 * radius)) / (SCORCH_PER_ROW + 1);
+			curVb->u = (uOffset + 0.5f + (X - loc.X) / (2 * radius)) / (SCORCH_PER_ROW + 1);
+			curVb->v = (vOffset + 0.5f + (Y - loc.Y) / (2 * radius)) / (SCORCH_PER_ROW + 1);
 			curVb->x = X;
 			curVb->y = Y;
 			curVb->z = theZ;

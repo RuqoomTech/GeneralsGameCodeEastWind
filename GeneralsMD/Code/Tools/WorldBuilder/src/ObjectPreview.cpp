@@ -93,7 +93,7 @@ static UnsignedByte * saveSurface(IDirect3DSurface8 *surface)
 
 	D3DLOCKED_RECT lrect;
 
-	DX8_ErrorCode(tempSurface->LockRect(&lrect,nullptr,D3DLOCK_READONLY));
+	WW_CHECK_RESULT(tempSurface->LockRect(&lrect,nullptr,D3DLOCK_READONLY));
 
 	unsigned int x,y,index,index2,width,height;
 

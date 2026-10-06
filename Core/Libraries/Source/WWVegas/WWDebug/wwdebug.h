@@ -42,6 +42,7 @@
 #endif
 
 #include "../../../../../Core/GameEngine/Include/Common/Debug.h"
+#include <cstdint>
 
 // The macro MESSAGE allows user to put:
 // #pragma MESSAGE("Hello world")
@@ -57,6 +58,12 @@
 
 void Convert_System_Error_To_String(int error_id, char* buffer, int buf_len);
 int Get_Last_System_Error();
+
+// These runtime result diagnostics accept only zero as success. The expression
+// is evaluated once, and the caller location accompanies any reported failure.
+void WWDebug_Log_Result_Error(std::uint32_t result, const char* file, int line);
+void WWDebug_Check_Result(std::uint32_t result, const char* file, int line);
+#define WW_CHECK_RESULT(expression) WWDebug_Check_Result((expression), __FILE__, __LINE__)
 
 /*
 ** If 'WWDEBUG' is turned off, all WWDEBUG_xxx macros will

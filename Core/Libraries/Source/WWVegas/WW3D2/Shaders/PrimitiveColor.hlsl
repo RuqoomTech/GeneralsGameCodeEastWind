@@ -159,7 +159,7 @@ TerrainPSInput VSTerrain(TerrainVSInput input)
     output.shroudTexcoord = input.shroudTexcoord;
     output.cloudTexcoord = input.cloudTexcoord;
     output.noiseTexcoord = input.noiseTexcoord;
-    if (ProjectWorldCoordinates != 0)
+    if ((ProjectWorldCoordinates & 1) != 0)
     {
         float3 worldPosition = mul(TerrainWorld, float4(input.position, 1.0f));
         output.position = mul(ViewProjection, float4(worldPosition, 1.0f));
@@ -167,6 +167,8 @@ TerrainPSInput VSTerrain(TerrainVSInput input)
         output.cloudTexcoord = worldPosition.xy * CloudNoiseProjection.x + CloudNoiseProjection.yz;
         output.noiseTexcoord = worldPosition.xy * CloudNoiseProjection.x;
     }
+    if ((ProjectWorldCoordinates & 2) != 0)
+        output.tileTexcoord = output.shroudTexcoord;
     return output;
 }
 
@@ -182,12 +184,12 @@ float4 PSTerrainTexture(TerrainPSInput input) : SV_TARGET
     float4 color = PrimitiveTexture.Sample(MaterialSampler, input.tileTexcoord);
     if ((TerrainLayers & 1) != 0)
         color *= SecondaryTexture.Sample(SecondarySampler, input.shroudTexcoord);
-    if ((TerrainLayers & 8) == 0) color *= input.color;
+    if (TextureCombine == 1 && (TerrainLayers & 8) == 0) color *= input.color;
     if ((TerrainLayers & 2) != 0)
         color *= TerrainCloudTexture.Sample(TerrainCloudSampler, input.cloudTexcoord);
     if ((TerrainLayers & 4) != 0)
         color *= TerrainNoiseTexture.Sample(TerrainNoiseSampler, input.noiseTexcoord);
     // Road assembly shaders apply their vertex lighting after cloud and noise.
-    if ((TerrainLayers & 8) != 0) color *= input.color;
+    if (TextureCombine == 1 && (TerrainLayers & 8) != 0) color *= input.color;
     return TestMaterialAlpha(color);
 }

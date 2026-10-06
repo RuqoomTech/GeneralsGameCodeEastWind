@@ -41,10 +41,10 @@ IDirect3DTexture8* MissingTexture::_Get_Missing_Texture()
 IDirect3DSurface8* MissingTexture::_Create_Missing_Surface()
 {
 	IDirect3DSurface8 *texture_surface = nullptr;
-	DX8_ErrorCode(_MissingTexture->GetSurfaceLevel(0, &texture_surface));
+	WW_CHECK_RESULT(_MissingTexture->GetSurfaceLevel(0, &texture_surface));
 	D3DSURFACE_DESC texture_surface_desc;
 	::ZeroMemory(&texture_surface_desc, sizeof(D3DSURFACE_DESC));
-	DX8_ErrorCode(texture_surface->GetDesc(&texture_surface_desc));
+	WW_CHECK_RESULT(texture_surface->GetDesc(&texture_surface_desc));
 
 	IDirect3DSurface8 *surface = nullptr;
 	DX8CALL(CreateImageSurface(
@@ -84,7 +84,7 @@ void MissingTexture::_Init()
 	rect.right=missing_image_width;
 	rect.top=0;
 	rect.bottom=missing_image_height;
-	DX8_ErrorCode(
+	WW_CHECK_RESULT(
 		tex->LockRect(
 			0,
 			&locked_rect,
@@ -97,19 +97,19 @@ void MissingTexture::_Init()
 	for (unsigned y = 0; y < height; ++y)
 		memcpy(static_cast<unsigned char *>(locked_rect.pBits)+y*locked_rect.Pitch, pixels.data()+y*width*4, width*4);
 
-	DX8_ErrorCode(tex->UnlockRect(0));
+	WW_CHECK_RESULT(tex->UnlockRect(0));
 
 	for (unsigned i=1;i<tex->GetLevelCount();++i) {
 		IDirect3DSurface8 *src,*dst;
-		DX8_ErrorCode(tex->GetSurfaceLevel(i-1,&src));
-		DX8_ErrorCode(tex->GetSurfaceLevel(i,&dst));
+		WW_CHECK_RESULT(tex->GetSurfaceLevel(i-1,&src));
+		WW_CHECK_RESULT(tex->GetSurfaceLevel(i,&dst));
 
 		D3DSURFACE_DESC src_desc;
 		D3DLOCKED_RECT src_lock;
 		D3DLOCKED_RECT dst_lock;
-		DX8_ErrorCode(src->GetDesc(&src_desc));
-		DX8_ErrorCode(src->LockRect(&src_lock,nullptr,D3DLOCK_READONLY));
-		DX8_ErrorCode(dst->LockRect(&dst_lock,nullptr,0));
+		WW_CHECK_RESULT(src->GetDesc(&src_desc));
+		WW_CHECK_RESULT(src->LockRect(&src_lock,nullptr,D3DLOCK_READONLY));
+		WW_CHECK_RESULT(dst->LockRect(&dst_lock,nullptr,0));
 
 		BitmapHandlerClass::Create_Mipmap_B8G8R8A8(
 			static_cast<unsigned char *>(dst_lock.pBits),
@@ -119,8 +119,8 @@ void MissingTexture::_Init()
 			src_desc.Width,
 			src_desc.Height);
 
-		DX8_ErrorCode(dst->UnlockRect());
-		DX8_ErrorCode(src->UnlockRect());
+		WW_CHECK_RESULT(dst->UnlockRect());
+		WW_CHECK_RESULT(src->UnlockRect());
 		src->Release();
 		dst->Release();
 	}

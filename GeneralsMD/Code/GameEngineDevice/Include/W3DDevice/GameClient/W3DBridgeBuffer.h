@@ -50,10 +50,6 @@
 #include "WWLib/always.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
-#include "WW3D2/shader.h"
-#include "WW3D2/vertmaterial.h"
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
 #include "Common/Dict.h"
@@ -63,6 +59,7 @@
 //           Forward References
 //-----------------------------------------------------------------------------
 class MeshClass;
+struct RenderBackendTerrainVertex;
 class W3DTerrainLogic;
 class W3DAssetManager;
 class SimpleSceneClass;
@@ -81,6 +78,7 @@ class BridgeInfo;
 /// The individual data for a bridge.
 class W3DBridge
 {
+friend class W3DBridgeBuffer;
 protected:
 	Vector3 m_start;						///< Drawing location
 	Vector3 m_end;							///< Drawing location
@@ -113,9 +111,9 @@ protected:
 	Bool			m_enabled;
 
 protected:
-	Int getModelVerticesFixed(VertexFormatXYZNDUV1 *destination_vb, Int curVertex, const Matrix3D &mtx, MeshClass *pMesh, RefRenderObjListIterator *pLightsIterator);
+	Int getModelVerticesFixed(RenderBackendTerrainVertex *destination_vb, Int curVertex, const Matrix3D &mtx, MeshClass *pMesh, RefRenderObjListIterator *pLightsIterator);
 	Int getModelIndices(UnsignedShort *destination_ib, Int curIndex, Int vertexOffset, MeshClass *pMesh);
-	Int getModelVertices(VertexFormatXYZNDUV1 *destination_vb, Int curVertex,  Real xOffset,
+	Int getModelVertices(RenderBackendTerrainVertex *destination_vb, Int curVertex,  Real xOffset,
 																Vector3 &vec, Vector3 &vecNormal, Vector3 &vecZ, Vector3 &offset,
 																const Matrix3D &mtx,
 																MeshClass *pMesh, RefRenderObjListIterator *pLightsIterator);
@@ -131,13 +129,12 @@ public:
 	Bool load(BodyDamageType curDamageState);
 	BodyDamageType getDamageState() {return m_curDamageState;};
 	void setDamageState(BodyDamageType state) { m_curDamageState = state;};
-	void getIndicesNVertices(UnsignedShort *destination_ib, VertexFormatXYZNDUV1 *destination_vb, Int *curIndexP, Int *curVertexP, RefRenderObjListIterator *pLightsIterator);
+	void getIndicesNVertices(UnsignedShort *destination_ib, RenderBackendTerrainVertex *destination_vb, Int *curIndexP, Int *curVertexP, RefRenderObjListIterator *pLightsIterator);
 	Bool cullBridge(CameraClass * camera);						 ///< Culls the bridges.  Returns true if visibility changed.
 	void clearBridge();		///< Frees all objects associated with a bridge.
 	Bool isVisible() {return m_visible;};
 	Bool isEnabled() {return m_enabled;};
 	void setEnabled(Bool enable) {m_enabled = enable;};
-	void renderBridge(Bool wireframe);
 	void getBridgeInfo(BridgeInfo *pInfo);
 };
 
@@ -155,7 +152,7 @@ public:
 	/// Empties the bridge buffer.
 	void clearAllBridges();
 	/// Draws the bridges.  Uses camera for culling.
-	void drawBridges(CameraClass * camera, Bool wireframe, TextureClass *cloudTexture);
+	void drawBridges(CameraClass *camera, Bool disableTextures, TextureClass *cloudTexture, const Matrix3D &worldTransform);
 	/// Called when the view changes, and sort key needs to be recalculated.
 	/// Normally sortKey gets calculated when a bridge becomes visible.
 	void doFullUpdate() {m_updateVis = true;};
@@ -166,12 +163,10 @@ public:
 					MAX_BRIDGE_INDEX=2*MAX_BRIDGE_VERTEX,	//make sure it stays under 65535
 					MAX_BRIDGES=200};
 protected:
-	DX8VertexBufferClass	*m_vertexBridge;	///<Bridge vertex buffer.
-	DX8IndexBufferClass			*m_indexBridge;	///<indices defining a triangles for the bridge drawing.
-	VertexMaterialClass *m_vertexMaterial;
-	TextureClass *m_bridgeTexture;	///<Bridges texture
-	Int			m_curNumBridgeVertices; ///<Number of vertices used in m_vertexBridge.
-	Int			m_curNumBridgeIndices;	///<Number of indices used in b_indexBridge;
+	struct GeometryState;
+	GeometryState *m_geometry;
+	Int			m_curNumBridgeVertices; ///< Number of retained bridge vertices.
+	Int			m_curNumBridgeIndices;	///< Number of retained bridge indices.
 	W3DBridge	m_bridges[MAX_BRIDGES];			///< The bridge buffer.  All bridges are stored here.
 	Int			m_numBridges;						///< Number of bridges in m_bridges.
 	Bool		m_initialized;		///< True if the subsystem initialized.
@@ -179,7 +174,7 @@ protected:
 	Bool		m_anythingChanged;	///< Set to true if visibility changed.
 	/// Add a bridge at location.  Name is the gdf item name.
 	void addBridge(Vector3 fromLoc, Vector3 toLoc, AsciiString name, W3DTerrainLogic *pTerrainLogic, Dict *props);
-	void loadBridgesInVertexAndIndexBuffers(RefRenderObjListIterator *pLightsIterator); ///< Fills the index and vertex buffers for drawing.
+	void rebuildBridgeGeometry(RefRenderObjListIterator *pLightsIterator); ///< Fills the index and vertex buffers for drawing.
 	void allocateBridgeBuffers();							 ///< Allocates the buffers.
 	void cull(CameraClass * camera);						 ///< Culls the bridges.
 	void freeBridgeBuffers();									 ///< Frees the index and vertex buffers.

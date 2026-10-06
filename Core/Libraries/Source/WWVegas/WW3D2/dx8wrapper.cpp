@@ -192,36 +192,6 @@ DX8_Stats	 DX8Wrapper::stats;
 **
 ***********************************************************************************/
 
-void Log_DX8_ErrorCode(unsigned res)
-{
-	char tmp[256]="";
-
-	HRESULT new_res=D3DXGetErrorStringA(
-		res,
-		tmp,
-		sizeof(tmp));
-
-	if (new_res==D3D_OK) {
-		WWDEBUG_SAY((tmp));
-	}
-
-	WWASSERT(0);
-}
-
-void Non_Fatal_Log_DX8_ErrorCode(unsigned res,const char * file,int line)
-{
-	char tmp[256]="";
-
-	HRESULT new_res=D3DXGetErrorStringA(
-		res,
-		tmp,
-		sizeof(tmp));
-
-	if (new_res==D3D_OK) {
-		WWDEBUG_SAY(("DX8 Error: %s, File: %s, Line: %d",tmp,file,line));
-	}
-}
-
 // TheSuperHackers @info helmutbuhler 14/04/2025
 // Helper function that moves x and y such that the inner rect fits into the outer rect.
 // If the inner rect already is in the outer rect, then this does nothing.
@@ -1697,7 +1667,7 @@ void DX8Wrapper::End_Scene(bool flip_frames)
 			}
 		}
 		else {
-			DX8_ErrorCode(hr);
+			WW_CHECK_RESULT(hr);
 		}
 	}
 
@@ -2370,7 +2340,7 @@ IDirect3DTexture8 * DX8Wrapper::_Create_DX8_Texture
 			&texture);
 
 		if (ret==D3DERR_NOTAVAILABLE) {
-			Non_Fatal_Log_DX8_ErrorCode(ret,__FILE__,__LINE__);
+			WWDebug_Log_Result_Error(ret,__FILE__,__LINE__);
 			return nullptr;
 		}
 
@@ -2400,12 +2370,12 @@ IDirect3DTexture8 * DX8Wrapper::_Create_DX8_Texture
 				WWDEBUG_SAY(("...Render target creation failed."));
 			}
 			if (ret==D3DERR_OUTOFVIDEOMEMORY) {
-				Non_Fatal_Log_DX8_ErrorCode(ret,__FILE__,__LINE__);
+				WWDebug_Log_Result_Error(ret,__FILE__,__LINE__);
 				return nullptr;
 			}
 		}
 
-		DX8_ErrorCode(ret);
+		WW_CHECK_RESULT(ret);
 		// Just return the texture, no reduction
 		// allowed for render targets.
 		return texture;
@@ -2452,7 +2422,7 @@ IDirect3DTexture8 * DX8Wrapper::_Create_DX8_Texture
 		}
 
 	}
-	DX8_ErrorCode(ret);
+	WW_CHECK_RESULT(ret);
 
 	return texture;
 }
@@ -2524,13 +2494,13 @@ IDirect3DTexture8 * DX8Wrapper::_Create_DX8_Texture
 	// Copy the surface to the texture
 	IDirect3DSurface8 *tex_surface = nullptr;
 	texture->GetSurfaceLevel(0, &tex_surface);
-	DX8_ErrorCode(D3DXLoadSurfaceFromSurface(tex_surface, nullptr, nullptr, surface, nullptr, nullptr, D3DX_FILTER_BOX, 0));
+	WW_CHECK_RESULT(D3DXLoadSurfaceFromSurface(tex_surface, nullptr, nullptr, surface, nullptr, nullptr, D3DX_FILTER_BOX, 0));
 	tex_surface->Release();
 
 	// Create mipmaps if needed
 	if (mip_level_count!=MIP_LEVELS_1)
 	{
-		DX8_ErrorCode(D3DXFilterTexture(texture, nullptr, 0, D3DX_FILTER_BOX));
+		WW_CHECK_RESULT(D3DXFilterTexture(texture, nullptr, 0, D3DX_FILTER_BOX));
 	}
 
 	return texture;
@@ -2568,7 +2538,7 @@ IDirect3DTexture8 * DX8Wrapper::_Create_DX8_ZTexture
 
 	if (ret==D3DERR_NOTAVAILABLE)
 	{
-		Non_Fatal_Log_DX8_ErrorCode(ret,__FILE__,__LINE__);
+		WWDebug_Log_Result_Error(ret,__FILE__,__LINE__);
 		return nullptr;
 	}
 
@@ -2603,12 +2573,12 @@ IDirect3DTexture8 * DX8Wrapper::_Create_DX8_ZTexture
 		}
 		if (ret==D3DERR_OUTOFVIDEOMEMORY)
 		{
-			Non_Fatal_Log_DX8_ErrorCode(ret,__FILE__,__LINE__);
+			WWDebug_Log_Result_Error(ret,__FILE__,__LINE__);
 			return nullptr;
 		}
 	}
 
-	DX8_ErrorCode(ret);
+	WW_CHECK_RESULT(ret);
 
 	texture->AddRef(); // don't release this texture
 
@@ -2659,7 +2629,7 @@ IDirect3DCubeTexture8* DX8Wrapper::_Create_DX8_Cube_Texture
 
 		if (ret==D3DERR_NOTAVAILABLE)
 		{
-			Non_Fatal_Log_DX8_ErrorCode(ret,__FILE__,__LINE__);
+			WWDebug_Log_Result_Error(ret,__FILE__,__LINE__);
 			return nullptr;
 		}
 
@@ -2694,12 +2664,12 @@ IDirect3DCubeTexture8* DX8Wrapper::_Create_DX8_Cube_Texture
 			}
 			if (ret==D3DERR_OUTOFVIDEOMEMORY)
 			{
-				Non_Fatal_Log_DX8_ErrorCode(ret,__FILE__,__LINE__);
+				WWDebug_Log_Result_Error(ret,__FILE__,__LINE__);
 				return nullptr;
 			}
 		}
 
-		DX8_ErrorCode(ret);
+		WW_CHECK_RESULT(ret);
 		// Just return the texture, no reduction
 		// allowed for render targets.
 		return texture;
@@ -2751,7 +2721,7 @@ IDirect3DCubeTexture8* DX8Wrapper::_Create_DX8_Cube_Texture
 		}
 
 	}
-	DX8_ErrorCode(ret);
+	WW_CHECK_RESULT(ret);
 
 	return texture;
 }
@@ -2830,7 +2800,7 @@ IDirect3DVolumeTexture8* DX8Wrapper::_Create_DX8_Volume_Texture
 		}
 
 	}
-	DX8_ErrorCode(ret);
+	WW_CHECK_RESULT(ret);
 
 	return texture;
 }

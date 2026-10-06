@@ -109,9 +109,6 @@ public:
 class ScorchTextureClass : public TextureClass
 {
 	W3DMPO_CODE(ScorchTextureClass)
-protected:
-		virtual void Apply(unsigned int stage) override;
-
 public:
 		// Create texture.
 		ScorchTextureClass( MipCountType mipLevelCount = MIP_LEVELS_3 );

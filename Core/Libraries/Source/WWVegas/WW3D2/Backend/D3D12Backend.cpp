@@ -1633,7 +1633,8 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
         std::memcpy(constants.world, terrain->world_transform, sizeof(constants.world));
         std::memcpy(constants.shroud, terrain->shroud_projection, sizeof(constants.shroud));
         std::memcpy(constants.cloud_noise, terrain->cloud_noise_projection, sizeof(constants.cloud_noise));
-        constants.project = terrain->project_world_coordinates ? 1u : 0u;
+        constants.project = (terrain->project_world_coordinates ? 1u : 0u) |
+            (terrain->project_base_to_shroud ? 2u : 0u);
         m_command_list->SetGraphicsRoot32BitConstants(10, 24, &constants, 0);
     }
 }
@@ -2345,6 +2346,12 @@ bool D3D12Backend::validTerrainDraw(RenderBackendTextureHandle base_texture,
             ((texture.slot == 0 && texture.generation == 0) || valid_texture(texture));
     };
     const bool textured = base_texture.Is_Valid();
+    if ((textured && material.texture_combine != RenderBackendTextureCombine::Replace &&
+         material.texture_combine != RenderBackendTextureCombine::Modulate) ||
+        (terrain.project_base_to_shroud && (!terrain.project_world_coordinates || !textured ||
+            material.texture_combine != RenderBackendTextureCombine::Replace ||
+            terrain.shroud_texture.Is_Valid() || terrain.cloud_texture.Is_Valid() || terrain.noise_texture.Is_Valid())))
+        return false;
     if (!m_scene_open || !validMaterialState(material) || material.secondary_rgb_modulate ||
         ((base_texture.slot != 0 || base_texture.generation != 0) && !valid_texture(base_texture)) ||
         !valid_layer(terrain.shroud_texture, terrain.shroud_sampler) ||
