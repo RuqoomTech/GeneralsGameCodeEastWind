@@ -36,6 +36,7 @@ struct RenderBackendFrameStatistics
     unsigned int draw_calls = 0;
     unsigned int triangles = 0;
     unsigned int vertices = 0;
+    unsigned int static_geometry_uploads = 0;
 };
 
 struct RenderBackendColorVertex
@@ -217,6 +218,10 @@ struct RenderBackendTerrainState
     RenderBackendSamplerState shroud_sampler;
     RenderBackendSamplerState cloud_sampler;
     RenderBackendSamplerState noise_sampler;
+    bool project_world_coordinates = false;
+    float world_transform[12]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+    float shroud_projection[4]{1, 1, 0, 0};
+    float cloud_noise_projection[4]{1, 0, 0, 0};
 };
 
 // Non-owning CPU views valid for the duration of texture creation.
@@ -416,6 +421,16 @@ public:
         const unsigned short *indices, unsigned int index_count,
         RenderBackendTextureHandle base_texture, const RenderBackendMaterialState &material,
         const RenderBackendTerrainState &terrain) = 0;
+    virtual RenderBackendGeometryHandle Create_Static_Indexed_Terrain_Geometry(
+        const RenderBackendTerrainVertex *vertices, unsigned int vertex_count,
+        const unsigned short *indices, unsigned int index_count) = 0;
+    virtual bool Is_Geometry_Valid(RenderBackendGeometryHandle geometry) const = 0;
+    virtual bool Draw_Static_Indexed_Terrain_Geometry(
+        RenderBackendGeometryHandle geometry, RenderBackendTextureHandle base_texture,
+        const RenderBackendMaterialState &material, const RenderBackendTerrainState &terrain) = 0;
+    virtual bool Draw_Static_Indexed_Material_Geometry(
+        RenderBackendGeometryHandle geometry, RenderBackendTextureHandle texture,
+        const RenderBackendMaterialState &material) = 0;
     virtual void Release_Texture(RenderBackendTextureHandle texture) = 0;
 
     virtual void Set_Ambient(const Vector3 & color) = 0;

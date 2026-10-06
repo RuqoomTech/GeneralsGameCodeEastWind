@@ -57,8 +57,6 @@
 #include "WW3D2/ww3d.h"
 #include "WW3D2/IRenderBackend.h"
 #include "WWMath/colmath.h"
-#include "W3DDevice/GameClient/W3DShaderManager.h"
-#include "W3DDevice/GameClient/W3DShroud.h"
 #include <vector>
 #include "WW3D2/camera.h"
 
@@ -68,10 +66,19 @@
 //-----------------------------------------------------------------------------
 struct W3DTerrainBackground::TerrainGeometryState
 {
-    struct Vertex { float x,y,z; UnsignedInt diffuse; float u1,v1; };
-    std::vector<Vertex> vertices;
+    std::vector<RenderBackendTerrainVertex> vertices;
     std::vector<UnsignedShort> indices;
-    std::vector<RenderBackendTerrainVertex> drawVertices;
+    RenderBackendGeometryHandle geometry;
+    IRenderBackend *backend = nullptr; // Compared only; an old backend may be destroyed.
+
+    void releaseGeometry()
+    {
+        IRenderBackend *current = WW3D::Get_Render_Backend();
+        if (current && current == backend && geometry.Is_Valid())
+            current->Release_Static_Geometry(geometry);
+        geometry = {};
+        backend = nullptr;
+    }
 };
 
 const Int PIXELS_PER_GRID = 8; // default tex resolution allocated for each tile. jba. [3/24/2003]
@@ -383,6 +390,7 @@ void W3DTerrainBackground::doTesselatedUpdate(const IRegion2D &partialRange, Wor
 	if (partialRange.hi.y < minY) return;
 
 	setFlip(htMap);
+	m_geometry->releaseGeometry(); // Tessellation or static lighting changed.
 
 	Int count = (m_width+1)*(m_width+1);
 
@@ -409,23 +417,21 @@ void W3DTerrainBackground::doTesselatedUpdate(const IRegion2D &partialRange, Wor
     }
     m_geometry->vertices.resize(requiredVertex);
     m_curNumTerrainVertices = 0;
-    TerrainGeometryState::Vertex *curVb = m_geometry->vertices.data();
+    RenderBackendTerrainVertex *curVb = m_geometry->vertices.data();
 	// Add to the vertex buffer.
 	for (j=minY; j<=maxY; j++) {
 		for (i=minX; i<=maxX; i++) {
 			if (m_map->getFlipState(i, j)) {
-				curVb->diffuse = (0<<24)|TheTerrainRenderObject->getStaticDiffuse(i,j);
+				const Vector4 color = Unpack_ARGB_Color(TheTerrainRenderObject->getStaticDiffuse(i,j));
 				Vector3 pos;
 				Int k = i<limitX?i:limitX;
 				Int l = j<limitY?j:limitY;
 				pos.Z = ((float)m_map->getHeight(k,l)*MAP_HEIGHT_SCALE);
 				pos.X = (i)*MAP_XY_FACTOR - m_map->getBorderSizeInline()*MAP_XY_FACTOR;
 				pos.Y = (j)*MAP_XY_FACTOR - m_map->getBorderSizeInline()*MAP_XY_FACTOR;
-				curVb->u1 = (float)(i-minX)/(float)(m_width);
-				curVb->v1 = 1.0f - (float)(j-minY)/(float)(m_width);
-				curVb->x = pos.X;
-				curVb->y = pos.Y;
-				curVb->z = pos.Z;
+				*curVb = {pos.X,pos.Y,pos.Z,color.X,color.Y,color.Z,color.W,
+					(float)(i-minX)/(float)(m_width),1.0f-(float)(j-minY)/(float)(m_width),
+					0,0,0,0,0,0};
 				curVb++;
 				Int ndxNdx = i-minX + (m_width+1)*(j-minY);
 				DEBUG_ASSERTCRASH(ndxNdx<count, ("Bad ndxNdx"));
@@ -514,9 +520,9 @@ m_anythingChanged(FALSE), m_initialized(FALSE)
 //=============================================================================
 void W3DTerrainBackground::freeTerrainBuffers()
 {
+	m_geometry->releaseGeometry();
 	m_geometry->vertices.clear();
 	m_geometry->indices.clear();
-	m_geometry->drawVertices.clear();
 	m_curNumTerrainVertices=0;
 	m_curNumTerrainIndices=0;
 	m_initialized = false;
@@ -636,9 +642,8 @@ void W3DTerrainBackground::updateTexture()
 // W3DTerrainBackground::renderTerrain
 //=============================================================================
 //=============================================================================
-void W3DTerrainBackground::drawVisiblePolys(RenderInfoClass &rinfo, Bool disableTextures,
-    const Matrix3D &worldTransform, const RenderBackendMaterialState &requestedMaterial,
-    const RenderBackendTerrainState &terrain, W3DShroud *shroud)
+void W3DTerrainBackground::drawVisiblePolys(Bool disableTextures,
+    const RenderBackendMaterialState &requestedMaterial, const RenderBackendTerrainState &terrain)
 {
     if (m_curNumTerrainIndices == 0 || m_cullStatus == CULL_STATUS_INVISIBLE) return;
     IRenderBackend *backend = WW3D::Get_Render_Backend();
@@ -653,7 +658,7 @@ void W3DTerrainBackground::drawVisiblePolys(RenderInfoClass &rinfo, Bool disable
             DEBUG_ASSERTCRASH(false, ("Terrain tile texture upload failed"));
             return;
         }
-        texture = atlas->Peek_Renderer_Texture();
+        texture = atlas->Get_Renderer_Texture();
         const bool linear = TheGlobalData && (TheGlobalData->m_bilinearTerrainTex || TheGlobalData->m_trilinearTerrainTex);
         material.sampler.min_filter = material.sampler.mag_filter = linear ?
             RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
@@ -662,26 +667,19 @@ void W3DTerrainBackground::drawVisiblePolys(RenderInfoClass &rinfo, Bool disable
         material.sampler.max_anisotropy = 1;
         material.sampler.address_u = material.sampler.address_v = RenderBackendTextureAddress::Clamp;
     }
-    m_geometry->drawVertices.resize(m_curNumTerrainVertices);
-    for (Int i=0; i<m_curNumTerrainVertices; ++i) {
-        const auto &source = m_geometry->vertices[i];
-        const Vector3 world = worldTransform * Vector3(source.x,source.y,source.z);
-        const Vector4 color = Unpack_Color(source.diffuse);
-        auto &vertex = m_geometry->drawVertices[i];
-        vertex = {world.X,world.Y,world.Z,color.X,color.Y,color.Z,color.W,source.u1,source.v1,0,0,0,0,0,0};
-        if (terrain.shroud_texture.Is_Valid() && shroud) {
-            vertex.u2 = (world.X - shroud->getDrawOriginX() + shroud->getCellWidth()) /
-                (shroud->getCellWidth() * shroud->getTextureWidth());
-            vertex.v2 = (world.Y - shroud->getDrawOriginY() + shroud->getCellHeight()) /
-                (shroud->getCellHeight() * shroud->getTextureHeight());
+    // Geometry changes only with tessellation/static lighting. World and layer
+    // projections are per-frame GPU constants, independent of this upload.
+    if (m_geometry->backend != backend || !backend->Is_Geometry_Valid(m_geometry->geometry)) {
+        m_geometry->releaseGeometry();
+        m_geometry->geometry = backend->Create_Static_Indexed_Terrain_Geometry(
+            m_geometry->vertices.data(),m_curNumTerrainVertices,
+            m_geometry->indices.data(),m_curNumTerrainIndices);
+        if (!m_geometry->geometry.Is_Valid()) {
+            DEBUG_ASSERTCRASH(false, ("Terrain geometry upload failed"));
+            return;
         }
-        Vector2 cloud, noise;
-        W3DShaderManager::getTerrainNoiseCoordinates(world, cloud, noise);
-        vertex.u3 = cloud.X; vertex.v3 = cloud.Y;
-        vertex.u4 = noise.X; vertex.v4 = noise.Y;
+        m_geometry->backend = backend;
     }
-    // The caller supplies the real camera, CPU tessellation and explicit material.
-    if (!backend->Draw_Indexed_Terrain_Triangles(m_geometry->drawVertices.data(),
-        m_curNumTerrainVertices,m_geometry->indices.data(),m_curNumTerrainIndices,texture,material,terrain))
+    if (!backend->Draw_Static_Indexed_Terrain_Geometry(m_geometry->geometry,texture,material,terrain))
         DEBUG_ASSERTCRASH(false, ("Terrain tile draw failed"));
 }

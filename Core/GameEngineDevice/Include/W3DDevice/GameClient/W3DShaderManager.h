@@ -42,10 +42,6 @@ enum ChipsetType CPP_11(: Int);
 enum CpuType CPP_11(: Int);
 enum GraphicsVenderID CPP_11(: Int);
 
-class Vector2;
-class Vector3;
-class Vector2;
-class Vector3;
 class TextureClass;	///forward reference
 /** System for managing complex rendering settings which are either not handled by
 	WW3D2 or need custom paths depending on the video card.  This system will determine
@@ -82,8 +78,7 @@ public:
 	W3DShaderManager();	///<constructor
 	static void init();	///<determine optimal shaders for current device.
 	static void shutdown();	///<release resources used by shaders
-	static void getTerrainNoiseCoordinates(const Vector3 &world, Vector2 &cloud, Vector2 &noise);
-	static void getTerrainNoiseCoordinates(const Vector3 &world, Vector2 &cloud, Vector2 &noise);
+	static void getTerrainNoiseProjection(float &scale, float &offsetX, float &offsetY);
 	static void updateCloud();	///<update the cloud position once every render frame.
 
 	static ChipsetType getChipset();	///<return current device chipset.

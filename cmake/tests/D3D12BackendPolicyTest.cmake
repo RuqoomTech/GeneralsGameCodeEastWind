@@ -429,6 +429,26 @@ rts_policy_require_contains(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp"
     "Draw_Indexed_Material_Triangles" "real tree batches must submit through the active render backend")
 
+foreach(_terrain_geometry_owner IN ITEMS
+    "Core/GameEngineDevice/Include/W3DDevice/GameClient/W3DTerrainBackground.h"
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DTerrainBackground.cpp")
+    rts_policy_require_absent("${_terrain_geometry_owner}" "DX8"
+        "migrated terrain tessellation must not restore native buffers or draws")
+    rts_policy_require_absent("${_terrain_geometry_owner}" "dx8"
+        "migrated terrain tessellation must keep native buffer headers retired")
+    rts_policy_require_absent("${_terrain_geometry_owner}" "IDirect3D"
+        "terrain CPU geometry must stay renderer neutral")
+endforeach()
+rts_policy_require_contains(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DTerrainBackground.cpp"
+    "Draw_Indexed_Terrain_Triangles" "the actual flat terrain tile must draw through the backend")
+rts_policy_require_absent(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp"
+    "FlatTerrainShader" "flat terrain shader implementations have moved to the canonical HLSL")
+rts_policy_require_contains(
+    "Core/Libraries/Source/WWVegas/WW3D2/Shaders/PrimitiveColor.hlsl"
+    "PSTerrainTexture" "flat terrain must retain its single-pass tile/shroud/diffuse/cloud/noise shader")
+
 rts_policy_require_contains(
     "Core/Libraries/Source/WWVegas/WW3D2/bitmaphandler.cpp"
     "void BitmapHandlerClass::Create_Mipmap("

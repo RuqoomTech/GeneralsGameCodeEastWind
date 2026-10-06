@@ -62,7 +62,6 @@
 class MeshClass;
 class WorldHeightMap;
 class TerrainTextureClass;
-class W3DShroud;
 struct RenderBackendMaterialState;
 struct RenderBackendTerrainState;
 
@@ -82,9 +81,8 @@ public:
 	W3DTerrainBackground();
 	~W3DTerrainBackground();
 	/// Draws the terrain.
-	void drawVisiblePolys(RenderInfoClass &rinfo, Bool disableTextures,
-		const Matrix3D &worldTransform, const RenderBackendMaterialState &material,
-		const RenderBackendTerrainState &terrain, W3DShroud *shroud);
+	void drawVisiblePolys(Bool disableTextures, const RenderBackendMaterialState &material,
+		const RenderBackendTerrainState &terrain);
 	void setFlip(WorldHeightMap *htMap); ///< Sets the flip bit for required vertices.
 	void doPartialUpdate(const IRegion2D &partialRange, WorldHeightMap *htMap, Bool doTextures );
 	void doTesselatedUpdate(const IRegion2D &partialRange, WorldHeightMap *htMap, Bool doTextures );
@@ -98,7 +96,7 @@ protected:
 	AABoxClass						m_bounds;
 
 	struct TerrainGeometryState;
-	TerrainGeometryState *m_geometry; // CPU tessellation, independent of device resources.
+	TerrainGeometryState *m_geometry; // CPU tessellation plus a cached backend geometry handle.
 	TerrainTextureClass *m_terrainTexture;	///<Terrain texture
 	TerrainTextureClass *m_terrainTexture2X;	///<Terrain texture
 	TerrainTextureClass *m_terrainTexture4X;	///<Terrain texture

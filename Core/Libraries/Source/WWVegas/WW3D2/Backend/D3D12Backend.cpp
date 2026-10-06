@@ -83,7 +83,7 @@ constexpr float IdentityTransform[16]{
     0.0f, 0.0f, 1.0f, 0.0f,
     0.0f, 0.0f, 0.0f, 1.0f};
 
-unsigned int nextTextureGeneration()
+unsigned int nextResourceGeneration()
 {
     // Resource identities remain local renderer values, never deterministic state.
     // Continue across backend recreation so a stale handle cannot alias a new device.
@@ -414,7 +414,7 @@ void D3D12Backend::createPrimitivePipeline()
     texture_range.RegisterSpace = 0;
     texture_range.OffsetInDescriptorsFromTableStart = 0;
 
-    D3D12_ROOT_PARAMETER parameters[10]{};
+    D3D12_ROOT_PARAMETER parameters[11]{};
     D3D12_ROOT_PARAMETER &texture_parameter = parameters[0];
     texture_parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     texture_parameter.DescriptorTable.NumDescriptorRanges = 1;
@@ -466,6 +466,10 @@ void D3D12Backend::createPrimitivePipeline()
     noise_sampler_range.BaseShaderRegister = 5;
     parameters[9] = parameters[3];
     parameters[9].DescriptorTable.pDescriptorRanges = &noise_sampler_range;
+    parameters[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    parameters[10].Constants.ShaderRegister = 2;
+    parameters[10].Constants.Num32BitValues = 24;
+    parameters[10].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -483,7 +487,7 @@ void D3D12Backend::createPrimitivePipeline()
     sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC root_desc{};
-    root_desc.NumParameters = 10;
+    root_desc.NumParameters = 11;
     root_desc.pParameters = parameters;
     D3D12_STATIC_SAMPLER_DESC samplers[2]{sampler, sampler};
     samplers[1].ShaderRegister = 1;
@@ -1113,7 +1117,7 @@ RenderBackendTextureHandle D3D12Backend::Create_Render_Texture(unsigned int widt
         stored.rtv_heap = rtv;
         stored.width = width;
         stored.height = height;
-        stored.generation = nextTextureGeneration();
+        stored.generation = nextResourceGeneration();
         stored.occupied = true;
         return {static_cast<unsigned int>(slot + 1), stored.generation};
     }
@@ -1536,86 +1540,8 @@ bool D3D12Backend::drawDynamicGeometry(
         vertex_upload = nullptr;
         index_upload = nullptr;
 
-        m_command_list->SetGraphicsRootSignature(m_primitive_root_signature);
-        m_command_list->SetGraphicsRoot32BitConstants(
-            1, 16, screen_space ? IdentityTransform : m_view_projection, 0);
-        m_command_list->SetPipelineState(pipeline);
-        if (material != nullptr)
-        {
-            struct Constants {
-                unsigned int combine, alpha_test; float alpha_reference; unsigned int clamp;
-                unsigned int secondary_rgb_modulate, terrain_layers; unsigned int padding[2];
-            };
-            const Constants constants{static_cast<unsigned int>(material->texture_combine),
-                static_cast<unsigned int>(material->alpha_test), material->alpha_reference,
-                material->clamp_texture ? 1u : 0u, material->secondary_rgb_modulate ? 1u : 0u,
-                terrain ? (terrain->shroud_texture.Is_Valid() ? 1u : 0u) |
-                    (terrain->cloud_texture.Is_Valid() ? 2u : 0u) |
-                    (terrain->noise_texture.Is_Valid() ? 4u : 0u) : 0u, {0,0}};
-            static_assert(sizeof(Constants) == 8 * sizeof(unsigned int), "Material root constants");
-            m_command_list->SetGraphicsRoot32BitConstants(2, 8, &constants, 0);
-            m_command_list->OMSetStencilRef(material->stencil.reference);
-        }
-        if (texture_handle.Is_Valid())
-        {
-            ID3D12DescriptorHeap *heaps[] = {m_texture_srv_heap, m_material_sampler_heap};
-            m_command_list->SetDescriptorHeaps(material ? 2 : 1, heaps);
-            D3D12_GPU_DESCRIPTOR_HANDLE srv = m_texture_srv_heap->GetGPUDescriptorHandleForHeapStart();
-            srv.ptr += static_cast<std::size_t>(texture_handle.slot - 1) * m_srv_descriptor_size;
-            m_command_list->SetGraphicsRootDescriptorTable(0, srv);
-            if (material)
-            {
-                auto sampler = material->sampler;
-                if (material->clamp_texture)
-                {
-                    sampler.address_u = sampler.address_v = RenderBackendTextureAddress::Clamp;
-                    sampler.mipmaps = false;
-                }
-                const auto slot = materialSampler(sampler);
-                auto descriptor = m_material_sampler_heap->GetGPUDescriptorHandleForHeapStart();
-                descriptor.ptr += static_cast<std::size_t>(slot) *
-                    m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
-                m_command_list->SetGraphicsRootDescriptorTable(3, descriptor);
-                auto bind_layer = [&](unsigned int root_index, RenderBackendTextureHandle layer,
-                                      const RenderBackendSamplerState &layer_sampler) {
-                    auto srv = m_texture_srv_heap->GetGPUDescriptorHandleForHeapStart();
-                    srv.ptr += static_cast<std::size_t>(layer.slot - 1) * m_srv_descriptor_size;
-                    m_command_list->SetGraphicsRootDescriptorTable(root_index, srv);
-                    const auto layer_slot = materialSampler(layer_sampler);
-                    auto descriptor = m_material_sampler_heap->GetGPUDescriptorHandleForHeapStart();
-                    descriptor.ptr += static_cast<std::size_t>(layer_slot) *
-                        m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
-                    m_command_list->SetGraphicsRootDescriptorTable(root_index + 1, descriptor);
-                };
-                // Bind every declared texture, including optional disabled layers.
-                if (terrain)
-                {
-                    bind_layer(4, terrain->shroud_texture.Is_Valid() ? terrain->shroud_texture : texture_handle,
-                        terrain->shroud_texture.Is_Valid() ? terrain->shroud_sampler : sampler);
-                    bind_layer(6, terrain->cloud_texture.Is_Valid() ? terrain->cloud_texture : texture_handle,
-                        terrain->cloud_texture.Is_Valid() ? terrain->cloud_sampler : sampler);
-                    bind_layer(8, terrain->noise_texture.Is_Valid() ? terrain->noise_texture : texture_handle,
-                        terrain->noise_texture.Is_Valid() ? terrain->noise_sampler : sampler);
-                }
-                else
-                    bind_layer(4, material->secondary_rgb_modulate ? secondary_texture : texture_handle,
-                        material->secondary_rgb_modulate ? material->secondary_sampler : sampler);
-            }
-        }
-        m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
-        m_command_list->IASetIndexBuffer(&index_view);
-        const RenderBackendViewport saved_viewport = m_viewport;
-        if (material != nullptr && material->screen_space)
-        {
-            const auto target = activeColorTarget()->GetDesc();
-            Set_Viewport({0, 0, static_cast<unsigned int>(target.Width), target.Height, 0.0f, 1.0f});
-        }
-        m_command_list->DrawIndexedInstanced(index_count, 1, 0, 0, 0);
-        if (material != nullptr && material->screen_space) Set_Viewport(saved_viewport);
-        ++m_frame_statistics.draw_calls;
-        m_frame_statistics.triangles += index_count / 3;
-        m_frame_statistics.vertices += vertex_count;
+        bindDrawState(pipeline, screen_space, texture_handle, material, secondary_texture, terrain);
+        issueGeometryDraw(vertex_view, index_view, index_count, vertex_count, material);
         return true;
     }
     catch (...)
@@ -1624,6 +1550,111 @@ bool D3D12Backend::drawDynamicGeometry(
         releaseCom(vertex_upload);
         return false;
     }
+}
+
+void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_space,
+    RenderBackendTextureHandle texture_handle, const RenderBackendMaterialState *material,
+    RenderBackendTextureHandle secondary_texture, const RenderBackendTerrainState *terrain)
+{
+    m_command_list->SetGraphicsRootSignature(m_primitive_root_signature);
+    m_command_list->SetGraphicsRoot32BitConstants(
+        1, 16, screen_space ? IdentityTransform : m_view_projection, 0);
+    m_command_list->SetPipelineState(pipeline);
+    if (material != nullptr)
+    {
+        struct Constants {
+            unsigned int combine, alpha_test; float alpha_reference; unsigned int clamp;
+            unsigned int secondary_rgb_modulate, terrain_layers; unsigned int padding[2];
+        };
+        const Constants constants{static_cast<unsigned int>(material->texture_combine),
+            static_cast<unsigned int>(material->alpha_test), material->alpha_reference,
+            material->clamp_texture ? 1u : 0u, material->secondary_rgb_modulate ? 1u : 0u,
+            terrain ? (terrain->shroud_texture.Is_Valid() ? 1u : 0u) |
+                (terrain->cloud_texture.Is_Valid() ? 2u : 0u) |
+                (terrain->noise_texture.Is_Valid() ? 4u : 0u) : 0u, {0,0}};
+        static_assert(sizeof(Constants) == 8 * sizeof(unsigned int), "Material root constants");
+        m_command_list->SetGraphicsRoot32BitConstants(2, 8, &constants, 0);
+        m_command_list->OMSetStencilRef(material->stencil.reference);
+    }
+    if (texture_handle.Is_Valid())
+    {
+        ID3D12DescriptorHeap *heaps[] = {m_texture_srv_heap, m_material_sampler_heap};
+        m_command_list->SetDescriptorHeaps(material ? 2 : 1, heaps);
+        D3D12_GPU_DESCRIPTOR_HANDLE srv = m_texture_srv_heap->GetGPUDescriptorHandleForHeapStart();
+        srv.ptr += static_cast<std::size_t>(texture_handle.slot - 1) * m_srv_descriptor_size;
+        m_command_list->SetGraphicsRootDescriptorTable(0, srv);
+        if (material)
+        {
+            auto sampler = material->sampler;
+            if (material->clamp_texture)
+            {
+                sampler.address_u = sampler.address_v = RenderBackendTextureAddress::Clamp;
+                sampler.mipmaps = false;
+            }
+            const auto slot = materialSampler(sampler);
+            auto descriptor = m_material_sampler_heap->GetGPUDescriptorHandleForHeapStart();
+            descriptor.ptr += static_cast<std::size_t>(slot) *
+                m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+            m_command_list->SetGraphicsRootDescriptorTable(3, descriptor);
+            auto bind_layer = [&](unsigned int root_index, RenderBackendTextureHandle layer,
+                                  const RenderBackendSamplerState &layer_sampler) {
+                auto srv = m_texture_srv_heap->GetGPUDescriptorHandleForHeapStart();
+                srv.ptr += static_cast<std::size_t>(layer.slot - 1) * m_srv_descriptor_size;
+                m_command_list->SetGraphicsRootDescriptorTable(root_index, srv);
+                const auto layer_slot = materialSampler(layer_sampler);
+                auto descriptor = m_material_sampler_heap->GetGPUDescriptorHandleForHeapStart();
+                descriptor.ptr += static_cast<std::size_t>(layer_slot) *
+                    m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+                m_command_list->SetGraphicsRootDescriptorTable(root_index + 1, descriptor);
+            };
+            // Bind every declared texture, including optional disabled layers.
+            if (terrain)
+            {
+                bind_layer(4, terrain->shroud_texture.Is_Valid() ? terrain->shroud_texture : texture_handle,
+                    terrain->shroud_texture.Is_Valid() ? terrain->shroud_sampler : sampler);
+                bind_layer(6, terrain->cloud_texture.Is_Valid() ? terrain->cloud_texture : texture_handle,
+                    terrain->cloud_texture.Is_Valid() ? terrain->cloud_sampler : sampler);
+                bind_layer(8, terrain->noise_texture.Is_Valid() ? terrain->noise_texture : texture_handle,
+                    terrain->noise_texture.Is_Valid() ? terrain->noise_sampler : sampler);
+            }
+            else
+                bind_layer(4, material->secondary_rgb_modulate ? secondary_texture : texture_handle,
+                    material->secondary_rgb_modulate ? material->secondary_sampler : sampler);
+        }
+    }
+    if (terrain)
+    {
+        struct ProjectionConstants {
+            float world[12], shroud[4], cloud_noise[4];
+            unsigned int project, padding[3];
+        } constants{};
+        static_assert(sizeof(ProjectionConstants) == 24 * sizeof(unsigned int), "Terrain root constants");
+        std::memcpy(constants.world, terrain->world_transform, sizeof(constants.world));
+        std::memcpy(constants.shroud, terrain->shroud_projection, sizeof(constants.shroud));
+        std::memcpy(constants.cloud_noise, terrain->cloud_noise_projection, sizeof(constants.cloud_noise));
+        constants.project = terrain->project_world_coordinates ? 1u : 0u;
+        m_command_list->SetGraphicsRoot32BitConstants(10, 24, &constants, 0);
+    }
+}
+
+void D3D12Backend::issueGeometryDraw(const D3D12_VERTEX_BUFFER_VIEW &vertex_view,
+    const D3D12_INDEX_BUFFER_VIEW &index_view, unsigned int index_count, unsigned int vertex_count,
+    const RenderBackendMaterialState *material)
+{
+    m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
+    m_command_list->IASetIndexBuffer(&index_view);
+    const RenderBackendViewport saved_viewport = m_viewport;
+    if (material != nullptr && material->screen_space)
+    {
+        const auto target = activeColorTarget()->GetDesc();
+        Set_Viewport({0, 0, static_cast<unsigned int>(target.Width), target.Height, 0.0f, 1.0f});
+    }
+    m_command_list->DrawIndexedInstanced(index_count, 1, 0, 0, 0);
+    if (material != nullptr && material->screen_space) Set_Viewport(saved_viewport);
+    ++m_frame_statistics.draw_calls;
+    m_frame_statistics.triangles += index_count / 3;
+    m_frame_statistics.vertices += vertex_count;
 }
 
 RenderBackendGeometryHandle D3D12Backend::Create_Static_Indexed_Color_Geometry(
@@ -1664,7 +1695,7 @@ RenderBackendGeometryHandle D3D12Backend::createStaticGeometry(
     unsigned int index_count,
     bool textured)
 {
-    if (m_scene_open || vertices == nullptr || indices == nullptr || vertex_stride == 0 ||
+    if (!Is_Device_Ready() || vertices == nullptr || indices == nullptr || vertex_stride == 0 ||
         vertex_count == 0 || index_count < 3 || (index_count % 3) != 0)
     {
         return RenderBackendGeometryHandle();
@@ -1682,6 +1713,9 @@ RenderBackendGeometryHandle D3D12Backend::createStaticGeometry(
     {
         return RenderBackendGeometryHandle();
     }
+
+    for (unsigned int index = 0; index < index_count; ++index)
+        if (indices[index] >= vertex_count) return {};
 
     ID3D12Resource *vertex_buffer = nullptr;
     ID3D12Resource *index_buffer = nullptr;
@@ -1773,11 +1807,8 @@ RenderBackendGeometryHandle D3D12Backend::createStaticGeometry(
         }
 
         StaticGeometryResource &geometry = m_static_geometry[slot];
-        ++geometry.generation;
-        if (geometry.generation == 0)
-        {
-            ++geometry.generation;
-        }
+        geometry.generation = nextResourceGeneration();
+        geometry.release_frame = FrameCount;
         geometry.vertex_buffer = vertex_buffer;
         geometry.index_buffer = index_buffer;
         geometry.vertex_bytes = static_cast<unsigned int>(vertex_bytes);
@@ -1788,6 +1819,7 @@ RenderBackendGeometryHandle D3D12Backend::createStaticGeometry(
         geometry.occupied = true;
         vertex_buffer = nullptr;
         index_buffer = nullptr;
+        ++m_frame_statistics.static_geometry_uploads;
         return RenderBackendGeometryHandle(static_cast<unsigned int>(slot + 1), geometry.generation);
     }
     catch (...)
@@ -1804,7 +1836,7 @@ RenderBackendGeometryHandle D3D12Backend::createStaticGeometry(
 
 bool D3D12Backend::drawStaticGeometry(RenderBackendGeometryHandle geometry_handle, bool textured)
 {
-    if (!m_scene_open || !geometry_handle.Is_Valid())
+    if (!m_scene_open || !Is_Geometry_Valid(geometry_handle))
     {
         return false;
     }
@@ -1818,7 +1850,8 @@ bool D3D12Backend::drawStaticGeometry(RenderBackendGeometryHandle geometry_handl
     const StaticGeometryResource &geometry = m_static_geometry[slot];
     if (!geometry.occupied || geometry.generation != geometry_handle.generation ||
         geometry.vertex_buffer == nullptr || geometry.index_buffer == nullptr ||
-        geometry.textured != textured)
+        geometry.textured != textured || geometry.vertex_stride !=
+            (textured ? sizeof(RenderBackendTexturedVertex) : sizeof(RenderBackendColorVertex)))
     {
         return false;
     }
@@ -1853,15 +1886,18 @@ bool D3D12Backend::Draw_Static_Indexed_Color_Geometry(RenderBackendGeometryHandl
 
 void D3D12Backend::Release_Static_Geometry(RenderBackendGeometryHandle geometry_handle)
 {
-    if (!geometry_handle.Is_Valid() || m_scene_open)
+    if (!Is_Geometry_Valid(geometry_handle))
     {
         return;
     }
 
     const std::size_t slot = static_cast<std::size_t>(geometry_handle.slot - 1);
-    if (slot >= m_static_geometry.size() || !m_static_geometry[slot].occupied ||
-        m_static_geometry[slot].generation != geometry_handle.generation)
+
+    if (m_scene_open || m_present_pending)
     {
+        // The current command list may still refer to this resource. Retire the
+        // public handle now and free its buffers only after this frame's fence.
+        m_static_geometry[slot].release_frame = m_frame_index;
         return;
     }
 
@@ -2036,7 +2072,7 @@ RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
             m_textures.push_back(TextureResource{});
         }
         TextureResource &stored = m_textures[slot];
-        stored.generation = nextTextureGeneration();
+        stored.generation = nextResourceGeneration();
         stored.texture = texture;
         stored.width = width;
         stored.height = height;
@@ -2059,7 +2095,7 @@ bool D3D12Backend::Draw_Static_Indexed_Textured_Geometry(
     RenderBackendTextureHandle texture_handle)
 {
     if ((texture_handle.slot == m_selected_texture.slot && texture_handle.generation == m_selected_texture.generation) ||
-        !m_scene_open || !geometry_handle.Is_Valid() || !texture_handle.Is_Valid() ||
+        !m_scene_open || !Is_Geometry_Valid(geometry_handle) || !texture_handle.Is_Valid() ||
         m_texture_srv_heap == nullptr || m_textured_pipeline == nullptr)
     {
         return false;
@@ -2075,6 +2111,7 @@ bool D3D12Backend::Draw_Static_Indexed_Textured_Geometry(
     const StaticGeometryResource &geometry = m_static_geometry[geometry_slot];
     const TextureResource &texture = m_textures[texture_slot];
     if (!geometry.occupied || geometry.generation != geometry_handle.generation || !geometry.textured ||
+        geometry.vertex_stride != sizeof(RenderBackendTexturedVertex) ||
         geometry.vertex_buffer == nullptr || geometry.index_buffer == nullptr ||
         !texture.occupied || texture.release_frame != FrameCount ||
         texture.generation != texture_handle.generation || texture.texture == nullptr)
@@ -2251,6 +2288,18 @@ bool D3D12Backend::Draw_Indexed_Material_Triangles(
     RenderBackendTextureHandle texture, const RenderBackendMaterialState &material,
     RenderBackendTextureHandle secondary_texture)
 {
+    if (!validMaterialDraw(texture, material, secondary_texture)) return false;
+    try
+    {
+        return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendTexturedVertex),
+            indices, index_count, materialPipeline(material, texture.Is_Valid()), material.screen_space, texture, &material, secondary_texture);
+    }
+    catch (...) { return false; }
+}
+
+bool D3D12Backend::validMaterialDraw(RenderBackendTextureHandle texture, const RenderBackendMaterialState &material,
+    RenderBackendTextureHandle secondary_texture) const
+{
     auto valid_texture = [&](RenderBackendTextureHandle handle) {
         return Is_Texture_Valid(handle) &&
             !(handle.slot == m_selected_texture.slot && handle.generation == m_selected_texture.generation);
@@ -2265,12 +2314,7 @@ bool D3D12Backend::Draw_Indexed_Material_Triangles(
         (texture.Is_Valid() && (!Is_Texture_Valid(texture) ||
             (texture.slot == m_selected_texture.slot && texture.generation == m_selected_texture.generation))))
         return false;
-    try
-    {
-        return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendTexturedVertex),
-            indices, index_count, materialPipeline(material, texture.Is_Valid()), material.screen_space, texture, &material, secondary_texture);
-    }
-    catch (...) { return false; }
+    return true;
 }
 
 bool D3D12Backend::Draw_Indexed_Terrain_Triangles(
@@ -2278,6 +2322,18 @@ bool D3D12Backend::Draw_Indexed_Terrain_Triangles(
     const unsigned short *indices, unsigned int index_count,
     RenderBackendTextureHandle base_texture, const RenderBackendMaterialState &material,
     const RenderBackendTerrainState &terrain)
+{
+    if (!validTerrainDraw(base_texture, material, terrain)) return false;
+    try
+    {
+        return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendTerrainVertex), indices, index_count,
+            materialPipeline(material, base_texture.Is_Valid(), true), material.screen_space, base_texture, &material, {}, &terrain);
+    }
+    catch (...) { return false; }
+}
+
+bool D3D12Backend::validTerrainDraw(RenderBackendTextureHandle base_texture,
+    const RenderBackendMaterialState &material, const RenderBackendTerrainState &terrain) const
 {
     auto valid_texture = [&](RenderBackendTextureHandle texture) {
         return Is_Texture_Valid(texture) &&
@@ -2296,10 +2352,62 @@ bool D3D12Backend::Draw_Indexed_Terrain_Triangles(
         (!textured && (terrain.shroud_texture.Is_Valid() || terrain.cloud_texture.Is_Valid() || terrain.noise_texture.Is_Valid())) ||
         (m_selected_texture.Is_Valid() && (material.depth_test != RenderBackendDepthTest::Disabled || material.stencil.enabled)))
         return false;
+    return true;
+}
+
+RenderBackendGeometryHandle D3D12Backend::Create_Static_Indexed_Terrain_Geometry(
+    const RenderBackendTerrainVertex *vertices, unsigned int vertex_count,
+    const unsigned short *indices, unsigned int index_count)
+{
+    return createStaticGeometry(vertices, vertex_count, sizeof(RenderBackendTerrainVertex), indices, index_count, true);
+}
+
+bool D3D12Backend::Is_Geometry_Valid(RenderBackendGeometryHandle handle) const
+{
+    if (!handle.Is_Valid() || handle.slot > m_static_geometry.size()) return false;
+    const auto &geometry = m_static_geometry[handle.slot - 1];
+    return geometry.occupied && geometry.release_frame == FrameCount && geometry.generation == handle.generation &&
+        geometry.vertex_buffer != nullptr && geometry.index_buffer != nullptr;
+}
+
+bool D3D12Backend::Draw_Static_Indexed_Terrain_Geometry(
+    RenderBackendGeometryHandle handle, RenderBackendTextureHandle base_texture,
+    const RenderBackendMaterialState &material, const RenderBackendTerrainState &terrain)
+{
+    if (!Is_Geometry_Valid(handle) || !validTerrainDraw(base_texture, material, terrain)) return false;
+    return drawStaticMaterialGeometry(handle, base_texture, material, &terrain);
+}
+
+bool D3D12Backend::Draw_Static_Indexed_Material_Geometry(
+    RenderBackendGeometryHandle handle, RenderBackendTextureHandle texture,
+    const RenderBackendMaterialState &material)
+{
+    if (!Is_Geometry_Valid(handle) || material.secondary_rgb_modulate || !validMaterialDraw(texture, material)) return false;
+    return drawStaticMaterialGeometry(handle, texture, material, nullptr);
+}
+
+bool D3D12Backend::drawStaticMaterialGeometry(
+    RenderBackendGeometryHandle handle, RenderBackendTextureHandle texture,
+    const RenderBackendMaterialState &material, const RenderBackendTerrainState *terrain)
+{
+    const auto &geometry = m_static_geometry[handle.slot - 1];
+    if (geometry.vertex_stride != (terrain ? sizeof(RenderBackendTerrainVertex) : sizeof(RenderBackendTexturedVertex)) ||
+        !geometry.textured) return false;
     try
     {
-        return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendTerrainVertex), indices, index_count,
-            materialPipeline(material, textured, true), material.screen_space, base_texture, &material, {}, &terrain);
+        D3D12_VERTEX_BUFFER_VIEW vertex_view{};
+        vertex_view.BufferLocation = geometry.vertex_buffer->GetGPUVirtualAddress();
+        vertex_view.SizeInBytes = geometry.vertex_bytes;
+        vertex_view.StrideInBytes = geometry.vertex_stride;
+        D3D12_INDEX_BUFFER_VIEW index_view{};
+        index_view.BufferLocation = geometry.index_buffer->GetGPUVirtualAddress();
+        index_view.SizeInBytes = geometry.index_bytes;
+        index_view.Format = DXGI_FORMAT_R16_UINT;
+        bindDrawState(materialPipeline(material, texture.Is_Valid(), terrain != nullptr), material.screen_space,
+            texture, &material, {}, terrain);
+        issueGeometryDraw(vertex_view, index_view, geometry.index_count,
+            geometry.vertex_bytes / geometry.vertex_stride, &material);
+        return true;
     }
     catch (...) { return false; }
 }
@@ -2460,6 +2568,8 @@ void D3D12Backend::releaseFrameUploads(std::uint32_t frame_index) noexcept
     m_frame_retired_texture_heaps[frame_index].clear();
     for (auto &texture : m_textures)
         if (texture.occupied && texture.release_frame == frame_index) releaseTexture(texture);
+    for (auto &geometry : m_static_geometry)
+        if (geometry.occupied && geometry.release_frame == frame_index) releaseStaticGeometry(geometry);
 }
 
 void D3D12Backend::releaseStaticGeometry(StaticGeometryResource &geometry) noexcept
@@ -2472,6 +2582,7 @@ void D3D12Backend::releaseStaticGeometry(StaticGeometryResource &geometry) noexc
     geometry.index_count = 0;
     geometry.textured = false;
     geometry.occupied = false;
+    geometry.release_frame = FrameCount;
 }
 
 void D3D12Backend::releaseTexture(TextureResource &texture) noexcept

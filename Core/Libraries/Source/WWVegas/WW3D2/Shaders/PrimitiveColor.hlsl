@@ -131,6 +131,15 @@ struct TerrainVSInput
     float2 noiseTexcoord : TEXCOORD3;
 };
 
+cbuffer TerrainProjection : register(b2)
+{
+    row_major float3x4 TerrainWorld;
+    float4 ShroudProjection;
+    float4 CloudNoiseProjection;
+    uint ProjectWorldCoordinates;
+    uint3 TerrainProjectionPadding;
+};
+
 struct TerrainPSInput
 {
     float4 position : SV_POSITION;
@@ -150,6 +159,14 @@ TerrainPSInput VSTerrain(TerrainVSInput input)
     output.shroudTexcoord = input.shroudTexcoord;
     output.cloudTexcoord = input.cloudTexcoord;
     output.noiseTexcoord = input.noiseTexcoord;
+    if (ProjectWorldCoordinates != 0)
+    {
+        float3 worldPosition = mul(TerrainWorld, float4(input.position, 1.0f));
+        output.position = mul(ViewProjection, float4(worldPosition, 1.0f));
+        output.shroudTexcoord = worldPosition.xy * ShroudProjection.xy + ShroudProjection.zw;
+        output.cloudTexcoord = worldPosition.xy * CloudNoiseProjection.x + CloudNoiseProjection.yz;
+        output.noiseTexcoord = worldPosition.xy * CloudNoiseProjection.x;
+    }
     return output;
 }
 

@@ -2723,14 +2723,12 @@ void W3DShaderManager::shutdown()
 }
 
 //=============================================================================
-void W3DShaderManager::getTerrainNoiseCoordinates(const Vector3 &world, Vector2 &cloud, Vector2 &noise)
+void W3DShaderManager::getTerrainNoiseProjection(float &scale, float &offsetX, float &offsetY)
 {
-    // In the old camera-space texture transform, inverse(view) restores world
-    // position before this scale and cloud offset. No event time enters state.
-    noise.X = world.X * STRETCH_FACTOR;
-    noise.Y = world.Y * STRETCH_FACTOR;
-    cloud.X = noise.X + terrainShader2Stage.m_xOffset;
-    cloud.Y = noise.Y + terrainShader2Stage.m_yOffset;
+    // The shader projects world XY; retain the existing local cloud movement.
+    scale = STRETCH_FACTOR;
+    offsetX = terrainShader2Stage.m_xOffset;
+    offsetY = terrainShader2Stage.m_yOffset;
 }
 
 void W3DShaderManager::updateCloud()

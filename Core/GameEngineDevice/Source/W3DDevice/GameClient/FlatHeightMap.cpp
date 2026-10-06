@@ -493,11 +493,17 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
     }
     material.color_write_mask = 7; // Preserve the destination alpha used by water.
     RenderBackendTerrainState terrain;
+    terrain.project_world_coordinates = true;
+    for (unsigned row=0;row<3;++row)
+        for (unsigned column=0;column<4;++column)
+            terrain.world_transform[row*4+column] = Transform[row][column];
+    W3DShaderManager::getTerrainNoiseProjection(terrain.cloud_noise_projection[0],
+        terrain.cloud_noise_projection[1],terrain.cloud_noise_projection[2]);
     auto layer = [](TextureClass *texture, RenderBackendTextureHandle &handle,
                     RenderBackendSamplerState &sampler, unsigned stage, bool clamp) {
         if (!texture || !texture->Ensure_Renderer_Texture() ||
             !texture->Get_Filter().Get_Render_Sampler(sampler,stage)) return false;
-        handle = texture->Peek_Renderer_Texture();
+        handle = texture->Get_Renderer_Texture();
         sampler.min_filter = sampler.mag_filter = RenderBackendTextureFilter::Linear;
         sampler.max_anisotropy = 1;
         sampler.address_u = sampler.address_v = clamp ?
@@ -512,6 +518,12 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
             !layer(m_shroud->getShroudTexture(),terrain.shroud_texture,terrain.shroud_sampler,0,true))) {
             DEBUG_ASSERTCRASH(false, ("Terrain shroud upload/projection failed")); return;
         }
+        if (m_shroud) {
+            terrain.shroud_projection[0] = 1.f / (m_shroud->getCellWidth() * m_shroud->getTextureWidth());
+            terrain.shroud_projection[1] = 1.f / (m_shroud->getCellHeight() * m_shroud->getTextureHeight());
+            terrain.shroud_projection[2] = (-m_shroud->getDrawOriginX() + m_shroud->getCellWidth()) * terrain.shroud_projection[0];
+            terrain.shroud_projection[3] = (-m_shroud->getDrawOriginY() + m_shroud->getCellHeight()) * terrain.shroud_projection[1];
+        }
         if (doCloud && !layer(m_stageTwoTexture,terrain.cloud_texture,terrain.cloud_sampler,2,false)) {
             DEBUG_ASSERTCRASH(false, ("Terrain cloud upload failed")); return;
         }
@@ -524,27 +536,27 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	Int yCoordMin = m_map->getXExtent();
 	Int xCoordMax = 0;
 	Int xCoordMin = m_map->getYExtent();
-		Int i, j;
-		for	(i=0; i<m_tilesWidth; i++) {
-			for (j=0; j<m_tilesHeight; j++) {
-				W3DTerrainBackground *tile = m_tiles+j*m_tilesWidth+i;
-				if (!tile->isCulled()) {
-					tile->drawVisiblePolys(rinfo,m_disableTextures,Transform,material,terrain,m_shroud);
-					if (i*CELLS_PER_TILE<xCoordMin) {
-						xCoordMin = i*CELLS_PER_TILE;
-					}
-					if (j*CELLS_PER_TILE<yCoordMin) {
-						yCoordMin = j*CELLS_PER_TILE;
-					}
-					if ((i+1)*CELLS_PER_TILE>xCoordMax) {
-						xCoordMax = (i+1)*CELLS_PER_TILE;
-					}
-					if ((j+1)*CELLS_PER_TILE>yCoordMax) {
-						yCoordMax = (j+1)*CELLS_PER_TILE;
-					}
+	Int i, j;
+	for	(i=0; i<m_tilesWidth; i++) {
+		for (j=0; j<m_tilesHeight; j++) {
+			W3DTerrainBackground *tile = m_tiles+j*m_tilesWidth+i;
+			if (!tile->isCulled()) {
+				tile->drawVisiblePolys(m_disableTextures,material,terrain);
+				if (i*CELLS_PER_TILE<xCoordMin) {
+					xCoordMin = i*CELLS_PER_TILE;
+				}
+				if (j*CELLS_PER_TILE<yCoordMin) {
+					yCoordMin = j*CELLS_PER_TILE;
+				}
+				if ((i+1)*CELLS_PER_TILE>xCoordMax) {
+					xCoordMax = (i+1)*CELLS_PER_TILE;
+				}
+				if ((j+1)*CELLS_PER_TILE>yCoordMax) {
+					yCoordMax = (j+1)*CELLS_PER_TILE;
 				}
 			}
 		}
+	}
 
 
 #if 1

@@ -27,6 +27,8 @@ struct ID3D12GraphicsCommandList;
 struct ID3D12PipelineState;
 struct ID3D12Resource;
 struct ID3D12RootSignature;
+struct D3D12_VERTEX_BUFFER_VIEW;
+struct D3D12_INDEX_BUFFER_VIEW;
 
 // Direct3D 12 implementation of the existing WW3D render-backend seam.
 // This is the only renderer backend supported by the x64 Evolution runtime.
@@ -113,6 +115,16 @@ public:
         const unsigned short *indices, unsigned int index_count,
         RenderBackendTextureHandle base_texture, const RenderBackendMaterialState &material,
         const RenderBackendTerrainState &terrain) override;
+    RenderBackendGeometryHandle Create_Static_Indexed_Terrain_Geometry(
+        const RenderBackendTerrainVertex *vertices, unsigned int vertex_count,
+        const unsigned short *indices, unsigned int index_count) override;
+    bool Is_Geometry_Valid(RenderBackendGeometryHandle geometry) const override;
+    bool Draw_Static_Indexed_Terrain_Geometry(
+        RenderBackendGeometryHandle geometry, RenderBackendTextureHandle base_texture,
+        const RenderBackendMaterialState &material, const RenderBackendTerrainState &terrain) override;
+    bool Draw_Static_Indexed_Material_Geometry(
+        RenderBackendGeometryHandle geometry, RenderBackendTextureHandle texture,
+        const RenderBackendMaterialState &material) override;
     void Release_Texture(RenderBackendTextureHandle texture) override;
 
     void Set_Ambient(const Vector3 &color) override;
@@ -131,6 +143,7 @@ private:
         unsigned int vertex_stride = 0;
         unsigned int index_count = 0;
         unsigned int generation = 0;
+        std::uint32_t release_frame = FrameCount;
         bool textured = false;
         bool occupied = false;
     };
@@ -170,6 +183,18 @@ private:
         RenderBackendTextureHandle secondary_texture = {},
         const RenderBackendTerrainState *terrain = nullptr);
     ID3D12PipelineState *materialPipeline(const RenderBackendMaterialState &material, bool textured, bool terrain = false);
+    void bindDrawState(ID3D12PipelineState *pipeline, bool screen_space,
+        RenderBackendTextureHandle texture, const RenderBackendMaterialState *material,
+        RenderBackendTextureHandle secondary_texture, const RenderBackendTerrainState *terrain);
+    void issueGeometryDraw(const D3D12_VERTEX_BUFFER_VIEW &vertex_view,
+        const D3D12_INDEX_BUFFER_VIEW &index_view, unsigned int index_count, unsigned int vertex_count,
+        const RenderBackendMaterialState *material);
+    bool validTerrainDraw(RenderBackendTextureHandle base_texture,
+        const RenderBackendMaterialState &material, const RenderBackendTerrainState &terrain) const;
+    bool validMaterialDraw(RenderBackendTextureHandle texture, const RenderBackendMaterialState &material,
+        RenderBackendTextureHandle secondary_texture = {}) const;
+    bool drawStaticMaterialGeometry(RenderBackendGeometryHandle geometry, RenderBackendTextureHandle texture,
+        const RenderBackendMaterialState &material, const RenderBackendTerrainState *terrain);
     RenderBackendGeometryHandle createStaticGeometry(
         const void *vertices,
         unsigned int vertex_count,
