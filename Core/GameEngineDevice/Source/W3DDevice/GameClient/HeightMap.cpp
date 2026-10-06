@@ -2100,8 +2100,6 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			rinfo.Peek_Additional_Pass(0)->UnInstall_Materials();
 		}
 
-		ShaderClass::Invalidate();
-		DX8Wrapper::Apply_Render_State_Changes();
 	}
 	else
 			m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, m_stageTwoTexture,Transform);
@@ -2319,15 +2317,23 @@ void HeightMapRenderObjClass::renderExtraBlendTiles(CameraClass *camera)
         terrain.cloud_noise_projection[1],terrain.cloud_noise_projection[2]);
     RenderBackendTextureHandle base;
     if (!debug) {
-        if (!m_stageOneTexture || !m_stageOneTexture->Ensure_Renderer_Texture() ||
-            !m_stageOneTexture->Get_Filter().Get_Render_Sampler(material.sampler)) {
+        // AlphaTerrainTextureClass formerly aliased this same native atlas.
+        // Use the retained real atlas directly; the alias has no CPU pixels.
+        if (!m_stageZeroTexture || !m_stageZeroTexture->Ensure_Renderer_Texture() ||
+            !m_stageZeroTexture->Get_Filter().Get_Render_Sampler(material.sampler)) {
             std::fprintf(stderr,"Extra-blend terrain tile texture upload failed.\n"); return;
         }
-        base = m_stageOneTexture->Get_Renderer_Texture();
+        base = m_stageZeroTexture->Get_Renderer_Texture();
         const auto mipFilter = TheGlobalData->m_trilinearTerrainTex ?
             RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
         const bool combinedLayers = useCloud() && TheGlobalData->m_useLightMap;
-        if (combinedLayers) material.sampler.mip_filter = mipFilter;
+        const bool linear = TheGlobalData->m_bilinearTerrainTex || TheGlobalData->m_trilinearTerrainTex;
+        material.sampler.min_filter = material.sampler.mag_filter = linear ?
+            RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
+        material.sampler.mip_filter = mipFilter;
+        material.sampler.mipmaps = true;
+        material.sampler.max_anisotropy = 1;
+        material.sampler.address_u = material.sampler.address_v = RenderBackendTextureAddress::Clamp;
         auto layer = [mipFilter](TextureClass *texture, RenderBackendTextureHandle &handle,
                                 RenderBackendSamplerState &sampler, unsigned stage,
                                 RenderBackendTextureFilter filter, bool overrideMip) {
@@ -2336,7 +2342,10 @@ void HeightMapRenderObjClass::renderExtraBlendTiles(CameraClass *camera)
             handle = texture->Get_Renderer_Texture();
             sampler.min_filter = filter;
             sampler.mag_filter = RenderBackendTextureFilter::Linear;
-            if (overrideMip) sampler.mip_filter = mipFilter;
+            if (overrideMip) {
+                sampler.mip_filter = mipFilter;
+                sampler.mipmaps = true;
+            }
             sampler.max_anisotropy = 1;
             sampler.address_u = sampler.address_v = RenderBackendTextureAddress::Wrap;
             return handle.Is_Valid();

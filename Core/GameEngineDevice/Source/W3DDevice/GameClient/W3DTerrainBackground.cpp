@@ -665,6 +665,7 @@ void W3DTerrainBackground::drawVisiblePolys(Bool disableTextures,
         material.sampler.mip_filter = TheGlobalData && TheGlobalData->m_trilinearTerrainTex ?
             RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
         material.sampler.max_anisotropy = 1;
+        material.sampler.mipmaps = true;
         material.sampler.address_u = material.sampler.address_v = RenderBackendTextureAddress::Clamp;
     }
     // Geometry changes only with tessellation/static lighting. World and layer

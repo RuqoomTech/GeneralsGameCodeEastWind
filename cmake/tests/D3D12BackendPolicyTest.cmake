@@ -553,3 +553,15 @@ rts_policy_require_absent(
 rts_policy_require_contains(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/HeightMap.cpp"
     "Draw_Indexed_Terrain_Triangles" "the real third-texture terrain blend must draw through the backend")
+
+foreach(_migrated_owner IN ITEMS
+    Core/GameEngineDevice/Source/W3DDevice/GameClient/FlatHeightMap.cpp
+    Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DScorch.cpp
+    Core/GameEngineDevice/Include/W3DDevice/GameClient/W3DScorch.h
+    Generals/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DBridgeBuffer.h
+    Generals/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DBridgeBuffer.cpp
+    GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DBridgeBuffer.h
+    GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DBridgeBuffer.cpp)
+    rts_policy_require_absent("${_migrated_owner}" "DX8" "migrated terrain callers must keep native rendering retired")
+    rts_policy_require_absent("${_migrated_owner}" "dx8" "migrated terrain callers must keep native buffer headers retired")
+endforeach()

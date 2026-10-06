@@ -174,9 +174,11 @@ Bool RoadType::draw(const RenderBackendMaterialState &state, const RenderBackend
         texture=m_roadTexture->Get_Renderer_Texture();
         material.sampler.address_u=material.sampler.address_v=RenderBackendTextureAddress::Wrap;
         // Only the combined cloud/noise pixel shader overrides base mip filtering.
-        if (terrain.cloud_texture.Is_Valid() && terrain.noise_texture.Is_Valid())
+        if (terrain.cloud_texture.Is_Valid() && terrain.noise_texture.Is_Valid()) {
             material.sampler.mip_filter=TheGlobalData->m_trilinearTerrainTex?
                 RenderBackendTextureFilter::Linear:RenderBackendTextureFilter::Point;
+            material.sampler.mipmaps=true;
+        }
     }
     return backend->Draw_Static_Indexed_Terrain_Geometry(m_geometry->handle,texture,material,terrain);
 }
@@ -2985,9 +2987,11 @@ void W3DRoadBuffer::drawRoads(CameraClass *camera, TextureClass *cloudTexture, T
         sampler.max_anisotropy=1;
         // Stage 2 of roadnoise2 retains the noise texture's mip filter.
         // Cloud and the single-noise fixed-function path explicitly override it.
-        if (!pointMin || !cloudTexture)
+        if (!pointMin || !cloudTexture) {
             sampler.mip_filter=TheGlobalData->m_trilinearTerrainTex?
                 RenderBackendTextureFilter::Linear:RenderBackendTextureFilter::Point;
+            sampler.mipmaps=true;
+        }
         return handle.Is_Valid();
     };
     if (!wireframe && ((cloudTexture && !layer(cloudTexture,terrain.cloud_texture,terrain.cloud_sampler,1,false)) ||

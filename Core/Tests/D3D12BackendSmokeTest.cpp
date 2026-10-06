@@ -636,8 +636,8 @@ bool verifyBridgePasses(IRenderBackend &backend)
     terrain.world_transform[0]=terrain.world_transform[5]=.5f;
     terrain.world_transform[3]=.3f;terrain.world_transform[7]=-.2f;terrain.world_transform[11]=.1f;
     terrain.cloud_texture=cloud;
-    terrain.shroud_projection[0]=terrain.shroud_projection[1]=.5f;
-    terrain.shroud_projection[2]=.1f;terrain.shroud_projection[3]=.35f;
+    terrain.shroud_projection[0]=terrain.shroud_projection[1]=2;
+    terrain.shroud_projection[2]=-.35f;terrain.shroud_projection[3]=.65f;
     RenderBackendMaterialState material;
     material.source_blend=RenderBackendBlendFactor::SourceAlpha;
     material.destination_blend=RenderBackendBlendFactor::InverseSourceAlpha;

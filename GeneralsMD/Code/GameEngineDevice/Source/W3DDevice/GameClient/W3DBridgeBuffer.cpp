@@ -67,6 +67,7 @@
 #include "WW3D2/camera.h"
 #include "WW3D2/IRenderBackend.h"
 #include "WW3D2/ww3d.h"
+#include "WWMath/matrix4.h"
 #include "WW3D2/shader.h"
 #include <vector>
 #include "WW3D2/meshrenderer.h"
@@ -1121,6 +1122,13 @@ void W3DBridgeBuffer::drawBridges(CameraClass *camera, Bool disableTextures, Tex
 
     IRenderBackend *backend = WW3D::Get_Render_Backend();
     if (!backend || !backend->Is_Device_Ready() || !camera) return;
+    Matrix4x4 savedProjection;
+    backend->Get_View_Projection(savedProjection);
+    struct RestoreProjection {
+        IRenderBackend *backend;
+        Matrix4x4 projection;
+        ~RestoreProjection() { backend->Set_View_Projection(projection); }
+    } restoreProjection{backend, savedProjection};
     camera->Apply();
     RenderBackendTerrainState terrain;
     terrain.project_world_coordinates = true;

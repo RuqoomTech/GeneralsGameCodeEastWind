@@ -80,7 +80,6 @@
 #include "W3DDevice/GameClient/W3DShadow.h"
 #include "W3DDevice/GameClient/W3DWater.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
-#include "WW3D2/dx8wrapper.h"
 #include "WW3D2/ww3d.h"
 #include "WW3D2/IRenderBackend.h"
 #include "WW3D2/light.h"
@@ -582,19 +581,10 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	if (TheTerrainTracksRenderObjClassSystem)
 		TheTerrainTracksRenderObjClassSystem->flush();
 
-	ShaderClass::Invalidate();
-	DX8Wrapper::Apply_Render_State_Changes();
-
 	m_waypointBuffer->drawWaypoints(rinfo);
 
 	m_bibBuffer->renderBibs(&rinfo.Camera,Transform);
 #endif
-	// We do some custom blending, so tell the shader class to reset everything.
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	m_stageTwoTexture->restore();
-	ShaderClass::Invalidate();
-	DX8Wrapper::Set_Material(nullptr);
 
 }
 

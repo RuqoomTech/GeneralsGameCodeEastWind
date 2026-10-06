@@ -177,6 +177,8 @@ void W3DScorch::drawScorches(WorldHeightMap& map, CameraClass& camera, const Mat
 		linear ? RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
 	material.sampler.mip_filter = TheGlobalData && TheGlobalData->m_trilinearTerrainTex ?
 		RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
+	material.sampler.max_anisotropy = 1;
+	material.sampler.mipmaps = true;
 	material.sampler.address_u = material.sampler.address_v = RenderBackendTextureAddress::Clamp;
 	Matrix4x4 savedProjection;
 	backend->Get_View_Projection(savedProjection);
