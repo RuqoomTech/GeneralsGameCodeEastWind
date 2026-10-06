@@ -1571,7 +1571,8 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
             material->clamp_texture ? 1u : 0u, material->secondary_rgb_modulate ? 1u : 0u,
             terrain ? (terrain->shroud_texture.Is_Valid() ? 1u : 0u) |
                 (terrain->cloud_texture.Is_Valid() ? 2u : 0u) |
-                (terrain->noise_texture.Is_Valid() ? 4u : 0u) : 0u, {0,0}};
+                (terrain->noise_texture.Is_Valid() ? 4u : 0u) |
+                (terrain->diffuse_after_layers ? 8u : 0u) : 0u, {0,0}};
         static_assert(sizeof(Constants) == 8 * sizeof(unsigned int), "Material root constants");
         m_command_list->SetGraphicsRoot32BitConstants(2, 8, &constants, 0);
         m_command_list->OMSetStencilRef(material->stencil.reference);

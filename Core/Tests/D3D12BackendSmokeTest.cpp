@@ -493,6 +493,129 @@ bool verifyTreeShroud(IRenderBackend &backend)
     return ok;
 }
 
+bool verifyPersistentTerrainAndMaterials(IRenderBackend &backend)
+{
+    const unsigned char texels[4][16]={
+        {192,128,64,224, 32,255,64,32, 64,32,255,64, 16,96,192,96},
+        {255,64,192,255, 128,192,64,96, 64,255,32,64, 32,96,255,32},
+        {192,64,128,64, 255,192,32,96, 64,128,192,160, 128,32,255,192},
+        {64,255,192,255, 255,32,64,192, 128,192,32,160, 192,96,128,80}};
+    RenderBackendTextureHandle textures[4];
+    bool ok=true;
+    for(unsigned i=0;i<4;++i) {
+        textures[i]=backend.Create_Static_RGBA8_Texture(2,2,texels[i],8);
+        ok=textures[i].Is_Valid() && ok;
+    }
+    RenderBackendTerrainVertex quad[]={
+        {-.8f,-.8f,.4f,.75f,.5f,.25f,1,.25f,.25f,0,0,0,0,0,0},
+        {-.8f,.8f,.4f,.75f,.5f,.25f,1,.25f,.25f,0,0,0,0,0,0},
+        {.8f,.8f,.4f,.75f,.5f,.25f,1,.25f,.25f,0,0,0,0,0,0},
+        {.8f,-.8f,.4f,.75f,.5f,.25f,1,.25f,.25f,0,0,0,0,0,0}};
+    const unsigned short indices[]={0,2,1,0,3,2},bad[]={0,4,1};
+    RenderBackendMaterialState material;
+    material.depth_write=false;
+    material.color_write_mask=7;
+    material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    RenderBackendTerrainState terrain;
+    terrain.project_world_coordinates=true;
+    const float world[]={.5f,.125f,0,.3f, 0,.25f,0,-.2f, 0,0,1,.1f};
+    std::copy(world,world+12,terrain.world_transform);
+    terrain.shroud_projection[0]=terrain.shroud_projection[1]=2;
+    terrain.shroud_projection[2]=-.35f;terrain.shroud_projection[3]=.65f;
+    terrain.cloud_noise_projection[0]=.5f;
+    terrain.cloud_noise_projection[1]=.6f;terrain.cloud_noise_projection[2]=.85f;
+    terrain.shroud_texture=textures[1];terrain.cloud_texture=textures[2];terrain.noise_texture=textures[3];
+    terrain.shroud_sampler.mag_filter=terrain.cloud_sampler.mag_filter=terrain.noise_sampler.mag_filter=RenderBackendTextureFilter::Point;
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    auto capture=[&]() {
+        backend.End_Scene(false);
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        backend.Flip_To_Primary();return read;
+    };
+    auto matches=[&](unsigned x,unsigned y,const std::array<float,4> &value) {
+        for(unsigned c=0;c<4;++c)
+            if(std::abs(int(pixels[(y*width+x)*4+c])-int(std::lround(value[c]*255)))>2) return false;
+        return true;
+    };
+    backend.Set_Viewport({0,0,640,480,0,1});backend.Set_View_Projection(Matrix4x4(true));
+    backend.Reset_Frame_Statistics();
+    backend.Clear(true,true,Vector3(0,0,0),.6f,1,0);backend.Begin_Scene();
+    // The actual terrain caller creates resources while recording its scene.
+    const auto geometry=backend.Create_Static_Indexed_Terrain_Geometry(quad,4,indices,6);
+    ok=backend.Is_Geometry_Valid(geometry) && backend.Get_Frame_Statistics().static_geometry_uploads==1 && ok;
+    ok=!backend.Create_Static_Indexed_Terrain_Geometry(quad,4,bad,3).Is_Valid() && ok;
+    // Caller memory can change after upload without changing retained vertices.
+    for(auto &v:quad) {v.x=999;v.r=0;}
+    for(unsigned frame=0;frame<3;++frame) {
+        if(frame) {
+            backend.Reset_Frame_Statistics();
+            backend.Clear(true,true,Vector3(0,0,0),.6f,1,0);backend.Begin_Scene();
+        }
+        terrain.cloud_noise_projection[1]=frame==1 ? .1f : .6f;
+        terrain.diffuse_after_layers=frame==1;
+        Matrix4x4 camera(true);camera[0][3]=frame==2 ? -.2f : 0.f;
+        backend.Set_View_Projection(camera);
+        const bool drew=backend.Draw_Static_Indexed_Terrain_Geometry(geometry,textures[0],material,terrain);
+        const bool read=capture();
+        std::array<float,4> expected{};
+        const float diffuse[]={.75f,.5f,.25f,1};
+        for(unsigned c=0;c<3;++c)
+            expected[c]=diffuse[c]*(texels[0][c]/255.f)*(texels[1][c]/255.f)*
+                (texels[2][(frame==1 ? 8 : 12)+c]/255.f)*(texels[3][8+c]/255.f);
+        expected[3]=.6f;
+        const bool passed=drew && read && matches(frame==2 ? 352 : 416,288,expected) &&
+            backend.Get_Frame_Statistics().static_geometry_uploads==(frame==0 ? 1u : 0u);
+        if(!passed) std::cerr << "Persistent terrain projection/reuse frame " << frame << " failed.\n";
+        ok=passed && ok;
+    }
+    backend.Release_Static_Geometry(geometry);
+    ok=!backend.Is_Geometry_Valid(geometry) && ok;
+    backend.Set_View_Projection(Matrix4x4(true));
+    terrain=RenderBackendTerrainState{};terrain.project_world_coordinates=true;
+    terrain.world_transform[0]=terrain.world_transform[5]=.25f;
+    terrain.world_transform[3]=-.45f;
+    for(unsigned i=0;i<4;++i) {
+        quad[i].x=i>=2 ? .8f : -.8f;quad[i].r=1;quad[i].g=quad[i].b=0;
+    }
+    backend.Clear(true,true,Vector3(0,0,0),.6f,1,0);backend.Begin_Scene();
+    const auto retiring=backend.Create_Static_Indexed_Terrain_Geometry(quad,4,indices,6);
+    ok=backend.Draw_Static_Indexed_Terrain_Geometry(retiring,{},material,terrain) && ok;
+    backend.Release_Static_Geometry(retiring);
+    ok=!backend.Is_Geometry_Valid(retiring) &&
+        !backend.Draw_Static_Indexed_Terrain_Geometry(retiring,{},material,terrain) && ok;
+    for(auto &v:quad) {v.r=0;v.g=1;}
+    const auto replacement=backend.Create_Static_Indexed_Terrain_Geometry(quad,4,indices,6);
+    terrain.world_transform[3]=.45f;
+    ok=backend.Draw_Static_Indexed_Terrain_Geometry(replacement,{},material,terrain) && ok;
+    const bool releaseRead=capture();
+    ok=releaseRead && matches(176,240,{1,0,0,.6f}) && matches(464,240,{0,1,0,.6f}) && ok;
+    backend.Release_Static_Geometry(replacement);
+    // Persistent material geometry uses the real bib blend/depth/write contract.
+    RenderBackendTexturedVertex bib[]={
+        {-.8f,-.8f,.5f,1,1,1,.5f,.25f,.25f}, {-.8f,.8f,.5f,1,1,1,.5f,.25f,.25f},
+        {.8f,.8f,.5f,1,1,1,.5f,.25f,.25f}, {.8f,-.8f,.5f,1,1,1,.5f,.25f,.25f}};
+    material.depth_test=RenderBackendDepthTest::Always;material.cull=RenderBackendCullMode::None;
+    material.source_blend=RenderBackendBlendFactor::SourceAlpha;
+    material.destination_blend=RenderBackendBlendFactor::InverseSourceAlpha;
+    const auto bibGeometry=backend.Create_Static_Indexed_Textured_Geometry(bib,4,indices,6);
+    ok=backend.Is_Geometry_Valid(bibGeometry) && ok;
+    for(unsigned frame=0;frame<2;++frame) {
+        backend.Reset_Frame_Statistics();backend.Clear(true,true,Vector3(.2f,.4f,.6f),.6f,.1f,0);backend.Begin_Scene();
+        ok=!backend.Draw_Static_Indexed_Terrain_Geometry(bibGeometry,{},material,terrain) &&
+            !backend.Draw_Static_Indexed_Material_Geometry(geometry,textures[0],material) && ok;
+        const bool drew=backend.Draw_Static_Indexed_Material_Geometry(bibGeometry,textures[0],material);
+        const bool read=capture();
+        const float alpha=.5f*224.f/255.f;
+        const std::array<float,4> expected={192.f/255.f*alpha+.2f*(1-alpha),128.f/255.f*alpha+.4f*(1-alpha),64.f/255.f*alpha+.6f*(1-alpha),.6f};
+        ok=drew && read && matches(320,240,expected) && backend.Get_Frame_Statistics().static_geometry_uploads==0 && ok;
+    }
+    backend.Release_Static_Geometry(bibGeometry);
+    for(auto texture:textures) backend.Release_Texture(texture);
+    if(!ok) std::cerr << "Persistent geometry, GPU projection, material blend, or deferred release failed.\n";
+    return ok;
+}
+
 bool verifyTerrain(IRenderBackend &backend)
 {
     const unsigned char texels[4][16]={
@@ -577,6 +700,21 @@ bool verifyTerrain(IRenderBackend &backend)
     for(unsigned mask=0;mask<8;++mask) {
         setLayers(mask); ok=verify(expected(mask),textures[0]) && ok;
     }
+    // The real road caller applies cloud/noise before diffuse and blends its
+    // full texture-layer alpha, while preserving the water alpha channel.
+    setLayers(6);
+    terrain.diffuse_after_layers=true;
+    material.source_blend=RenderBackendBlendFactor::SourceAlpha;
+    material.destination_blend=RenderBackendBlendFactor::InverseSourceAlpha;
+    material.color_write_mask=7;
+    auto road=expected(6);
+    for(unsigned c=0;c<3;++c) road[c]*=road[3];
+    road[3]=.3f;
+    ok=verify(road,textures[0]) && ok;
+    terrain.diffuse_after_layers=false;
+    material.source_blend=RenderBackendBlendFactor::One;
+    material.destination_blend=RenderBackendBlendFactor::Zero;
+    material.color_write_mask=15;
     setLayers(7);
     RenderBackendSamplerState *samplers[]={&terrain.shroud_sampler,&terrain.cloud_sampler,&terrain.noise_sampler};
     for(unsigned layer=0;layer<3;++layer) {
@@ -1237,7 +1375,7 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyTreeShroud(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyTreeShroud(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

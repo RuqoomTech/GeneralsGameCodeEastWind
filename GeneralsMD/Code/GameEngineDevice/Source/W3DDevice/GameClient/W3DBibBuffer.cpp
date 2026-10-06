@@ -48,18 +48,15 @@
 
 #include "W3DDevice/GameClient/W3DBibBuffer.h"
 
-#include <WW3D2/assetmgr.h>
 #include <WW3D2/texture.h>
 #include "Common/GlobalData.h"
-#include "Common/RandomValue.h"
-#include "W3DDevice/GameClient/TerrainTex.h"
-#include "W3DDevice/GameClient/HeightMap.h"
-#include "W3DDevice/GameClient/W3DDynamicLight.h"
 #include "WW3D2/camera.h"
-#include "WW3D2/dx8wrapper.h"
-#include "WW3D2/meshrenderer.h"
-#include "WW3D2/mesh.h"
-#include "WW3D2/meshmdl.h"
+#include "WW3D2/shader.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
+#include "WWMath/matrix4.h"
+#include <vector>
+#include <cstdio>
 
 //-----------------------------------------------------------------------------
 //         Private Data
@@ -71,6 +68,36 @@
 	ShaderClass::DETAILCOLOR_DISABLE, ShaderClass::DETAILALPHA_DISABLE) )
 
 static ShaderClass detailAlphaShader(SC_ALPHA_DETAIL);
+
+namespace {
+UnsignedInt getBibLighting()
+{
+    Real r=TheGlobalData->m_terrainAmbient[0].red;
+    Real g=TheGlobalData->m_terrainAmbient[0].green;
+    Real b=TheGlobalData->m_terrainAmbient[0].blue;
+    r+=TheGlobalData->m_terrainDiffuse[0].red;
+    g+=TheGlobalData->m_terrainDiffuse[0].green;
+    b+=TheGlobalData->m_terrainDiffuse[0].blue;
+    if (r>1.0f) r=1.0f;
+    if (g>1.0f) g=1.0f;
+    if (b>1.0f) b=1.0f;
+    r*=255.0f; g*=255.0f; b*=255.0f;
+    return static_cast<UnsignedInt>(REAL_TO_INT(b)) |
+        (static_cast<UnsignedInt>(REAL_TO_INT(g)) << 8) |
+        (static_cast<UnsignedInt>(REAL_TO_INT(r)) << 16) | (UnsignedInt(255) << 24);
+}
+}
+
+struct W3DBibBuffer::GeometryState
+{
+    std::vector<RenderBackendTexturedVertex> vertices[2];
+    std::vector<UnsignedShort> indices[2];
+    RenderBackendGeometryHandle handles[2];
+    UnsignedInt lighting=0;
+    bool hasLighting=false;
+};
+
+
 
 
 //-----------------------------------------------------------------------------
@@ -85,115 +112,44 @@ static ShaderClass detailAlphaShader(SC_ALPHA_DETAIL);
 //=============================================================================
 void W3DBibBuffer::loadBibsInVertexAndIndexBuffers()
 {
-	if (!m_indexBib || !m_vertexBib || !m_initialized) {
-		return;
-	}
-	if (!m_anythingChanged) {
-		return;
-	}
+    if (!m_initialized || !m_anythingChanged) return;
+    m_curNumBibVertices = m_curNumBibIndices = 0;
+    m_curNumNormalBibIndices = m_curNumNormalBibVertex = 0;
+    for (unsigned batch=0; batch<2; ++batch) {
+        m_geometry->vertices[batch].clear();
+        m_geometry->indices[batch].clear();
+    }
 
-	m_curNumBibVertices = 0;
-	m_curNumBibIndices = 0;
-	m_curNumNormalBibIndices = 0;
-	m_curNumNormalBibVertex = 0;
-
-	if (m_numBibs==0) {
-		return;
-	}
-
-	VertexFormatXYZDUV1 *vb;
-	UnsignedShort *ib;
-	// Lock the buffers.
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBib, D3DLOCK_DISCARD);
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexBib, D3DLOCK_DISCARD);
-	vb=(VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-	ib = lockIdxBuffer.Get_Index_Array();
-	// Add to the index buffer & vertex buffer.
-	UnsignedShort *curIb = ib;
-
-	VertexFormatXYZDUV1 *curVb = vb;
-
-	Int curBib;
-
-	// Calculate a static lighting value to use for all the bibs.
-	Real shadeR, shadeG, shadeB;
-	shadeR = TheGlobalData->m_terrainAmbient[0].red;
-	shadeG = TheGlobalData->m_terrainAmbient[0].green;
-	shadeB = TheGlobalData->m_terrainAmbient[0].blue;
-	shadeR += TheGlobalData->m_terrainDiffuse[0].red;
-	shadeG += TheGlobalData->m_terrainDiffuse[0].green;
-	shadeB += TheGlobalData->m_terrainDiffuse[0].blue;
-	if (shadeR>1.0f) shadeR=1.0f;
-	if (shadeG>1.0f) shadeG=1.0f;
-	if (shadeB>1.0f) shadeB=1.0f;
-	shadeR*=255.0f;
-	shadeG*=255.0f;
-	shadeB*=255.0f;
-
-	Int diffuse = (REAL_TO_INT(shadeB) | (REAL_TO_INT(shadeG) << 8) | (REAL_TO_INT(shadeR) << 16) | (255 << 24));
-	Int doHighlight;
-	for (doHighlight=0; doHighlight<=1; doHighlight++)
-	{
-		if (doHighlight==1)
-		{
-			m_curNumNormalBibIndices = m_curNumBibIndices;
-			m_curNumNormalBibVertex = m_curNumBibVertices;
-		}
-		for (curBib=0; curBib<m_numBibs; curBib++) {
-			if (m_bibs[curBib].m_unused) continue;
-			if (m_bibs[curBib].m_highlight != (Bool)doHighlight) continue;
-			Int startVertex = m_curNumBibVertices;
-			Int i;
-			Int numVertex = 4;
-			if (m_curNumBibVertices+numVertex+2>= m_vertexBibSize) {
-				break;
-			}
-			Int numIndex = 6;
-			if (m_curNumBibIndices+numIndex+6 >= m_indexBibSize) {
-				break;
-			}
-
-			for (i=0; i<numVertex; i++) {
-
-				// Update the uv values.  The W3D models each have their own texture, and
-				// we use one texture with all images in one, so we have to change the uvs to
-				// match.
-				Real U, V;
-				Vector3 vLoc=m_bibs[curBib].m_corners[i];
-				switch (i) {
-					case 0 :
-						U=0;V=1;
-						break;
-					case 1:
-						U=1;V=1;
-						break;
-					case 2:
-						U=1;V=0;
-						break;
-					case 3:
-						U=0;V=0;
-						break;
-				}
-
-				curVb->u1 = U;
-				curVb->v1 = V;
-				curVb->x = vLoc.X;
-				curVb->y = vLoc.Y;
-				curVb->z = vLoc.Z;
-				curVb->diffuse = diffuse;
-				curVb++;
-				m_curNumBibVertices++;
-			}
-
-			*curIb++ = startVertex + 0;
-			*curIb++ = startVertex + 1;
-			*curIb++ = startVertex + 2;
-			*curIb++ = startVertex + 0;
-			*curIb++ = startVertex + 2;
-			*curIb++ = startVertex + 3;
-			m_curNumBibIndices+=6;
-		}
-	}
+    // Preserve the original packed ambient-plus-diffuse terrain light.
+    const UnsignedInt diffuse=getBibLighting();
+    m_geometry->lighting = diffuse;
+    m_geometry->hasLighting = true;
+    const Real red = ((diffuse >> 16) & 255u) / 255.0f;
+    const Real green = ((diffuse >> 8) & 255u) / 255.0f;
+    const Real blue = (diffuse & 255u) / 255.0f;
+    const Real uv[4][2]={{0,1},{1,1},{1,0},{0,0}};
+    for (unsigned batch=0; batch<2; ++batch) {
+        if (batch==1) {
+            m_curNumNormalBibIndices=m_curNumBibIndices;
+            m_curNumNormalBibVertex=m_curNumBibVertices;
+        }
+        for (Int bib=0; bib<m_numBibs; ++bib) {
+            if (m_bibs[bib].m_unused || m_bibs[bib].m_highlight != static_cast<Bool>(batch)) continue;
+            // Retain the legacy aggregate capacity and conservative boundary checks.
+            if (m_curNumBibVertices+4+2 >= m_vertexBibSize ||
+                m_curNumBibIndices+6+6 >= m_indexBibSize) break;
+            const UnsignedShort start=static_cast<UnsignedShort>(m_geometry->vertices[batch].size());
+            for (unsigned corner=0; corner<4; ++corner) {
+                const Vector3 &p=m_bibs[bib].m_corners[corner];
+                m_geometry->vertices[batch].push_back({p.X,p.Y,p.Z,red,green,blue,1.0f,uv[corner][0],uv[corner][1]});
+            }
+            const UnsignedShort order[6]={0,1,2,0,2,3};
+            for (unsigned i=0; i<6; ++i)
+                m_geometry->indices[batch].push_back(static_cast<UnsignedShort>(start+order[i]));
+            m_curNumBibVertices+=4;
+            m_curNumBibIndices+=6;
+        }
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -208,6 +164,7 @@ void W3DBibBuffer::loadBibsInVertexAndIndexBuffers()
 W3DBibBuffer::~W3DBibBuffer()
 {
 	freeBibBuffers();
+	delete m_geometry;
 	REF_PTR_RELEASE(m_bibTexture);
 	REF_PTR_RELEASE(m_highlightBibTexture);
 }
@@ -221,8 +178,7 @@ for the bibs. */
 W3DBibBuffer::W3DBibBuffer()
 {
 	m_initialized = false;
-	m_vertexBib = nullptr;
-	m_indexBib = nullptr;
+	m_geometry = new GeometryState;
 	m_bibTexture = nullptr;
 	m_curNumBibVertices=0;
 	m_curNumBibIndices=0;
@@ -248,8 +204,16 @@ W3DBibBuffer::W3DBibBuffer()
 //=============================================================================
 void W3DBibBuffer::freeBibBuffers()
 {
-	REF_PTR_RELEASE(m_vertexBib);
-	REF_PTR_RELEASE(m_indexBib);
+    IRenderBackend *backend=WW3D::Get_Render_Backend();
+    for (unsigned batch=0; batch<2; ++batch) {
+        if (backend) backend->Release_Static_Geometry(m_geometry->handles[batch]);
+        m_geometry->handles[batch]={};
+        std::vector<RenderBackendTexturedVertex>().swap(m_geometry->vertices[batch]);
+        std::vector<UnsignedShort>().swap(m_geometry->indices[batch]);
+    }
+    m_curNumBibVertices=m_curNumBibIndices=0;
+    m_curNumNormalBibIndices=m_curNumNormalBibVertex=0;
+    m_anythingChanged=true;
 }
 
 //=============================================================================
@@ -259,10 +223,11 @@ void W3DBibBuffer::freeBibBuffers()
 //=============================================================================
 void W3DBibBuffer::allocateBibBuffers()
 {
-	m_vertexBib=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,m_vertexBibSize+4,DX8VertexBufferClass::USAGE_DYNAMIC));
-	m_indexBib=NEW_REF(DX8IndexBufferClass,(m_indexBibSize+4, DX8IndexBufferClass::USAGE_DYNAMIC));
-	m_curNumBibVertices=0;
-	m_curNumBibIndices=0;
+    freeBibBuffers();
+    for (unsigned batch=0; batch<2; ++batch) {
+        m_geometry->vertices[batch].reserve(m_vertexBibSize+4);
+        m_geometry->indices[batch].reserve(m_indexBibSize+4);
+    }
 }
 
 //=============================================================================
@@ -293,6 +258,7 @@ void W3DBibBuffer::removeHighlighting()
 {
 	Int bibIndex;
 	for (bibIndex=0; bibIndex<m_numBibs; bibIndex++) {
+		if (m_bibs[bibIndex].m_highlight) m_anythingChanged=true;
 		m_bibs[bibIndex].m_highlight = false;
 	}
 }
@@ -415,27 +381,65 @@ void W3DBibBuffer::removeBibDrawable(DrawableID id)
 //=============================================================================
 /** Draws the bibs.  Uses camera to cull. */
 //=============================================================================
-void W3DBibBuffer::renderBibs()
+void W3DBibBuffer::renderBibs(CameraClass *camera, const Matrix3D &worldTransform)
 {
-
-	loadBibsInVertexAndIndexBuffers();
-
-	if (m_curNumBibIndices == 0) {
-		return;
-	}
-	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Index_Buffer(m_indexBib,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexBib);
-	DX8Wrapper::Set_Shader(detailAlphaShader);
-	if (m_curNumNormalBibIndices) {
-		DX8Wrapper::Set_Texture(0,m_bibTexture);
-		DX8Wrapper::Draw_Triangles(	0, m_curNumNormalBibIndices/3, 0,	m_curNumNormalBibVertex);
-	}
-	if (m_curNumBibIndices>m_curNumNormalBibIndices) {
-		DX8Wrapper::Set_Texture(0,m_highlightBibTexture);
-		DX8Wrapper::Draw_Triangles(	m_curNumNormalBibIndices, (m_curNumBibIndices-m_curNumNormalBibIndices)/3,
-						m_curNumNormalBibVertex,	m_curNumBibVertices-m_curNumNormalBibVertex);
-	}
+    IRenderBackend *backend=WW3D::Get_Render_Backend();
+    if (!camera || !TheGlobalData || !m_initialized || !backend || !backend->Is_Device_Ready()) return;
+    const UnsignedInt lighting=getBibLighting();
+    if (!m_geometry->hasLighting || lighting!=m_geometry->lighting) m_anythingChanged=true;
+    for (unsigned batch=0; batch<2; ++batch)
+        if (!m_geometry->indices[batch].empty() && !backend->Is_Geometry_Valid(m_geometry->handles[batch]))
+            m_anythingChanged=true;
+    if (m_anythingChanged) {
+        loadBibsInVertexAndIndexBuffers();
+        RenderBackendGeometryHandle replacement[2];
+        bool uploaded=true;
+        for (unsigned batch=0; batch<2; ++batch) {
+            if (m_geometry->indices[batch].empty()) continue;
+            replacement[batch]=backend->Create_Static_Indexed_Textured_Geometry(
+                m_geometry->vertices[batch].data(),static_cast<unsigned>(m_geometry->vertices[batch].size()),
+                m_geometry->indices[batch].data(),static_cast<unsigned>(m_geometry->indices[batch].size()));
+            if (!replacement[batch].Is_Valid()) { uploaded=false; break; }
+        }
+        if (!uploaded) {
+            for (unsigned batch=0; batch<2; ++batch) backend->Release_Static_Geometry(replacement[batch]);
+            std::fprintf(stderr,"Bib geometry upload failed.\n");
+            return;
+        }
+        for (unsigned batch=0; batch<2; ++batch) {
+            backend->Release_Static_Geometry(m_geometry->handles[batch]);
+            m_geometry->handles[batch]=replacement[batch];
+        }
+        m_anythingChanged=false;
+    }
+    if (m_curNumBibIndices==0) return;
+    RenderBackendMaterialState material;
+    if (!detailAlphaShader.Get_Render_Backend_State(material)) {
+        std::fprintf(stderr,"Bib material translation failed.\n");
+        return;
+    }
+    material.color_write_mask=7; // Destination alpha belongs to the water shoreline pass.
+    Matrix4x4 savedProjection;
+    backend->Get_View_Projection(savedProjection);
+    struct RestoreProjection {
+        IRenderBackend *backend;
+        const Matrix4x4 &projection;
+        ~RestoreProjection() { backend->Set_View_Projection(projection); }
+    } restore={backend,savedProjection};
+    camera->Apply();
+    Matrix4x4 cameraProjection;
+    backend->Get_View_Projection(cameraProjection);
+    backend->Set_View_Projection(cameraProjection*Matrix4x4(worldTransform));
+    TextureClass *textures[2]={m_bibTexture,m_highlightBibTexture};
+    for (unsigned batch=0; batch<2; ++batch) {
+        if (m_geometry->indices[batch].empty()) continue;
+        if (!textures[batch] || !textures[batch]->Ensure_Renderer_Texture() ||
+            !textures[batch]->Get_Filter().Get_Render_Sampler(material.sampler) ||
+            !backend->Draw_Static_Indexed_Material_Geometry(m_geometry->handles[batch],
+                textures[batch]->Get_Renderer_Texture(),material)) {
+            std::fprintf(stderr,"Bib textured material draw failed.\n");
+            return;
+        }
+    }
 }
-
 

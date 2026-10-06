@@ -1,5 +1,19 @@
 # Current Source State
 
+## Persistent terrain and bib continuation - 2026-10-06
+
+The tested candidate is `main` at user commit `127198b1781280b96b2be893aa150d2dbd1bb918` plus the local bib, dispatch, test and policy changes. User commits may advance concurrently. No agent commits or GitHub pushes were made.
+
+The actual flat terrain tiles now use persistent default-heap geometry. CPU tessellation, static lighting, packed diffuse, culling and authored tile UVs remain in their existing owner. Geometry is rebuilt/uploaded only after content changes or resource invalidation. Canonical HLSL applies the world transform and world-XY shroud/cloud/noise projection from per-draw constants; the previous per-frame CPU vertex transformation/projection loop and duplicate vertex array are removed. The preferred original `fterrain*.nvp` single-pass RGBA multiplication, optional layers, samplers, LEQUAL/depth writing, culling and RGB-only mask remain explicit. Both superseded `FlatTerrainShader` implementations and registrations are retired. Unmigrated roads, bridges and waypoints still require their genuine post-terrain state responsibilities.
+
+The backend supports persistent terrain and material draws through the same resource pool and shared draw-state helpers. Uploads during an open scene use a separate command list on the same queue. Geometry handles become invalid immediately on release; buffers and slots remain retained until the referencing frame fence completes. Global geometry generations prevent stale handles from becoming valid after backend recreation. Runtime upload counters remain observational and downstream of simulation.
+
+Paired Generals/Zero Hour bib owners now use separate persistent normal/highlight batches, actual authored textures and normalized samplers. Original aggregate capacity checks, stacking order, UVs, winding, packed ambient-plus-diffuse lighting, alpha blending, always depth comparison, disabled depth writes and RGB-only mask are preserved. Bib/highlight/lighting changes and stale handles invalidate the cache. Dirty state is cleared only after both batches upload successfully. Saved camera state is restored on every draw exit. Native buffer headers, locks and DX8 calls are removed from all four bib files.
+
+Validation: strict focused build passes; 31/31 non-browser tests pass, including the production GPU smoke in 4.19 seconds (21.16 seconds total). New GPU cases verify world/projection constants, moving cloud and camera reuse with zero additional geometry uploads, independence from mutated source vertices, rejected invalid indices/geometry kinds, safe release and replacement inside a pending frame, and persistent bib material blending with preserved destination alpha. Both bib variants pass focused MinGW syntax checks. Read-only agents found no introduced terrain/backend/bib correctness defect. Existing full-game and no-PCH legacy warnings remain; no warning suppression was added. The unchanged browser owner retains its separate earlier 1/1 native smoke receipt.
+
+The exact `cmake --build --preset mingw64-game --target z_generals -- -j1` compiles all updated game sources and fails at executable linking. Unique unresolved symbols remain 59, with no additions; reference occurrences decrease from 578 to 567. The first failure is `FlatHeightMap.cpp:594`, `DX8Wrapper::Apply_Render_State_Changes()`, in the remaining post-terrain dispatch. Logs: `build/mingw64-game/gpu-terrain-bibs-game-build.txt`, `build/gpu-terrain-bibs-link-summary.json`, `build/gpu-terrain-bibs-regressions.txt`, `build/gpu-terrain-bibs-paired-syntax.txt`. No current game link, boot, visible game frame, complete DX8 removal, performance speedup measurement, sealed milestone or user Windows sign-off is claimed.
+
 ## Tree and shroud continuation - 2026-10-05
 
 The current checkout remains user commit `87ac65056fd6fa20e3247ab71bb96682b7b96344` plus local changes. The user prohibits GitHub pushes.

@@ -120,5 +120,5 @@ protected:
 	void renderTerrainPass(CameraClass *pCamera);	///< renders additional terrain pass.
 	virtual Int	getNumExtraBlendTiles(Bool visible) override { return visible?m_numVisibleExtraBlendTiles:m_numExtraBlendTiles;}
 	void freeIndexVertexBuffers();
-	void renderExtraBlendTiles();	///< render 3-way blend tiles that have blend of 3 textures.
+	void renderExtraBlendTiles(CameraClass *camera);	///< render 3-way blend tiles that have blend of 3 textures.
 };

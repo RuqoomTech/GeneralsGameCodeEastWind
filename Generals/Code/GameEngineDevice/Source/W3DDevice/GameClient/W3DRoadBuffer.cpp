@@ -55,17 +55,18 @@
 //#include "Common/GameFileSystem.h"
 #include "Common/FileSystem.h" // for LOAD_TEST_ASSETS
 #include "GameClient/TerrainRoads.h"
-#include "W3DDevice/GameClient/TerrainTex.h"
 #include "W3DDevice/GameClient/HeightMap.h"
 #include "W3DDevice/GameClient/W3DAssetManager.h"
-#include "W3DDevice/GameClient/W3DDynamicLight.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameClient/W3DShaderManager.h"
 #include "WW3D2/camera.h"
-#include "WW3D2/dx8wrapper.h"
-#include "WW3D2/meshrenderer.h"
-#include "WW3D2/mesh.h"
-#include "WW3D2/meshmdl.h"
+#include "WW3D2/shader.h"
+#include "WW3D2/ww3d.h"
+#include "WW3D2/IRenderBackend.h"
+#include "WWMath/matrix4.h"
+#include <vector>
+#include <algorithm>
+#include <cstdio>
 
 static const Real TEE_WIDTH_ADJUSTMENT = 1.03f;
 
@@ -123,6 +124,63 @@ static Int xpSign(const Vector2 &v1, const Vector2 &v2) {
 //         Private Class
 //-----------------------------------------------------------------------------
 
+struct RoadType::GeometryState
+{
+    std::vector<RoadVertex> vertices;
+    std::vector<UnsignedShort> indices;
+    RenderBackendGeometryHandle handle;
+    bool dirty=true;
+};
+
+RoadVertex *RoadType::getVB() { return m_geometry->vertices.empty()?nullptr:m_geometry->vertices.data(); }
+UnsignedShort *RoadType::getIB() { return m_geometry->indices.empty()?nullptr:m_geometry->indices.data(); }
+void RoadType::setNumVertices(Int num) { m_numRoadVertices=num; m_geometry->dirty=true; }
+void RoadType::setNumIndices(Int num) { m_numRoadIndices=num; m_geometry->dirty=true; }
+
+Bool RoadType::draw(const RenderBackendMaterialState &state, const RenderBackendTerrainState &terrain)
+{
+    IRenderBackend *backend=WW3D::Get_Render_Backend();
+    if (!backend || !backend->Is_Device_Ready()) return false;
+    if (m_numRoadIndices==0 || m_numRoadVertices==0) {
+        backend->Release_Static_Geometry(m_geometry->handle);
+        m_geometry->handle={};
+        m_geometry->dirty=false;
+        return true;
+    }
+    if (m_geometry->dirty || !backend->Is_Geometry_Valid(m_geometry->handle)) {
+        std::vector<RenderBackendTerrainVertex> vertices;
+        vertices.reserve(m_numRoadVertices);
+        for (Int i=0; i<m_numRoadVertices; ++i) {
+            const RoadVertex &source=m_geometry->vertices[i];
+            const UnsignedInt color=source.diffuse;
+            vertices.push_back({source.x,source.y,source.z,
+                ((color>>16)&255u)/255.0f,((color>>8)&255u)/255.0f,
+                (color&255u)/255.0f,((color>>24)&255u)/255.0f,
+                source.u1,source.v1,0,0,0,0,0,0});
+        }
+        const RenderBackendGeometryHandle replacement=backend->Create_Static_Indexed_Terrain_Geometry(
+            vertices.data(),static_cast<unsigned>(vertices.size()),m_geometry->indices.data(),
+            static_cast<unsigned>(m_numRoadIndices));
+        if (!replacement.Is_Valid()) return false;
+        backend->Release_Static_Geometry(m_geometry->handle);
+        m_geometry->handle=replacement;
+        m_geometry->dirty=false;
+    }
+    RenderBackendMaterialState material=state;
+    RenderBackendTextureHandle texture;
+    if (material.texture_combine!=RenderBackendTextureCombine::Replace) {
+        if (!m_roadTexture || !m_roadTexture->Ensure_Renderer_Texture() ||
+            !m_roadTexture->Get_Filter().Get_Render_Sampler(material.sampler)) return false;
+        texture=m_roadTexture->Get_Renderer_Texture();
+        material.sampler.address_u=material.sampler.address_v=RenderBackendTextureAddress::Wrap;
+        // Only the combined cloud/noise pixel shader overrides base mip filtering.
+        if (terrain.cloud_texture.Is_Valid() && terrain.noise_texture.Is_Valid())
+            material.sampler.mip_filter=TheGlobalData->m_trilinearTerrainTex?
+                RenderBackendTextureFilter::Linear:RenderBackendTextureFilter::Point;
+    }
+    return backend->Draw_Static_Indexed_Terrain_Geometry(m_geometry->handle,texture,material,terrain);
+}
+
 //=============================================================================
 // RoadType constructor
 //=============================================================================
@@ -130,10 +188,12 @@ static Int xpSign(const Vector2 &v1, const Vector2 &v2) {
 //=============================================================================
 RoadType::RoadType():
 m_roadTexture(nullptr),
-m_vertexRoad(nullptr),
-m_indexRoad(nullptr),
-m_stackingOrder(0),
-m_uniqueID(-1)
+m_geometry(new GeometryState),
+m_numRoadVertices(0),
+m_numRoadIndices(0),
+m_uniqueID(-1),
+m_isAutoLoaded(false),
+m_stackingOrder(0)
 {
 }
 
@@ -145,22 +205,9 @@ m_uniqueID(-1)
 RoadType::~RoadType()
 {
 	REF_PTR_RELEASE(m_roadTexture);
-	REF_PTR_RELEASE(m_vertexRoad);
-	REF_PTR_RELEASE(m_indexRoad);
+	if (IRenderBackend *backend=WW3D::Get_Render_Backend()) backend->Release_Static_Geometry(m_geometry->handle);
+	delete m_geometry;
 }
-
-//=============================================================================
-// RoadType applyTexture
-//=============================================================================
-/** Sets the W3D texture. */
-//=============================================================================
-void RoadType::applyTexture()
-{
- 	W3DShaderManager::setTexture(0,m_roadTexture);
-	DX8Wrapper::Set_Index_Buffer(m_indexRoad,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexRoad);
-}
-
 
 //=============================================================================
 // RoadType loadTexture
@@ -179,8 +226,9 @@ void RoadType::loadTexture(AsciiString path, Int ID)
 	m_roadTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_REPEAT);
 	m_roadTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_REPEAT);
 
-	m_vertexRoad=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,TheGlobalData->m_maxRoadVertex+4,DX8VertexBufferClass::USAGE_DYNAMIC));
-	m_indexRoad=NEW_REF(DX8IndexBufferClass,(TheGlobalData->m_maxRoadIndex+4, DX8IndexBufferClass::USAGE_DYNAMIC));
+	m_geometry->vertices.resize(std::min(TheGlobalData->m_maxRoadVertex,65536)+4);
+	m_geometry->indices.resize(TheGlobalData->m_maxRoadIndex+4);
+	m_geometry->dirty=true;
 	m_numRoadVertices=0;
 	m_numRoadIndices=0;
 
@@ -245,7 +293,7 @@ RoadSegment::~RoadSegment()
 //=============================================================================
 /** Allocates & sets the vertex entries. */
 //=============================================================================
-void RoadSegment::SetVertexBuffer(VertexFormatXYZDUV1 *vb, Int numVertex)
+void RoadSegment::SetVertexBuffer(RoadVertex *vb, Int numVertex)
 {
 	delete[] m_vb;
 	m_vb = nullptr;
@@ -255,12 +303,12 @@ void RoadSegment::SetVertexBuffer(VertexFormatXYZDUV1 *vb, Int numVertex)
 	if (numVertex<1 || numVertex > MAX_SEG_VERTEX)
 		return;
 
-	m_vb = NEW VertexFormatXYZDUV1[numVertex];	// pool[]ify
+	m_vb = NEW RoadVertex[numVertex];	// pool[]ify
 	if (!m_vb)
 		return;
 
 	m_numVertex = numVertex;
-	memcpy(m_vb, vb, numVertex*sizeof(VertexFormatXYZDUV1));
+	memcpy(m_vb, vb, numVertex*sizeof(RoadVertex));
 	Int i;
 	for (i=0; i<numVertex; i++) {
 		verts[i].X = m_vb[i].x;
@@ -298,11 +346,11 @@ void RoadSegment::SetIndexBuffer(UnsignedShort *ib, Int numIndex)
 //=============================================================================
 /** Copies vertex entries into destination_vb. */
 //=============================================================================
-Int RoadSegment::GetVertices(VertexFormatXYZDUV1 *destination_vb, Int numToCopy)
+Int RoadSegment::GetVertices(RoadVertex *destination_vb, Int numToCopy)
 {
 	if (m_vb == nullptr || numToCopy<1) return	(0);
 	if (numToCopy > m_numVertex) return(0);
-	memcpy(destination_vb, m_vb, numToCopy*sizeof(VertexFormatXYZDUV1));
+	memcpy(destination_vb, m_vb, numToCopy*sizeof(RoadVertex));
 	return(numToCopy);
 }
 
@@ -335,7 +383,7 @@ void RoadSegment::updateSegLighting()
 		Int y = m_vb[i].y/MAP_XY_FACTOR+0.5;
 		x += TheTerrainRenderObject->getMap()->getBorderSize();
 		y += TheTerrainRenderObject->getMap()->getBorderSize();
-		m_vb[i].diffuse = (255<<24)|TheTerrainRenderObject->getStaticDiffuse(x, y);
+		m_vb[i].diffuse = (UnsignedInt(255)<<24)|TheTerrainRenderObject->getStaticDiffuse(x, y);
 	}
 }
 
@@ -558,7 +606,7 @@ void W3DRoadBuffer::loadFloat4PtSection(RoadSegment *pRoad, Vector2 loc,
 	const Real FLOAT_AMOUNT = MAP_HEIGHT_SCALE/8;
 	const Real MAX_ERROR = MAP_HEIGHT_SCALE*1.1f;
 	UnsignedShort ib[MAX_SEG_INDEX];
-	VertexFormatXYZDUV1 vb[MAX_SEG_VERTEX];
+	RoadVertex vb[MAX_SEG_VERTEX];
 	Int numRoadVertices = 0;
 	Int numRoadIndices = 0;
 
@@ -763,302 +811,6 @@ void W3DRoadBuffer::loadFloat4PtSection(RoadSegment *pRoad, Vector2 loc,
 }
 
 //=============================================================================
-// W3DRoadBuffer::loadLit4PtSection
-//=============================================================================
-/** Loads a section of road using a mesh that floats a little above the
-terrain.  The road is loaded into the quadrilateral defined by the
-4 corners points.  loc specifies the point where u==uOffset && v==vOffset, and
-the road vector gives the direction of the road, and the road normal is perpendicular
-to the road normal.  */
-//=============================================================================
-void W3DRoadBuffer::loadLit4PtSection(RoadSegment *pRoad, UnsignedShort *ib, VertexFormatXYZDUV1 *vb, RefRenderObjListIterator *pDynamicLightsIterator)
-{
-
-	const Real FLOAT_AMOUNT = MAP_HEIGHT_SCALE/8;
-	const Real MAX_ERROR = MAP_HEIGHT_SCALE*1.1f;
-
-
-	if (pRoad->m_uniqueID != m_curUniqueID) {
-		return;
-	}
-	// Throw out segs out of view.
-	if (pRoad->m_pt1.loc.X + pRoad->m_scale/2 < this->m_minX &&
-		pRoad->m_pt2.loc.X + pRoad->m_scale/2 < this->m_minX) {
-		return;
-	}
-	if (pRoad->m_pt1.loc.X - pRoad->m_scale/2 > this->m_maxX &&
-		pRoad->m_pt2.loc.X - pRoad->m_scale/2 > this->m_maxX) {
-		return;
-	}
-	// Throw out segs out of view.
-	if (pRoad->m_pt1.loc.Y + pRoad->m_scale/2 < this->m_minY &&
-		pRoad->m_pt2.loc.Y + pRoad->m_scale/2 < this->m_minY) {
-		return;
-	}
-	if (pRoad->m_pt1.loc.Y - pRoad->m_scale/2 > this->m_maxY &&
-		pRoad->m_pt2.loc.Y - pRoad->m_scale/2 > this->m_maxY) {
-		return;
-	}
-
-	Int numLights = 0;
-	const Int maxLights = 8;
-	LightClass *lights[maxLights];
-
-	for (pDynamicLightsIterator->First(); !pDynamicLightsIterator->Is_Done(); pDynamicLightsIterator->Next()) {
-			LightClass *pLight = (LightClass*)pDynamicLightsIterator->Peek_Obj();
-			SphereClass bounds = pLight->Get_Bounding_Sphere();
-			if (Spheres_Intersect(pRoad->getBounds(), bounds)) {
-				lights[numLights] = pLight;
-				numLights++;
-				if (numLights == maxLights) break;
-			}
-	}
-
-	if (numLights == 0) return;
-
-	TRoadSegInfo info;
-	pRoad->GetRoadSegInfo(&info);
-	Real roadLen = info.roadVector.Length();
-	Real halfHeight = info.roadNormal.Length();
-	info.roadNormal.Normalize();
-	info.roadVector.Normalize();
-	Vector2 curVector;
-	Int uCount = (roadLen/MAP_XY_FACTOR)+1;
-	Int vCount = (2*halfHeight/MAP_XY_FACTOR)+1;
-
-
-	const int maxRows = 100;
-	typedef struct {
-		Bool collapsed;
-		Bool deleted;
-		Vector3 vtx[maxRows];
-		Int diffuseRed;
-		Bool lightGradient;
-		Int vertexIndex[maxRows];
-		Real uIndex;
-	} TColumn;
-//	const Int DIFFUSE_LIMIT = 25; // if more than that, we tesselate :) jba.
-
-	if (vCount>maxRows) vCount = maxRows;
-	TColumn prevColumn, curColumn, nextColumn;
-
-	prevColumn.deleted = true;
-	curColumn.deleted = true;
-	Int i, j, k;
-	Vector2 v2 = info.corners[bottomLeft];
-	Vector3 origin(v2.X, v2.Y, 0);
-	v2 = info.corners[bottomRight] - info.corners[bottomLeft];
-	Vector3 uVector1(v2.X, v2.Y, 0);
-	v2 = info.corners[topRight] - info.corners[topLeft];
-	Vector3 uVector2(v2.X, v2.Y, 0);
-	v2 = info.corners[topLeft];
-	Vector3 origin2(v2.X, v2.Y, 0);
-	v2 = info.corners[topLeft] - info.corners[bottomLeft];
-	Vector3 vVector1(v2.X, v2.Y, 0);
-	v2 = info.corners[topRight] - info.corners[bottomRight];
-	Vector3 vVector2(v2.X, v2.Y, 0);
-	uVector2 += (vVector1 - vVector2);
-	for (i=0; i<=uCount; i++) {
-		Real iFactor = ((Real)i / (uCount-1));
-		Real iBarFactor = 1.0f-iFactor;
-		if (i<uCount) {
-			nextColumn.collapsed = false;
-			nextColumn.deleted = false;
-			nextColumn.lightGradient = false;
-			nextColumn.uIndex = i;
-
-			Real minHeight=m_map->getMaxHeightValue()*MAP_HEIGHT_SCALE;
-			Real maxHeight = m_map->getMinHeightValue()*MAP_HEIGHT_SCALE;
-			for (j=0; j<vCount; j++) {
-				Real jFactor = ((Real)j / (vCount-1));
-				Real jBarFactor = 1.0f-jFactor;
-				nextColumn.vtx[j] = origin +  (uVector1 * jBarFactor * iFactor) + (uVector2 * jFactor * iFactor) +
-													(vVector1 * iBarFactor * jFactor) + (vVector2 * iFactor * jFactor) ;
-				Real z = TheTerrainRenderObject->getMaxCellHeight(nextColumn.vtx[j].X, nextColumn.vtx[j].Y);
-				if (z<minHeight) minHeight = z;
-				if (z>maxHeight) maxHeight = z;
-				nextColumn.vertexIndex[j] = -1;
-				nextColumn.vtx[j].Z = z;
-				Int k;
-				for (k=0; k<numLights; k++) {
-					Vector3 offset = nextColumn.vtx[j] - lights[k]->Get_Position();
-					Real range = lights[k]->Get_Attenuation_Range();
-					// for culling, expand one cell radius.
-					range += MAP_XY_FACTOR;
-					if (offset.Length2() < range*range) {
-						nextColumn.lightGradient = true;
-					}
-				}
-			}
-			if (!nextColumn.lightGradient) {
-				nextColumn.collapsed = true;
-				nextColumn.vtx[0].Z = maxHeight;
-				nextColumn.vtx[1] = nextColumn.vtx[vCount-1];
-				nextColumn.vtx[1].Z = maxHeight;
-			}	else {
-				for (j=0; j<vCount; j++) {
-					nextColumn.vtx[j].Z = maxHeight;
-				}
-			}
-			if (i<2) {
-				curColumn = nextColumn;
-			} else {
-				if (prevColumn.collapsed && curColumn.collapsed && nextColumn.collapsed) {
-					Bool okToDelete = false;
-
-					Real theZ = prevColumn.vtx[0].Z * (curColumn.uIndex-prevColumn.uIndex) +
-										nextColumn.vtx[0].Z * (nextColumn.uIndex-curColumn.uIndex);
-					theZ /= nextColumn.uIndex-prevColumn.uIndex;
-					if (theZ >= curColumn.vtx[0].Z && theZ < curColumn.vtx[0].Z + MAX_ERROR) {
-						theZ = prevColumn.vtx[1].Z * (curColumn.uIndex-prevColumn.uIndex) +
-											nextColumn.vtx[1].Z * (nextColumn.uIndex-curColumn.uIndex);
-						theZ /= nextColumn.uIndex-prevColumn.uIndex;
-						if (theZ >= curColumn.vtx[1].Z && theZ < curColumn.vtx[1].Z + MAX_ERROR) {
-							okToDelete = true;
-						}
-					}
-					if (okToDelete) {
-						curColumn.deleted = true;
-					}
-				}
-			}
-		}
-		if (!curColumn.deleted && i!=1) {
-			// Write out the vertices.
-			for (j=0; j<vCount; j++) {
-				Real U, V;
-				if (m_curNumRoadVertices >= m_maxRoadVertex) {
-					break;
-				}
-				curVector.Set(curColumn.vtx[j].X - info.loc.X, curColumn.vtx[j].Y - info.loc.Y);
-				V = Vector2::Dot_Product(info.roadNormal, curVector);
-				U = Vector2::Dot_Product(info.roadVector, curVector);
-				Int diffuse = (255<<24)|TheTerrainRenderObject->getStaticDiffuse(curColumn.vtx[j].X/MAP_XY_FACTOR+0.5, curColumn.vtx[j].Y/MAP_XY_FACTOR+0.5);
-				Real shadeR, shadeG, shadeB;
-				shadeB = (diffuse & 0xFF)/255.0;
-				shadeG = ((diffuse>>8) & 0xFF)/255.0;
-				shadeR = ((diffuse>>16) & 0xFF)/255.0;
-				Int k;
-				for (k=0; k<numLights; k++) {
-					Real factor;
-					if (lights[k]->Get_Type() == LightClass::POINT) {
-						Vector3 lightLoc = lights[k]->Get_Position();
-						Vector3 vtx = curColumn.vtx[j];
-						Vector3 offset = vtx - lightLoc;
-						double range, midRange;
-						lights[k]->Get_Far_Attenuation_Range(midRange, range);
-						if (vtx.X < lightLoc.X-range) continue;
-						if (vtx.X > lightLoc.X+range) continue;
-						if (vtx.Y < lightLoc.Y-range) continue;
-						if (vtx.Y > lightLoc.Y+range) continue;
-						Real dist = offset.Length();
-						if (dist >= range) continue;
-						if (midRange < 0.1) continue;
-	#if 1
-						factor = 1.0f - (dist - midRange) / (range - midRange);
-	#else
-						// f = 1.0 / (atten0 + d*atten1 + d*d/atten2);
-						if (fabs(range-midRange)<1e-5)	{
-							// if the attenuation range is too small assume uniform with cutoff
-							factor = 1.0;
-						}	else  {
-							factor = 1.0f/(0.1+dist/midRange + 5.0f*dist*dist/(range*range));
-						}
-	#endif
-						factor = WWMath::Clamp(factor,0.0f,1.0f);
-						Real shade = 0.5f;
-						shade *= factor;
-						Vector3 diffuse;
-						lights[k]->Get_Diffuse(&diffuse);
-						Vector3 ambient;
-						lights[k]->Get_Ambient(&ambient);
-						if (shade > 1.0) shade = 1.0;
-						if(shade < 0.0f) shade = 0.0f;
-						shadeR += shade*diffuse.X;
-						shadeG += shade*diffuse.Y;
-						shadeB += shade*diffuse.Z;
-						shadeR += factor*ambient.X;
-						shadeG += factor*ambient.Y;
-						shadeB += factor*ambient.Z;
-					}
-				}
- 				if (shadeR > 1.0) shadeR = 1.0;
-				if(shadeR < 0.0f) shadeR = 0.0f;
-				if (shadeG > 1.0) shadeG = 1.0;
-				if(shadeG < 0.0f) shadeG = 0.0f;
-				if (shadeB > 1.0) shadeB = 1.0;
-				if(shadeB < 0.0f) shadeB = 0.0f;
-				shadeR*=255;
-				shadeG*=255;
-				shadeB*=255;
-				diffuse=REAL_TO_INT(shadeB) | (REAL_TO_INT(shadeG) << 8) | (REAL_TO_INT(shadeR) << 16) | ((int)255 << 24);
-
-			#ifdef RTS_DEBUG
-				//diffuse &= 0xFFFF00FF; // strip out green.
-			#endif
-				vb[m_curNumRoadVertices].u1 = info.uOffset+U/(info.scale*4);
-				vb[m_curNumRoadVertices].v1 = info.vOffset-V/(info.scale*4);	// Road is 1/16 texture height.
-				vb[m_curNumRoadVertices].x = curColumn.vtx[j].X;
-				vb[m_curNumRoadVertices].y = curColumn.vtx[j].Y;
-				vb[m_curNumRoadVertices].z = curColumn.vtx[j].Z+FLOAT_AMOUNT;
-				vb[m_curNumRoadVertices].diffuse = diffuse;
-				curColumn.vertexIndex[j] = m_curNumRoadVertices;
-				m_curNumRoadVertices++;
-				if (j==1 && curColumn.collapsed) {
-					break;
-				}
-			}
-			if (m_curNumRoadVertices >= MAX_SEG_INDEX) {
-				break;
-			}
-			if (i>1 && (!prevColumn.collapsed || !curColumn.collapsed)) {
-				// Write out the triangles.
-				j = 0;
-				k = 0;
-				while (j<vCount-1 && k<vCount-1) {
-					if (m_curNumRoadIndices >= m_maxRoadIndex) {
-						break;
-					}
-					UnsignedShort *curIb = ib+m_curNumRoadIndices;
-					if (k==0 || !prevColumn.collapsed) {
-						*curIb++ = prevColumn.vertexIndex[j+1];
-						*curIb++ = prevColumn.vertexIndex[j];
-						*curIb++ = curColumn.vertexIndex[k];
-						m_curNumRoadIndices+=3;
-					}
-					if (j==0 || !curColumn.collapsed) {
-						Int offset = 1;
-						if (curColumn.collapsed && !prevColumn.collapsed) {
-							offset = vCount-1;
-						}
-						*curIb++ = prevColumn.vertexIndex[j+offset];
-						*curIb++ = curColumn.vertexIndex[k];
-						*curIb++ = curColumn.vertexIndex[k+1];
-						m_curNumRoadIndices+=3;
-					}
-					if (prevColumn.collapsed && curColumn.collapsed) {
-						break;
-					}
-					if (!prevColumn.collapsed) {
-						j++;
-					}
-					if (!curColumn.collapsed) {
-						k++;
-					}
-				}
-				prevColumn = curColumn;
-			}	else if (i==0) {
-				prevColumn = curColumn;
-			}
-			if (m_curNumRoadIndices >= MAX_SEG_INDEX) {
-				break;
-			}
-		}
-		curColumn = nextColumn;
-	}
-}
-
-//=============================================================================
 // W3DRoadBuffer::loadCurve
 //=============================================================================
 /** Loads a curve segment into the vertex buffer for a road end cap or join. */
@@ -1232,18 +984,16 @@ void W3DRoadBuffer::loadRoadsInVertexAndIndexBuffers()
 	}
 	m_curNumRoadVertices = 0;
 	m_curNumRoadIndices = 0;
-	VertexFormatXYZDUV1 *vb;
+	RoadVertex *vb;
 	UnsignedShort *ib;
-	// Lock the buffers.
+	// Write the retained CPU cache; upload occurs only when its content changes.
 	if (m_roadTypes[m_curRoadType].getIB() == nullptr) {
 		this->m_roadTypes[m_curRoadType].setNumVertices(0);
 		this->m_roadTypes[m_curRoadType].setNumIndices(0);
 		return;
 	}
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_roadTypes[m_curRoadType].getIB());
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_roadTypes[m_curRoadType].getVB());
-	vb=(VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-	ib = lockIdxBuffer.Get_Index_Array();
+	vb=m_roadTypes[m_curRoadType].getVB();
+	ib=m_roadTypes[m_curRoadType].getIB();
 	// Add to the index buffer & vertex buffer.
 
 	Int curRoad;
@@ -1262,48 +1012,11 @@ void W3DRoadBuffer::loadRoadsInVertexAndIndexBuffers()
 }
 
 //=============================================================================
-// W3DRoadBuffer::loadLitRoadsInVertexAndIndexBuffers
-//=============================================================================
-/** Loads the roads into the vertex buffer for drawing. */
-//=============================================================================
-void W3DRoadBuffer::loadLitRoadsInVertexAndIndexBuffers(RefRenderObjListIterator *pDynamicLightsIterator)
-{
-	if ( !m_initialized) {
-		return;
-	}
-	m_curNumRoadVertices = 0;
-	m_curNumRoadIndices = 0;
-	VertexFormatXYZDUV1 *vb;
-	UnsignedShort *ib;
-	// Lock the buffers.
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_roadTypes[m_curRoadType].getIB());
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_roadTypes[m_curRoadType].getVB());
-	vb=(VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-	ib = lockIdxBuffer.Get_Index_Array();
-	// Add to the index buffer & vertex buffer.
-
-	Int curRoad;
-	if (true) {
-		// Do road segments.
-		TCorner corner;
-		for (corner = SEGMENT; corner < NUM_JOINS; corner = (TCorner)(corner+1)) {
-			for (curRoad=0; curRoad<m_numRoads; curRoad++) {
-				if (m_roads[curRoad].m_type == corner) {
-					loadLit4PtSection(&m_roads[curRoad], ib, vb, pDynamicLightsIterator);
-				}
-			}
-		}
-	}
-	this->m_roadTypes[m_curRoadType].setNumVertices(m_curNumRoadVertices);
-	this->m_roadTypes[m_curRoadType].setNumIndices(m_curNumRoadIndices);
-}
-
-//=============================================================================
 // W3DRoadBuffer::loadRoadSegment
 //=============================================================================
 /** Loads a road segment into the vertex buffer for drawing. */
 //=============================================================================
-void W3DRoadBuffer::loadRoadSegment(UnsignedShort *ib, VertexFormatXYZDUV1 *vb, RoadSegment *pRoad)
+void W3DRoadBuffer::loadRoadSegment(UnsignedShort *ib, RoadVertex *vb, RoadSegment *pRoad)
 {
 	if (pRoad->m_uniqueID != m_curUniqueID) {
 		return;
@@ -3041,21 +2754,28 @@ W3DRoadBuffer::~W3DRoadBuffer()
 //=============================================================================
 /** Constructor.  */
 //=============================================================================
-W3DRoadBuffer::W3DRoadBuffer()	:
-	m_roads(nullptr),
-	m_numRoads(0),
-	m_initialized(false),
-	m_map(nullptr),
+W3DRoadBuffer::W3DRoadBuffer() :
+    m_roadTypes(nullptr),
+    m_roads(nullptr),
+    m_numRoads(0),
+    m_initialized(false),
+    m_map(nullptr),
+    m_lightsIterator(nullptr),
+    m_minX(0),m_maxX(0),m_minY(0),m_maxY(0),
+    m_curUniqueID(-1),
+    m_curRoadType(0),
 #ifdef LOAD_TEST_ASSETS
-	m_maxUID(0),
-#endif // LOAD_TEST_ASSETS
-	m_lightsIterator(nullptr),
-	m_maxRoadSegments(500),
-	m_maxRoadTypes(8),
-	m_maxRoadVertex(1000),
-	m_maxRoadIndex(2000),
-	m_curRoadType(0)
-
+    m_maxUID(0),
+    m_curOpenRoad(0),
+#endif
+    m_maxRoadSegments(500),
+    m_maxRoadVertex(1000),
+    m_maxRoadIndex(2000),
+    m_maxRoadTypes(8),
+    m_curNumRoadVertices(0),
+    m_curNumRoadIndices(0),
+    m_updateBuffers(true),
+    m_contentChanged(true)
 {
 	allocateRoadBuffers();
 }
@@ -3086,7 +2806,7 @@ void W3DRoadBuffer::allocateRoadBuffers()
 
 	// save data for max limits
 	m_maxRoadSegments = TheGlobalData->m_maxRoadSegments;
-	m_maxRoadVertex = TheGlobalData->m_maxRoadVertex;
+	m_maxRoadVertex = std::min(TheGlobalData->m_maxRoadVertex,65536);
 	m_maxRoadIndex = TheGlobalData->m_maxRoadIndex;
 	m_maxRoadTypes = TheGlobalData->m_maxRoadTypes;
 
@@ -3098,6 +2818,8 @@ void W3DRoadBuffer::allocateRoadBuffers()
 	m_curNumRoadIndices=0;
 	m_roads = MSGNEW("RoadBuffer") RoadSegment[m_maxRoadSegments];
 	m_roadTypes = MSGNEW("RoadBuffer") RoadType[m_maxRoadTypes];
+	m_updateBuffers=true;
+	m_contentChanged=true;
 
 	// load roads from INI
 	TerrainRoadType *road;
@@ -3137,6 +2859,8 @@ void W3DRoadBuffer::allocateRoadBuffers()
 //=============================================================================
 void W3DRoadBuffer::clearAllRoads()
 {
+	m_updateBuffers=true;
+	m_contentChanged=true;
 	Int i;
 	if (m_roads)
 	for (i=0; i<m_numRoads; i++) {
@@ -3192,6 +2916,8 @@ void W3DRoadBuffer::loadRoads()
 //=============================================================================
 void W3DRoadBuffer::updateLighting()
 {
+	if (!m_roads) return;
+	m_contentChanged=true;
 	Int curRoad;
 	// Do road segments.
 	for (curRoad=0; curRoad<m_numRoads; curRoad++) {
@@ -3214,98 +2940,81 @@ void W3DRoadBuffer::updateCenter()
 //=============================================================================
 /** Draws the roads.   */
 //=============================================================================
-void W3DRoadBuffer::drawRoads(CameraClass * camera, TextureClass *cloudTexture, TextureClass *noiseTexture, Bool wireframe,
-															Int minX, Int maxX, Int minY, Int maxY, RefRenderObjListIterator *pDynamicLightsIterator)
+void W3DRoadBuffer::drawRoads(CameraClass *camera, TextureClass *cloudTexture, TextureClass *noiseTexture, Bool wireframe,
+    Int minX, Int maxX, Int minY, Int maxY, RefRenderObjListIterator *pDynamicLightsIterator,
+    const Matrix3D &worldTransform)
 {
-	m_minX = minX*MAP_XY_FACTOR;
-	m_maxX = maxX*MAP_XY_FACTOR;
-	m_minY = minY*MAP_XY_FACTOR;
-	m_maxY = maxY*MAP_XY_FACTOR;
-
-	Int i;
-
-	Int maxStacking = 0;
-	for (i=0; i<m_maxRoadTypes; i++) {
-		if (m_roadTypes[i].getStacking() > maxStacking) {
-			maxStacking = m_roadTypes[i].getStacking();
-		}
-	}
-	Int stacking;
-	W3DShaderManager::ShaderTypes st=W3DShaderManager::ST_ROAD_BASE; //set default shader
-	if (cloudTexture)
-	{	st=W3DShaderManager::ST_ROAD_BASE_NOISE1;
-		if (noiseTexture)
-			st=W3DShaderManager::ST_ROAD_BASE_NOISE12;
-	}
-	else
-	if (noiseTexture)
-		st=W3DShaderManager::ST_ROAD_BASE_NOISE2;
-
-	Int devicePasses = 1;	//assume regular rendering
- 	//Find number of passes required to render current shader
-	devicePasses=W3DShaderManager::getShaderPasses(st);
-
-	W3DShaderManager::setTexture(1,cloudTexture);	//cloud
-	W3DShaderManager::setTexture(2,noiseTexture);	//noise/lightmap
-
-	for (stacking=0; stacking <= maxStacking; stacking++) {
-		for (i=0; i<m_maxRoadTypes; i++) {
-			if (stacking != m_roadTypes[i].getStacking()) {
-				continue;
-			}
-			m_curUniqueID = m_roadTypes[i].getUniqueID();
-			m_curRoadType = i;
-			loadRoadsInVertexAndIndexBuffers();
-			if (m_roadTypes[i].getNumIndices() == 0) continue;
-			if (wireframe) {
-				m_roadTypes[i].applyTexture();
-				DX8Wrapper::Set_Texture(0,nullptr);
-				DX8Wrapper::Set_Shader(detailShader); // shows clipping.
-			} else {
-				m_roadTypes[i].applyTexture();
-			}
-	#ifdef RTS_DEBUG
-			//DX8Wrapper::Set_Shader(detailShader); // shows clipping.
-	#endif
-			for (Int pass=0; pass < devicePasses; pass++)
-			{
-				if (!wireframe)
-		 			W3DShaderManager::setShader(st, pass);
-				//Draw all this road type.
-				DX8Wrapper::Draw_Triangles(	0, m_roadTypes[i].getNumIndices()/3, 0,	m_roadTypes[i].getNumVertices());
-			}
-
-			if (!wireframe)	//shader was applied at least once?
- 				W3DShaderManager::resetShader(st);
-		}
-	}
-
-#if 0
-	// Need to use a separate set of index & vertex buffers for this.  jba.
-	DX8Wrapper::Set_Index_Buffer(nullptr,0);
-	DX8Wrapper::Set_Vertex_Buffer(nullptr);
-	if (pDynamicLightsIterator) {
-		for (i=0; i<m_maxRoadTypes; i++) {
-			m_curRoadType = i;
-			m_curUniqueID = m_roadTypes[i].getUniqueID();
-			if (m_curUniqueID < 0 || m_curUniqueID >= m_maxRoadTypes) continue;
-			loadLitRoadsInVertexAndIndexBuffers(pDynamicLightsIterator);
-			if (this->m_curNumRoadIndices == 0) continue;
-			if (wireframe) {
-					DX8Wrapper::Set_Texture(0,nullptr);
-			} else {
-				m_roadTypes[i].applyTexture();
-				if (cloudTexture) {
-					DX8Wrapper::Set_Texture(1,cloudTexture);
-				}
-			}
-			DX8Wrapper::Set_Shader(detailAlphaShader);
-			//Draw all the roads.
-			DX8Wrapper::Draw_Triangles(	0, m_curNumRoadIndices/3, 0,	m_curNumRoadVertices);
-		}
-	}
-#endif
-	m_curRoadType = 0;
+    (void)pDynamicLightsIterator; // The old dynamic-light pass was never enabled.
+    IRenderBackend *backend=WW3D::Get_Render_Backend();
+    if (!m_initialized || !m_roads || !m_roadTypes || !camera || !backend || !backend->Is_Device_Ready()) return;
+    IRegion2D bounds;
+    bounds.lo.x=minX*MAP_XY_FACTOR; bounds.hi.x=maxX*MAP_XY_FACTOR;
+    bounds.lo.y=minY*MAP_XY_FACTOR; bounds.hi.y=maxY*MAP_XY_FACTOR;
+    const bool boundsChanged=m_minX!=bounds.lo.x || m_maxX!=bounds.hi.x ||
+        m_minY!=bounds.lo.y || m_maxY!=bounds.hi.y;
+    m_minX=bounds.lo.x; m_maxX=bounds.hi.x; m_minY=bounds.lo.y; m_maxY=bounds.hi.y;
+    const bool loadBuffers=m_contentChanged || boundsChanged;
+    m_contentChanged=loadBuffers; // Retain pending visibility work if texture preparation fails.
+    m_updateBuffers=false;
+    ShaderClass shader=wireframe?detailShader:detailAlphaShader;
+    shader.Set_Post_Detail_Color_Func(ShaderClass::DETAILCOLOR_DISABLE);
+    shader.Set_Post_Detail_Alpha_Func(ShaderClass::DETAILALPHA_DISABLE);
+    RenderBackendMaterialState material;
+    if (!shader.Get_Render_Backend_State(material)) {
+        std::fprintf(stderr,"Road material translation failed.\n"); return;
+    }
+    material.color_write_mask=7;
+    // An absent base texture asks the terrain backend to draw vertex color.
+    if (wireframe) material.texture_combine=RenderBackendTextureCombine::Replace;
+    RenderBackendTerrainState terrain;
+    terrain.project_world_coordinates=true;
+    terrain.diffuse_after_layers=!wireframe && cloudTexture && noiseTexture;
+    for (unsigned row=0; row<3; ++row)
+        for (unsigned column=0; column<4; ++column)
+            terrain.world_transform[row*4+column]=worldTransform[row][column];
+    W3DShaderManager::getTerrainNoiseProjection(terrain.cloud_noise_projection[0],
+        terrain.cloud_noise_projection[1],terrain.cloud_noise_projection[2]);
+    auto layer=[cloudTexture](TextureClass *texture,RenderBackendTextureHandle &handle,
+        RenderBackendSamplerState &sampler,unsigned stage,bool pointMin) {
+        if (!texture || !texture->Ensure_Renderer_Texture() ||
+            !texture->Get_Filter().Get_Render_Sampler(sampler,stage)) return false;
+        handle=texture->Get_Renderer_Texture();
+        sampler.address_u=sampler.address_v=RenderBackendTextureAddress::Wrap;
+        sampler.min_filter=pointMin?RenderBackendTextureFilter::Point:RenderBackendTextureFilter::Linear;
+        sampler.mag_filter=RenderBackendTextureFilter::Linear;
+        sampler.max_anisotropy=1;
+        // Stage 2 of roadnoise2 retains the noise texture's mip filter.
+        // Cloud and the single-noise fixed-function path explicitly override it.
+        if (!pointMin || !cloudTexture)
+            sampler.mip_filter=TheGlobalData->m_trilinearTerrainTex?
+                RenderBackendTextureFilter::Linear:RenderBackendTextureFilter::Point;
+        return handle.Is_Valid();
+    };
+    if (!wireframe && ((cloudTexture && !layer(cloudTexture,terrain.cloud_texture,terrain.cloud_sampler,1,false)) ||
+        (noiseTexture && !layer(noiseTexture,terrain.noise_texture,terrain.noise_sampler,2,true)))) {
+        std::fprintf(stderr,"Road cloud/noise texture preparation failed.\n"); return;
+    }
+    Matrix4x4 savedProjection;
+    backend->Get_View_Projection(savedProjection);
+    struct RestoreProjection {
+        IRenderBackend *backend;
+        const Matrix4x4 &projection;
+        ~RestoreProjection() { backend->Set_View_Projection(projection); }
+    } restore={backend,savedProjection};
+    camera->Apply();
+    Int maxStacking=0;
+    for (Int i=0; i<m_maxRoadTypes; ++i)
+        if (m_roadTypes[i].getStacking()>maxStacking) maxStacking=m_roadTypes[i].getStacking();
+    for (Int stacking=0; stacking<=maxStacking; ++stacking) {
+        for (Int i=0; i<m_maxRoadTypes; ++i) {
+            if (stacking!=m_roadTypes[i].getStacking()) continue;
+            m_curUniqueID=m_roadTypes[i].getUniqueID();
+            m_curRoadType=i;
+            if (loadBuffers) loadRoadsInVertexAndIndexBuffers();
+            if (!m_roadTypes[i].draw(material,terrain))
+                std::fprintf(stderr,"Road persistent geometry/material draw failed.\n");
+        }
+    }
+    m_contentChanged=false;
+    m_curRoadType=0;
 }
-
-

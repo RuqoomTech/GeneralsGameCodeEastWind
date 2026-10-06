@@ -182,10 +182,12 @@ float4 PSTerrainTexture(TerrainPSInput input) : SV_TARGET
     float4 color = PrimitiveTexture.Sample(MaterialSampler, input.tileTexcoord);
     if ((TerrainLayers & 1) != 0)
         color *= SecondaryTexture.Sample(SecondarySampler, input.shroudTexcoord);
-    color *= input.color;
+    if ((TerrainLayers & 8) == 0) color *= input.color;
     if ((TerrainLayers & 2) != 0)
         color *= TerrainCloudTexture.Sample(TerrainCloudSampler, input.cloudTexcoord);
     if ((TerrainLayers & 4) != 0)
         color *= TerrainNoiseTexture.Sample(TerrainNoiseSampler, input.noiseTexcoord);
+    // Road assembly shaders apply their vertex lighting after cloud and noise.
+    if ((TerrainLayers & 8) != 0) color *= input.color;
     return TestMaterialAlpha(color);
 }

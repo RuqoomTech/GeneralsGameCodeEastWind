@@ -48,20 +48,16 @@
 //           Includes
 //-----------------------------------------------------------------------------
 #include "WWLib/always.h"
-#include "WW3D2/rendobj.h"
-#include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
-#include "WW3D2/shader.h"
-#include "WW3D2/vertmaterial.h"
+#include "WWMath/vector3.h"
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
-#include "Common/AsciiString.h"
 
 //-----------------------------------------------------------------------------
 //           Forward References
 //-----------------------------------------------------------------------------
-class MeshClass;
+class TextureClass;
+class CameraClass;
+class Matrix3D;
 
 //-----------------------------------------------------------------------------
 //           Type Defines
@@ -99,21 +95,21 @@ public:
 	/// Removes highlighting.
 	void removeHighlighting();
 	/// Draws the bibs.
-	void renderBibs();
+	void renderBibs(CameraClass *camera, const Matrix3D &worldTransform);
 	/// Called when the view changes, and sort key needs to be recalculated.
 	/// Normally sortKey gets calculated when a bib becomes visible.
 protected:
 	enum { INITIAL_BIB_VERTEX=256,
 					INITIAL_BIB_INDEX=384,
 					MAX_BIBS=1000};
-	DX8VertexBufferClass	*m_vertexBib;	///<Bib vertex buffer.
-	Int										m_vertexBibSize; ///< Num vertices in bib buffer.
-	DX8IndexBufferClass		*m_indexBib;	///<indices defining a triangles for the bib drawing.
-	Int							  		m_indexBibSize;	///<indices available in m_indexBib.
+	struct GeometryState;
+	GeometryState *m_geometry;
+	Int										m_vertexBibSize; ///< Maximum aggregate bib vertices.
+	Int							  		m_indexBibSize;	///< Maximum aggregate bib indices.
 	TextureClass *m_bibTexture;	///<Bibs texture
 	TextureClass *m_highlightBibTexture;	///<Bibs texture
-	Int			m_curNumBibVertices; ///<Number of vertices used in m_vertexBib.
-	Int			m_curNumBibIndices;	///<Number of indices used in b_indexBib;
+	Int			m_curNumBibVertices; ///< Number of cached bib vertices.
+	Int			m_curNumBibIndices;	///< Number of cached bib indices.
 	Int			m_curNumNormalBibIndices; ///< Number of non-highlighted bib index.
 	Int			m_curNumNormalBibVertex; ///< Number of non-highlighted bib vertex.
 

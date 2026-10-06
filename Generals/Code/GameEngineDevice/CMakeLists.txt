@@ -120,7 +120,6 @@ set(GAMEENGINEDEVICE_SRC
     Source/W3DDevice/GameClient/Shaders/monochrome.nvp
     Source/W3DDevice/GameClient/Shaders/motionblur.nvp
     Source/W3DDevice/GameClient/Shaders/MotionBlur.nvv
-    Source/W3DDevice/GameClient/Shaders/roadnoise2.nvp
     Source/W3DDevice/GameClient/Shaders/terrain.nvp
     Source/W3DDevice/GameClient/Shaders/terrainnoise.nvp
     Source/W3DDevice/GameClient/Shaders/terrainnoise2.nvp

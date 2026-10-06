@@ -72,6 +72,10 @@ public:
     bool Draw_Indexed_Terrain_Triangles(const RenderBackendTerrainVertex*,unsigned,
         const unsigned short*,unsigned,RenderBackendTextureHandle,const RenderBackendMaterialState&,
         const RenderBackendTerrainState&) override { return false; }
+    RenderBackendGeometryHandle Create_Static_Indexed_Terrain_Geometry(const RenderBackendTerrainVertex*,unsigned,const unsigned short*,unsigned) override { return {}; }
+    bool Is_Geometry_Valid(RenderBackendGeometryHandle) const override { return false; }
+    bool Draw_Static_Indexed_Terrain_Geometry(RenderBackendGeometryHandle,RenderBackendTextureHandle,const RenderBackendMaterialState&,const RenderBackendTerrainState&) override { return false; }
+    bool Draw_Static_Indexed_Material_Geometry(RenderBackendGeometryHandle,RenderBackendTextureHandle,const RenderBackendMaterialState&) override { return false; }
     void Release_Texture(RenderBackendTextureHandle) override {}
     void Set_Ambient(const Vector3&) override {}
     void Set_Light_Environment(LightEnvironmentClass*) override {}

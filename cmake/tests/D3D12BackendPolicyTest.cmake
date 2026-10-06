@@ -441,7 +441,7 @@ foreach(_terrain_geometry_owner IN ITEMS
 endforeach()
 rts_policy_require_contains(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DTerrainBackground.cpp"
-    "Draw_Indexed_Terrain_Triangles" "the actual flat terrain tile must draw through the backend")
+    "Draw_Static_Indexed_Terrain_Geometry" "the actual flat terrain tile must reuse backend geometry")
 rts_policy_require_absent(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp"
     "FlatTerrainShader" "flat terrain shader implementations have moved to the canonical HLSL")
@@ -529,3 +529,27 @@ rts_policy_require_contains(
     "legacy D3DX8 shader assembly must stay outside the Evolution x64 path")
 
 message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, sampled textures, the Step05H real Render2D path, and active Evolution shader/tree/water math no longer depends on D3DX8")
+
+foreach(_bib_owner IN ITEMS
+    Generals/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DBibBuffer.h
+    Generals/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DBibBuffer.cpp
+    GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DBibBuffer.h
+    GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DBibBuffer.cpp)
+    rts_policy_require_absent("${_bib_owner}" "DX8" "migrated bibs must use persistent backend geometry")
+    rts_policy_require_absent("${_bib_owner}" "dx8" "migrated bibs must keep native buffer headers retired")
+endforeach()
+
+foreach(_road_owner IN ITEMS
+    Generals/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DRoadBuffer.h
+    Generals/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DRoadBuffer.cpp
+    GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DRoadBuffer.h
+    GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DRoadBuffer.cpp)
+    rts_policy_require_absent("${_road_owner}" "DX8" "migrated roads must use retained backend geometry")
+    rts_policy_require_absent("${_road_owner}" "dx8" "migrated roads must keep native buffer headers retired")
+endforeach()
+rts_policy_require_absent(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp"
+    "RoadShader" "all road and extra-blend callers must use the canonical HLSL")
+rts_policy_require_contains(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/HeightMap.cpp"
+    "Draw_Indexed_Terrain_Triangles" "the real third-texture terrain blend must draw through the backend")

@@ -83,6 +83,11 @@
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "WW3D2/dx8wrapper.h"
 #include "WW3D2/light.h"
+#include "WW3D2/IRenderBackend.h"
+#include "WW3D2/ww3d.h"
+#include "WWMath/matrix4.h"
+#include <vector>
+#include <cstdio>
 #include "WW3D2/scene.h"
 #include "W3DDevice/GameClient/W3DPoly.h"
 #include "W3DDevice/GameClient/W3DCustomScene.h"
@@ -2062,25 +2067,19 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 
 		//Do additional pass over any tiles that have 3 textures blended together.
 		if (TheGlobalData->m_use3WayTerrainBlends)
-			renderExtraBlendTiles();
+			renderExtraBlendTiles(&rinfo.Camera);
 
 		Int yCoordMin = m_map->getDrawOrgY();
 		Int yCoordMax = m_y+m_map->getDrawOrgY()-1;
 		Int xCoordMin = m_map->getDrawOrgX();
 		Int xCoordMax = m_x+m_map->getDrawOrgX()-1;
 #ifdef DO_ROADS
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Set_Texture(1,nullptr);
-		m_stageTwoTexture->restore();
-
-		ShaderClass::Invalidate();
 		if (!ShaderClass::Is_Backface_Culling_Inverted()) {
-			DX8Wrapper::Set_Material(m_vertexMaterialClass);
 			if (Scene) {
 				RTS3DScene *pMyScene = (RTS3DScene *)Scene;
 				RefRenderObjListIterator pDynamicLightsIterator(pMyScene->getDynamicLights());
 				m_roadBuffer->drawRoads(&rinfo.Camera, doCloud?m_stageTwoTexture:nullptr, TheGlobalData->m_useLightMap?m_stageThreeTexture:nullptr,
-					m_disableTextures,xCoordMin-m_map->getBorderSizeInline(), xCoordMax-m_map->getBorderSizeInline(), yCoordMin-m_map->getBorderSizeInline(), yCoordMax-m_map->getBorderSizeInline(), &pDynamicLightsIterator);
+					m_disableTextures,xCoordMin-m_map->getBorderSizeInline(), xCoordMax-m_map->getBorderSizeInline(), yCoordMin-m_map->getBorderSizeInline(), yCoordMax-m_map->getBorderSizeInline(), &pDynamicLightsIterator,Transform);
 			}
 		}
 	#endif
@@ -2120,7 +2119,7 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
   if ( m_waypointBuffer )
 	  m_waypointBuffer->drawWaypoints(rinfo);
 
-	m_bibBuffer->renderBibs();
+	m_bibBuffer->renderBibs(&rinfo.Camera,Transform);
 
 	// We do some custom blending, so tell the shader class to reset everything.
 	DX8Wrapper::Set_Texture(0,nullptr);
@@ -2174,209 +2173,205 @@ void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 //=============================================================================
 /** Renders an additional terrain pass including only those tiles which have more than 2 textures
 blended together.  Used primarily for corner cases where 3 different textures meet.*/
-void HeightMapRenderObjClass::renderExtraBlendTiles()
+void HeightMapRenderObjClass::renderExtraBlendTiles(CameraClass *camera)
 {
-	Int vertexCount = 0;
-	Int indexCount = 0;
-	Int xExtent = m_map->getXExtent();
-	Int border = m_map->getBorderSizeInline();
-	static Int maxBlendTiles = DEFAULT_MAX_FRAME_EXTRABLEND_TILES;
+    m_numVisibleExtraBlendTiles = 0;
+    if (!m_numExtraBlendTiles || !m_map || !camera) return;
+    IRenderBackend *backend = WW3D::Get_Render_Backend();
+    if (!backend || !backend->Is_Device_Ready()) return;
+    Int vertexCount = 0;
+    Int indexCount = 0;
+    const Int xExtent = m_map->getXExtent();
+    const Int border = m_map->getBorderSizeInline();
+    static Int maxBlendTiles = DEFAULT_MAX_FRAME_EXTRABLEND_TILES;
+    if (maxBlendTiles > 10000) maxBlendTiles = 10000;
+    std::vector<RenderBackendTerrainVertex> vertices;
+    std::vector<UnsignedShort> indices;
+    vertices.reserve(maxBlendTiles*4);
+    indices.reserve(maxBlendTiles*6);
+    RenderBackendTerrainVertex *vb = nullptr;
+    UnsignedShort *ib = nullptr;
+    const bool debug = TheGlobalData->m_use3WayTerrainBlends == 2;
+    auto setColor = [debug](RenderBackendTerrainVertex &vertex, UnsignedInt diffuse, UnsignedByte alpha) {
+        const Vector4 color = Unpack_ARGB_Color((static_cast<UnsignedInt>(alpha)<<24) | (diffuse & 0x00ffffffu));
+        vertex.r = debug ? 1.f : color.X;
+        vertex.g = debug ? 1.f : color.Y;
+        vertex.b = debug ? 1.f : color.Z;
+        vertex.a = debug ? 1.f : color.W;
+    };
+	const UnsignedByte* data = m_map->getDataPtr();
 
-	m_numVisibleExtraBlendTiles = 0;
+	//Loop over visible terrain and extract all the tiles that need extra blend
+	Int drawEdgeY=m_map->getDrawOrgY()+m_map->getDrawHeight()-1;
+	Int drawEdgeX=m_map->getDrawOrgX()+m_map->getDrawWidth()-1;
+	if (drawEdgeX > (m_map->getXExtent()-1))
+		drawEdgeX = m_map->getXExtent()-1;
+	if (drawEdgeY > (m_map->getYExtent()-1))
+		drawEdgeY = m_map->getYExtent()-1;
+	Int drawStartX=m_map->getDrawOrgX();
+	Int drawStartY=m_map->getDrawOrgY();
 
-	if (!m_numExtraBlendTiles)
-		return;	//nothing to draw
-
-	if (maxBlendTiles > 10000)	//we can only fit about 10000 tiles into a single VB.
-		maxBlendTiles = 10000;
-
-	DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,DX8_FVF_XYZNDUV2,maxBlendTiles*4);
-	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,maxBlendTiles*6);
+	for (Int j=0; j<m_numExtraBlendTiles; j++)
 	{
+		if (vertexCount >= (maxBlendTiles*4))
+			break;	//no room in vertex buffer
 
-		DynamicVBAccessClass::WriteLockClass lock(&vb_access);
-		VertexFormatXYZNDUV2* vb= lock.Get_Formatted_Vertex_Array();
-		DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
-		UnsignedShort *ib=lockib.Get_Index_Array();
+		Real U[4],V[4];
+		UnsignedByte alpha[4];
+		Bool flipState,cliffState;
+		Int x = m_extraBlendTilePositions[j] & 0xffff;
+		Int y = m_extraBlendTilePositions[j] >> 16;
 
-		if (!vb || !ib) return;
+		if (x >= drawStartX && x < drawEdgeX &&
+			y >= drawStartY && y < drawEdgeY &&
+			m_map->getExtraAlphaUVData(x,y,U,V,alpha,&flipState, &cliffState))
+		{	//this tile is inside visible region and has 3rd blend layer.
+            vertices.resize(vertexCount+4);
+            indices.resize(indexCount+6);
+            vb = vertices.data()+vertexCount;
+            ib = indices.data()+indexCount;
 
-		const UnsignedByte* data = m_map->getDataPtr();
+			Int idx = x+y*xExtent;
 
-		//Loop over visible terrain and extract all the tiles that need extra blend
-		Int drawEdgeY=m_map->getDrawOrgY()+m_map->getDrawHeight()-1;
-		Int drawEdgeX=m_map->getDrawOrgX()+m_map->getDrawWidth()-1;
-		if (drawEdgeX > (m_map->getXExtent()-1))
-			drawEdgeX = m_map->getXExtent()-1;
-		if (drawEdgeY > (m_map->getYExtent()-1))
-			drawEdgeY = m_map->getYExtent()-1;
-		Int drawStartX=m_map->getDrawOrgX();
-		Int drawStartY=m_map->getDrawOrgY();
+			Real p0=data[idx]*MAP_HEIGHT_SCALE;
+			Real p1=data[idx+1]*MAP_HEIGHT_SCALE;
+			Real p2=data[idx + 1 + xExtent]*MAP_HEIGHT_SCALE;
+			Real p3=data[idx + xExtent]*MAP_HEIGHT_SCALE;
+			if (cliffState && abs(p0-p2) > abs(p1-p3))	//cliffs sometimes force a flip
+				flipState = TRUE;
 
-		for (Int j=0; j<m_numExtraBlendTiles; j++)
-		{
-			if (vertexCount >= (maxBlendTiles*4))
-				break;	//no room in vertex buffer
+			vb->x=(x-border)*MAP_XY_FACTOR;
+			vb->y=(y-border)*MAP_XY_FACTOR;
+			vb->z=p0;
+			setColor(*vb,getStaticDiffuse(x,y),alpha[0]);
+			vb->u=U[0];
+			vb->v=V[0];
+			vb->u2=0;
+			vb->v2=0;
+			vb++;
 
-			Real U[4],V[4];
-			UnsignedByte alpha[4];
-			Bool flipState,cliffState;
-			Int x = m_extraBlendTilePositions[j] & 0xffff;
-			Int y = m_extraBlendTilePositions[j] >> 16;
+			vb->x=(x+1-border)*MAP_XY_FACTOR;
+			vb->y=(y-border)*MAP_XY_FACTOR;
+			vb->z=p1;
+			setColor(*vb,getStaticDiffuse(x+1,y),alpha[1]);
+			vb->u=U[1];
+			vb->v=V[1];
+			vb->u2=0;
+			vb->v2=0;
+			vb++;
 
-			if (x >= drawStartX && x < drawEdgeX &&
-				y >= drawStartY && y < drawEdgeY &&
-				m_map->getExtraAlphaUVData(x,y,U,V,alpha,&flipState, &cliffState))
-			{	//this tile is inside visible region and has 3rd blend layer.
+			vb->x=(x+1-border)*MAP_XY_FACTOR;
+			vb->y=(y+1-border)*MAP_XY_FACTOR;
+			vb->z=p2;
+			setColor(*vb,getStaticDiffuse(x+1,y+1),alpha[2]);
+			vb->u=U[2];
+			vb->v=V[2];
+			vb->u2=0;
+			vb->v2=0;
+			vb++;
 
-				Int idx = x+y*xExtent;
+			vb->x=(x-border)*MAP_XY_FACTOR;
+			vb->y=(y+1-border)*MAP_XY_FACTOR;
+			vb->z=p3;
+			setColor(*vb,getStaticDiffuse(x,y+1),alpha[3]);
+			vb->u=U[3];
+			vb->v=V[3];
+			vb->u2=0;
+			vb->v2=0;
+			vb++;
 
-				Real p0=data[idx]*MAP_HEIGHT_SCALE;
-				Real p1=data[idx+1]*MAP_HEIGHT_SCALE;
-				Real p2=data[idx + 1 + xExtent]*MAP_HEIGHT_SCALE;
-				Real p3=data[idx + xExtent]*MAP_HEIGHT_SCALE;
-				if (cliffState && abs(p0-p2) > abs(p1-p3))	//cliffs sometimes force a flip
-					flipState = TRUE;
-
-				vb->x=(x-border)*MAP_XY_FACTOR;
-				vb->y=(y-border)*MAP_XY_FACTOR;
-				vb->z=p0;
-				vb->nx=0;
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=(alpha[0]<<24)|(getStaticDiffuse(x,y) & 0x00ffffff);
-				vb->u1=U[0];
-				vb->v1=V[0];
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				vb->x=(x+1-border)*MAP_XY_FACTOR;
-				vb->y=(y-border)*MAP_XY_FACTOR;
-				vb->z=p1;
-				vb->nx=0;
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=(alpha[1]<<24)|(getStaticDiffuse(x+1,y) & 0x00ffffff);
-				vb->u1=U[1];
-				vb->v1=V[1];
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				vb->x=(x+1-border)*MAP_XY_FACTOR;
-				vb->y=(y+1-border)*MAP_XY_FACTOR;
-				vb->z=p2;
-				vb->nx=0;
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=(alpha[2]<<24)|(getStaticDiffuse(x+1,y+1) & 0x00ffffff);
-				vb->u1=U[2];
-				vb->v1=V[2];
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				vb->x=(x-border)*MAP_XY_FACTOR;
-				vb->y=(y+1-border)*MAP_XY_FACTOR;
-				vb->z=p3;
-				vb->nx=0;
-				vb->ny=0;
-				vb->nz=0;
-				vb->diffuse=(alpha[3]<<24)|(getStaticDiffuse(x,y+1) & 0x00ffffff);
-				vb->u1=U[3];
-				vb->v1=V[3];
-				vb->u2=0;
-				vb->v2=0;
-				vb++;
-
-				if (flipState)
-				{
-					ib[0]=1+vertexCount;
-					ib[1]=3+vertexCount;
-					ib[2]=0+vertexCount;
-					ib[3]=1+vertexCount;
-					ib[4]=2+vertexCount;
-					ib[5]=3+vertexCount;
-				}
-				else
-				{
-					ib[0]=0+vertexCount;
-					ib[1]=2+vertexCount;
-					ib[2]=3+vertexCount;
-					ib[3]=0+vertexCount;
-					ib[4]=1+vertexCount;
-					ib[5]=2+vertexCount;
-				}
-				ib += 6;
-				vertexCount +=4;
-				indexCount +=6;
+			if (flipState)
+			{
+				ib[0]=1+vertexCount;
+				ib[1]=3+vertexCount;
+				ib[2]=0+vertexCount;
+				ib[3]=1+vertexCount;
+				ib[4]=2+vertexCount;
+				ib[5]=3+vertexCount;
 			}
+			else
+			{
+				ib[0]=0+vertexCount;
+				ib[1]=2+vertexCount;
+				ib[2]=3+vertexCount;
+				ib[3]=0+vertexCount;
+				ib[4]=1+vertexCount;
+				ib[5]=2+vertexCount;
+			}
+			ib += 6;
+			vertexCount +=4;
+			indexCount +=6;
 		}
 	}
-
-	if (vertexCount)
-	{
-		//Check if we couldn't fit all blend tiles into vertex buffer so we can enlarge it for next frame.
-		if (vertexCount == (maxBlendTiles*4))
-			maxBlendTiles += 16;	//enlarge by 16 to reduce trashing.
-
-		ShaderClass::Invalidate();	//invalidate to force shader to reset since we directly changed states
-		DX8Wrapper::Set_Index_Buffer(ib_access,0);
-		DX8Wrapper::Set_Vertex_Buffer(vb_access);
-		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-		DX8Wrapper::Set_Material(vmat);
-		REF_PTR_RELEASE(vmat);
-		ShaderClass shader=ShaderClass::_PresetOpaqueShader;
-		shader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_DISABLE);	//disable writes to z
-		DX8Wrapper::Set_Shader(shader);
-
-		if (TheGlobalData->m_use3WayTerrainBlends == 2)
-		{
-			shader.Set_Primary_Gradient(ShaderClass::GRADIENT_DISABLE);	//disable lighting.
-			shader.Set_Texturing(ShaderClass::TEXTURING_DISABLE);		//disable texturing.
-			DX8Wrapper::Set_Shader(shader);
-			DX8Wrapper::Set_Texture(0,nullptr);	//debug mode which draws terrain tiles in white.
-			if (Is_Hidden() == 0) {
-				DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
-				m_numVisibleExtraBlendTiles += indexCount/6;
-			}
-		}
-		else
-		{
-			W3DShaderManager::setTexture(0,m_stageOneTexture);
-			W3DShaderManager::setTexture(1,m_stageTwoTexture);	//cloud
-			W3DShaderManager::setTexture(2,m_stageThreeTexture);	//noise/lightmap
-
-			W3DShaderManager::ShaderTypes st = W3DShaderManager::ST_ROAD_BASE;
-
-			const Bool doCloud = useCloud();
-
-			if (TheGlobalData->m_useLightMap && doCloud)
- 			{
-				st = W3DShaderManager::ST_ROAD_BASE_NOISE12;
- 			}
- 			else if (TheGlobalData->m_useLightMap)
- 			{	//lightmap only
- 				st = W3DShaderManager::ST_ROAD_BASE_NOISE2;
- 			}
- 			else if (doCloud)
- 			{	//cloudmap only
- 				st = W3DShaderManager::ST_ROAD_BASE_NOISE1;
- 			}
-
-			Int devicePasses=W3DShaderManager::getShaderPasses(st);
-
-			for (Int pass=0; pass < devicePasses; pass++)
-			{
-				W3DShaderManager::setShader(st, pass);
-				if (Is_Hidden() == 0) {
-					DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
-					m_numVisibleExtraBlendTiles += indexCount/6;
-				}
-			}
-			W3DShaderManager::resetShader(st);
-		}
-  }
+    if (!vertexCount) return;
+    if (vertexCount == maxBlendTiles*4) maxBlendTiles += 16;
+    if (Is_Hidden()) return;
+    ShaderClass shader = ShaderClass::_PresetOpaqueShader;
+    shader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_DISABLE);
+    if (debug) {
+        shader.Set_Primary_Gradient(ShaderClass::GRADIENT_DISABLE);
+        shader.Set_Texturing(ShaderClass::TEXTURING_DISABLE);
+    } else {
+        shader.Set_Src_Blend_Func(ShaderClass::SRCBLEND_SRC_ALPHA);
+        shader.Set_Dst_Blend_Func(ShaderClass::DSTBLEND_ONE_MINUS_SRC_ALPHA);
+    }
+    RenderBackendMaterialState material;
+    if (!shader.Get_Render_Backend_State(material)) {
+        std::fprintf(stderr,"Extra-blend terrain material translation failed.\n"); return;
+    }
+    material.color_write_mask = 7; // Water owns the shoreline destination alpha.
+    RenderBackendTerrainState terrain;
+    terrain.project_world_coordinates = true;
+    for (unsigned row=0;row<3;++row)
+        for (unsigned column=0;column<4;++column)
+            terrain.world_transform[row*4+column] = Transform[row][column];
+    W3DShaderManager::getTerrainNoiseProjection(terrain.cloud_noise_projection[0],
+        terrain.cloud_noise_projection[1],terrain.cloud_noise_projection[2]);
+    RenderBackendTextureHandle base;
+    if (!debug) {
+        if (!m_stageOneTexture || !m_stageOneTexture->Ensure_Renderer_Texture() ||
+            !m_stageOneTexture->Get_Filter().Get_Render_Sampler(material.sampler)) {
+            std::fprintf(stderr,"Extra-blend terrain tile texture upload failed.\n"); return;
+        }
+        base = m_stageOneTexture->Get_Renderer_Texture();
+        const auto mipFilter = TheGlobalData->m_trilinearTerrainTex ?
+            RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
+        const bool combinedLayers = useCloud() && TheGlobalData->m_useLightMap;
+        if (combinedLayers) material.sampler.mip_filter = mipFilter;
+        auto layer = [mipFilter](TextureClass *texture, RenderBackendTextureHandle &handle,
+                                RenderBackendSamplerState &sampler, unsigned stage,
+                                RenderBackendTextureFilter filter, bool overrideMip) {
+            if (!texture || !texture->Ensure_Renderer_Texture() ||
+                !texture->Get_Filter().Get_Render_Sampler(sampler,stage)) return false;
+            handle = texture->Get_Renderer_Texture();
+            sampler.min_filter = filter;
+            sampler.mag_filter = RenderBackendTextureFilter::Linear;
+            if (overrideMip) sampler.mip_filter = mipFilter;
+            sampler.max_anisotropy = 1;
+            sampler.address_u = sampler.address_v = RenderBackendTextureAddress::Wrap;
+            return handle.Is_Valid();
+        };
+        if (useCloud() && !layer(m_stageTwoTexture,terrain.cloud_texture,terrain.cloud_sampler,1,RenderBackendTextureFilter::Linear,true)) {
+            std::fprintf(stderr,"Extra-blend terrain cloud upload failed.\n"); return;
+        }
+        if (TheGlobalData->m_useLightMap && !layer(m_stageThreeTexture,terrain.noise_texture,terrain.noise_sampler,2,RenderBackendTextureFilter::Point,!combinedLayers)) {
+            std::fprintf(stderr,"Extra-blend terrain noise upload failed.\n"); return;
+        }
+    }
+    // Dual noise used roadnoise2.nvp; single-noise fixed stages lit first.
+    terrain.diffuse_after_layers = terrain.cloud_texture.Is_Valid() && terrain.noise_texture.Is_Valid();
+    Matrix4x4 savedProjection;
+    backend->Get_View_Projection(savedProjection);
+    struct RestoreProjection {
+        IRenderBackend *backend;
+        const Matrix4x4 &projection;
+        ~RestoreProjection() { backend->Set_View_Projection(projection); }
+    } restore={backend,savedProjection};
+    camera->Apply();
+    if (!backend->Draw_Indexed_Terrain_Triangles(vertices.data(),vertexCount,indices.data(),indexCount,base,material,terrain)) {
+        std::fprintf(stderr,"Extra-blend terrain draw failed.\n"); return;
+    }
+    m_numVisibleExtraBlendTiles = indexCount/6;
 }
+
 #endif

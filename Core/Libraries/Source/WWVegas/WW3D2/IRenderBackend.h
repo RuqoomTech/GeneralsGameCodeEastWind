@@ -219,6 +219,7 @@ struct RenderBackendTerrainState
     RenderBackendSamplerState cloud_sampler;
     RenderBackendSamplerState noise_sampler;
     bool project_world_coordinates = false;
+    bool diffuse_after_layers = false;
     float world_transform[12]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
     float shroud_projection[4]{1, 1, 0, 0};
     float cloud_noise_projection[4]{1, 0, 0, 0};
