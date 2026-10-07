@@ -116,8 +116,6 @@ set(GAMEENGINEDEVICE_SRC
 #    Source/W3DDevice/GameClient/GUI/W3DGameWindow.cpp
 #    Source/W3DDevice/GameClient/GUI/W3DGameWindowManager.cpp
 #    Source/W3DDevice/GameClient/HeightMap.cpp
-    Source/W3DDevice/GameClient/Shaders/invmonochrome.nvp
-    Source/W3DDevice/GameClient/Shaders/monochrome.nvp
     Source/W3DDevice/GameClient/Shaders/motionblur.nvp
     Source/W3DDevice/GameClient/Shaders/MotionBlur.nvv
     Source/W3DDevice/GameClient/Shadow/W3DBufferManager.cpp

@@ -133,10 +133,6 @@ public:
 	virtual Bool preRender(Bool &skipRender, CustomScenePassModes &scenePassMode) {skipRender=false; return false;} ///< Set up at start of render.  Only applies to screen filter shaders.
 	virtual Bool postRender(FilterModes mode, Coord2D &scrollDelta, Bool &doExtraRender){return false;} ///< Called after render.  Only applies to screen filter shaders.
 	virtual Bool setup(FilterModes mode){return false;} ///< Called when the filter is started, one time before the first prerender.
-protected:
-	virtual Int set(FilterModes mode) = 0;		///<setup shader for the specified rendering pass.
-	 ///do any custom resetting necessary to bring W3D in sync.
-	virtual void reset() = 0;
 };
 
 
@@ -145,9 +141,9 @@ protected:
 class ScreenMotionBlurFilter : public W3DFilterInterface
 {
 public:
-	virtual Int set(FilterModes mode) override;		///<setup shader for the specified rendering pass.
+	virtual Int set(FilterModes mode);		///<setup shader for the specified rendering pass.
 	virtual Int init() override;			///<perform any one time initialization and validation
-	virtual void reset() override;		///<do any custom resetting necessary to bring W3D in sync.
+	virtual void reset();		///<do any custom resetting necessary to bring W3D in sync.
 	virtual Int shutdown() override;		///<release resources used by shader
 	virtual Bool preRender(Bool &skipRender, CustomScenePassModes &scenePassMode) override; ///< Set up at start of render.  Only applies to screen filter shaders.
 	virtual Bool postRender(FilterModes mode, Coord2D &scrollDelta, Bool &doExtraRender) override; ///< Called after render.  Only applies to screen filter shaders.
@@ -179,7 +175,11 @@ protected:
 ///converts viewport to black & white.
 class ScreenBWFilter : public W3DFilterInterface
 {
-	DWORD	m_dwBWPixelShader;		///<D3D handle to pixel shader which tints texture to black & white.
+	TextureClass *m_capture = nullptr;
+	IRenderBackend *m_captureBackend = nullptr;
+	Int m_captureWidth = 0;
+	Int m_captureHeight = 0;
+	Bool m_capturing = false;
 public:
 	virtual Int init() override;			///<perform any one time initialization and validation
 	virtual Int shutdown() override;		///<release resources used by shader
@@ -193,25 +193,12 @@ public:
 		m_fadeDirection = direction;
 	}
 protected:
-	virtual Int set(FilterModes mode) override;		///<setup shader for the specified rendering pass.
-	virtual void reset() override;		///<do any custom resetting necessary to bring W3D in sync.
+	Bool restoreOutput();
+	void advanceFade();
 	static Int m_fadeFrames;
 	static Int m_fadeDirection;
 	static Int m_curFadeFrame;
 	static Real m_curFadeValue;
-};
-
-class ScreenBWFilterDOT3 : public ScreenBWFilter
-{
-public:
-	virtual Int init() override;			///<perform any one time initialization and validation
-	virtual Int shutdown() override;		///<release resources used by shader
-	virtual Bool preRender(Bool &skipRender, CustomScenePassModes &scenePassMode) override; ///< Set up at start of render.  Only applies to screen filter shaders.
-	virtual Bool postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doExtraRender) override; ///< Called after render.  Only applies to screen filter shaders.
-	virtual Bool setup(FilterModes mode) override {return true;} ///< Called when the filter is started, one time before the first prerender.
-protected:
-	virtual Int set(FilterModes mode) override;		///<setup shader for the specified rendering pass.
-	virtual void reset() override;		///<do any custom resetting necessary to bring W3D in sync.
 };
 
 /*=========  ScreenCrossFadeFilter	=============================================================*/
@@ -233,8 +220,8 @@ public:
 	static Real getCurrentFadeValue()	{ return m_curFadeValue;}
 	static TextureClass *getCurrentMaskTexture() { return m_fadePatternTexture;}
 protected:
-	virtual Int set(FilterModes mode) override;		///<setup shader for the specified rendering pass.
-	virtual void reset() override;		///<do any custom resetting necessary to bring W3D in sync.
+	virtual Int set(FilterModes mode);		///<setup shader for the specified rendering pass.
+	virtual void reset();		///<do any custom resetting necessary to bring W3D in sync.
 	Bool updateFadeLevel();		///<updated current state of fade and return true if not finished.
 	static Int m_fadeFrames;
 	static Int m_fadeDirection;

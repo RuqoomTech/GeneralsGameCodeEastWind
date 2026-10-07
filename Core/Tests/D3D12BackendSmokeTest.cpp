@@ -493,6 +493,130 @@ bool verifyTreeShroud(IRenderBackend &backend)
     return ok;
 }
 
+bool verifyWaterTracks(IRenderBackend &backend)
+{
+    const unsigned char wavePixels[]={200,120,80,192, 24,220,128,96};
+    const unsigned char shroudPixels[]={128,192,64,64, 224,96,160,192};
+    const auto wave=backend.Create_Static_RGBA8_Texture(2,1,wavePixels,8);
+    const auto shroud=backend.Create_Static_RGBA8_Texture(2,1,shroudPixels,8);
+    // Match the caller's two-row strip and its conversion to indexed triangles.
+    // Deliberately wrong authored secondary UVs expose failure to project shroud.
+    RenderBackendTerrainVertex quad[]={
+        {-.8f,.8f,.5f,1,1,1,128.f/255.f,.25f,.5f,.99f,.01f,0,0,0,0},
+        {.8f,.8f,.5f,1,1,1,128.f/255.f,.25f,.5f,.99f,.01f,0,0,0,0},
+        {-.8f,-.8f,.5f,1,1,1,128.f/255.f,.25f,.5f,.99f,.01f,0,0,0,0},
+        {.8f,-.8f,.5f,1,1,1,128.f/255.f,.25f,.5f,.99f,.01f,0,0,0,0}};
+    const unsigned short strip[]={2,0,3,3,0,1}, reverse[]={2,3,0,3,1,0};
+    RenderBackendMaterialState material;
+    material.depth_write=false;
+    material.cull=RenderBackendCullMode::None;
+    material.source_blend=RenderBackendBlendFactor::SourceAlpha;
+    material.destination_blend=RenderBackendBlendFactor::InverseSourceAlpha;
+    material.color_write_mask=15;
+    material.sampler.min_filter=material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    material.sampler.address_u=material.sampler.address_v=RenderBackendTextureAddress::Clamp;
+    RenderBackendTerrainState terrain;
+    terrain.project_world_coordinates=true;
+    terrain.shroud_texture=shroud;
+    terrain.shroud_sampler.min_filter=terrain.shroud_sampler.mag_filter=RenderBackendTextureFilter::Point;
+    terrain.shroud_sampler.address_u=terrain.shroud_sampler.address_v=RenderBackendTextureAddress::Clamp;
+    terrain.shroud_projection[0]=terrain.shroud_projection[1]=.5f;
+    terrain.shroud_projection[2]=.25f;
+    terrain.shroud_projection[3]=.5f;
+    const std::array<float,4> clear={.2f,.4f,.6f,.7f};
+    auto blended=[&](int shroudTexel) {
+        std::array<float,4> value=clear;
+        // Stage-one ALPHAOP MODULATE affects source-alpha blending as well as RGB.
+        const float alpha=128.f/255.f*(wavePixels[3]/255.f)*
+            (shroudTexel>=0 ? shroudPixels[shroudTexel*4+3]/255.f : 1.f);
+        for (unsigned c=0;c<3;++c) {
+            const float source=(wavePixels[c]/255.f)*
+                (shroudTexel>=0 ? shroudPixels[shroudTexel*4+c]/255.f : 1.f);
+            // The render target clear is quantized before the blend occurs.
+            const float destination=std::lround(clear[c]*255.f)/255.f;
+            value[c]=source*alpha+destination*(1-alpha);
+        }
+        const float destinationAlpha=std::lround(clear[3]*255.f)/255.f;
+        value[3]=alpha*alpha+destinationAlpha*(1-alpha);
+        return value;
+    };
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    auto capture=[&](const std::array<float,4> &expected, unsigned scenario) {
+        backend.End_Scene(false);
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        bool match=read;
+        const unsigned center=(240*640+320)*4;
+        if(read) for(unsigned c=0;c<4;++c)
+            match=std::abs(int(pixels[center+c])-int(std::lround(expected[c]*255.f)))<=2 && match;
+        if(!match) {
+            std::cerr << "Water-track GPU case " << scenario << " failed (read=" << read << ")";
+            if(read) for(unsigned c=0;c<4;++c)
+                std::cerr << " " << int(pixels[center+c]) << "/" << int(std::lround(expected[c]*255.f));
+            std::cerr << "\n";
+        }
+        backend.Flip_To_Primary();
+        return match;
+    };
+    auto begin=[&](float depth) {
+        backend.Clear(true,true,Vector3(clear[0],clear[1],clear[2]),clear[3],depth,0);
+        backend.Begin_Scene();
+    };
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Set_View_Projection(Matrix4x4(true));
+    bool ok=wave.Is_Valid() && shroud.Is_Valid();
+    for(unsigned texel=0;texel<2;++texel) {
+        terrain.shroud_projection[2]=texel ? .75f : .25f;
+        begin(1);
+        ok=backend.Draw_Indexed_Terrain_Triangles(quad,4,texel ? reverse : strip,6,wave,material,terrain) && ok;
+        ok=capture(blended(texel),texel) && ok;
+    }
+    // A following unlayered wave retains its own alpha and sampler operation.
+    terrain.shroud_texture={};
+    begin(1);
+    ok=backend.Draw_Indexed_Terrain_Triangles(quad,4,strip,6,wave,material,terrain) && ok;
+    ok=capture(blended(-1),2) && ok;
+    terrain.shroud_texture=shroud;
+    terrain.shroud_projection[2]=.25f;
+    // A separate render pass may explicitly retain the destination alpha;
+    // the normal water-track material writes all four channels.
+    material.color_write_mask=7;
+    begin(1);
+    ok=backend.Draw_Indexed_Terrain_Triangles(quad,4,strip,6,wave,material,terrain) && ok;
+    auto retainedAlpha=blended(0);
+    retainedAlpha[3]=clear[3];
+    ok=capture(retainedAlpha,3) && ok;
+    material.color_write_mask=15;
+    // D24 offset is explicitly in representable depth units; -8 moves nearer.
+    // Sample an interior pixel and use four LSBs to avoid equality ambiguity.
+    constexpr float depthUnit=1.f/16777216.f;
+    for(auto &vertex:quad) vertex.z=.5f+4*depthUnit;
+    const int biases[]={0,-8,0,8};
+    for(unsigned scenario=0;scenario<4;++scenario) {
+        material.depth_bias=biases[scenario];
+        begin(.5f);
+        ok=backend.Draw_Indexed_Terrain_Triangles(quad,4,strip,6,wave,material,terrain) && ok;
+        ok=capture(scenario==1 ? blended(0) : clear,4+scenario) && ok;
+    }
+    material.depth_bias=-8;
+    begin(.5f);
+    ok=backend.Draw_Indexed_Terrain_Triangles(quad,4,strip,6,wave,material,terrain) && ok;
+    RenderBackendTexturedVertex probe[]={
+        {-.8f,.8f,.5f-2*depthUnit,0,0,1,1,0,0}, {.8f,.8f,.5f-2*depthUnit,0,0,1,1,0,0},
+        {-.8f,-.8f,.5f-2*depthUnit,0,0,1,1,0,0}, {.8f,-.8f,.5f-2*depthUnit,0,0,1,1,0,0}};
+    RenderBackendMaterialState probeMaterial;
+    probeMaterial.cull=RenderBackendCullMode::None;
+    probeMaterial.color_write_mask=7;
+    // This succeeds only if the nearer biased translucent wave did not write depth.
+    ok=backend.Draw_Indexed_Material_Triangles(probe,4,strip,6,{},probeMaterial) && ok;
+    const auto waveBlended=blended(0);
+    ok=capture({0,0,1,waveBlended[3]},8) && ok;
+    backend.Release_Texture(wave);
+    backend.Release_Texture(shroud);
+    if(!ok) std::cerr << "Water-track projected RGBA shroud, strip, blending, depth bias, or depth-write checks failed.\n";
+    return ok;
+}
+
 bool verifyPersistentTerrainAndMaterials(IRenderBackend &backend)
 {
     const unsigned char texels[4][16]={
@@ -1280,6 +1404,132 @@ bool verifyDecals(IRenderBackend &backend)
     backend.Release_Texture(offscreen); backend.Release_Texture(edge); backend.Release_Texture(texture);
     return !backend.Is_Texture_Valid(texture) && ok;
 }
+bool verifyMonochromeSceneCapture(IRenderBackend &backend)
+{
+    // A real scene filter changes targets inside the same frame, shares the
+    // output depth buffer, and samples the result after restoring the output.
+    const unsigned char sourcePixel[]{204, 102, 51, 64};
+    const auto source = backend.Create_Static_RGBA8_Texture(1, 1, sourcePixel, 4);
+    const auto wrongSize = backend.Create_Render_Texture(16, 16);
+    RenderBackendTextureHandle target;
+    RenderBackendTexturedVertex full[] = {
+        {-1,-1,.4f,1,1,1,1,0,1}, {-1,1,.4f,1,1,1,1,0,0},
+        {1,1,.4f,1,1,1,1,1,0}, {1,-1,.4f,1,1,1,1,1,1}};
+    const unsigned short indices[]{0,2,1,0,3,2};
+    RenderBackendMaterialState scene;
+    scene.screen_space = true;
+    scene.cull = RenderBackendCullMode::None;
+    scene.texture_combine = RenderBackendTextureCombine::Replace;
+    RenderBackendColorVertex rejected[] = {
+        {-1,-1,.45f,1,0,0,1}, {-1,1,.45f,1,0,0,1},
+        {1,1,.45f,1,0,0,1}, {1,-1,.45f,1,0,0,1}};
+    // D3D12 quad bounds are pixel edges. Keep UV edges in full-output space.
+    RenderBackendTexturedVertex composite[] = {
+        {-0.6875f,-2.f/3.f,0,1,1,1,1,100.f/640.f,400.f/480.f},
+        {-0.6875f, 2.f/3.f,0,1,1,1,1,100.f/640.f, 80.f/480.f},
+        { 0.6875f, 2.f/3.f,0,1,1,1,1,540.f/640.f, 80.f/480.f},
+        { 0.6875f,-2.f/3.f,0,1,1,1,1,540.f/640.f,400.f/480.f}};
+    RenderBackendMaterialState filter;
+    filter.screen_space = true;
+    filter.depth_test = RenderBackendDepthTest::Always;
+    filter.depth_write = false;
+    filter.cull = RenderBackendCullMode::None;
+    filter.texture_combine = RenderBackendTextureCombine::Replace;
+    filter.sampler.address_u = filter.sampler.address_v = RenderBackendTextureAddress::Clamp;
+    filter.sampler.mipmaps = false;
+    filter.monochrome = true;
+    Matrix4x4 camera(true);
+    camera[0][3] = .125f;
+    bool ok = source.Is_Valid() && wrongSize.Is_Valid();
+    unsigned width = 0, height = 0;
+    std::vector<unsigned char> pixels;
+    const float luminance = (.3f*204 + .59f*102 + .11f*51)/255.f;
+    for (unsigned mode = 0; mode < 3; ++mode) {
+        for (unsigned fade = 0; fade < 3; ++fade) {
+            const bool preserveAlpha = mode == 2 && fade == 1;
+            filter.color_write_mask = preserveAlpha ? 7u : 15u;
+            filter.monochrome_fade = .5f*fade;
+            filter.monochrome_tint[0] = mode == 2 ? 0.f : 1.f;
+            filter.monochrome_tint[1] = mode == 1 ? 0.f : 1.f;
+            filter.monochrome_tint[2] = mode == 0 ? 1.f : 0.f;
+            backend.Set_Viewport({64,48,512,384,0,1});
+            backend.Set_View_Projection(camera);
+            backend.Clear(true,true,Vector3(0,0,1),.75f,.5f,0);
+            backend.Begin_Scene();
+            if (!target.Is_Valid()) target = backend.Create_Render_Texture(640,480,true);
+            ok = target.Is_Valid() && !backend.Set_Render_Texture(wrongSize,true) &&
+                backend.Set_Render_Texture(target,true) && ok;
+            backend.Clear(true,false,Vector3(0,0,0),.25f);
+            ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,source,scene) && ok;
+            // A farther draw must fail against the shared DSV written in capture.
+            ok = backend.Draw_Indexed_Triangles(rejected,4,indices,6) && ok;
+            // Sampling the selected attachment must remain forbidden.
+            ok = !backend.Draw_Indexed_Material_Triangles(full,4,indices,6,target,scene) && ok;
+            ok = backend.Set_Render_Texture({}) && ok;
+            Matrix4x4 restored;
+            backend.Get_View_Projection(restored);
+            for (unsigned row=0; row<4; ++row) for (unsigned column=0; column<4; ++column)
+                ok = restored[row][column] == camera[row][column] && ok;
+            // Also reject against capture's DSV after restoring the main output.
+            ok = backend.Draw_Indexed_Triangles(rejected,4,indices,6) && ok;
+            ok = backend.Draw_Indexed_Material_Triangles(composite,4,indices,6,target,filter) && ok;
+            backend.End_Scene(false);
+            const bool read = backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+            ok = read && ok;
+            if (read) {
+                const auto center = (240u*640u+320u)*4u;
+                for (unsigned channel=0; channel<3; ++channel) {
+                    const float expected = (1-filter.monochrome_fade)*sourcePixel[channel] +
+                        filter.monochrome_fade*luminance*filter.monochrome_tint[channel]*255;
+                    ok = std::abs(int(pixels[center+channel])-int(std::lround(expected)))<=2 && ok;
+                }
+                ok = std::abs(int(pixels[center+3])-int(std::lround(255*(preserveAlpha ? .75f : luminance))))<=2 && ok;
+                // Bounds must land on pixel edges, without filtering into UI.
+                const unsigned inside[]{80u*640u+100u,399u*640u+539u};
+                for (auto pixel : inside) for (unsigned channel=0; channel<3; ++channel)
+                    ok = pixels[pixel*4+channel] == pixels[center+channel] && ok;
+                const unsigned outside[]{80u*640u+99u,400u*640u+540u,0u};
+                for (auto pixel : outside)
+                    ok = pixels[pixel*4]==0 && pixels[pixel*4+1]==0 &&
+                        pixels[pixel*4+2]==255 && pixels[pixel*4+3]==191 && ok;
+            }
+            backend.Flip_To_Primary();
+        }
+    }
+    // Alternating single-pixel columns expose an erroneous legacy half-texel
+    // offset when a captured view is sampled with the required linear filter.
+    std::vector<unsigned char> columns(640u*4u);
+    for (unsigned x=0; x<640; ++x) {
+        columns[x*4] = (x&1u) ? 0 : 255;
+        columns[x*4+3] = 64;
+    }
+    const auto columnTexture = backend.Create_Static_RGBA8_Texture(640,1,columns.data(),640*4);
+    backend.Set_View_Projection(Matrix4x4(true));
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Clear(true,true,Vector3(0,0,1),.75f,.5f,0);
+    backend.Begin_Scene();
+    ok = columnTexture.Is_Valid() && backend.Set_Render_Texture(target,true) && ok;
+    backend.Clear(true,false,Vector3(0,0,0),.25f);
+    ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,columnTexture,scene) && ok;
+    ok = backend.Set_Render_Texture({}) && ok;
+    filter.monochrome_fade = 0;
+    filter.color_write_mask = 15;
+    ok = backend.Draw_Indexed_Material_Triangles(composite,4,indices,6,target,filter) && ok;
+    backend.End_Scene(false);
+    const bool columnRead = backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    ok = columnRead && ok;
+    if (columnRead) for (unsigned x=100; x<540; ++x)
+        ok = std::abs(int(pixels[(240*640+x)*4])-int(columns[x*4]))<=1 && ok;
+    backend.Flip_To_Primary();
+    backend.Release_Texture(columnTexture);
+    backend.Release_Texture(target);
+    backend.Release_Texture(wrongSize);
+    backend.Release_Texture(source);
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Set_View_Projection(Matrix4x4(true));
+    if (!ok) std::cerr << "Monochrome scene capture: depth, target restoration, tint/fade, alpha, or pixel bounds failed.\n";
+    return ok;
+}
 } // namespace
 
 int main()
@@ -1611,7 +1861,7 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

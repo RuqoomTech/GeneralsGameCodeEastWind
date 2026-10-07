@@ -54,8 +54,8 @@ public:
     void Flip_To_Primary() override {}
     void Clear(bool,bool,const Vector3&,float,float,unsigned) override {}
     void Set_Viewport(const RenderBackendViewport&) override {}
-    RenderBackendTextureHandle Create_Render_Texture(unsigned,unsigned) override { return {}; }
-    bool Set_Render_Texture(RenderBackendTextureHandle) override { return false; }
+    RenderBackendTextureHandle Create_Render_Texture(unsigned,unsigned,bool = false) override { return {}; }
+    bool Set_Render_Texture(RenderBackendTextureHandle,bool = false) override { return false; }
     bool Get_Render_Target_Size(int&,int&) const override { return false; }
     bool Copy_Texture(RenderBackendTextureHandle,RenderBackendTextureHandle) override { return false; }
     void Invalidate_Cached_Render_States() override {}

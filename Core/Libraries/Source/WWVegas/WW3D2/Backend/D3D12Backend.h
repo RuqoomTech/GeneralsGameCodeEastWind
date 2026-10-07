@@ -52,8 +52,9 @@ public:
     void Set_Viewport(const RenderBackendViewport &viewport) override;
     void Set_View_Projection(const Matrix4x4 &view_projection) override;
     void Get_View_Projection(Matrix4x4 &view_projection) const override;
-    RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height) override;
-    bool Set_Render_Texture(RenderBackendTextureHandle texture) override;
+    RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height,
+        bool use_output_depth = false) override;
+    bool Set_Render_Texture(RenderBackendTextureHandle texture, bool use_output_depth = false) override;
     bool Get_Render_Target_Size(int &width, int &height) const override;
     bool Copy_Texture(RenderBackendTextureHandle destination, RenderBackendTextureHandle source) override;
     void Invalidate_Cached_Render_States() override;
@@ -205,6 +206,7 @@ private:
     bool drawStaticGeometry(RenderBackendGeometryHandle geometry, bool textured);
     TextureResource *findTexture(RenderBackendTextureHandle texture);
     ID3D12Resource *activeColorTarget() const;
+    bool activeTargetHasDepth() const;
     void bindActiveTarget();
     void applyPendingClear();
     void submitScene(bool present);
@@ -247,7 +249,7 @@ private:
     ID3D12PipelineState *m_2d_opaque_pipeline = nullptr;
     ID3D12PipelineState *m_2d_alpha_pipeline = nullptr;
     ID3D12PipelineState *m_2d_additive_pipeline = nullptr;
-    struct MaterialPipeline { std::uint64_t key; ID3D12PipelineState *pipeline; };
+    struct MaterialPipeline { std::uint64_t key; int depth_bias; ID3D12PipelineState *pipeline; };
     std::vector<MaterialPipeline> m_material_pipelines;
     ID3D10Blob *m_material_vertex_shader = nullptr;
     ID3D10Blob *m_material_color_shader = nullptr;
@@ -263,6 +265,7 @@ private:
     RenderBackendViewport m_viewport{};
     RenderBackendViewport m_output_viewport{};
     RenderBackendTextureHandle m_selected_texture;
+    bool m_selected_output_depth = false;
     float m_output_view_projection[16]{};
     float m_view_projection[16]{
         1.0f, 0.0f, 0.0f, 0.0f,

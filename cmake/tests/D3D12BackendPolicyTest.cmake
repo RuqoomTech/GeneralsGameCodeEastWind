@@ -1,5 +1,21 @@
 include("${RTS_SOURCE_DIR}/cmake/tests/PolicyTestHelpers.cmake")
 
+foreach(_filter_owner IN ITEMS
+    Core/GameEngineDevice/Include/W3DDevice/GameClient/W3DShaderManager.h
+    Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp)
+    foreach(_retired_filter IN ITEMS ScreenDefaultFilter ScreenBWFilterDOT3 m_dwBWPixelShader)
+        rts_policy_require_absent("${_filter_owner}" "${_retired_filter}"
+            "default rendering and monochrome must keep the retired native filter implementations removed")
+    endforeach()
+endforeach()
+foreach(_game IN ITEMS Generals GeneralsMD)
+    foreach(_retired_shader IN ITEMS monochrome.nvp invmonochrome.nvp)
+        if(EXISTS "${RTS_SOURCE_DIR}/${_game}/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shaders/${_retired_shader}")
+            message(FATAL_ERROR "Policy regression: migrated monochrome shader ${_retired_shader} must not return")
+        endif()
+    endforeach()
+endforeach()
+
 rts_policy_require_absent(
     "Core/Libraries/Source/WWVegas/WW3D2/texproject.cpp"
     "DX8Wrapper"
@@ -558,6 +574,8 @@ foreach(_migrated_owner IN ITEMS
     Core/GameEngineDevice/Include/W3DDevice/GameClient/HeightMap.h
     Core/GameEngineDevice/Source/W3DDevice/GameClient/HeightMap.cpp
     Core/GameEngineDevice/Include/W3DDevice/GameClient/BaseHeightMap.h
+    Core/GameEngineDevice/Include/W3DDevice/GameClient/W3DWaterTracks.h
+    Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWaterTracks.cpp
     Core/GameEngineDevice/Source/W3DDevice/GameClient/FlatHeightMap.cpp
     Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DScorch.cpp
     Core/GameEngineDevice/Include/W3DDevice/GameClient/W3DScorch.h
@@ -578,3 +596,11 @@ rts_policy_require_absent(
 rts_policy_require_absent(
     "Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper.cpp"
     "D3DXGetErrorString" "shared result diagnostics must remain in existing WWDebug")
+foreach(_diagnostic_owner IN ITEMS
+    Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper.h
+    Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper.cpp)
+    rts_policy_require_absent("${_diagnostic_owner}" "Get_DX8_Render_State_Value_Name"
+        "snapshot diagnostics must not restore retired renderer label dependencies")
+    rts_policy_require_absent("${_diagnostic_owner}" "Get_DX8_Texture_Stage_State_Value_Name"
+        "snapshot diagnostics must retain values through the existing logger")
+endforeach()

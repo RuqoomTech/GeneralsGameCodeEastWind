@@ -1,10 +1,28 @@
 # Project state
 
-Updated: 2026-10-06
+Updated: 2026-10-07
 
 ## Current baseline
 
-The tested candidate is `main` at user commit `127198b1781280b96b2be893aa150d2dbd1bb918` plus local bib, dispatch and validation changes; user commits can advance concurrently. All agent work stays local, with no commits or GitHub pushes. Earlier selective `late` reuse and ownership repairs are recorded in `Modernization/CURRENT_STATE.md`; the branch is not merged wholesale.
+The verified source parent is user commit `5a4b16b002d6b9607820da62662129b5983b3d74`; user commits can advance concurrently. The user authorized ongoing local commits of verified changes on 2026-10-07. The coordinator owns integration commits; no GitHub pushes. Earlier selective `late` reuse and ownership repairs are recorded in `Modernization/CURRENT_STATE.md`; the branch is not merged wholesale.
+
+## Current monochrome screen filter
+
+Real BW/tinted view rendering now captures through TextureClass/backend resources and composites canonical HLSL with exact luminance, fade and alpha behavior. The backend supports explicit in-frame full-output capture using shared depth, safe target transitions and output-state restoration; color-only shadow targets retain their existing semantics. Unreachable default RTT code, obsolete DOT3 fallback and four paired monochrome assembly files are removed. Runtime state remains downstream of deterministic simulation.
+
+Focused build and 31/31 non-browser regressions pass, including GPU tint/fade/alpha, depth, restoration and half-texel checks. Eleven paired owners pass syntax checks. The exact serial game build completes compilation but fails at executable link with 54 unresolved symbols, no additions, and 194 printed references versus 200. First function: ScreenMotionBlurFilter::set at W3DShaderManager.cpp:819. Migrate its retained capture, exact UVs, vertex-selected alpha, overlay order/blends and CPU cadence next. Details, receipts and fresh 4539-file byte comparison are in the newest CURRENT_STATE section. No game link/boot/frame or user Windows sign-off is claimed; verified changes are committed locally without pushes.
+
+## Current water tracks and reusable prompt
+
+The Claude Code/Codex continuation prompt is `Modernization/AGENT_CONTINUATION_PROMPT.md`. Water tracks now use actual backend terrain/material geometry and wave/shroud textures, with GPU projected coordinates and explicit depth bias. CPU wave timing/motion and deterministic contracts remain. Native track buffers/draw/state/lifecycle calls, unused state-label helpers and unused CloudMap restore are retired. Full RGBA blending, topology, shroud, depth-bias cache isolation and disabled depth writes have GPU checks.
+
+Latest non-browser regressions pass 31/31. The exact serial z_generals build compiles and fails at final link with 54 unique unresolved symbols / 200 printed references; first owner is W3DShaderManager.cpp:294/298, Apply_Render_State_Changes. TerrainTex native references disappeared but their global symbols remain in other owners. Trace shader dispatch and real effects next; textured Render2D remains necessary for first actual UI visibility. Detailed receipts and late-water reuse limits are in the newest CURRENT_STATE section. No game link, boot/frame, complete DX8 removal, measured speedup, sealing or user Windows sign-off is established. All work remains local without agent commits or pushes.
+
+## Current foreground terrain and handoff
+
+Foreground terrain uses persistent dirty GPU tiles and shader world/projection constants. The actual atlas supplies both stages with independent UV/mip filtering and vertex-alpha interpolation. Explicit shroud/mask/wireframe passes preserve their state. Native terrain buffers, blank atlas alias, obsolete terrain/cloud shader registrations and six assembly assets are removed. Paired display selection/gamma and shroud header dependencies follow their actual platform/backend owners. No simulation or wire types widen.
+
+31/31 non-browser regressions and eleven focused source syntax checks pass. Radar CPU formats, paired projected-shadow header completeness and view depth/stencil clearing are fixed. The latest exact `z_generals -j1` build compiles those fixes and exits 1 at water-track native buffer declarations (`W3DWaterTracks.h:51`); migrate its actual geometry/material behavior next. A separate accidental full-suite run failed native browser controller creation; details and validation limits are in the newest `Modernization/CURRENT_STATE.md` section. No current link, boot/frame, complete DX8 removal, measured speedup, sealed milestone or user Windows sign-off is claimed. `Modernization/AGENT_CONTINUATION_PROMPT.md` is the reusable prompt for Claude Code, Codex and other code agents, including remaining textured UI visibility requirements.
 
 ## Current persistent terrain and bib continuation
 

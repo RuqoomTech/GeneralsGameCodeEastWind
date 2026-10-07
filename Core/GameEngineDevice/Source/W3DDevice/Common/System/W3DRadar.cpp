@@ -53,7 +53,6 @@
 #include "W3DDevice/GameClient/HeightMap.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "WW3D2/texture.h"
-#include "WW3D2/dx8caps.h"
 #include "WWMath/vector2i.h"
 
 
@@ -75,61 +74,15 @@ inline Bool legalRadarPoint( Int px, Int py )
 }
 
 //-------------------------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------------------------
-static WW3DFormat findFormat(const WW3DFormat formats[])
-{
-	for( Int i = 0; formats[ i ] != WW3D_FORMAT_UNKNOWN; i++ )
-	{
-
-		if( DX8Wrapper::Get_Current_Caps()->Support_Texture_Format( formats[ i ] ) )
-		{
-
-			return formats[ i ];
-
-		}
-
-	}
-	DEBUG_CRASH(("WW3DRadar: No appropriate texture format") );
-	return WW3D_FORMAT_UNKNOWN;
-}
-
-//-------------------------------------------------------------------------------------------------
-/** Find the texture format we're going to use for the radar.  The texture format must
-	* be supported by the hardware.  The "more preferred" formats appear at the top of
-	* the format tables in order from most preferred to least preferred */
+/** Radar pixels live in CPU surfaces and TextureClass uploads their RGBA8
+    conversion through the backend. Preserve full RGB precision for terrain and
+    full alpha precision for object overlays and shroud. */
 //-------------------------------------------------------------------------------------------------
 void W3DRadar::initializeTextureFormats()
 {
-	const WW3DFormat terrainFormats[] =
-	{
-		WW3D_FORMAT_R8G8B8,
-		WW3D_FORMAT_X8R8G8B8,
-		WW3D_FORMAT_R5G6B5,
-		WW3D_FORMAT_X1R5G5B5,
-		WW3D_FORMAT_UNKNOWN				// keep this one last
-	};
-	const WW3DFormat overlayFormats[] =
-	{
-		WW3D_FORMAT_A8R8G8B8,
-		WW3D_FORMAT_A4R4G4B4,
-		WW3D_FORMAT_UNKNOWN				// keep this one last
-	};
-	const WW3DFormat shroudFormats[] =
-	{
-		WW3D_FORMAT_A8R8G8B8,
-		WW3D_FORMAT_A4R4G4B4,
-		WW3D_FORMAT_UNKNOWN				// keep this one last
-	};
-
-	// find a format for the terrain texture
-	m_terrainTextureFormat = findFormat(terrainFormats);
-
-	// find a format for the overlay texture
-	m_overlayTextureFormat = findFormat(overlayFormats);
-
-	// find a format for the shroud texture
-	m_shroudTextureFormat = findFormat(shroudFormats);
-
+	m_terrainTextureFormat = WW3D_FORMAT_R8G8B8;
+	m_overlayTextureFormat = WW3D_FORMAT_A8R8G8B8;
+	m_shroudTextureFormat = WW3D_FORMAT_A8R8G8B8;
 }
 
 //-------------------------------------------------------------------------------------------------

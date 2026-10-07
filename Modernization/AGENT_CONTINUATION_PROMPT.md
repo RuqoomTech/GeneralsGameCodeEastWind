@@ -1,10 +1,10 @@
 # GeneralsGameCodeEastWind continuation prompt
 
-Copy the prompt below into Claude Code, Codex, or another coding agent running in this repository. The status snapshot is dated 2026-10-06; verify the live checkout and build before relying on it.
+Copy the prompt below into Claude Code, Codex, or another coding agent running in this repository. The status snapshot is dated 2026-10-07; verify the live checkout and build before relying on it.
 
 ---
 
-Continue my GeneralsGameCodeEastWind modernization project. Implement and validate changes, then continue from the next actual failure. Keep all work local: **do not push to GitHub, create a pull request, or mutate remote branches**. Do not commit unless I explicitly request it. Preserve my existing work and any commits I make while you run.
+Continue my GeneralsGameCodeEastWind modernization project. Implement and validate changes, then continue from the next actual failure. Keep all work local: **do not push to GitHub, create a pull request, or mutate remote branches**. Commit verified changes locally at coherent milestones; I have authorized ongoing local commits. Preserve my existing work and any commits I make while you run.
 
 ## Objective
 
@@ -65,7 +65,23 @@ Source has advanced well past H1N. Recent work includes real mesh/material/textu
 
 The normal game previously completed compilation and failed at the executable linker with remaining legacy renderer references. It has **not** been established to link, boot, or show a real game frame. Focused GPU tests passing does not establish those milestones. Current symbol counts and line numbers are volatile: obtain them from a fresh build.
 
-Likely next genuine responsibility after post-terrain cleanup is **foreground `HeightMap.cpp` terrain**: native vertex/index buffers and draw calls, with the actual `lerp(base, blend, vertexAlpha)` atlas shader behavior. Its blend differs from flat terrain/road multiplication. Preserve terrain tessellation, height/flip handling, lighting updates, shroud/cloud/noise, authored mip/filter contracts, and actual draw consumers. Consider persistent dirty tiles plus GPU transforms/projection in the existing backend.
+Foreground `HeightMap.cpp` terrain now uses persistent dirty GPU tiles, GPU world/projection constants, and the actual `lerp(base, blend, vertexAlpha)` atlas behavior. Its blend differs from flat terrain/road multiplication. Explicit shroud, mask, and wireframe clear-line passes preserve their state. Retired terrain/cloud shader registrations and six assembly assets are removed. The blank native atlas alias is removed; both atlas stages sample the actual terrain texture. Static/dynamic lighting and simulation remain CPU-owned. Do not redo this migration or restore retired owners.
+
+The current tested source is user commit `5a4b16b002d6b9607820da62662129b5983b3d74` plus local continuation changes. Latest focused compilation passes 20/20 actions; non-browser regressions pass **31/31**, production GPU 4.70 seconds (20.52 seconds total), receipt `build/monochrome-regressions.txt`. Updated retirement policy separately passes. Eleven paired terrain/display/shroud/bridge/shader owners pass focused MinGW syntax (`build/monochrome-syntax.txt`). Browser controller creation failed in an earlier accidental full-suite run; do not report a current browser/full-suite pass.
+
+Water tracks now use actual terrain material drawing, original CPU wave timing/motion/topology/UVs/fade alpha, full RGBA projected shroud, and explicit backend depth bias. The -8 D24-unit bias preserves near-pull intent; old-driver numeric equivalence and game appearance remain unverified. Native track buffers/locks/draw/state/lifecycle hooks, unused diagnostic label helpers, and unused CloudMap restore are removed. Texture generation and actual pending renderer responsibilities remain intact.
+
+ScreenBWFilter now owns a TextureClass capture and composites through the material/backend route. Canonical HLSL preserves luminance .3/.59/.11, white/red/green tint, RGB fade, and alpha equal to luminance independently of fade. Original CPU rendered-view fade cadence/final frame, opaque blend, always depth/no depth writing, RGBA mask, linear clamp/no mip and tactical UVs remain. D3D12 quad pixel edges have no obsolete -0.5 bias. Capture validates resize/backend generations and restores output state before failure exits. Default screen filtering explicitly renders directly; its unreachable RTT implementation/registration and the obsolete BW DOT3 fallback/four paired monochrome assembly assets are retired. Keep remaining active motion-blur/crossfade/water effects until their full caller behavior migrates.
+
+The existing render-texture APIs take optional `use_output_depth=false`. True is explicit full-output capture: it permits allocation/selection in an open scene, binds shared output D24S8, transitions targets and restores output camera/viewport. Default color-only shadow behavior retains between-scene restrictions. Material constants grow to 12 DWORD, total root signature exactly 64 DWORD; do not add root constants beyond this budget. GPU fixtures cover tint/fade/alpha, shared depth both sides of restoration, invalid targets/self-sampling, saved camera, tactical pixel bounds and alternating single-pixel columns to catch half-texel blur. Simulation and wire contracts do not change.
+
+The exact serial game build completes compilation and exits 1 at executable link (156 actions; `build/mingw64-game/monochrome-game-build.txt`). **54 unique unresolved symbols / 194 printed references**, none added versus the previous 54/200 candidate. First function is **ScreenMotionBlurFilter::set(FilterModes)**, `W3DShaderManager.cpp:819`, `DX8Wrapper::Apply_Render_State_Changes()`. Obtain fresh counts from the actual log; linker-summary hidden repetitions are not counted. No normal game link, boot/backend creation or visible frame is established. Fresh baseline patch reconstruction matches 4539 files byte-for-byte; receipt `build/monochrome-patchcheck.txt`.
+
+Next actual migration: motion-blur retained capture and composite. Preserve skip-render frozen frames, exact zoom/pan UV arithmetic, overlay order/count and normal versus additive blending, GameLogic-frame versus rendered-view CPU cadence, vertex-selected alpha independently of capture alpha, and soft-water tactical alpha-only clear with quantized minimum opacity followed by RGB-only writes. Full clearing would erase its retained image. The existing BW material needs a narrow vertex-alpha operation; using ordinary Modulate would multiply by capture alpha incorrectly. Consolidate shared capture ownership into the existing shader manager as filters migrate; do not build a parallel framework. Generic native manager initialization, crossfade, water shroud/mask and texture resources remain genuine pending owners.
+
+Actual textured Render2D still needs paired migration for first visible UI: Zero Hour currently routes only untextured/non-grayscale draws. Keep existing screen-space camera/viewport isolation, already-normalized positions and authored UVs. Grayscale uses staged texture-factor/DOT3 math, not ordinary luminance weights. GPU fixtures and CPU texture uploads do not prove radar/video/UI visibility.
+
+The `late` branch's main water implementations are unsafe to copy wholesale: some replace authored bump maps with flat dummy pixels, omit reflection/layers, change nonplanar strip diagonals, use alpha blending instead of destination-alpha feathering, and ignore failures. Reuse only verified topology/UV or neutral geometry fragments while preserving current resource ownership and full shader/material behavior.
 
 Another later candidate is tree per-frame CPU vertex transformation/upload. Move authored tree geometry and the original shader's sway/world/color/shroud operations through a real D3D12 caller when the build queue supports it. Keep push/topple/FX, RNG and Xfer on their existing CPU paths.
 
@@ -110,7 +126,7 @@ Input flow: SDL event -> normalized local input -> existing game command transla
 
 ## Parallel agents and build coordination
 
-Use as many agents as the environment supports for independent, bounded responsibilities. Assign explicit file ownership. Tell each agent others are editing, to preserve others' changes, and to avoid commits/pushes. Reuse agents for related reviews.
+Use as many agents as the environment supports for independent, bounded responsibilities. Assign explicit file ownership. Tell each agent others are editing, to preserve others' changes, and to leave integration commits to the coordinator. No agent may push. Reuse agents for related reviews.
 
 One coordinator owns shared backend/HLSL changes and integration. Keep production sources and shared/PCH headers frozen during actual game builds. Parallel tests may use separate build directories. Do not let multiple agents mutate/build the same graph concurrently. Ask reviewers to verify complete caller state, resource generations/lifetime, camera restoration on every exit, and paired variant behavior.
 

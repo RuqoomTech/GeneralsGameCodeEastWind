@@ -81,9 +81,10 @@ cbuffer MaterialParameters : register(b1)
     uint AlphaTest;
     float AlphaReference;
     uint ClampTexture;
-    uint SecondaryRGBModulate;
+    uint MaterialEffects;
     uint TerrainLayers;
     uint2 MaterialPadding;
+    float4 MonochromeTintFade;
 };
 
 float4 TestMaterialAlpha(float4 color)
@@ -111,8 +112,16 @@ float4 PSMaterialTexture(TexturedPSInput input) : SV_TARGET
         color = float4(saturate(textureColor.rgb + input.color.rgb), textureColor.a * input.color.a);
     if (TextureCombine == 3)
         color = float4(saturate(2.0f * textureColor.rgb * input.color.rgb), textureColor.a * input.color.a);
-    if (SecondaryRGBModulate != 0)
+    if ((MaterialEffects & 1) != 0)
         color.rgb *= SecondaryTexture.Sample(SecondarySampler, input.secondaryTexcoord).rgb;
+    if ((MaterialEffects & 2) != 0)
+    {
+        // monochrome.nvp broadcasts dp3 to RGBA, then uses c2.a = 1.
+        // The source texture's alpha does not survive this effect.
+        float luminance = dot(textureColor.rgb, float3(0.3f, 0.59f, 0.11f));
+        color = float4(lerp(textureColor.rgb, luminance * MonochromeTintFade.rgb,
+                            MonochromeTintFade.a), luminance);
+    }
     return TestMaterialAlpha(color);
 }
 

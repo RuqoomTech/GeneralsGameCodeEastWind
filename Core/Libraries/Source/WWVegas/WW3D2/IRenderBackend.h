@@ -182,10 +182,18 @@ struct RenderBackendMaterialState
     bool clamp_texture = false;
     bool screen_space = false; // Caller supplies clip/NDC coordinates, bypassing the camera.
     bool wireframe = false;
+    // Offset in depth-buffer precision units; negative values pull toward the camera.
+    // Runtime draw state, never part of the asset's fixed-width ShaderClass bits.
+    int depth_bias = 0;
     RenderBackendSamplerState sampler;
     // Tree shroud modulates RGB after the base texture operation; alpha survives.
     bool secondary_rgb_modulate = false;
     RenderBackendSamplerState secondary_sampler;
+    // ScreenBWFilter's monochrome shader: RGB fades to tinted luminance;
+    // alpha is luminance independently of the RGB fade.
+    bool monochrome = false;
+    float monochrome_tint[3]{1.0f, 1.0f, 1.0f};
+    float monochrome_fade = 0.0f;
     RenderBackendStencilState stencil;
 };
 
@@ -269,8 +277,9 @@ public:
     virtual void Get_View_Projection(Matrix4x4 &view_projection) const = 0;
     // Projected-shadow textures use RGBA8 color-only targets. Selection is
     // between scenes; an empty handle restores output viewport/camera state.
-    virtual RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height) = 0;
-    virtual bool Set_Render_Texture(RenderBackendTextureHandle texture) = 0;
+    virtual RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height,
+        bool use_output_depth = false) = 0;
+    virtual bool Set_Render_Texture(RenderBackendTextureHandle texture, bool use_output_depth = false) = 0;
     virtual bool Get_Render_Target_Size(int &width, int &height) const = 0;
     // Whole RGBA8 level-zero copy, between scenes, with matching dimensions.
     virtual bool Copy_Texture(RenderBackendTextureHandle destination, RenderBackendTextureHandle source) = 0;

@@ -888,9 +888,6 @@ void WaterRenderObjClass::ReleaseResources()
 	SAFE_RELEASE(m_vertexBufferD3D);
 	SAFE_RELEASE(m_indexBufferD3D);
 
-	if (m_waterTrackSystem)
-		m_waterTrackSystem->ReleaseResources();
-
 	if (m_dwWavePixelShader)
 		m_pDev->DeletePixelShader(m_dwWavePixelShader);
 
@@ -981,9 +978,6 @@ void WaterRenderObjClass::ReAcquireResources()
 		// Create reflection texture
 		m_pReflectionTexture = DX8Wrapper::Create_Render_Target (SEA_REFLECTION_SIZE, SEA_REFLECTION_SIZE);
 	}
-
-	if (m_waterTrackSystem)
-		m_waterTrackSystem->ReAcquireResources();
 
 #if !defined(RTS_EVOLUTION_X64)
 	// The inline ps.1.1 assembler is part of the archival DX8 renderer. Evolution

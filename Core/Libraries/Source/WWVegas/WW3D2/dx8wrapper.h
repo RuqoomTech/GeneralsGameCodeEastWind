@@ -624,32 +624,7 @@ public:
 	static bool Registry_Save_Render_Device( const char * sub_key );
 	static bool Registry_Load_Render_Device( const char * sub_key, bool resize_window );
 
-	static const char* Get_DX8_Render_State_Name(D3DRENDERSTATETYPE state);
-	static const char* Get_DX8_Texture_Stage_State_Name(D3DTEXTURESTAGESTATETYPE state);
 	static unsigned Get_DX8_Render_State(D3DRENDERSTATETYPE state) { return RenderStates[state]; }
-
-	// Names of the specific values of render states and texture stage states
-	static void Get_DX8_Texture_Stage_State_Value_Name(StringClass& name, D3DTEXTURESTAGESTATETYPE state, unsigned value);
-	static void Get_DX8_Render_State_Value_Name(StringClass& name, D3DRENDERSTATETYPE state, unsigned value);
-
-	static const char* Get_DX8_Texture_Address_Name(unsigned value);
-	static const char* Get_DX8_Texture_Filter_Name(unsigned value);
-	static const char* Get_DX8_Texture_Arg_Name(unsigned value);
-	static const char* Get_DX8_Texture_Op_Name(unsigned value);
-	static const char* Get_DX8_Texture_Transform_Flag_Name(unsigned value);
-	static const char* Get_DX8_ZBuffer_Type_Name(unsigned value);
-	static const char* Get_DX8_Fill_Mode_Name(unsigned value);
-	static const char* Get_DX8_Shade_Mode_Name(unsigned value);
-	static const char* Get_DX8_Blend_Name(unsigned value);
-	static const char* Get_DX8_Cull_Mode_Name(unsigned value);
-	static const char* Get_DX8_Cmp_Func_Name(unsigned value);
-	static const char* Get_DX8_Fog_Mode_Name(unsigned value);
-	static const char* Get_DX8_Stencil_Op_Name(unsigned value);
-	static const char* Get_DX8_Material_Source_Name(unsigned value);
-	static const char* Get_DX8_Vertex_Blend_Flag_Name(unsigned value);
-	static const char* Get_DX8_Patch_Edge_Style_Name(unsigned value);
-	static const char* Get_DX8_Debug_Monitor_Token_Name(unsigned value);
-	static const char* Get_DX8_Blend_Op_Name(unsigned value);
 
 	static void Invalidate_Cached_Render_States();
 
@@ -943,13 +918,8 @@ WWINLINE void DX8Wrapper::Set_DX8_Render_State(D3DRENDERSTATETYPE state, unsigne
 	if (RenderStates[state]==value) return;
 
 #ifdef MESH_RENDER_SNAPSHOT_ENABLED
-	if (WW3D::Is_Snapshot_Activated()) {
-		StringClass value_name(0,true);
-		Get_DX8_Render_State_Value_Name(value_name,state,value);
-		SNAPSHOT_SAY(("DX8 - SetRenderState(state: %s, value: %s)",
-			Get_DX8_Render_State_Name(state),
-			value_name.str()));
-	}
+	SNAPSHOT_SAY(("DX8 - SetRenderState(state: %u, value: %u [0x%08X])",
+		static_cast<unsigned>(state), value, value));
 #endif
 
 	RenderStates[state]=value;
@@ -972,14 +942,8 @@ WWINLINE void DX8Wrapper::Set_DX8_Texture_Stage_State(unsigned stage, D3DTEXTURE
 	// Can't monitor state changes because setShader call to GERD may change the states!
 	if (TextureStageStates[stage][(unsigned int)state]==value) return;
 #ifdef MESH_RENDER_SNAPSHOT_ENABLED
-	if (WW3D::Is_Snapshot_Activated()) {
-		StringClass value_name(0,true);
-		Get_DX8_Texture_Stage_State_Value_Name(value_name,state,value);
-		SNAPSHOT_SAY(("DX8 - SetTextureStageState(stage: %d, state: %s, value: %s)",
-			stage,
-			Get_DX8_Texture_Stage_State_Name(state),
-			value_name.str()));
-	}
+	SNAPSHOT_SAY(("DX8 - SetTextureStageState(stage: %u, state: %u, value: %u [0x%08X])",
+		stage, static_cast<unsigned>(state), value, value));
 #endif
 
 	TextureStageStates[stage][(unsigned int)state]=value;
@@ -996,7 +960,7 @@ WWINLINE void DX8Wrapper::Set_DX8_Texture(unsigned int stage, IDirect3DBaseTextu
 
 	if (Textures[stage]==texture) return;
 
-	SNAPSHOT_SAY(("DX8 - SetTexture(%x) ",texture));
+	SNAPSHOT_SAY(("DX8 - SetTexture(stage: %u, bound: %d)", stage, texture != nullptr));
 
 	if (Textures[stage]) Textures[stage]->Release();
 	Textures[stage] = texture;
