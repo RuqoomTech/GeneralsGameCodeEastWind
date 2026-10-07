@@ -181,6 +181,7 @@ struct RenderBackendMaterialState
     unsigned int color_write_mask = 15; // R=1, G=2, B=4, A=8
     bool clamp_texture = false;
     bool screen_space = false; // Caller supplies clip/NDC coordinates, bypassing the camera.
+    bool wireframe = false;
     RenderBackendSamplerState sampler;
     // Tree shroud modulates RGB after the base texture operation; alpha survives.
     bool secondary_rgb_modulate = false;
@@ -212,6 +213,7 @@ struct RenderBackendTextureHandle
 
 struct RenderBackendTerrainState
 {
+    // Secondary atlas instead of projected shroud when vertex-alpha blending is enabled.
     RenderBackendTextureHandle shroud_texture;
     RenderBackendTextureHandle cloud_texture;
     RenderBackendTextureHandle noise_texture;
@@ -221,6 +223,9 @@ struct RenderBackendTerrainState
     bool project_world_coordinates = false;
     bool diffuse_after_layers = false;
     bool project_base_to_shroud = false; // Separate bridge shroud pass; texture Replace ignores diffuse.
+    bool blend_secondary_by_vertex_alpha = false;
+    bool use_constant_color = false; // Terrain clear-line pass retains geometry and overrides lighting.
+    float constant_color[4]{1, 1, 1, 1};
     float world_transform[12]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
     float shroud_projection[4]{1, 1, 0, 0};
     float cloud_noise_projection[4]{1, 0, 0, 0};

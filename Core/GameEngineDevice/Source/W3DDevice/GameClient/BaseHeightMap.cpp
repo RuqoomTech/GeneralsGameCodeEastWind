@@ -154,7 +154,6 @@ Int BaseHeightMapRenderObjClass::freeMapResources()
 	m_scorches->freeBuffers();
 	m_staticScorches->freeBuffers();
 
-	REF_PTR_RELEASE(m_vertexMaterialClass);
 	REF_PTR_RELEASE(m_stageZeroTexture);
 	REF_PTR_RELEASE(m_stageOneTexture);
 	REF_PTR_RELEASE(m_stageTwoTexture);
@@ -254,7 +253,6 @@ BaseHeightMapRenderObjClass::BaseHeightMapRenderObjClass()
 	m_shoreLineTilePositionsSize=0;
 	m_currentMinWaterOpacity = -1.0f;
 
-	m_vertexMaterialClass=nullptr;
 	m_stageZeroTexture=nullptr;
 	m_stageOneTexture=nullptr;
 	m_stageTwoTexture=nullptr;
@@ -505,11 +503,6 @@ handle 4 lights at this point. */
 //=============================================================================
 void BaseHeightMapRenderObjClass::doTheLight(VERTEX_FORMAT *vb, const Vector3*light, Vector3*normal, RefRenderObjListIterator *pLightsIterator, UnsignedByte alpha)
 {
-#ifdef USE_NORMALS
-	vb->nx = normal->X;
-	vb->ny = normal->Y;
-	vb->nz = normal->Z;
-#else
 	Real shadeR, shadeG, shadeB;
 	Real shade;
 	shadeR = TheGlobalData->m_terrainAmbient[0].red;	//only the first terrain light contributes to ambient
@@ -607,7 +600,6 @@ void BaseHeightMapRenderObjClass::doTheLight(VERTEX_FORMAT *vb, const Vector3*li
 	shadeG*=255.0f;
 	shadeB*=255.0f;
 	vb->diffuse = REAL_TO_INT(shadeB) | (REAL_TO_INT(shadeG) << 8) | (REAL_TO_INT(shadeR) << 16) | ((Int)alpha << 24);
-#endif
 }
 
 //=============================================================================
@@ -1856,7 +1848,6 @@ Int BaseHeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pM
 		m_scorches->allocateBuffers();
 		m_staticScorches->allocateBuffers();
 
-		m_vertexMaterialClass=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
 
 		m_shaderClass = detailOpaqueShader;	//		ShaderClass::_PresetOpaqueShader;
 	}

@@ -25,9 +25,11 @@
 #pragma once
 
 #include "WW3D2/matpass.h"
+#include "WW3D2/texturefilter.h"
 #include <windows.h>
 
 class SurfaceClass;
+struct RenderBackendTerrainState;
 
 class AABoxClass;
 class WorldHeightMap;
@@ -47,6 +49,9 @@ public:
 	W3DShroudMaterialPassClass() : m_isTransparentObjectPass(FALSE) {}
 	virtual void	Install_Materials() const override;
 	virtual void	UnInstall_Materials() const override;
+	// Explicit terrain draw state; texture is borrowed and projection uses world XY.
+	bool Prepare_Terrain_Pass(RenderBackendMaterialState &material,
+		RenderBackendTerrainState &terrain, TextureClass *&texture) const;
 	void enableTransparentObjectPass(Bool enable) {m_isTransparentObjectPass = enable;}
 protected:
 	//customized version to deal with transparent (alpha-tested) polys.
@@ -64,6 +69,8 @@ public:
 	W3DMaskMaterialPassClass() : m_texture(nullptr), m_allowUninstall(TRUE) {}
 	virtual void	Install_Materials() const override;
 	virtual void	UnInstall_Materials() const override;
+	bool Prepare_Terrain_Pass(RenderBackendMaterialState &material,
+		RenderBackendTerrainState &terrain, TextureClass *&texture) const;
 	void	setTexture(TextureClass *texture)	{m_texture=texture;}
 	void	setAllowUninstall(Bool state)	{ m_allowUninstall = state;}
 

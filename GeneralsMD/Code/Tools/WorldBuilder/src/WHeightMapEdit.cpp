@@ -176,10 +176,8 @@ m_warnTooManyBlend(false)
 	}
 	REF_PTR_SET(m_alphaEdgeTex, pThis->m_alphaEdgeTex);
 	REF_PTR_SET(m_terrainTex, pThis->m_terrainTex);
-	REF_PTR_SET(m_alphaTerrainTex, pThis->m_alphaTerrainTex);
 	m_dataSize = pThis->m_dataSize;
 	m_terrainTexHeight = pThis->m_terrainTexHeight;
-	m_alphaTexHeight = pThis->m_alphaTexHeight;
 	m_alphaEdgeHeight = pThis->m_alphaEdgeHeight;
 	m_width = pThis->m_width;
 #ifdef EVAL_TILING_MODES
@@ -1597,7 +1595,6 @@ void WorldHeightMapEdit::reloadTextures()
 		TheTerrainRenderObject->ReAcquireResources();
 	}
 	REF_PTR_RELEASE(m_terrainTex);
-	REF_PTR_RELEASE(m_alphaTerrainTex);
 	REF_PTR_RELEASE(m_alphaEdgeTex);
 }
 

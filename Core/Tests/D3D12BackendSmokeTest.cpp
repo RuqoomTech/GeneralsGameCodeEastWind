@@ -706,6 +706,152 @@ bool verifyBridgePasses(IRenderBackend &backend)
     return ok;
 }
 
+bool verifyForegroundTerrainAndWireframe(IRenderBackend &backend)
+{
+    const unsigned char basePixels[]={200,100,40,240, 16,240,32,64, 64,16,240,96, 32,64,16,128};
+    const unsigned char secondaryMip[]={64,32,240,192};
+    const unsigned char cloudPixels[]={255,255,255,192, 32,64,128,64, 64,128,32,96, 128,220,255,128};
+    const unsigned char noisePixels[]={32,64,96,64, 64,96,128,96, 230,220,200,128, 96,128,160,160};
+    const RenderBackendTextureMipLevel atlasLevels[]={{2,2,8,basePixels},{1,1,4,secondaryMip}};
+    const auto base=backend.Create_Static_RGBA8_Texture(atlasLevels,2);
+    const auto secondary=base; // The real foreground terrain binds one atlas in both slots.
+    const auto cloud=backend.Create_Static_RGBA8_Texture(2,2,cloudPixels,8);
+    const auto noise=backend.Create_Static_RGBA8_Texture(2,2,noisePixels,8);
+    // UV1 is authored terrain atlas data, not projected shroud coordinates.
+    // Alpha varies across the retained geometry and controls atlas interpolation.
+    const RenderBackendTerrainVertex quad[]={
+        {-.8f,-.8f,.4f,1.8f,.6f,.4f,.125f,.25f,.25f,.75f,.75f,0,0,0,0},
+        {-.8f,.8f,.4f,1.8f,.6f,.4f,.125f,.25f,.25f,.75f,.75f,0,0,0,0},
+        {.8f,.8f,.4f,1.8f,.6f,.4f,.375f,.25f,.25f,.75f,.75f,0,0,0,0},
+        {.8f,-.8f,.4f,1.8f,.6f,.4f,.375f,.25f,.25f,.75f,.75f,0,0,0,0}};
+    const unsigned short indices[]={0,2,1,0,3,2};
+    const auto geometry=backend.Create_Static_Indexed_Terrain_Geometry(quad,4,indices,6);
+    bool ok=base.Is_Valid() && secondary.Is_Valid() && cloud.Is_Valid() && noise.Is_Valid() && backend.Is_Geometry_Valid(geometry);
+    RenderBackendTerrainState terrain;
+    terrain.project_world_coordinates=true;
+    terrain.blend_secondary_by_vertex_alpha=true;
+    terrain.world_transform[0]=terrain.world_transform[5]=.5f;
+    terrain.world_transform[3]=.3f;terrain.world_transform[7]=-.2f;terrain.world_transform[11]=.1f;
+    terrain.shroud_texture=secondary;terrain.cloud_texture=cloud;terrain.noise_texture=noise;
+    // At the center this projection would produce (.25,.25), distinctly wrong
+    // for the authored second atlas UV (.75,.75).
+    terrain.shroud_projection[0]=terrain.shroud_projection[1]=.5f;
+    terrain.shroud_projection[2]=.1f;terrain.shroud_projection[3]=.35f;
+    terrain.cloud_noise_projection[0]=.5f;
+    terrain.shroud_sampler.mag_filter=terrain.cloud_sampler.mag_filter=terrain.noise_sampler.mag_filter=RenderBackendTextureFilter::Point;
+    terrain.shroud_sampler.mip_filter=RenderBackendTextureFilter::Point;
+    RenderBackendMaterialState material;
+    material.depth_write=false;material.cull=RenderBackendCullMode::None;
+    material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    auto capture=[&]() {
+        backend.End_Scene(false);
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        backend.Flip_To_Primary();return read;
+    };
+    backend.Set_Viewport({0,0,640,480,0,1});
+    for(unsigned frame=0;frame<3;++frame) {
+        Matrix4x4 camera(true);camera[0][3]=frame==1 ? -.2f : 0.f;
+        backend.Set_View_Projection(camera);
+        terrain.cloud_noise_projection[1]=frame==1 ? .1f : .6f;
+        terrain.cloud_noise_projection[2]=frame==1 ? .35f : .85f;
+        // The same SRV has independent samplers: only slot 1 changes mip.
+        terrain.shroud_sampler.min_mip_level=frame==2 ? 1 : 0;
+        backend.Reset_Frame_Statistics();
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0);backend.Begin_Scene();
+        const bool drew=backend.Draw_Static_Indexed_Terrain_Geometry(geometry,base,material,terrain);
+        const bool read=capture();
+        bool passed=drew && read && backend.Get_Frame_Statistics().static_geometry_uploads==0;
+        if(read) for(unsigned sample=0;sample<3;++sample) {
+            const unsigned x=(frame==1 ? 288 : 352)+sample*64;
+            const float worldX=2.f*((x+.5f)/640.f)-1.f-(frame==1 ? -.2f : 0.f);
+            const float localX=(worldX-.3f)/.5f;
+            const float alpha=.25f+localX*(.25f/1.6f);
+            for(unsigned c=0;c<4;++c) {
+                const unsigned char second=frame==2 ? secondaryMip[c] : basePixels[12+c];
+                const float diffuse=c==3 ? alpha : (c==0 ? 1.8f : c==1 ? .6f : .4f);
+                const float atlas=((1-alpha)*basePixels[c]+alpha*second)/255.f;
+                const float expected=std::clamp(atlas*diffuse*(cloudPixels[(frame==1 ? 0 : 12)+c]/255.f)*(noisePixels[8+c]/255.f),0.f,1.f);
+                const int actual=pixels[(288*width+x)*4+c];
+                const int quantized=static_cast<int>(std::lround(expected*255.f));
+                if(std::abs(actual-quantized)>2) {
+                    std::cerr << "Foreground atlas frame " << frame << " sample " << sample << " channel " << c
+                        << ": expected " << quantized << ", got " << actual << ".\n";
+                    passed=false;
+                }
+            }
+        }
+        ok=passed && ok;
+    }
+    // The same retained vertices support the scene's clear-line override.
+    // Interleave solid/wireframe/solid to exercise both raster PSOs and their cache.
+    terrain.shroud_texture=terrain.cloud_texture=terrain.noise_texture={};
+    terrain.blend_secondary_by_vertex_alpha=false;
+    terrain.use_constant_color=true;
+    terrain.constant_color[0]=terrain.constant_color[1]=terrain.constant_color[2]=128.f/255.f;
+    terrain.constant_color[3]=1;
+    material.color_write_mask=7;
+    backend.Set_View_Projection(Matrix4x4(true));
+    for(unsigned frame=0;frame<3;++frame) {
+        material.wireframe=frame==1;
+        backend.Reset_Frame_Statistics();
+        backend.Clear(true,true,Vector3(0,0,0),.7f,1,0);backend.Begin_Scene();
+        const bool drew=backend.Draw_Static_Indexed_Terrain_Geometry(geometry,{},material,terrain);
+        const bool read=capture();
+        bool passed=drew && read && backend.Get_Frame_Statistics().static_geometry_uploads==0;
+        if(read) {
+            const unsigned interior=(260*width+416)*4;
+            for(unsigned c=0;c<3;++c)
+                passed=pixels[interior+c]==(material.wireframe ? 0 : 128) && passed;
+            passed=std::abs(int(pixels[interior+3])-int(std::lround(.7f*255)))<=1 && passed;
+            unsigned grayPixels=0;
+            for(unsigned y=190;y<386;++y) for(unsigned x=286;x<546;++x) {
+                const unsigned p=(y*width+x)*4;
+                if(pixels[p]==128 && pixels[p+1]==128 && pixels[p+2]==128) {
+                    ++grayPixels;
+                    passed=std::abs(int(pixels[p+3])-int(std::lround(.7f*255)))<=1 && passed;
+                }
+            }
+            // Count rasterized edges without depending on a particular edge pixel.
+            passed=grayPixels>0 && (!material.wireframe || grayPixels<3000) && passed;
+        }
+        if(!passed) std::cerr << "Terrain constant-color/wireframe frame " << frame << " failed.\n";
+        ok=passed && ok;
+    }
+    material.wireframe=false;material.color_write_mask=15;
+    terrain.use_constant_color=false;terrain.blend_secondary_by_vertex_alpha=true;
+    terrain.shroud_texture=secondary;
+    backend.Begin_Scene();
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,{},material,terrain) && ok;
+    terrain.shroud_texture={};
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,base,material,terrain) && ok;
+    terrain.shroud_texture=secondary;terrain.project_base_to_shroud=true;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,base,material,terrain) && ok;
+    terrain.project_base_to_shroud=false;terrain.diffuse_after_layers=true;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,base,material,terrain) && ok;
+    terrain.diffuse_after_layers=false;material.texture_combine=RenderBackendTextureCombine::Replace;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,base,material,terrain) && ok;
+    material.texture_combine=RenderBackendTextureCombine::Modulate;
+    const auto stale=backend.Create_Static_RGBA8_Texture(1,1,secondaryMip,4);
+    ok=stale.Is_Valid() && ok;
+    backend.Release_Texture(stale);
+    terrain.shroud_texture=stale;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,base,material,terrain) && ok;
+    terrain.shroud_texture=secondary;
+    backend.End_Scene(false);backend.Flip_To_Primary();
+    const auto target=backend.Create_Render_Texture(32,32);
+    ok=target.Is_Valid() && backend.Set_Render_Texture(target) && ok;
+    terrain.shroud_texture=target;material.depth_test=RenderBackendDepthTest::Disabled;
+    backend.Begin_Scene();
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,base,material,terrain) && ok;
+    backend.End_Scene(false);backend.Set_Render_Texture({});
+    backend.Release_Texture(target);backend.Release_Texture(base);backend.Release_Texture(cloud);backend.Release_Texture(noise);
+    backend.Release_Static_Geometry(geometry);
+    if(!ok) std::cerr << "Foreground terrain atlas, GPU constants, wireframe, or resource checks failed.\n";
+    return ok;
+}
+
 bool verifyTerrain(IRenderBackend &backend)
 {
     const unsigned char texels[4][16]={
@@ -1465,7 +1611,7 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyTreeShroud(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

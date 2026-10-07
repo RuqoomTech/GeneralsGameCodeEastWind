@@ -44,6 +44,7 @@
 #include "WW3D2/textureloader.h"
 #include "Common/GlobalData.h"
 #include "GameLogic/PartitionManager.h"
+#include "GameClient/View.h"
 
 
 //-----------------------------------------------------------------------------
@@ -766,6 +767,82 @@ void W3DShroud::setShroudFilter(Bool enable)
 		m_shroudFilter=TextureFilterClass::FILTER_TYPE_DEFAULT;
 	else
 		m_shroudFilter=TextureFilterClass::FILTER_TYPE_NONE;
+}
+
+// The terrain's extra pass retains its original identity world transform.
+// World-XY projection runs in the backend vertex shader instead of rebuilding
+// an inverse view/texture matrix or changing native device state.
+bool W3DShroudMaterialPassClass::Prepare_Terrain_Pass(
+	RenderBackendMaterialState &material, RenderBackendTerrainState &terrain,
+	TextureClass *&texture) const
+{
+	texture = nullptr;
+	if (!TheTerrainRenderObject) return false;
+	W3DShroud *shroud = TheTerrainRenderObject->getShroud();
+	if (!shroud || shroud->getCellWidth() <= 0 || shroud->getCellHeight() <= 0 ||
+		shroud->getTextureWidth() <= 0 || shroud->getTextureHeight() <= 0) return false;
+	TextureClass *shroudTexture = shroud->getShroudTexture();
+	RenderBackendMaterialState state;
+#if defined(RTS_DEBUG)
+	const ShaderClass &shader = TheGlobalData && TheGlobalData->m_fogOfWarOn ?
+		ShaderClass::_PresetAlphaSpriteShader : ShaderClass::_PresetMultiplicativeSpriteShader;
+#else
+	const ShaderClass &shader = ShaderClass::_PresetMultiplicativeSpriteShader;
+#endif
+	if (!shroudTexture || !shader.Get_Render_Backend_State(state) ||
+		!shroudTexture->Get_Filter().Get_Render_Sampler(state.sampler, 0)) return false;
+	state.depth_test = RenderBackendDepthTest::Equal;
+	state.color_write_mask = 7; // Terrain destination alpha remains available to water.
+	RenderBackendTerrainState projection;
+	projection.project_world_coordinates = true;
+	projection.project_base_to_shroud = true;
+	projection.shroud_projection[0] = 1.0f / (shroud->getCellWidth() * shroud->getTextureWidth());
+	projection.shroud_projection[1] = 1.0f / (shroud->getCellHeight() * shroud->getTextureHeight());
+	if (TheTerrainRenderObject->getMap()) {
+		projection.shroud_projection[2] = (-shroud->getDrawOriginX() + shroud->getCellWidth()) * projection.shroud_projection[0];
+		projection.shroud_projection[3] = (-shroud->getDrawOriginY() + shroud->getCellHeight()) * projection.shroud_projection[1];
+	}
+	material = state;
+	terrain = projection;
+	texture = shroudTexture;
+	return true;
+}
+
+bool W3DMaskMaterialPassClass::Prepare_Terrain_Pass(
+	RenderBackendMaterialState &material, RenderBackendTerrainState &terrain,
+	TextureClass *&texture) const
+{
+	texture = nullptr;
+	// Install_Materials historically takes this texture from the active screen
+	// cross fade, regardless of the unused setTexture member.
+	TextureClass *maskTexture = ScreenCrossFadeFilter::getCurrentMaskTexture();
+	ShaderClass shader = ShaderClass::_PresetOpaqueShader;
+	shader.Set_Primary_Gradient(ShaderClass::GRADIENT_DISABLE);
+	RenderBackendMaterialState state;
+	if (!maskTexture || !shader.Get_Render_Backend_State(state) ||
+		!maskTexture->Get_Filter().Get_Render_Sampler(state.sampler, 0)) return false;
+	state.color_write_mask = 8; // Alpha mask and depth, with RGB left intact.
+	RenderBackendTerrainState projection;
+	projection.project_world_coordinates = true;
+	projection.project_base_to_shroud = true;
+	Coord3D center;
+	center.zero();
+	if (TheTacticalView) {
+		ICoord2D screenPosition;
+		screenPosition.x = static_cast<Int>(TheTacticalView->getWidth() * 0.5f);
+		screenPosition.y = static_cast<Int>(TheTacticalView->getHeight() * 0.5f);
+		TheTacticalView->screenToTerrain(&screenPosition, &center);
+	}
+	const Real worldTexelWidth = (1.0f - ScreenCrossFadeFilter::getCurrentFadeValue()) * 25.0f;
+	// Keep the original 128-texel footprint and exact final-fade behavior.
+	const Real scale = worldTexelWidth != 0 ? 1.0f / (worldTexelWidth * 128.0f) : 0.0f;
+	projection.shroud_projection[0] = projection.shroud_projection[1] = scale;
+	projection.shroud_projection[2] = scale != 0 ? 0.5f - center.x * scale : 0.0f;
+	projection.shroud_projection[3] = scale != 0 ? 0.5f - center.y * scale : 0.0f;
+	material = state;
+	terrain = projection;
+	texture = maskTexture;
+	return true;
 }
 
 //-----------------------------------------------------------------------------

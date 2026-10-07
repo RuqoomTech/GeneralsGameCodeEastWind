@@ -55,13 +55,8 @@ public:
 	//put any custom shaders (not going through W3D) in here.
 	enum ShaderTypes
 	{	ST_INVALID,			//invalid shader type.
-		ST_TERRAIN_BASE,	//shader to apply base terrain texture only
-		ST_TERRAIN_BASE_NOISE1,	//shader to apply base texture and cloud/noise 1.
-		ST_TERRAIN_BASE_NOISE2,	//shader to apply base texture and cloud/noise 2.
-		ST_TERRAIN_BASE_NOISE12,//shader to apply base texture and both cloud/noise
 		ST_SHROUD_TEXTURE,		//shader to apply shroud texture projection.
 		ST_MASK_TEXTURE,		//shader to apply alpha mask texture projection.
-		ST_CLOUD_TEXTURE,			//shader to project clouds.
 		ST_FLAT_TERRAIN_BASE,	//shader to apply base terrain texture only
 		ST_FLAT_TERRAIN_BASE_NOISE1,	//shader to apply base texture and cloud/noise 1.
 		ST_FLAT_TERRAIN_BASE_NOISE2,	//shader to apply base texture and cloud/noise 2.

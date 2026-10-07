@@ -592,7 +592,6 @@ static PoolSizeRec PoolSizes[] =
 	{ "ScorchTextureClass", 4, 4 },
 	{ "LightMapTerrainTextureClass", 4, 4 },
 	{ "AlphaEdgeTextureClass", 4, 4 },
-	{ "AlphaTerrainTextureClass", 4, 4 },
 	{ "TerrainTextureClass", 4, 4 },
 	{ "MeshClass", 14000, 2000 },
 	{ "HTreeClass", 2048, 512 },

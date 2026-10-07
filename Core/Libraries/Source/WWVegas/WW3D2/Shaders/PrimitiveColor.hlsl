@@ -138,6 +138,7 @@ cbuffer TerrainProjection : register(b2)
     float4 CloudNoiseProjection;
     uint ProjectWorldCoordinates;
     uint3 TerrainProjectionPadding;
+    float4 TerrainConstantColor;
 };
 
 struct TerrainPSInput
@@ -159,11 +160,16 @@ TerrainPSInput VSTerrain(TerrainVSInput input)
     output.shroudTexcoord = input.shroudTexcoord;
     output.cloudTexcoord = input.cloudTexcoord;
     output.noiseTexcoord = input.noiseTexcoord;
+    if ((ProjectWorldCoordinates & 8) != 0)
+        output.color = TerrainConstantColor;
     if ((ProjectWorldCoordinates & 1) != 0)
     {
         float3 worldPosition = mul(TerrainWorld, float4(input.position, 1.0f));
         output.position = mul(ViewProjection, float4(worldPosition, 1.0f));
-        output.shroudTexcoord = worldPosition.xy * ShroudProjection.xy + ShroudProjection.zw;
+        // Foreground terrain's second atlas uses authored UVs, even as world
+        // transforms and cloud/noise projection move to the GPU.
+        if ((ProjectWorldCoordinates & 4) == 0)
+            output.shroudTexcoord = worldPosition.xy * ShroudProjection.xy + ShroudProjection.zw;
         output.cloudTexcoord = worldPosition.xy * CloudNoiseProjection.x + CloudNoiseProjection.yz;
         output.noiseTexcoord = worldPosition.xy * CloudNoiseProjection.x;
     }
@@ -182,7 +188,9 @@ float4 PSTerrainColor(TerrainPSInput input) : SV_TARGET
 float4 PSTerrainTexture(TerrainPSInput input) : SV_TARGET
 {
     float4 color = PrimitiveTexture.Sample(MaterialSampler, input.tileTexcoord);
-    if ((TerrainLayers & 1) != 0)
+    if ((TerrainLayers & 16) != 0)
+        color = lerp(color, SecondaryTexture.Sample(SecondarySampler, input.shroudTexcoord), input.color.a);
+    else if ((TerrainLayers & 1) != 0)
         color *= SecondaryTexture.Sample(SecondarySampler, input.shroudTexcoord);
     if (TextureCombine == 1 && (TerrainLayers & 8) == 0) color *= input.color;
     if ((TerrainLayers & 2) != 0)

@@ -92,7 +92,6 @@ class OutputStream;
 class DataChunkInput;
 struct DataChunkInfo;
 class TerrainTextureClass;
-class AlphaTerrainTextureClass;
 class AlphaEdgeTextureClass;
 
 #define NUM_ALPHA_TILES 12
@@ -101,7 +100,6 @@ class WorldHeightMap : public RefCountClass,
                        public WorldHeightMapInterfaceClass
 {
 	friend class TerrainTextureClass;
-	friend class AlphaTerrainTextureClass;
 	friend class AlphaEdgeTextureClass;
 
 #define NO_EVAL_TILING_MODES
@@ -182,8 +180,6 @@ protected:
 	Int	m_terrainTexHeight; /// Height of m_terrainTex allocated.
 	/** The texture that contains the alpha edge tiles that get blended on
 			top of the base texture. getAlphaUVData does the mapping. */
-	AlphaTerrainTextureClass *m_alphaTerrainTex;
-	Int	m_alphaTexHeight; /// Height of m_alphaTerrainTex allocated.
 
 	/** The texture that contains custom blend edge tiles. */
 	AlphaEdgeTextureClass *m_alphaEdgeTex;
@@ -283,7 +279,6 @@ public:  // height map info.
 public:  // tile and texture info.
 	void setTextureLOD(Int lod);	///< set maximum lod level sent to the hardware.
 	TextureClass *getTerrainTexture();  //< generates if needed and returns the terrain texture
-	TextureClass *getAlphaTerrainTexture(); //< generates if needed and returns alpha terrain texture
 	TextureClass *getEdgeTerrainTexture(); //< generates if needed and returns blend edge texture
 	/// UV mapping data for a cell to map into the terrain texture.  Returns true if the textures had to be stretched for cliffs.
 	Bool getUVData(Int xIndex, Int yIndex, float U[4], float V[4]);

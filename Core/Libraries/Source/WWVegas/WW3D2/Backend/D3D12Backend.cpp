@@ -468,7 +468,7 @@ void D3D12Backend::createPrimitivePipeline()
     parameters[9].DescriptorTable.pDescriptorRanges = &noise_sampler_range;
     parameters[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
     parameters[10].Constants.ShaderRegister = 2;
-    parameters[10].Constants.Num32BitValues = 24;
+    parameters[10].Constants.Num32BitValues = 28;
     parameters[10].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
@@ -1572,7 +1572,8 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
             terrain ? (terrain->shroud_texture.Is_Valid() ? 1u : 0u) |
                 (terrain->cloud_texture.Is_Valid() ? 2u : 0u) |
                 (terrain->noise_texture.Is_Valid() ? 4u : 0u) |
-                (terrain->diffuse_after_layers ? 8u : 0u) : 0u, {0,0}};
+                (terrain->diffuse_after_layers ? 8u : 0u) |
+                (terrain->blend_secondary_by_vertex_alpha ? 16u : 0u) : 0u, {0,0}};
         static_assert(sizeof(Constants) == 8 * sizeof(unsigned int), "Material root constants");
         m_command_list->SetGraphicsRoot32BitConstants(2, 8, &constants, 0);
         m_command_list->OMSetStencilRef(material->stencil.reference);
@@ -1628,14 +1629,18 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
         struct ProjectionConstants {
             float world[12], shroud[4], cloud_noise[4];
             unsigned int project, padding[3];
+            float color[4];
         } constants{};
-        static_assert(sizeof(ProjectionConstants) == 24 * sizeof(unsigned int), "Terrain root constants");
+        static_assert(sizeof(ProjectionConstants) == 28 * sizeof(unsigned int), "Terrain root constants");
         std::memcpy(constants.world, terrain->world_transform, sizeof(constants.world));
         std::memcpy(constants.shroud, terrain->shroud_projection, sizeof(constants.shroud));
         std::memcpy(constants.cloud_noise, terrain->cloud_noise_projection, sizeof(constants.cloud_noise));
+        std::memcpy(constants.color, terrain->constant_color, sizeof(constants.color));
         constants.project = (terrain->project_world_coordinates ? 1u : 0u) |
-            (terrain->project_base_to_shroud ? 2u : 0u);
-        m_command_list->SetGraphicsRoot32BitConstants(10, 24, &constants, 0);
+            (terrain->project_base_to_shroud ? 2u : 0u) |
+            (terrain->blend_secondary_by_vertex_alpha ? 4u : 0u) |
+            (terrain->use_constant_color ? 8u : 0u);
+        m_command_list->SetGraphicsRoot32BitConstants(10, 28, &constants, 0);
     }
 }
 
@@ -2213,7 +2218,8 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
         (static_cast<std::uint64_t>(material.stencil.write_mask) << 25) |
         (face_key(material.stencil.front) << 33) | (face_key(material.stencil.back) << 45) |
         (static_cast<std::uint64_t>(material.color_write_mask) << 57) |
-        (static_cast<std::uint64_t>(terrain) << 61);
+        (static_cast<std::uint64_t>(terrain) << 61) |
+        (static_cast<std::uint64_t>(material.wireframe) << 62);
     for (const auto &entry : m_material_pipelines)
         if (entry.key == key) return entry.pipeline;
 
@@ -2252,7 +2258,7 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
     blend.LogicOp = D3D12_LOGIC_OP_NOOP;
     blend.RenderTargetWriteMask = material.color_write ? static_cast<UINT8>(material.color_write_mask) : 0;
     pipeline.SampleMask = std::numeric_limits<UINT>::max();
-    pipeline.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    pipeline.RasterizerState.FillMode = material.wireframe ? D3D12_FILL_MODE_WIREFRAME : D3D12_FILL_MODE_SOLID;
     pipeline.RasterizerState.CullMode = cull == 0 ? D3D12_CULL_MODE_NONE : D3D12_CULL_MODE_BACK;
     pipeline.RasterizerState.FrontCounterClockwise = cull == 1;
     pipeline.RasterizerState.DepthClipEnable = TRUE;
@@ -2346,6 +2352,9 @@ bool D3D12Backend::validTerrainDraw(RenderBackendTextureHandle base_texture,
             ((texture.slot == 0 && texture.generation == 0) || valid_texture(texture));
     };
     const bool textured = base_texture.Is_Valid();
+    if (terrain.blend_secondary_by_vertex_alpha && (!textured || !terrain.shroud_texture.Is_Valid() ||
+        terrain.project_base_to_shroud || terrain.diffuse_after_layers ||
+        material.texture_combine != RenderBackendTextureCombine::Modulate)) return false;
     if ((textured && material.texture_combine != RenderBackendTextureCombine::Replace &&
          material.texture_combine != RenderBackendTextureCombine::Modulate) ||
         (terrain.project_base_to_shroud && (!terrain.project_world_coordinates || !textured ||

@@ -409,7 +409,6 @@ WorldHeightMap::~WorldHeightMap()
 		REF_PTR_RELEASE(m_alphaTiles[i]);
 	}
 	REF_PTR_RELEASE(m_terrainTex);
-	REF_PTR_RELEASE(m_alphaTerrainTex);
 	REF_PTR_RELEASE(m_alphaEdgeTex);
 }
 
@@ -435,12 +434,12 @@ WorldHeightMap::WorldHeightMap():
 	m_numTextureClasses(0),
 	m_drawWidthX(NORMAL_DRAW_WIDTH), m_drawHeightY(NORMAL_DRAW_HEIGHT),
 	m_tileNdxes(nullptr), m_blendTileNdxes(nullptr), m_extraBlendTileNdxes(nullptr), m_cliffInfoNdxes(nullptr),
-	m_terrainTexHeight(1), m_alphaTexHeight(1),	m_cellCliffState(nullptr),
+	m_terrainTexHeight(1),	m_cellCliffState(nullptr),
 #ifdef EVAL_TILING_MODES
 	m_tileMode(TILE_4x4),
 #endif
 	m_numCliffInfo(1),
-	m_terrainTex(nullptr), m_alphaTerrainTex(nullptr), m_numBitmapTiles(0), m_numBlendedTiles(1)
+	m_terrainTex(nullptr), m_numBitmapTiles(0), m_numBlendedTiles(1)
 {
 	Int i;
 	for (i=0; i<NUM_SOURCE_TILES; i++) {
@@ -474,12 +473,12 @@ WorldHeightMap::WorldHeightMap(ChunkInputStream *pStrm, Bool logicalDataOnly):
 	m_numTextureClasses(0),
 	m_drawWidthX(NORMAL_DRAW_WIDTH), m_drawHeightY(NORMAL_DRAW_HEIGHT),
 	m_tileNdxes(nullptr), m_blendTileNdxes(nullptr), m_extraBlendTileNdxes(nullptr), m_cliffInfoNdxes(nullptr),
-	m_terrainTexHeight(1), m_alphaTexHeight(1),
+	m_terrainTexHeight(1),
 #ifdef EVAL_TILING_MODES
 	m_tileMode(TILE_4x4),
 #endif
 	m_numCliffInfo(1),
-	m_terrainTex(nullptr), m_alphaTerrainTex(nullptr), m_numBitmapTiles(0), m_numBlendedTiles(1)
+	m_terrainTex(nullptr), m_numBitmapTiles(0), m_numBlendedTiles(1)
 {
 
 	int i;
@@ -2127,8 +2126,6 @@ TextureClass *WorldHeightMap::getTerrainTexture()
 		char buf[64];
 		sprintf(buf, "Base tex height %d", pow2Height);
 		DEBUG_LOG((buf));
-		REF_PTR_RELEASE(m_alphaTerrainTex);
-		m_alphaTerrainTex = MSGNEW("WorldHeightMap_getTerrainTexture") AlphaTerrainTextureClass(m_terrainTex);
 
 		pow2Height = 1;
 		while (pow2Height<edgeHeight) {
@@ -2157,14 +2154,6 @@ TextureClass *WorldHeightMap::getTerrainTexture()
 	}
 
 	return m_terrainTex;
-}
-
-TextureClass *WorldHeightMap::getAlphaTerrainTexture()
-{
-	if (m_alphaTerrainTex == nullptr) {
-		getTerrainTexture();
-	}
-	return m_alphaTerrainTex;
 }
 
 TextureClass *WorldHeightMap::getEdgeTerrainTexture()

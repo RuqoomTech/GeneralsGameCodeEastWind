@@ -81,12 +81,12 @@
 #include "W3DDevice/GameClient/W3DShadow.h"
 #include "W3DDevice/GameClient/W3DWater.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
-#include "WW3D2/dx8wrapper.h"
 #include "WW3D2/light.h"
 #include "WW3D2/IRenderBackend.h"
 #include "WW3D2/ww3d.h"
 #include "WWMath/matrix4.h"
 #include <vector>
+#include <cstddef>
 #include <cstdio>
 #include "WW3D2/scene.h"
 #include "W3DDevice/GameClient/W3DPoly.h"
@@ -95,8 +95,6 @@
 #include "Common/UnitTimings.h" //Contains the DO_UNIT_TIMINGS define jba.
 
 
-#define no_OPTIMIZED_HEIGHTMAP_LIGHTING	01
-// Doesn't work well.  jba.
 
 HeightMapRenderObjClass *TheHeightMap = nullptr;
 //-----------------------------------------------------------------------------
@@ -116,6 +114,25 @@ static ShaderClass detailOpaqueShader(SC_DETAIL_BLEND);
 #define ADJUST_FROM_INDEX_TO_REAL(k) ((k-m_map->getBorderSizeInline())*MAP_XY_FACTOR)
 inline Int IABS(Int x) {	if (x>=0) return x; return -x;};
 
+struct HeightMapRenderObjClass::GeometryState
+{
+    struct Tile {
+        RenderBackendGeometryHandle geometry;
+        bool dirty = true;
+    };
+    std::vector<TerrainLightingVertex> current;
+    std::vector<Tile> tiles;
+    IRenderBackend *backend = nullptr;
+
+    void release(Tile &tile) {
+        if (backend && backend == WW3D::Get_Render_Backend()) {
+            backend->Release_Static_Geometry(tile.geometry);
+        }
+        tile.geometry = {};
+    }
+    ~GeometryState() { for (auto &tile : tiles) release(tile); }
+};
+
 //-----------------------------------------------------------------------------
 //         Private Functions
 //-----------------------------------------------------------------------------
@@ -127,14 +144,8 @@ inline Int IABS(Int x) {	if (x>=0) return x; return -x;};
 //=============================================================================
 void HeightMapRenderObjClass::freeIndexVertexBuffers()
 {
-	REF_PTR_RELEASE(m_indexBuffer);
-
-	if (m_vertexBufferTiles) {
-		for (int i=0; i<m_numVertexBufferTiles; i++)
-			REF_PTR_RELEASE(m_vertexBufferTiles[i]);
-		delete[] m_vertexBufferTiles;
-		m_vertexBufferTiles = nullptr;
-	}
+	delete m_geometry;
+	m_geometry = nullptr;
 
 	delete[] m_vertexBufferBackup;
 	m_vertexBufferBackup = nullptr;
@@ -157,9 +168,15 @@ Int HeightMapRenderObjClass::freeMapResources()
 
 //=============================================================================
 
-DX8VertexBufferClass *HeightMapRenderObjClass::getVertexBufferTile(Int x, Int y)
+TerrainLightingVertex *HeightMapRenderObjClass::getVertexBufferTile(Int x, Int y)
 {
-	return m_vertexBufferTiles[y*m_numVBTilesX+x];
+	return m_geometry->current.data() + (y*m_numVBTilesX+x)*HEIGHTMAP_VERTEX_NUM;
+}
+
+void HeightMapRenderObjClass::markTileGeometryDirty(Int x, Int y)
+{
+    if (m_geometry && x>=0 && y>=0 && x<m_numVBTilesX && y<m_numVBTilesY)
+        m_geometry->tiles[y*m_numVBTilesX+x].dirty = true;
 }
 
 //=============================================================================
@@ -175,9 +192,6 @@ VERTEX_FORMAT *HeightMapRenderObjClass::getVertexBufferBackup(Int x, Int y)
 //=============================================================================
 UnsignedInt HeightMapRenderObjClass::doTheDynamicLight(VERTEX_FORMAT *vb, VERTEX_FORMAT *vbMirror, Vector3*light, Vector3*normal,  W3DDynamicLight *pLights[], Int numLights)
 {
-#ifdef USE_NORMALS
-	return;
-#else
 	Real shadeR, shadeG, shadeB;
 	Int diffuse = vbMirror->diffuse;
 #ifdef RTS_DEBUG
@@ -258,7 +272,6 @@ UnsignedInt HeightMapRenderObjClass::doTheDynamicLight(VERTEX_FORMAT *vb, VERTEX
 	vb->diffuse = light_val;
 	return light_val;
 
-#endif
 }
 
 //=============================================================================
@@ -305,7 +318,7 @@ data is expected to be an array same dimensions as current heightmap
 mapped into this VB.
 */
 //=============================================================================
-Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIterator)
+Int HeightMapRenderObjClass::updateVB(TerrainLightingVertex *pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIterator)
 {
 	Int i,j;
 	Vector3 lightRay[MAX_GLOBAL_LIGHTS];
@@ -316,7 +329,7 @@ Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *
 	constexpr const Int cellOffset = 1;
 
 	REF_PTR_SET(m_map, pMap);	//update our heightmap pointer in case it changed since last call.
-	if (m_vertexBufferTiles && pMap)
+	if (m_geometry && pMap)
 	{
 #ifdef RTS_DEBUG
 		assert(x0 >= originX && y0 >= originY && x1>x0 && y1>y0 && x1<=originX+VERTEX_BUFFER_TILE_LENGTH && y1<=originY+VERTEX_BUFFER_TILE_LENGTH);
@@ -328,8 +341,7 @@ Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *
 			lightRay[lightIndex].Set(-lightPos.x, -lightPos.y, -lightPos.z);
 		}
 
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
-		VERTEX_FORMAT *vbHardware = (VERTEX_FORMAT*)lockVtxBuffer.Get_Vertex_Array();
+		VERTEX_FORMAT *vbHardware = pVB;
 		VERTEX_FORMAT *vBase = data;
 		// Note that we are building the vertex buffer data in the memory buffer, data.
 		// At the bottom, we will copy the final vertex data for one cell into the
@@ -534,10 +546,11 @@ Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *
 				// Now copy the set of vertices into the hardware buffer.
 				// We don't copy the whole vertex buffer because we often update only
 				// a couple of rows and its a lot faster to just copy the ones that change.
-				Int offset = pCurVertices - vBase;
+				const std::ptrdiff_t offset = pCurVertices - vBase;
 				memcpy(vbHardware+offset, pCurVertices, 4*sizeof(VERTEX_FORMAT));
 			}
 		}
+		m_geometry->tiles[(pVB-m_geometry->current.data())/HEIGHTMAP_VERTEX_NUM].dirty = true;
 		return 0; //success.
 	}
 	return -1;
@@ -549,26 +562,22 @@ Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *
 /** Update the dynamic lighting values only in a rectangular block of the given Vertex Buffer.
 The vertex locations and texture coords are unchanged.
 */
-Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights)
+Int HeightMapRenderObjClass::updateVBForLight(TerrainLightingVertex *pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights)
 {
 
-#if (OPTIMIZED_HEIGHTMAP_LIGHTING)	// (gth) if optimizations are enabled, jump over to the "optimized" version of this function.
-	return updateVBForLightOptimized( pVB, data, x0, y0, x1, y1, originX, originY, pLights, numLights );
-#endif
 
 	Int i,j,k;
 	Int vn0,un0,vp1,up1;
 	Vector3 l2r,n2f,normalAtTexel;
 	constexpr const Int	vertsPerRow=(VERTEX_BUFFER_TILE_LENGTH)*4;	//vertices per row of VB
 
-	if (m_vertexBufferTiles && m_map)
+	if (m_geometry && m_map)
 	{
 #ifdef RTS_DEBUG
 		assert(x0 >= originX && y0 >= originY && x1>x0 && y1>y0 && x1<=originX+VERTEX_BUFFER_TILE_LENGTH && y1<=originY+VERTEX_BUFFER_TILE_LENGTH);
 #endif
 
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
-		VERTEX_FORMAT *vBase = (VERTEX_FORMAT*)lockVtxBuffer.Get_Vertex_Array();
+		VERTEX_FORMAT *vBase = pVB;
 		VERTEX_FORMAT *vb;
 
 		for (j=y0; j<y1; j++)
@@ -618,7 +627,7 @@ Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_
 				if (!intersect) {
 					continue;
 				}
-				// vb is the pointer to the vertex in the hardware dx8 vertex buffer.
+				// vb is the current CPU vertex; the backup retains baseline lighting.
 				Int offset = (j-originY)*vertsPerRow+4*(i-originX);
 				vb = vBase + offset;	//skip to correct row in vertex buffer
 				// vbMirror is the pointer to the vertex in our memory based copy.
@@ -688,185 +697,11 @@ Int HeightMapRenderObjClass::updateVBForLight(DX8VertexBufferClass	*pVB, VERTEX_
 				vb++;	vbMirror++;
 			}
 		}
+		m_geometry->tiles[(pVB-m_geometry->current.data())/HEIGHTMAP_VERTEX_NUM].dirty = true;
 		return 0; //success.
 	}
 	return -1;
 }
-
-
-Int HeightMapRenderObjClass::updateVBForLightOptimized(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *data, Int x0, Int y0, Int x1, Int y1, Int originX, Int originY, W3DDynamicLight *pLights[], Int numLights)
-{
-	Int i,j,k;
-	Int vn0,un0,vp1,up1;
-	Vector3 l2r,n2f,normalAtTexel;
-	constexpr const Int vertsPerRow=(VERTEX_BUFFER_TILE_LENGTH)*4;	//vertices per row of VB
-
-	if (m_vertexBufferTiles && m_map)
-	{
-#ifdef RTS_DEBUG
-		assert(x0 >= originX && y0 >= originY && x1>x0 && y1>y0 && x1<=originX+VERTEX_BUFFER_TILE_LENGTH && y1<=originY+VERTEX_BUFFER_TILE_LENGTH);
-#endif
-
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
-		VERTEX_FORMAT *vBase = (VERTEX_FORMAT*)lockVtxBuffer.Get_Vertex_Array();
-		VERTEX_FORMAT *vb;
-
-		//
-		// (gth) the optimization in this function is to take advantage of verts in the same
-		// x,y position who have already computed their lighting.  To do this, we need to set up
-		// some offsets in the vertex buffer.  I've computed these offsets to be consistent with
-		// the formula's that Generals is using but in the case of the "half-res-mesh" I'm not
-		// sure things are correct...
-		//
-		constexpr const Int quad_right_offset = 4;
-		constexpr const Int quad_below_offset = vertsPerRow;
-		//constexpr const Int quad_below_right_offset = vertsPerRow + 4;
-
-		//
-		// i,j loop over the quads affected by the light.  Each quad has its *own* 4 vertices.  This
-		// means that for any vertex position on the map, there are actually 4 copies of the vertex.
-		//
-		for (j=y0; j<y1; j++)
-		{
-			const Int mapY = getYWithOrigin(j);
-			const Int yCoord = mapY+m_map->getDrawOrgY()-m_map->getBorderSizeInline();
-			Bool intersect = false;
-			for (k=0; k<numLights; k++) {
-				if (pLights[k]->m_minY <= yCoord+1 &&
-					pLights[k]->m_maxY >= yCoord) {
-					intersect = true;
-				}
-				if (pLights[k]->m_prevMinY <= yCoord+1 &&
-					pLights[k]->m_prevMaxY >= yCoord) {
-					intersect = true;
-				}
-			}
-			if (!intersect) {
-				continue;
-			}
-			vn0 = mapY-1;
-			if (vn0 < -m_map->getDrawOrgY())
-				vn0=-m_map->getDrawOrgY();
-			vp1 = getYWithOrigin(j+1)+1;
-			if (vp1 >= m_map->getYExtent()-m_map->getDrawOrgY())
-				vp1=m_map->getYExtent()-m_map->getDrawOrgY()-1;
-
-			for (i=x0; i<x1; i++)
-			{
-				const Int mapX = getXWithOrigin(i);
-				const Int xCoord = mapX+m_map->getDrawOrgX()-m_map->getBorderSizeInline();
-				Bool intersect = false;
-				for (k=0; k<numLights; k++) {
-					if (pLights[k]->m_minX <= xCoord+1 &&
-						pLights[k]->m_maxX >= xCoord &&
-						pLights[k]->m_minY <= yCoord+1 &&
-						pLights[k]->m_maxY >= yCoord) {
-						intersect = true;
-					}
-					if (pLights[k]->m_prevMinX <= xCoord+1 &&
-						pLights[k]->m_prevMaxX >= xCoord &&
-						pLights[k]->m_prevMinY <= yCoord+1 &&
-						pLights[k]->m_prevMaxY >= yCoord) {
-						intersect = true;
-					}
-				}
-				if (!intersect) {
-					continue;
-				}
-				// vb is the pointer to the vertex in the hardware dx8 vertex buffer.
-				Int offset = (j-originY)*vertsPerRow+4*(i-originX);
-				vb = vBase + offset;	//skip to correct row in vertex buffer
-				// vbMirror is the pointer to the vertex in our memory based copy.
-				// The important point is that we can read out of our copy to get the original
-				// diffuse color, and xyz location.  It is VERY SLOW to read out of the
-				// hardware vertex buffer, possibly worse... jba.
-				VERTEX_FORMAT *vbMirror = data + offset;
-				VERTEX_FORMAT *vbaseMirror = data;
-				un0 = mapX-1;
-				if (un0 < -m_map->getDrawOrgX())
-					un0=-m_map->getDrawOrgX();
-				up1 = getXWithOrigin(i+1)+1;
-				if (up1 >= m_map->getXExtent()-m_map->getDrawOrgX())
-					up1=m_map->getXExtent()-m_map->getDrawOrgX()-1;
-
-				Vector3 lightRay(0,0,0);
-
-				//
-				// (gth) Following the set of rules below lets us take advantage of lighting values that have
-				// been previously computed.  The idea is to copy them ahead to future quads that will need them
-				// and then not compute them when we get to those quads.  This also avoids having to read-back
-				// from the vertex buffer but we do jump around in memory... probably bad anyway, maybe we should
-				// compute into a temporary buffer and copy all at once...
-				//
-				unsigned long light_copy;
-
-				// top-left sample -> only compute when i==0 and j==0
-				if ((i==x0) && (j==y0)) {
-					l2r.Set(2*MAP_XY_FACTOR,0,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX+1, mapY) - m_map->getDisplayHeight(un0, mapY)));
-					n2f.Set(0,2*MAP_XY_FACTOR,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX, (mapY+1)) - m_map->getDisplayHeight(mapX, vn0)));
-					Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
-					doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
-				}
-				vb++;	vbMirror++;
-
-				//top-right sample -> compute when j==0, then copy to (right,0)
-				if (j==y0) {
-					l2r.Set(2*MAP_XY_FACTOR,0,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(up1 , mapY ) - m_map->getDisplayHeight(mapX , mapY )));
-					n2f.Set(0,2*MAP_XY_FACTOR,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX+1 , (mapY+1) ) - m_map->getDisplayHeight(mapX+1 , vn0 )));
-					Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
-					light_copy = doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
-
-					if (i < x1-1) {
-						// copy light to (right,0)
-						(vBase + offset + quad_right_offset)->diffuse = (light_copy&0x00FFFFFF) | ((vbaseMirror + offset + quad_right_offset)->diffuse&0xff000000) ;
-					}
-				}
-				vb++;	vbMirror++;
-
-				//bottom-right sample -> always compute, then copy to (right,3), (down,1), (down+right,0)
-				l2r.Set(2*MAP_XY_FACTOR,0,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(up1 , (mapY+1) ) - m_map->getDisplayHeight(mapX , (mapY+1) )));
-				n2f.Set(0,2*MAP_XY_FACTOR,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX+1 , vp1 ) - m_map->getDisplayHeight(mapX+1 , mapY )));
-				Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
-				light_copy = doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
-
-				if (i < x1-1) {
-					// copy light to (right,3)
-					//(vBase + offset + quad_right_offset + 3)->diffuse = light_copy;
-					(vBase + offset + quad_right_offset + 3)->diffuse = (light_copy&0x00FFFFFF) | ((vbaseMirror + offset + quad_right_offset + 3)->diffuse&0xff000000) ;
-				}
-				if (j < y1-1) {
-					// copy light to (down,1)
-					//(vBase + offset + quad_below_offset + 1)->diffuse = light_copy;
-					(vBase + offset + quad_right_offset + 1)->diffuse = (light_copy&0x00FFFFFF) | ((vbaseMirror + offset + quad_right_offset + 1)->diffuse&0xff000000) ;
-				}
-				if ((i < x1-1) && (j < y1-1)) {
-					// copy light to (right+down,0)
-					//(vBase + offset + quad_below_right_offset)->diffuse = light_copy;
-					(vBase + offset + quad_right_offset)->diffuse = (light_copy&0x00FFFFFF) | ((vbaseMirror + offset + quad_right_offset)->diffuse&0xff000000) ;
-				}
-				vb++;	vbMirror++;
-
-				//bottom-left sample -> compute when i==0, otherwise copy from (left,2)
-				if (i==x0) {
-					l2r.Set(2*MAP_XY_FACTOR,0,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX+1 , (mapY+1) ) - m_map->getDisplayHeight(un0 , (mapY+1) )));
-					n2f.Set(0,2*MAP_XY_FACTOR,MAP_HEIGHT_SCALE*(m_map->getDisplayHeight(mapX , vp1 ) - m_map->getDisplayHeight(mapX , mapY )));
-					Vector3::Normalized_Cross_Product(l2r, n2f, &normalAtTexel);
-					light_copy = doTheDynamicLight(vb, vbMirror, &lightRay, &normalAtTexel, pLights, numLights);
-
-					if (j < y1-1) {
-						// copy light to (down,0)
-						//(vBase + offset + quad_below_offset)->diffuse = light_copy;
-						(vBase + offset + quad_below_offset)->diffuse = (light_copy&0x00FFFFFF) | ((vbaseMirror + offset + quad_below_offset)->diffuse&0xff000000) ;
-					}
-				}
-				vb++;	vbMirror++;
-			}
-		}
-		return 0; //success.
-	}
-	return -1;
-}
-
 
 
 //=============================================================================
@@ -981,7 +816,7 @@ Int HeightMapRenderObjClass::updateBlock(Int x0, Int y0, Int x1, Int y1,  WorldH
 	Invalidate_Cached_Bounding_Volumes();
 	if (pMap && m_treeBuffer != nullptr) {
 		REF_PTR_SET(m_stageZeroTexture, pMap->getTerrainTexture());
-		REF_PTR_SET(m_stageOneTexture, pMap->getAlphaTerrainTexture());
+		REF_PTR_SET(m_stageOneTexture, pMap->getTerrainTexture());
 	}
 
 	Int i,j;
@@ -1009,7 +844,7 @@ Int HeightMapRenderObjClass::updateBlock(Int x0, Int y0, Int x1, Int y1,  WorldH
 			if (xMin >= xMax) {
 				continue;
 			}
-			DX8VertexBufferClass *pVB = getVertexBufferTile(i, j);
+			TerrainLightingVertex *pVB = getVertexBufferTile(i, j);
 			VERTEX_FORMAT *pData = getVertexBufferBackup(i, j);
 			updateVB(pVB, pData, xMin, yMin, xMax, yMax, originX, originY, pMap, pLightsIterator);
 		}
@@ -1046,7 +881,7 @@ m_extraBlendTilePositions(nullptr),
 m_numExtraBlendTiles(0),
 m_numVisibleExtraBlendTiles(0),
 m_extraBlendTilePositionsSize(0),
-m_vertexBufferTiles(nullptr),
+m_geometry(nullptr),
 m_vertexBufferBackup(nullptr),
 m_originX(0),
 m_originY(0),
@@ -1054,7 +889,6 @@ m_desiredDrawWidth(WorldHeightMap::NORMAL_DRAW_WIDTH),
 m_desiredDrawHeight(WorldHeightMap::NORMAL_DRAW_HEIGHT),
 m_oversizeDrawWidth(0),
 m_oversizeDrawHeight(0),
-m_indexBuffer(nullptr),
 m_numVBTilesX(0),
 m_numVBTilesY(0),
 m_numVertexBufferTiles(0),
@@ -1274,35 +1108,12 @@ Int HeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, 
 	// If the size changed, we need to allocate.
 	Bool needToAllocate = (x != m_x || y != m_y);
 	// If the textures aren't allocated (usually because of a hardware reset) need to allocate.
-	if (m_stageOneTexture == nullptr) {
+	if (m_stageOneTexture == nullptr || !m_geometry) {
 		needToAllocate = true;
 	}
 	if (data && needToAllocate && m_treeBuffer != nullptr)
 	{	//requested heightmap different from old one.
 		freeIndexVertexBuffers();
-		//Create static index buffers.  These will index the vertex buffers holding the map.
-		m_indexBuffer=NEW_REF(DX8IndexBufferClass,(VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*2*3));
-
-		// Fill up the IB
-		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBuffer);
-		UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
-
-		for (j=0; j<(VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*4); j+=VERTEX_BUFFER_TILE_LENGTH*4)
-		{
-			for (i=j; i<(j+VERTEX_BUFFER_TILE_LENGTH*4); i+=4)	//4 vertices per 2x2 block
-			{
-				ib[0]=i;
-				ib[1]=i+2;
-				ib[2]=i+3;
-
-				ib[3]=i;
-				ib[4]=i+1;
-				ib[5]=i+2;
-
-				ib+=6;	//skip the 6 indices we just filled
-			}
-		}
-
 		//Get number of vertex buffers needed to hold current map
 		//First round dimensions to next multiple of VERTEX_BUFFER_TILE_LENGTH since that's our block size
 		m_numVBTilesX=1;
@@ -1323,16 +1134,10 @@ Int HeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, 
 		m_x=x;
 		m_y=y;
 
-		m_vertexBufferTiles = NEW DX8VertexBufferClass*[m_numVertexBufferTiles];
-		m_vertexBufferBackup = NEW VERTEX_FORMAT [m_numVertexBufferTiles * HEIGHTMAP_VERTEX_NUM];
-
-		for (i=0; i<m_numVertexBufferTiles; i++) {
-#ifdef USE_NORMALS
-			m_vertexBufferTiles[i] = NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZNUV2,HEIGHTMAP_VERTEX_NUM,DX8VertexBufferClass::USAGE_DEFAULT));
-#else
-			m_vertexBufferTiles[i] = NEW_REF(DX8VertexBufferClass,(DX8_VERTEX_FORMAT,HEIGHTMAP_VERTEX_NUM,DX8VertexBufferClass::USAGE_DEFAULT));
-#endif
-		}
+        m_geometry = NEW GeometryState;
+        m_geometry->current.resize(m_numVertexBufferTiles * HEIGHTMAP_VERTEX_NUM);
+        m_geometry->tiles.resize(m_numVertexBufferTiles);
+        m_vertexBufferBackup = NEW VERTEX_FORMAT[m_numVertexBufferTiles * HEIGHTMAP_VERTEX_NUM]{};
 
 		//go with a preset material for now.
 	}
@@ -1370,11 +1175,6 @@ void HeightMapRenderObjClass::On_Frame_Update()
 	return;
 #endif
 
-#ifdef EXTENDED_STATS
-	if (DX8Wrapper::stats.m_disableTerrain) {
-		return;
-	}
-#endif
 
 	Int numDynaLights=0;
 	W3DDynamicLight *enabledLights[MAX_ENABLED_DYNAMIC_LIGHTS];
@@ -1523,7 +1323,7 @@ void HeightMapRenderObjClass::On_Frame_Update()
 				if (!intersect) {
 					continue;
 				}
-				DX8VertexBufferClass *pVB = getVertexBufferTile(i, j);
+				TerrainLightingVertex *pVB = getVertexBufferTile(i, j);
 				VERTEX_FORMAT *pData = getVertexBufferBackup(i, j);
 				updateVBForLight(pVB, pData, xMin, yMin, xMax, yMax, originX,originY, enabledLights, numDynaLights);
 			}
@@ -1641,7 +1441,7 @@ void HeightMapRenderObjClass::updateCenter(CameraClass *camera, const Vector3 *c
 	if (m_updating) {
 		return;
 	}
-	if (m_vertexBufferTiles ==nullptr)
+	if (m_geometry ==nullptr)
 		return;		//did not initialize resources yet.
 
 	BaseHeightMapRenderObjClass::updateCenter(camera, cameraPivot, pLightsIterator);
@@ -1873,288 +1673,194 @@ void HeightMapRenderObjClass::updateCenter(CameraClass *camera, const Vector3 *c
 //=============================================================================
 //DECLARE_PERF_TIMER(Terrain_Render)
 
-void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
+bool HeightMapRenderObjClass::drawTerrainGeometry(CameraClass &camera,
+    const RenderBackendTerrainState &terrain, const RenderBackendMaterialState &material,
+    TextureClass *baseTexture)
 {
-	//USE_PERF_TIMER(Terrain_Render)
+    IRenderBackend *backend = WW3D::Get_Render_Backend();
+    if (Is_Hidden()) return true;
+    if (!backend || !backend->Is_Device_Ready() || !m_geometry) return false;
+    RenderBackendTextureHandle base;
+    if (baseTexture) {
+        if (!baseTexture->Ensure_Renderer_Texture()) {
+            std::fprintf(stderr,"Foreground terrain texture upload failed.\n"); return false;
+        }
+        base = baseTexture->Get_Renderer_Texture();
+    }
+    if (m_geometry->backend != backend) {
+        for (auto &tile : m_geometry->tiles) m_geometry->release(tile);
+        m_geometry->backend = backend;
+    }
+    Matrix4x4 saved;
+    backend->Get_View_Projection(saved);
+    struct Restore { IRenderBackend *backend; const Matrix4x4 &saved;
+        ~Restore() { backend->Set_View_Projection(saved); } } restore={backend,saved};
+    camera.Apply();
+    for (Int y=0; y<m_numVBTilesY; ++y) for (Int x=0; x<m_numVBTilesX; ++x) {
+        auto &tile = m_geometry->tiles[y*m_numVBTilesX+x];
+        if (tile.dirty) { m_geometry->release(tile); tile.dirty = false; }
+        auto &handle = tile.geometry;
+        if (!backend->Is_Geometry_Valid(handle)) {
+            const Int columns = std::min(VERTEX_BUFFER_TILE_LENGTH,m_x-1-x*VERTEX_BUFFER_TILE_LENGTH);
+            const Int rows = std::min(VERTEX_BUFFER_TILE_LENGTH,m_y-1-y*VERTEX_BUFFER_TILE_LENGTH);
+            if (columns<=0 || rows<=0) continue;
+            std::vector<RenderBackendTerrainVertex> vertices(HEIGHTMAP_VERTEX_NUM);
+            const TerrainLightingVertex *source = getVertexBufferTile(x,y);
+            std::vector<unsigned short> indices;
+            indices.reserve(columns*rows*6);
+            for (Int row=0; row<rows; ++row) for (Int column=0; column<columns; ++column) {
+                const unsigned short first = (row*VERTEX_BUFFER_TILE_LENGTH+column)*4;
+                for (unsigned n=0; n<4; ++n) {
+                    const auto &v = source[first+n];
+                    auto &out = vertices[first+n];
+                    out.x=v.x; out.y=v.y; out.z=v.z;
+                    out.r=((v.diffuse>>16)&255)/255.f;
+                    out.g=((v.diffuse>>8)&255)/255.f;
+                    out.b=(v.diffuse&255)/255.f;
+                    out.a=((v.diffuse>>24)&255)/255.f;
+                    out.u=v.u1; out.v=v.v1; out.u2=v.u2; out.v2=v.v2;
+                }
+                indices.insert(indices.end(),{first,static_cast<unsigned short>(first+2),static_cast<unsigned short>(first+3),
+                    first,static_cast<unsigned short>(first+1),static_cast<unsigned short>(first+2)});
+            }
+            handle = backend->Create_Static_Indexed_Terrain_Geometry(vertices.data(),vertices.size(),indices.data(),indices.size());
+            if (!handle.Is_Valid()) { std::fprintf(stderr,"Foreground terrain geometry upload failed.\n"); return false; }
+        }
+        if (!backend->Draw_Static_Indexed_Terrain_Geometry(handle,base,material,terrain)) {
+            std::fprintf(stderr,"Foreground terrain draw failed.\n"); return false;
+        }
+    }
+    return true;
+}
 
-	Int i,j,devicePasses;
-	W3DShaderManager::ShaderTypes st;
-	const Bool doCloud = useCloud();
+bool HeightMapRenderObjClass::renderTerrainPass(CameraClass *camera, MaterialPassClass *pass)
+{
+    if (!camera || !pass) return false;
+    RenderBackendMaterialState material;
+    RenderBackendTerrainState terrain;
+    TextureClass *texture = nullptr;
+    bool ready = false;
+    if (auto *shroud = dynamic_cast<W3DShroudMaterialPassClass *>(pass))
+        ready = shroud->Prepare_Terrain_Pass(material,terrain,texture);
+    else if (auto *mask = dynamic_cast<W3DMaskMaterialPassClass *>(pass))
+        ready = mask->Prepare_Terrain_Pass(material,terrain,texture);
+    if (!ready) {
+        std::fprintf(stderr,"Unsupported additional foreground terrain pass.\n"); return false;
+    }
+    // The historical additional pass uses identity world coordinates, independently
+    // of the base terrain Transform; derived pass projection remains authoritative.
+    return drawTerrainGeometry(*camera,terrain,material,texture);
+}
 
-	if (doCloud)
-	{
-		// TheSuperHackers @tweak Updates the cloud movement before applying it to the world.
-		// Is now decoupled from logic step.
-		W3DShaderManager::updateCloud();
-	}
-
-#if 0 // There is some weirdness sometimes with the dx8 static buffers.
-			// This usually fixes terrain flashing.  jba.
-	static Int delay = 1;
-	delay --;
-	if (delay<1) {
-		delay = 1;
-		static Int ndx = -1;
-		ndx++;
-		if (ndx>=m_numVertexBufferTiles) {
-			ndx = 0;
-		}
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_vertexBufferTiles + ndx);
-		VERTEX_FORMAT *vb = (VERTEX_FORMAT*)lockVtxBuffer.Get_Vertex_Array();
-		vb = 0;
-	}
-#endif
-	// If there are trees, tell them to draw at the transparent time to draw.
-	if (m_treeBuffer) {
-		m_treeBuffer->setIsTerrain();
-	}
-
-
+void HeightMapRenderObjClass::Render(RenderInfoClass &rinfo)
+{
+    if (!m_map || !m_geometry) return;
+    const Bool doCloud = useCloud();
+    if (doCloud) W3DShaderManager::updateCloud();
+    if (m_treeBuffer) m_treeBuffer->setIsTerrain();
 #ifdef DO_UNIT_TIMINGS
 #pragma MESSAGE("*** WARNING *** DOING DO_UNIT_TIMINGS!!!!")
-	return;
+    return;
 #endif
-
-#ifdef EXTENDED_STATS
-	if (DX8Wrapper::stats.m_disableTerrain) {
-		return;
-	}
-#endif
-
-	DX8Wrapper::Set_Light_Environment(rinfo.light_environment);
-
-	// Force shaders to update.
-	m_stageTwoTexture->restore();
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	ShaderClass::Invalidate();
-
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Transform);
-
-	//Apply the shader and material
-
-	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
-
-	Bool doMultiPassWireFrame=FALSE;
-
-	if (((RTS3DScene *)rinfo.Camera.Get_User_Data())->getCustomPassMode() == SCENE_PASS_ALPHA_MASK ||
-		((SceneClass *)rinfo.Camera.Get_User_Data())->Get_Extra_Pass_Polygon_Mode() == SceneClass::EXTRA_PASS_CLEAR_LINE)
-	{
-			if (WW3D::Is_Texturing_Enabled())
-			{	//first pass where we just fill the z-buffer
-
-				devicePasses=1;	//one pass solid, next in wireframe.
-				doMultiPassWireFrame=TRUE;
-
-				if (rinfo.Additional_Pass_Count())
-				{
-					rinfo.Peek_Additional_Pass(0)->Install_Materials();
-					renderTerrainPass(&rinfo.Camera);
-					rinfo.Peek_Additional_Pass(0)->UnInstall_Materials();
-					return;
-				}
-			}
-			else
-			{	//wireframe pass
-				//Set to vertex diffuse lighting
-				DX8Wrapper::Set_Material(m_vertexMaterialClass);
-				//Set shader to non-textured solid color from vertex
-				DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueSolidShader);
-				devicePasses=1;	//one pass solid, next in wireframe.
-				DX8Wrapper::Apply_Render_State_Changes();
-				DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG2, D3DTA_TFACTOR );
-				DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR,0xff808080);
-				doMultiPassWireFrame=TRUE;
-				renderTerrainPass(&rinfo.Camera);
-				DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR,0xff008000);
-				return;
-			}
-	}
-	else
-	{
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
-		DX8Wrapper::Set_Shader(m_shaderClass);
-
- 		st=W3DShaderManager::ST_TERRAIN_BASE; //set default shader
-
- 		//set correct shader based on current settings
- 		if (!ShaderClass::Is_Backface_Culling_Inverted())
- 		{	//not reflection pass
- 			if (TheGlobalData->m_useLightMap && doCloud)
- 			{	st=W3DShaderManager::ST_TERRAIN_BASE_NOISE12;
- 			}
- 			else
- 			if (TheGlobalData->m_useLightMap)
- 			{	//lightmap only
- 				st=W3DShaderManager::ST_TERRAIN_BASE_NOISE2;
- 			}
- 			else
- 			if (doCloud)
- 			{	//cloudmap only
- 				st=W3DShaderManager::ST_TERRAIN_BASE_NOISE1;
- 			}
- 		}
- 		else
- 		{	//reflection pass, just do base texture
- 			st=W3DShaderManager::ST_TERRAIN_BASE;
- 		}
-
- 		//Find number of passes required to render current shader
- 		devicePasses=W3DShaderManager::getShaderPasses(st);
-
- 		if (m_disableTextures)
- 			devicePasses=1;	//force to 1 lighting-only pass
-
- 		//Specify all textures that this shader may need.
- 		W3DShaderManager::setTexture(0,m_stageZeroTexture);
- 		W3DShaderManager::setTexture(1,m_stageZeroTexture);
- 		W3DShaderManager::setTexture(2,m_stageTwoTexture);	//cloud
- 		W3DShaderManager::setTexture(3,m_stageThreeTexture);//noise
-		//Disable writes to destination alpha channel (if there is one)
-		if (DX8Wrapper::getBackBufferFormat() == WW3D_FORMAT_A8R8G8B8)
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
-	}
-
-	Int pass;
- 	for (pass=0; pass<devicePasses; pass++) {
-#ifdef TIMING_TESTS
-#endif
-		if (!doMultiPassWireFrame)	//multi-pass wireframe doesn't use regular shaders.
-		{
- 			if (m_disableTextures ) {
- 				DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaque2DShader);
- 				DX8Wrapper::Set_Texture(0,nullptr);
-   			} else {
- 				W3DShaderManager::setShader(st, pass);
-			}
-		}
-
-		for (j=0; j<m_numVBTilesY; j++)
-			for (i=0; i<m_numVBTilesX; i++)
-			{
-				DX8Wrapper::Set_Vertex_Buffer(getVertexBufferTile(i, j));
-#ifdef PRE_TRANSFORM_VERTEX
-				if (m_xformedVertexBuffer && pass==0) {
-					// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-					DX8Wrapper::Apply_Render_State_Changes();
-					int code = DX8Wrapper::_Get_D3D_Device8()->ProcessVertices(0, 0, numVertex, m_xformedVertexBuffer[j*m_numVBTilesX+i], 0);
-					::OutputDebugString("did process vertex\n");
-				}
-				if (m_xformedVertexBuffer) {
-					// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-					DX8Wrapper::Apply_Render_State_Changes();
-					DX8Wrapper::_Get_D3D_Device8()->SetStreamSource(
-						0,
-						m_xformedVertexBuffer[j*m_numVBTilesX+i],
-						sizeof(float) * 8 + sizeof(DWORD));
-					DX8Wrapper::_Get_D3D_Device8()->SetVertexShader(D3DFVF_XYZRHW |D3DFVF_DIFFUSE|D3DFVF_TEX2);
-				}
-#endif
-				if (Is_Hidden() == 0) {
-					DX8Wrapper::Draw_Triangles(0, HEIGHTMAP_POLYGON_NUM, 0, HEIGHTMAP_VERTEX_NUM);
-				}
-
-			}
-	}
-
-	if (!doMultiPassWireFrame)
-	{
-		if (pass)	//shader was applied at least once?
- 			W3DShaderManager::resetShader(st);
-
-		//Draw feathered shorelines
-		renderShoreLines(&rinfo.Camera);
-
-		//Do additional pass over any tiles that have 3 textures blended together.
-		if (TheGlobalData->m_use3WayTerrainBlends)
-			renderExtraBlendTiles(&rinfo.Camera);
-
-		Int yCoordMin = m_map->getDrawOrgY();
-		Int yCoordMax = m_y+m_map->getDrawOrgY()-1;
-		Int xCoordMin = m_map->getDrawOrgX();
-		Int xCoordMax = m_x+m_map->getDrawOrgX()-1;
+    auto *scene = static_cast<RTS3DScene *>(rinfo.Camera.Get_User_Data());
+    const bool custom = scene && (scene->getCustomPassMode()==SCENE_PASS_ALPHA_MASK ||
+        scene->Get_Extra_Pass_Polygon_Mode()==SceneClass::EXTRA_PASS_CLEAR_LINE);
+    if (custom && WW3D::Is_Texturing_Enabled() && rinfo.Additional_Pass_Count()) {
+        renderTerrainPass(&rinfo.Camera,rinfo.Peek_Additional_Pass(0));
+        return;
+    }
+    RenderBackendTerrainState terrain;
+    terrain.project_world_coordinates=true;
+    for (unsigned row=0; row<3; ++row) for (unsigned column=0; column<4; ++column)
+        terrain.world_transform[row*4+column]=Transform[row][column];
+    RenderBackendMaterialState material;
+    ShaderClass shader = m_disableTextures ? ShaderClass::_PresetOpaque2DShader : m_shaderClass;
+    shader.Set_Post_Detail_Color_Func(ShaderClass::DETAILCOLOR_DISABLE);
+    shader.Set_Post_Detail_Alpha_Func(ShaderClass::DETAILALPHA_DISABLE);
+    if (!shader.Get_Render_Backend_State(material)) {
+        std::fprintf(stderr,"Foreground terrain material translation failed.\n"); return;
+    }
+    material.color_write_mask=7;
+    if (custom && !WW3D::Is_Texturing_Enabled()) {
+        if (!ShaderClass::_PresetOpaqueSolidShader.Get_Render_Backend_State(material)) return;
+        material.color_write_mask=7;
+        material.wireframe=true;
+        terrain = RenderBackendTerrainState{};
+        terrain.project_world_coordinates=true;
+        terrain.use_constant_color=true;
+        terrain.constant_color[0]=terrain.constant_color[1]=terrain.constant_color[2]=128.f/255.f;
+        terrain.constant_color[3]=1.f;
+        drawTerrainGeometry(rinfo.Camera,terrain,material,nullptr);
+        return;
+    }
+    TextureClass *base = m_disableTextures ? nullptr : m_stageZeroTexture;
+    if (base) {
+        if (!base->Ensure_Renderer_Texture() || !base->Get_Filter().Get_Render_Sampler(material.sampler)) {
+            std::fprintf(stderr,"Foreground terrain atlas upload failed.\n"); return;
+        }
+        material.sampler.min_filter=material.sampler.mag_filter=
+            TheGlobalData->m_bilinearTerrainTex || TheGlobalData->m_trilinearTerrainTex ?
+            RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
+        material.sampler.mip_filter=TheGlobalData->m_trilinearTerrainTex ?
+            RenderBackendTextureFilter::Linear : RenderBackendTextureFilter::Point;
+        material.sampler.mipmaps=true;
+        material.sampler.max_anisotropy=1;
+        material.sampler.address_u=material.sampler.address_v=RenderBackendTextureAddress::Clamp;
+        terrain.blend_secondary_by_vertex_alpha=true;
+        terrain.shroud_texture=base->Get_Renderer_Texture();
+        if (!base->Get_Filter().Get_Render_Sampler(terrain.shroud_sampler,1)) return;
+        terrain.shroud_sampler.min_filter=terrain.shroud_sampler.mag_filter=material.sampler.min_filter;
+        terrain.shroud_sampler.mipmaps=true;
+        terrain.shroud_sampler.max_anisotropy=1;
+        terrain.shroud_sampler.address_u=terrain.shroud_sampler.address_v=RenderBackendTextureAddress::Clamp;
+        terrain.shroud_sampler.mip_filter=RenderBackendTextureFilter::Linear;
+        if (!ShaderClass::Is_Backface_Culling_Inverted()) {
+            W3DShaderManager::getTerrainNoiseProjection(terrain.cloud_noise_projection[0],
+                terrain.cloud_noise_projection[1],terrain.cloud_noise_projection[2]);
+            auto layer=[](TextureClass *texture, RenderBackendTextureHandle &handle,
+                RenderBackendSamplerState &sampler, unsigned stage) {
+                if (!texture || !texture->Ensure_Renderer_Texture() ||
+                    !texture->Get_Filter().Get_Render_Sampler(sampler,stage)) return false;
+                handle=texture->Get_Renderer_Texture();
+                sampler.min_filter=sampler.mag_filter=RenderBackendTextureFilter::Linear;
+                sampler.max_anisotropy=1;
+                sampler.address_u=sampler.address_v=RenderBackendTextureAddress::Wrap;
+                return handle.Is_Valid();
+            };
+            if (doCloud && !layer(m_stageTwoTexture,terrain.cloud_texture,terrain.cloud_sampler,2)) return;
+            if (TheGlobalData->m_useLightMap) {
+                if (!layer(m_stageThreeTexture,terrain.noise_texture,terrain.noise_sampler,3)) return;
+                terrain.noise_sampler.min_filter=RenderBackendTextureFilter::Point;
+            }
+        }
+    }
+    if (!drawTerrainGeometry(rinfo.Camera,terrain,material,base)) return;
+    if (!custom) {
+        renderShoreLines(&rinfo.Camera);
+        if (TheGlobalData->m_use3WayTerrainBlends) renderExtraBlendTiles(&rinfo.Camera);
+        const Int yCoordMin=m_map->getDrawOrgY(), yCoordMax=m_y+yCoordMin-1;
+        const Int xCoordMin=m_map->getDrawOrgX(), xCoordMax=m_x+xCoordMin-1;
 #ifdef DO_ROADS
-		if (!ShaderClass::Is_Backface_Culling_Inverted()) {
-			if (Scene) {
-				RTS3DScene *pMyScene = (RTS3DScene *)Scene;
-				RefRenderObjListIterator pDynamicLightsIterator(pMyScene->getDynamicLights());
-				m_roadBuffer->drawRoads(&rinfo.Camera, doCloud?m_stageTwoTexture:nullptr, TheGlobalData->m_useLightMap?m_stageThreeTexture:nullptr,
-					m_disableTextures,xCoordMin-m_map->getBorderSizeInline(), xCoordMax-m_map->getBorderSizeInline(), yCoordMin-m_map->getBorderSizeInline(), yCoordMax-m_map->getBorderSizeInline(), &pDynamicLightsIterator,Transform);
-			}
-		}
-	#endif
-	if (m_propBuffer) {
-		m_propBuffer->drawProps(rinfo);
-	}
-		drawScorches(rinfo.Camera,Transform);
-
-		m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, doCloud?m_stageTwoTexture:nullptr,Transform);
-
-		if (TheTerrainTracksRenderObjClassSystem)
-			TheTerrainTracksRenderObjClassSystem->flush();
-
-		if (m_shroud && rinfo.Additional_Pass_Count())
-		{
-			rinfo.Peek_Additional_Pass(0)->Install_Materials();
-			renderTerrainPass(&rinfo.Camera);
-			rinfo.Peek_Additional_Pass(0)->UnInstall_Materials();
-		}
-
-	}
-	else
-			m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, m_stageTwoTexture,Transform);
-
-  if ( m_waypointBuffer )
-	  m_waypointBuffer->drawWaypoints(rinfo);
-
-	m_bibBuffer->renderBibs(&rinfo.Camera,Transform);
-
-	// We do some custom blending, so tell the shader class to reset everything.
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
-	m_stageTwoTexture->restore();
-	ShaderClass::Invalidate();
-	DX8Wrapper::Set_Material(nullptr);
-
-}
-
-
-
-///Performs additional terrain rendering pass, blending in the black shroud texture.
-void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
-{
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Matrix3D(true));
-
-	//Apply the shader and material
-
-	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
-
-	for (Int j=0; j<m_numVBTilesY; j++)
-		for (Int i=0; i<m_numVBTilesX; i++)
-		{
-			DX8Wrapper::Set_Vertex_Buffer(getVertexBufferTile(i, j));
-#ifdef PRE_TRANSFORM_VERTEX
-			if (m_xformedVertexBuffer && pass==0) {
-				// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-				DX8Wrapper::Apply_Render_State_Changes();
-				int code = DX8Wrapper::_Get_D3D_Device8()->ProcessVertices(0, 0, numVertex, m_xformedVertexBuffer[j*m_numVBTilesX+i], 0);
-				::OutputDebugString("did process vertex\n");
-			}
-			if (m_xformedVertexBuffer) {
-				// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-				DX8Wrapper::Apply_Render_State_Changes();
-				DX8Wrapper::_Get_D3D_Device8()->SetStreamSource(
-					0,
-					m_xformedVertexBuffer[j*m_numVBTilesX+i],
-					sizeof(float) * 8 + sizeof(DWORD));
-				DX8Wrapper::_Get_D3D_Device8()->SetVertexShader(D3DFVF_XYZRHW |D3DFVF_DIFFUSE|D3DFVF_TEX2);
-			}
+        if (!ShaderClass::Is_Backface_Culling_Inverted() && Scene) {
+            RTS3DScene *terrainScene=static_cast<RTS3DScene *>(Scene);
+            RefRenderObjListIterator lights(terrainScene->getDynamicLights());
+            m_roadBuffer->drawRoads(&rinfo.Camera,doCloud?m_stageTwoTexture:nullptr,
+                TheGlobalData->m_useLightMap?m_stageThreeTexture:nullptr,m_disableTextures,
+                xCoordMin-m_map->getBorderSizeInline(),xCoordMax-m_map->getBorderSizeInline(),
+                yCoordMin-m_map->getBorderSizeInline(),yCoordMax-m_map->getBorderSizeInline(),&lights,Transform);
+        }
 #endif
-			if (Is_Hidden() == 0) {
-				DX8Wrapper::Draw_Triangles(0, HEIGHTMAP_POLYGON_NUM, 0, HEIGHTMAP_VERTEX_NUM);
-			}
-		}
+        if (m_propBuffer) m_propBuffer->drawProps(rinfo);
+        drawScorches(rinfo.Camera,Transform);
+        m_bridgeBuffer->drawBridges(&rinfo.Camera,m_disableTextures,doCloud?m_stageTwoTexture:nullptr,Transform);
+        if (TheTerrainTracksRenderObjClassSystem) TheTerrainTracksRenderObjClassSystem->flush();
+        if (m_shroud && rinfo.Additional_Pass_Count())
+            renderTerrainPass(&rinfo.Camera,rinfo.Peek_Additional_Pass(0));
+    } else m_bridgeBuffer->drawBridges(&rinfo.Camera,m_disableTextures,m_stageTwoTexture,Transform);
+    if (m_waypointBuffer) m_waypointBuffer->drawWaypoints(rinfo);
+    m_bibBuffer->renderBibs(&rinfo.Camera,Transform);
 }
+
 
 //=============================================================================
 // HeightMapRenderObjClass::renderExtraBlendTiles
@@ -2317,8 +2023,7 @@ void HeightMapRenderObjClass::renderExtraBlendTiles(CameraClass *camera)
         terrain.cloud_noise_projection[1],terrain.cloud_noise_projection[2]);
     RenderBackendTextureHandle base;
     if (!debug) {
-        // AlphaTerrainTextureClass formerly aliased this same native atlas.
-        // Use the retained real atlas directly; the alias has no CPU pixels.
+        // Both authored atlas coordinate sets sample the same retained terrain texture.
         if (!m_stageZeroTexture || !m_stageZeroTexture->Ensure_Renderer_Texture() ||
             !m_stageZeroTexture->Get_Filter().Get_Render_Sampler(material.sampler)) {
             std::fprintf(stderr,"Extra-blend terrain tile texture upload failed.\n"); return;

@@ -60,19 +60,6 @@ public:
 };
 
 
-class AlphaTerrainTextureClass : public TextureClass
-{
-	W3DMPO_CODE(AlphaTerrainTextureClass)
-protected:
-		virtual void Apply(unsigned int stage) override;
-public:
-		// Create texture for a height map.
-		AlphaTerrainTextureClass(TextureClass *pBaseTex );
-
-		// just use default destructor. ~TerrainTextureClass();
-
-};
-
 /** ***********************************************************************
 **                             AlphaEdgeTextureClass
 ***************************************************************************/

@@ -27,8 +27,6 @@
 #include "WWLib/always.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/w3d_file.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8indexbuffer.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/vertmaterial.h"
 #include "Lib/BaseType.h"
@@ -54,7 +52,6 @@ class GeometryInfo;
 
 #define no_TIMING_TESTS	1
 
-#define no_PRE_TRANSFORM_VERTEX // Don't do this, not a performance win.  jba.
 
 typedef struct {
 	Int minX, maxX;
@@ -70,8 +67,15 @@ class W3DDynamicLight;
 
 #define DO_ROADS 1
 
-#define VERTEX_FORMAT VertexFormatXYZDUV2
-#define DX8_VERTEX_FORMAT DX8_FVF_XYZDUV2
+// CPU terrain lighting retains the authored packed color and independent atlas UVs.
+// It is never a native GPU layout or persisted simulation representation.
+struct TerrainLightingVertex
+{
+    float x, y, z;
+    UnsignedInt diffuse;
+    float u1, v1, u2, v2;
+};
+#define VERTEX_FORMAT TerrainLightingVertex
 
 /// Custom render object that draws the heightmap and handles intersection tests.
 /**
@@ -251,7 +255,6 @@ protected:
 
 
 	ShaderClass m_shaderClass; ///<shader or rendering state for heightmap
-	VertexMaterialClass	  	  *m_vertexMaterialClass;	///< vertex shader (lighting) for terrain
 	TextureClass *m_stageZeroTexture;	///<primary texture
 	TextureClass *m_stageOneTexture;	///<transparent edging texture
 	CloudMapTerrainTextureClass *m_stageTwoTexture;	///<Cloud map texture

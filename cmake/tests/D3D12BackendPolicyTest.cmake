@@ -555,6 +555,9 @@ rts_policy_require_contains(
     "Draw_Indexed_Terrain_Triangles" "the real third-texture terrain blend must draw through the backend")
 
 foreach(_migrated_owner IN ITEMS
+    Core/GameEngineDevice/Include/W3DDevice/GameClient/HeightMap.h
+    Core/GameEngineDevice/Source/W3DDevice/GameClient/HeightMap.cpp
+    Core/GameEngineDevice/Include/W3DDevice/GameClient/BaseHeightMap.h
     Core/GameEngineDevice/Source/W3DDevice/GameClient/FlatHeightMap.cpp
     Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DScorch.cpp
     Core/GameEngineDevice/Include/W3DDevice/GameClient/W3DScorch.h
@@ -565,3 +568,13 @@ foreach(_migrated_owner IN ITEMS
     rts_policy_require_absent("${_migrated_owner}" "DX8" "migrated terrain callers must keep native rendering retired")
     rts_policy_require_absent("${_migrated_owner}" "dx8" "migrated terrain callers must keep native buffer headers retired")
 endforeach()
+
+rts_policy_require_absent(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp"
+    "TerrainShader" "all foreground and flat terrain shaders must use canonical HLSL")
+rts_policy_require_absent(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp"
+    "CloudTextureShader" "cloud projection must use the backend terrain constants")
+rts_policy_require_absent(
+    "Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper.cpp"
+    "D3DXGetErrorString" "shared result diagnostics must remain in existing WWDebug")
