@@ -3,13 +3,13 @@ include("${RTS_SOURCE_DIR}/cmake/tests/PolicyTestHelpers.cmake")
 foreach(_filter_owner IN ITEMS
     Core/GameEngineDevice/Include/W3DDevice/GameClient/W3DShaderManager.h
     Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp)
-    foreach(_retired_filter IN ITEMS ScreenDefaultFilter ScreenBWFilterDOT3 m_dwBWPixelShader)
+    foreach(_retired_filter IN ITEMS ScreenDefaultFilter ScreenBWFilterDOT3 m_dwBWPixelShader ScreenMotionBlurFilterList ScreenCrossFadeFilterList MaskTextureShader)
         rts_policy_require_absent("${_filter_owner}" "${_retired_filter}"
             "default rendering and monochrome must keep the retired native filter implementations removed")
     endforeach()
 endforeach()
 foreach(_game IN ITEMS Generals GeneralsMD)
-    foreach(_retired_shader IN ITEMS monochrome.nvp invmonochrome.nvp)
+    foreach(_retired_shader IN ITEMS monochrome.nvp invmonochrome.nvp motionblur.nvp MotionBlur.nvv)
         if(EXISTS "${RTS_SOURCE_DIR}/${_game}/Code/GameEngineDevice/Source/W3DDevice/GameClient/Shaders/${_retired_shader}")
             message(FATAL_ERROR "Policy regression: migrated monochrome shader ${_retired_shader} must not return")
         endif()

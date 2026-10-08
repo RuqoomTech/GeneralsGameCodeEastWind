@@ -214,6 +214,45 @@ struct MeshRendererClass::Impl
             for (int i = 0; i < polygon_count; ++i) apt.Add(i);
         }
 
+        RenderBackendMaterialState projected_material;
+        RenderBackendTerrainState projection;
+        TextureClass *projected_texture = nullptr;
+        if (task.pass && task.pass->Prepare_Projected_Mesh_Pass(projected_material, projection, projected_texture)) {
+            if (!projected_texture || !projected_texture->Ensure_Renderer_Texture())
+                return failure(mesh, "projected mesh texture unavailable");
+            // Rigid local geometry and world projection stay on the GPU. Skin
+            // positions are already deformed in world space by the existing owner.
+            for (int row=0; row<3; ++row) for (int column=0; column<4; ++column)
+                projection.world_transform[row*4+column] = world[row][column];
+            std::vector<RenderBackendTerrainVertex> projected_vertices;
+            std::vector<unsigned short> projected_indices;
+            const auto flush_projected = [&]() {
+                if (projected_indices.empty()) return true;
+                const bool result = backend->Draw_Indexed_Terrain_Triangles(projected_vertices.data(),
+                    static_cast<unsigned int>(projected_vertices.size()), projected_indices.data(),
+                    static_cast<unsigned int>(projected_indices.size()), projected_texture->Get_Renderer_Texture(),
+                    projected_material, projection);
+                if (result) ++draws;
+                projected_vertices.clear(); projected_indices.clear();
+                return result;
+            };
+            for (int p=0; p<apt.Count(); ++p) {
+                const unsigned int polygon = apt[p];
+                if (polygon >= static_cast<unsigned int>(polygon_count)) return failure(mesh, "invalid projected APT polygon");
+                const TriIndex &triangle = polygons[polygon];
+                if (projected_vertices.size()+3 > 65535 && !flush_projected()) return false;
+                for (int corner=0; corner<3; ++corner) {
+                    const int index = triangle[corner];
+                    if (index < 0 || index >= vertex_count) return failure(mesh, "invalid projected vertex");
+                    const Vector3 &position = positions[index];
+                    projected_indices.push_back(static_cast<unsigned short>(projected_vertices.size()));
+                    projected_vertices.push_back({position.X,position.Y,position.Z,1,1,1,1,0,0,0,0,0,0,0,0});
+                }
+            }
+            if (!flush_projected()) return failure(mesh, "D3D12 projected mesh submission rejected");
+            return true;
+        }
+
         std::vector<RenderBackendTexturedVertex> vertices;
         std::vector<unsigned short> indices;
         TextureClass *batch_texture = nullptr;

@@ -179,6 +179,8 @@ struct RenderBackendMaterialState
     bool depth_write = true;
     bool color_write = true;
     unsigned int color_write_mask = 15; // R=1, G=2, B=4, A=8
+    // Explicit coverage passes may write destination alpha inside an RGB pass.
+    bool override_pass_color_write_mask = false;
     bool clamp_texture = false;
     bool screen_space = false; // Caller supplies clip/NDC coordinates, bypassing the camera.
     bool wireframe = false;
@@ -194,6 +196,8 @@ struct RenderBackendMaterialState
     bool monochrome = false;
     float monochrome_tint[3]{1.0f, 1.0f, 1.0f};
     float monochrome_fade = 0.0f;
+    // Motion-blur composites select vertex alpha independently of capture alpha.
+    bool vertex_alpha = false;
     RenderBackendStencilState stencil;
 };
 
@@ -275,6 +279,14 @@ public:
     // clip-depth projection. Screen-space draws remain independent of camera.
     virtual void Set_View_Projection(const Matrix4x4 &view_projection) = 0;
     virtual void Get_View_Projection(Matrix4x4 &view_projection) const = 0;
+    // Runtime pass scope, downstream of simulation. Clear operations are separate.
+    bool Set_Pass_Color_Write_Mask(unsigned int mask)
+    {
+        if (mask > 15) return false;
+        m_pass_color_write_mask = mask;
+        return true;
+    }
+    unsigned int Get_Pass_Color_Write_Mask() const { return m_pass_color_write_mask; }
     // Projected-shadow textures use RGBA8 color-only targets. Selection is
     // between scenes; an empty handle restores output viewport/camera state.
     virtual RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height,
@@ -451,4 +463,6 @@ public:
 
     virtual void Set_Ambient(const Vector3 & color) = 0;
     virtual void Set_Light_Environment(LightEnvironmentClass * light_env) = 0;
+private:
+    unsigned int m_pass_color_write_mask = 15;
 };

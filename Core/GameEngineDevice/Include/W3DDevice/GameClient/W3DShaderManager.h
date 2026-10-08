@@ -56,7 +56,6 @@ public:
 	enum ShaderTypes
 	{	ST_INVALID,			//invalid shader type.
 		ST_SHROUD_TEXTURE,		//shader to apply shroud texture projection.
-		ST_MASK_TEXTURE,		//shader to apply alpha mask texture projection.
 		ST_FLAT_TERRAIN_BASE,	//shader to apply base terrain texture only
 		ST_FLAT_TERRAIN_BASE_NOISE1,	//shader to apply base texture and cloud/noise 1.
 		ST_FLAT_TERRAIN_BASE_NOISE2,	//shader to apply base texture and cloud/noise 2.
@@ -104,6 +103,10 @@ public:
 	static IDirect3DTexture8 * getRenderTexture();	///< returns last used render target texture
 	static Bool isRenderingToTexture() {return m_renderingToTexture; }
 	static void drawViewport(Int color);	///<draws 2 triangles covering the current tactical viewport
+	static Bool startBackendCapture(Bool preserveColor, Bool *newCapture = nullptr);
+	static Bool restoreBackendOutput();
+	static TextureClass *endBackendCapture();
+	static TextureClass *getBackendCapture() {return m_backendCaptureHasScene ? m_backendCapture : nullptr;}
 
 
 protected:
@@ -121,6 +124,12 @@ protected:
 	static IDirect3DTexture8 *m_renderTexture;		///<texture into which rendering will be redirected.
 	static IDirect3DSurface8 *m_newRenderSurface;	///<new render target inside m_renderTexture
 	static IDirect3DSurface8 *m_oldDepthSurface;	///<previous depth buffer surface
+	static TextureClass *m_backendCapture;
+	static IRenderBackend *m_backendCaptureOwner;
+	static Int m_backendCaptureWidth, m_backendCaptureHeight;
+	static Bool m_backendCapturing;
+	static Bool m_backendCaptureHasScene;
+	static unsigned int m_backendOutputWriteMask;
 
 
 };
@@ -141,10 +150,7 @@ public:
 class ScreenMotionBlurFilter : public W3DFilterInterface
 {
 public:
-	virtual Int set(FilterModes mode);		///<setup shader for the specified rendering pass.
 	virtual Int init() override;			///<perform any one time initialization and validation
-	virtual void reset();		///<do any custom resetting necessary to bring W3D in sync.
-	virtual Int shutdown() override;		///<release resources used by shader
 	virtual Bool preRender(Bool &skipRender, CustomScenePassModes &scenePassMode) override; ///< Set up at start of render.  Only applies to screen filter shaders.
 	virtual Bool postRender(FilterModes mode, Coord2D &scrollDelta, Bool &doExtraRender) override; ///< Called after render.  Only applies to screen filter shaders.
 	virtual Bool setup(FilterModes mode) override; ///< Called when the filter is started, one time before the first prerender.
@@ -175,14 +181,8 @@ protected:
 ///converts viewport to black & white.
 class ScreenBWFilter : public W3DFilterInterface
 {
-	TextureClass *m_capture = nullptr;
-	IRenderBackend *m_captureBackend = nullptr;
-	Int m_captureWidth = 0;
-	Int m_captureHeight = 0;
-	Bool m_capturing = false;
 public:
 	virtual Int init() override;			///<perform any one time initialization and validation
-	virtual Int shutdown() override;		///<release resources used by shader
 	virtual Bool preRender(Bool &skipRender, CustomScenePassModes &scenePassMode) override; ///< Set up at start of render.  Only applies to screen filter shaders.
 	virtual Bool postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doExtraRender) override; ///< Called after render.  Only applies to screen filter shaders.
 	virtual Bool setup(FilterModes mode) override {return true;} ///< Called when the filter is started, one time before the first prerender.
@@ -193,7 +193,6 @@ public:
 		m_fadeDirection = direction;
 	}
 protected:
-	Bool restoreOutput();
 	void advanceFade();
 	static Int m_fadeFrames;
 	static Int m_fadeDirection;
@@ -220,8 +219,6 @@ public:
 	static Real getCurrentFadeValue()	{ return m_curFadeValue;}
 	static TextureClass *getCurrentMaskTexture() { return m_fadePatternTexture;}
 protected:
-	virtual Int set(FilterModes mode);		///<setup shader for the specified rendering pass.
-	virtual void reset();		///<do any custom resetting necessary to bring W3D in sync.
 	Bool updateFadeLevel();		///<updated current state of fade and return true if not finished.
 	static Int m_fadeFrames;
 	static Int m_fadeDirection;

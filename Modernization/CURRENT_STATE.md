@@ -1,5 +1,27 @@
 # Current Source State
 
+## Shared scene capture, motion blur and crossfade - 2026-10-08
+
+The verified source parent is local commit `872f6b535580b315f51118fead265c061f177fd9`. The user requires verified coherent local commits and forbids pushes. This batch advances the real game migration; normal game link/boot, a visible frame, complete DX8 removal and user Windows sign-off remain unproven.
+
+ScreenBWFilter, ScreenMotionBlurFilter and ScreenCrossFadeFilter now share one TextureClass capture owned by W3DShaderManager. Size/generation checks, target transitions, shared output depth and output camera/viewport restoration remain on the backend seam. New/lost captures are initialized and rendered as actual scenes before frozen reuse; crossfade seeds missing RGB once instead of sampling an uninitialized image. Motion blur preserves the original CPU GameLogic-frame count/camera decisions, cumulative pan/zoom UV arithmetic, first opaque replacement and ordered normal/additive overlays. A narrow existing material-effects bit selects vertex alpha independently of captured alpha, without increasing the 64-DWORD root signature. Direct END_PAN activation initializes its prior delta and guards zero-length normalization.
+
+Soft-water retained captures reset only tactical alpha, with the original packed-byte opacity quantization. A small backend pass channel mask protects alpha from ordinary scene geometry; explicit shoreline coverage may override it to write alpha. Dynamic/static color, textured material, terrain and 2D draw paths preserve their existing state while applying the pass mask. Deferred sorting snapshots the effective channel mask at submission, so restoration before flush does not change queued draws. Clear remains independent of draw channel masks. This is renderer runtime state, never simulation/wire/Xfer/CRC data.
+
+Crossfade retains the shared raw RGB while updating projected mask alpha/depth, then restores output, requests the original second normal-scene render and composites the retained scene. Circle mode uses the existing terrain-layer operation for independent secondary UVs and full RGBA mask multiplication, preserving source-alpha/inverse-source-alpha blending and output alpha. Terrain masks retain their existing projection; a narrow additional-material seam now carries real rigid/skinned mesh mask geometry through the same GPU world-XY projection. Shroud mesh transparency remains a separate pending owner. The alpha-mask scene scope also protects RGB from ordinary trees and objects. Native motion/crossfade set/reset/registration lists, native MaskTextureShader/registration and its obsolete pass hooks are removed. Four unused paired motion-blur assembly prototypes and their CMake references are retired. Remaining native shroud, wireframe/scene state, water, smudge and resource owners still require actual migration.
+
+Validation receipts:
+
+- `build/capture-tests-complete-build.txt`: focused test graph compiles/links; the previously unregistered production sorting fixture is now a CTest target.
+- `build/capture-final-regressions.txt`: **32/32 non-browser tests pass**, production GPU 6.90 seconds, total 20.34 seconds. Browser was excluded; do not claim a browser/full-suite pass.
+- GPU fixtures verify retained RGB/depth, vertex-selected versus captured alpha, normal/additive blending, tactical alpha-only updates, exact pixel edges, all ordinary draw channel-mask routes, explicit shoreline coverage and full RGBA circle-mask composition with independent UVs.
+- `build/capture-original-sort.txt`: exact historical `e6f36e322` sorter reproduces the corrected equal-Z fixture order. Production ordering was unchanged; enabling its previously unregistered fixture exposed an incorrect old expected array. The queue test also verifies masks survive scope restoration.
+- `build/capture-syntax.txt` and `build/capture-extra-syntax.txt`: eleven paired/shared existing owners plus neutral mesh renderer and both scene variants pass MinGW syntax checks.
+- `build/mingw64-game/capture-verified-game-build.txt`: exact serial `z_generals` command compiles and fails at executable link. `build/capture-final-link-summary.json` records **54 unique unresolved symbols / 185 printed references**, down from 194 references with none added. The first function is **ShroudTextureShader::set(int)** at `W3DShaderManager.cpp:738`, `DX8Wrapper::Apply_Render_State_Changes()`. The next actual owner is shroud dispatch/caller behavior, followed by remaining manager/native resource and scene dependencies.
+- `build/capture-patchcheck.txt`: fresh original-baseline reconstruction and byte comparison, performed after source/document updates. Expected remaining candidate count is 4535 after four assembly deletions; use the receipt as authoritative.
+
+Next: migrate actual shroud mesh/terrain/water callers coherently, preserving transparent-object handling, texture projection, depth equality, blending and alpha; do not stub native state merely to link. Keep the persistent goal active and all commits local.
+
 ## Real monochrome filter and scene capture - 2026-10-07
 
 The verified source parent is user commit `5a4b16b002d6b9607820da62662129b5983b3d74`. On 2026-10-07 the user authorized ongoing local commits of verified changes; the coordinator commits this continuation batch after validation. No GitHub pushes. The reusable agent prompt includes the updated commit authorization and latest build queue.

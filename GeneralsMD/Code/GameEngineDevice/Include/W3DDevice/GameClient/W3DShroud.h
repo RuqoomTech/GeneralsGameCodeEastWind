@@ -66,17 +66,12 @@ protected:
 class W3DMaskMaterialPassClass : public MaterialPassClass
 {
 public:
-	W3DMaskMaterialPassClass() : m_texture(nullptr), m_allowUninstall(TRUE) {}
-	virtual void	Install_Materials() const override;
-	virtual void	UnInstall_Materials() const override;
 	bool Prepare_Terrain_Pass(RenderBackendMaterialState &material,
 		RenderBackendTerrainState &terrain, TextureClass *&texture) const;
-	void	setTexture(TextureClass *texture)	{m_texture=texture;}
-	void	setAllowUninstall(Bool state)	{ m_allowUninstall = state;}
+	bool Prepare_Projected_Mesh_Pass(RenderBackendMaterialState &material,
+		RenderBackendTerrainState &terrain, TextureClass *&texture) const override
+		{ return Prepare_Terrain_Pass(material, terrain, texture); }
 
-protected:
-	TextureClass *m_texture;	///<texture to be projected.
-	Bool m_allowUninstall;		///<flag which allows uninstalling this material.
 };
 
 /** Terrain shroud rendering class */

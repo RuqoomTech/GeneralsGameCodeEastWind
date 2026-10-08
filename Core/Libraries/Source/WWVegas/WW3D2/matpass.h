@@ -47,6 +47,7 @@ class VertexMaterialClass;
 class MeshModelClass;
 class OBBoxClass;
 struct RenderBackendMaterialState;
+struct RenderBackendTerrainState;
 
 /**
 ** MaterialPassClass
@@ -73,6 +74,8 @@ public:
 	// Custom passes must expose their complete draw behavior at this seam before
 	// the neutral mesh renderer can use them.
 	virtual bool Prepare_Render_Material(RenderBackendMaterialState &state) const;
+	virtual bool Prepare_Projected_Mesh_Pass(RenderBackendMaterialState &,
+		RenderBackendTerrainState &, TextureClass *&) const { return false; }
 	virtual void	UnInstall_Materials() const { };	///< reset/cleanup D3D states
 
 	void							Set_Texture(TextureClass * Texture,int stage = 0);

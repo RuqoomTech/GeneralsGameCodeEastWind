@@ -1530,6 +1530,280 @@ bool verifyMonochromeSceneCapture(IRenderBackend &backend)
     if (!ok) std::cerr << "Monochrome scene capture: depth, target restoration, tint/fade, alpha, or pixel bounds failed.\n";
     return ok;
 }
+bool verifyCrossFadeComposite(IRenderBackend &backend)
+{
+    const unsigned char retained[]{204,102,51,128};
+    // Different RGBA across secondary UVs distinguishes full modulation from
+    // RGB-only shroud and proves independent circle-mask coordinate selection.
+    const unsigned char maskPixels[]{255,255,255,255,64,128,255,64};
+    const auto capture=backend.Create_Static_RGBA8_Texture(1,1,retained,4);
+    const auto mask=backend.Create_Static_RGBA8_Texture(2,1,maskPixels,8);
+    const unsigned short indices[]{0,2,1,0,3,2};
+    RenderBackendTerrainVertex vertices[]{
+        {-1,-1,0,1,1,1,1,0,0,.75f,.5f,0,0,0,0}, {-1,1,0,1,1,1,1,0,0,.75f,.5f,0,0,0,0},
+        {1,1,0,1,1,1,1,0,0,.75f,.5f,0,0,0,0}, {1,-1,0,1,1,1,1,0,0,.75f,.5f,0,0,0,0}};
+    RenderBackendMaterialState material;
+    material.screen_space=true;
+    material.depth_test=RenderBackendDepthTest::Always;
+    material.depth_write=false;
+    material.cull=RenderBackendCullMode::None;
+    material.source_blend=RenderBackendBlendFactor::SourceAlpha;
+    material.destination_blend=RenderBackendBlendFactor::InverseSourceAlpha;
+    material.color_write_mask=7;
+    RenderBackendTerrainState terrain;
+    terrain.shroud_texture=mask;
+    terrain.shroud_sampler.address_u=terrain.shroud_sampler.address_v=RenderBackendTextureAddress::Clamp;
+    terrain.shroud_sampler.mipmaps=false;
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Clear(true,true,Vector3(.1f,.2f,.3f),.75f);
+    backend.Begin_Scene();
+    bool ok=capture.Is_Valid() && mask.Is_Valid() &&
+        backend.Draw_Indexed_Terrain_Triangles(vertices,4,indices,6,capture,material,terrain);
+    backend.End_Scene(false);
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    ok=read && ok;
+    if (read) {
+        const float alpha=(128.f/255.f)*(64.f/255.f);
+        const unsigned clear[]{26,51,76};
+        for (unsigned channel=0;channel<3;++channel) {
+            const float expected=retained[channel]*(maskPixels[4+channel]/255.f)*alpha+clear[channel]*(1-alpha);
+            ok=std::abs(int(pixels[(240u*640u+320u)*4u+channel])-int(std::lround(expected)))<=2 && ok;
+        }
+        ok=pixels[(240u*640u+320u)*4u+3]==191 && ok;
+    }
+    backend.Flip_To_Primary();
+    backend.Release_Texture(mask);
+    backend.Release_Texture(capture);
+    if (!ok) std::cerr << "Crossfade composite: independent mask UVs, RGBA multiplication or output alpha failed.\n";
+    return ok;
+}
+
+bool verifySceneWriteMasks(IRenderBackend &backend)
+{
+    const unsigned short indices[]{0,2,1,0,3,2};
+    RenderBackendColorVertex color[]{
+        {-1,-1,.4f,.8f,.4f,.2f,.75f}, {-1,1,.4f,.8f,.4f,.2f,.75f},
+        {1,1,.4f,.8f,.4f,.2f,.75f}, {1,-1,.4f,.8f,.4f,.2f,.75f}};
+    RenderBackendTexturedVertex textured[4];
+    RenderBackendTerrainVertex terrainVertices[4];
+    for (unsigned i=0; i<4; ++i) {
+        textured[i]={color[i].x,color[i].y,color[i].z,1,1,1,1,0,0};
+        terrainVertices[i]={color[i].x,color[i].y,color[i].z,1,1,1,1,0,0,0,0,0,0,0,0};
+    }
+    const unsigned char source[]{204,102,51,191};
+    const auto texture=backend.Create_Static_RGBA8_Texture(1,1,source,4);
+    const auto colors=backend.Create_Static_Indexed_Color_Geometry(color,4,indices,6);
+    const auto texturedGeometry=backend.Create_Static_Indexed_Textured_Geometry(textured,4,indices,6);
+    const auto terrainGeometry=backend.Create_Static_Indexed_Terrain_Geometry(terrainVertices,4,indices,6);
+    RenderBackendMaterialState material;
+    material.cull=RenderBackendCullMode::None;
+    RenderBackendTerrainState terrain;
+    backend.Set_View_Projection(Matrix4x4(true));
+    backend.Set_Viewport({0,0,640,480,0,1});
+    bool ok=texture.Is_Valid() && colors.Is_Valid() && texturedGeometry.Is_Valid() && terrainGeometry.Is_Valid();
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    for (unsigned mask : {7u,8u}) for (unsigned route=0; route<6; ++route) {
+        backend.Clear(true,true,Vector3(.1f,.2f,.3f),.25f);
+        backend.Begin_Scene();
+        ok=backend.Set_Pass_Color_Write_Mask(mask) && !backend.Set_Pass_Color_Write_Mask(16) &&
+            backend.Get_Pass_Color_Write_Mask()==mask && ok;
+        bool drawn=false;
+        switch (route) {
+        case 0: drawn=backend.Draw_Indexed_Triangles(color,4,indices,6); break;
+        case 1: drawn=backend.Draw_Static_Indexed_Color_Geometry(colors); break;
+        case 2: drawn=backend.Draw_2D_Indexed_Triangles(color,4,indices,6,RenderBackend2DBlendMode::Opaque); break;
+        case 3: drawn=backend.Draw_Static_Indexed_Textured_Geometry(texturedGeometry,texture); break;
+        case 4: drawn=backend.Draw_Indexed_Material_Triangles(textured,4,indices,6,texture,material); break;
+        case 5: drawn=backend.Draw_Static_Indexed_Terrain_Geometry(terrainGeometry,texture,material,terrain); break;
+        }
+        ok=drawn && ok;
+        backend.Set_Pass_Color_Write_Mask(15);
+        backend.End_Scene(false);
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        ok=read && ok;
+        if (read) {
+            const unsigned clear[]{26,51,76,64};
+            for (unsigned channel=0;channel<4;++channel) {
+                const int expected=(mask & (1u<<channel)) ? source[channel] : clear[channel];
+                ok=std::abs(int(pixels[(240u*640u+320u)*4u+channel])-expected)<=1 && ok;
+            }
+        }
+        backend.Flip_To_Primary();
+    }
+    // Shoreline is an explicit destination-alpha pass inside an RGB scene.
+    backend.Clear(true,true,Vector3(.1f,.2f,.3f),.25f);
+    backend.Begin_Scene();
+    backend.Set_Pass_Color_Write_Mask(7);
+    material.color_write_mask=8;
+    material.override_pass_color_write_mask=true;
+    ok=backend.Draw_Indexed_Material_Triangles(textured,4,indices,6,texture,material) && ok;
+    backend.Set_Pass_Color_Write_Mask(15);
+    backend.End_Scene(false);
+    const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    ok=read && ok;
+    if (read) {
+        const unsigned expected[]{26,51,76,191};
+        for (unsigned channel=0;channel<4;++channel)
+            ok=std::abs(int(pixels[(240u*640u+320u)*4u+channel])-int(expected[channel]))<=1 && ok;
+    }
+    backend.Flip_To_Primary();
+    backend.Release_Static_Geometry(terrainGeometry);
+    backend.Release_Static_Geometry(texturedGeometry);
+    backend.Release_Static_Geometry(colors);
+    backend.Release_Texture(texture);
+    if (!ok) std::cerr << "Scene write masks: ordinary geometry or explicit shoreline coverage failed.\n";
+    return ok;
+}
+
+bool verifyMotionBlurSceneCapture(IRenderBackend &backend)
+{
+    // Low texture alpha makes selecting vertex alpha observable. Single-pixel
+    // columns also detect a legacy half-texel offset in the retained capture.
+    std::vector<unsigned char> columns(640u*4u);
+    for (unsigned x=0; x<640; ++x) {
+        columns[x*4] = (x&1u) ? 51 : 204;
+        columns[x*4+1] = 102;
+        columns[x*4+2] = 51;
+        columns[x*4+3] = 64;
+    }
+    const unsigned char overlayPixel[]{17,230,110,3};
+    const auto source = backend.Create_Static_RGBA8_Texture(640,1,columns.data(),640*4);
+    const auto overlay = backend.Create_Static_RGBA8_Texture(1,1,overlayPixel,4);
+    const auto target = backend.Create_Render_Texture(640,480,true);
+    const unsigned short indices[]{0,2,1,0,3,2};
+    RenderBackendTexturedVertex full[] = {
+        {-1,-1,.4f,1,1,1,1,0,1}, {-1,1,.4f,1,1,1,1,0,0},
+        {1,1,.4f,1,1,1,1,1,0}, {1,-1,.4f,1,1,1,1,1,1}};
+    RenderBackendTexturedVertex tactical[] = {
+        {-0.6875f,-2.f/3.f,0,1,1,1,8.f/255.f,100.f/640.f,400.f/480.f},
+        {-0.6875f, 2.f/3.f,0,1,1,1,8.f/255.f,100.f/640.f, 80.f/480.f},
+        { 0.6875f, 2.f/3.f,0,1,1,1,8.f/255.f,540.f/640.f, 80.f/480.f},
+        { 0.6875f,-2.f/3.f,0,1,1,1,8.f/255.f,540.f/640.f,400.f/480.f}};
+    RenderBackendMaterialState scene;
+    scene.screen_space = true;
+    scene.cull = RenderBackendCullMode::None;
+    scene.texture_combine = RenderBackendTextureCombine::Replace;
+    RenderBackendMaterialState composite = scene;
+    composite.depth_test = RenderBackendDepthTest::Always;
+    composite.depth_write = false;
+    composite.sampler.address_u = composite.sampler.address_v = RenderBackendTextureAddress::Clamp;
+    composite.sampler.mipmaps = false;
+    composite.vertex_alpha = true;
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Set_View_Projection(Matrix4x4(true));
+    bool ok = source.Is_Valid() && overlay.Is_Valid() && target.Is_Valid();
+    unsigned width=0, height=0;
+    std::vector<unsigned char> pixels;
+    auto matches = [](unsigned char value, float expected) {
+        return std::abs(int(value)-int(std::lround(std::clamp(expected,0.f,255.f))))<=2;
+    };
+    auto read = [&]() {
+        backend.End_Scene(false);
+        const bool captured = backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        ok = captured && ok;
+        return captured;
+    };
+    backend.Clear(true,true,Vector3(0,0,1),.75f,.5f,0);
+    backend.Begin_Scene();
+    ok = backend.Set_Render_Texture(target,true) && ok;
+    backend.Clear(true,false,Vector3(0,0,0),0);
+    ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,source,scene) && ok;
+    ok = backend.Set_Render_Texture({}) && ok;
+    ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,target,composite) && ok;
+    if (read()) for (unsigned x=0; x<640; ++x) {
+        const auto pixel=(240u*640u+x)*4u;
+        for (unsigned channel=0; channel<3; ++channel)
+            ok = matches(pixels[pixel+channel],columns[x*4+channel]) && ok;
+        ok = pixels[pixel+3]==255 && ok;
+    }
+    backend.Flip_To_Primary();
+
+    // Skip scene capture for subsequent frames. The raw RGB must survive,
+    // rather than accumulating the previous frame's blurred composite.
+    for (unsigned mode=0; mode<3; ++mode) {
+        backend.Clear(true,false,Vector3(0,0,1),.75f);
+        backend.Begin_Scene();
+        for (auto &vertex : full) vertex.a=1;
+        composite.vertex_alpha=true;
+        composite.source_blend=RenderBackendBlendFactor::One;
+        composite.destination_blend=RenderBackendBlendFactor::Zero;
+        ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,target,composite) && ok;
+        const float alpha = mode==1 ? 9.f/255.f : 21.f/255.f;
+        for (auto &vertex : full) vertex.a=alpha;
+        composite.vertex_alpha=mode!=2;
+        composite.source_blend=RenderBackendBlendFactor::SourceAlpha;
+        composite.destination_blend=mode==1 ? RenderBackendBlendFactor::One : RenderBackendBlendFactor::InverseSourceAlpha;
+        ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,overlay,composite) && ok;
+        if (read()) {
+            const float selectedAlpha=mode==2 ? overlayPixel[3]/255.f : alpha;
+            const float destinationFactor=mode==1 ? 1.f : 1.f-selectedAlpha;
+            for (unsigned x=100; x<540; ++x) {
+                const auto pixel=(240u*640u+x)*4u;
+                for (unsigned channel=0; channel<3; ++channel)
+                    ok = matches(pixels[pixel+channel],overlayPixel[channel]*selectedAlpha+
+                        columns[x*4+channel]*destinationFactor) && ok;
+                ok = matches(pixels[pixel+3],255*(selectedAlpha*selectedAlpha+destinationFactor)) && ok;
+            }
+        }
+        backend.Flip_To_Primary();
+    }
+
+    // A soft-water update writes only tactical alpha. A farther scene probe
+    // must still fail the shared depth test, proving this update kept the DSV.
+    backend.Clear(true,false,Vector3(0,0,1),.75f);
+    backend.Begin_Scene();
+    ok = backend.Set_Render_Texture(target,true) && ok;
+    RenderBackendMaterialState alphaOnly=composite;
+    alphaOnly.source_blend=RenderBackendBlendFactor::One;
+    alphaOnly.destination_blend=RenderBackendBlendFactor::Zero;
+    alphaOnly.texture_combine=RenderBackendTextureCombine::Modulate;
+    alphaOnly.color_write_mask=8;
+    alphaOnly.vertex_alpha=false;
+    ok = backend.Draw_Indexed_Material_Triangles(tactical,4,indices,6,{},alphaOnly) && ok;
+    RenderBackendTexturedVertex rejected[4];
+    for (unsigned i=0; i<4; ++i) {
+        rejected[i]=full[i];
+        rejected[i].z=.45f;
+    }
+    ok = backend.Draw_Indexed_Material_Triangles(rejected,4,indices,6,overlay,scene) && ok;
+    ok = backend.Set_Render_Texture({}) && ok;
+    composite.source_blend=RenderBackendBlendFactor::One;
+    composite.destination_blend=RenderBackendBlendFactor::Zero;
+    composite.color_write_mask=7;
+    composite.vertex_alpha=true;
+    for (auto &vertex : full) vertex.a=1;
+    ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,target,composite) && ok;
+    if (read()) for (unsigned x=0; x<640; ++x) {
+        const auto pixel=(240u*640u+x)*4u;
+        for (unsigned channel=0; channel<3; ++channel)
+            ok = matches(pixels[pixel+channel],columns[x*4+channel]) && ok;
+        ok = matches(pixels[pixel+3],191) && ok;
+    }
+    backend.Flip_To_Primary();
+
+    // Sample the retained alpha with the default material after vertex-alpha
+    // draws. Alpha updates stop exactly at tactical pixel edges.
+    backend.Clear(true,false,Vector3(0,0,1),.75f);
+    backend.Begin_Scene();
+    composite.color_write_mask=15;
+    composite.vertex_alpha=false;
+    ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,target,composite) && ok;
+    if (read()) {
+        const unsigned inside[]{80u*640u+100u,399u*640u+539u,240u*640u+320u};
+        const unsigned outside[]{80u*640u+99u,400u*640u+540u,79u*640u+100u,0u};
+        for (auto pixel : inside) ok = matches(pixels[pixel*4+3],8) && ok;
+        for (auto pixel : outside) ok = matches(pixels[pixel*4+3],64) && ok;
+    }
+    backend.Flip_To_Primary();
+    backend.Release_Texture(target);
+    backend.Release_Texture(overlay);
+    backend.Release_Texture(source);
+    if (!ok) std::cerr << "Motion-blur capture: retained RGB/depth, selected alpha, blending, or tactical pixel bounds failed.\n";
+    return ok;
+}
 } // namespace
 
 int main()
@@ -1861,7 +2135,7 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyMotionBlurSceneCapture(*backend) || !verifySceneWriteMasks(*backend) || !verifyCrossFadeComposite(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

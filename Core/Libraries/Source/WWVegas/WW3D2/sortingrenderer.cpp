@@ -172,6 +172,12 @@ std::unique_ptr<SortingSubmission> Prepare_Submission(
     node->vertices.assign(vertices, vertices + vertex_count);
     node->indices.assign(indices, indices + index_count);
     node->material = material;
+    // The pass may restore its channel mask before deferred triangles flush.
+    // Snapshot the effective mask with the rest of this submission's draw state.
+    if (auto *backend = WW3D::Get_Render_Backend(); backend && !material.override_pass_color_write_mask) {
+        node->material.color_write_mask &= backend->Get_Pass_Color_Write_Mask();
+        node->material.override_pass_color_write_mask = true;
+    }
     if (texture) {
         if (!texture->Get_Filter().Get_Render_Sampler(node->material.sampler))
             { failure("unsupported CPU texture sampler"); return {}; }

@@ -622,6 +622,28 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND MINGW)
+    # The existing sorting fixture exercises the production snapshot queue;
+    # isolate its untextured path from the unrelated game/asset graph.
+    add_executable(sorting_renderer_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/SortingRendererTest.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/texturefilter.cpp
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWMath/matrix3d.cpp
+    )
+    target_include_directories(sorting_renderer_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+        ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas
+        ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2
+    )
+    target_link_libraries(sorting_renderer_test PRIVATE core_config core_utility_no_pch)
+    target_compile_options(sorting_renderer_test PRIVATE
+        -ffunction-sections -fdata-sections -fno-exceptions -fno-asynchronous-unwind-tables
+        -fno-unwind-tables -include Utility/CppMacros.h)
+    target_link_options(sorting_renderer_test PRIVATE -Wl,--gc-sections)
+    set_target_properties(sorting_renderer_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
+    add_test(NAME sorting_renderer COMMAND sorting_renderer_test)
+
     # Run the production CPU particle expansion without renderer/window state.
     add_executable(particle_geometry_test
         ${CMAKE_CURRENT_SOURCE_DIR}/ParticleGeometryTest.cpp

@@ -60,6 +60,7 @@
 #include "WW3D2/dx8wrapper.h"
 #include "WW3D2/light.h"
 #include "WW3D2/matpass.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/shader.h"
 #include "WW3D2/dx8caps.h"
 #include "WW3D2/colorspace.h"
@@ -940,22 +941,13 @@ void RTS3DScene::Render(RenderInfoClass & rinfo)
 		}
 		else if (m_customPassMode == SCENE_PASS_ALPHA_MASK)
 		{
-			//a projected alpha texture which will later be used to determine where
-			//wireframe should be visible.
-			///@todo: Clearing to black may not be needed if the scene already did the clear.
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_ALPHA);
-			DX8Wrapper::Set_DX8_Render_State (D3DRS_ZBIAS, 0);
-			//Since all objects will be rendered with same material, disable resetting until all are done.
-			m_maskMaterialPass->setAllowUninstall(FALSE);
-
-			Customized_Render(rinfo);	//render mask into alpha channel and fill z-buffer with depth values.
-			Flush(rinfo);
-			m_maskMaterialPass->setAllowUninstall(TRUE);
-			m_maskMaterialPass->UnInstall_Materials();
-
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
-
-			ShaderClass::Invalidate();
+			IRenderBackend *backend = WW3D::Get_Render_Backend();
+			if (!backend) return;
+			const unsigned int savedMask = backend->Get_Pass_Color_Write_Mask();
+			backend->Set_Pass_Color_Write_Mask(8);
+			Customized_Render(rinfo);
+			Flush(rinfo); // Includes ordinary trees/objects: preserve retained RGB.
+			backend->Set_Pass_Color_Write_Mask(savedMask);
 		}
 	}
 	else
@@ -973,13 +965,10 @@ void RTS3DScene::Render(RenderInfoClass & rinfo)
 
 			//We're only filling the z-buffer so ignore normal textures and state changes to speed things up.
 			m_customPassMode = SCENE_PASS_ALPHA_MASK;
-			m_maskMaterialPass->setAllowUninstall(FALSE);
 
 			Customized_Render(rinfo);	//render mask into alpha channel and fill z-buffer with depth values.
 			Flush(rinfo);
 
-			m_maskMaterialPass->setAllowUninstall(TRUE);
-			m_maskMaterialPass->UnInstall_Materials();
 
 			DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_RED);
 			WW3D::Enable_Coloring(0xff008000);

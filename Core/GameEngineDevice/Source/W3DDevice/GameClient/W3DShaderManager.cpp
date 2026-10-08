@@ -126,6 +126,42 @@ HRESULT Set_Legacy_Pixel_Shader_Constant(DWORD shader_register, const Vector4 &v
 	return DX8Wrapper::_Get_D3D_Device8()->SetPixelShaderConstant(shader_register, &value.X, 1);
 }
 
+Bool Build_Screen_Filter_Quad(Int outputWidth, Int outputHeight, RenderBackendTexturedVertex (&vertices)[4])
+{
+	if (!TheTacticalView || outputWidth <= 0 || outputHeight <= 0) return false;
+	Int xpos, ypos;
+	TheTacticalView->getOrigin(&xpos, &ypos);
+	const Int width = TheTacticalView->getWidth(), height = TheTacticalView->getHeight();
+	if (width <= 0 || height <= 0) return false;
+	const Real px[4] = {Real(xpos + width), Real(xpos + width), Real(xpos), Real(xpos)};
+	const Real py[4] = {Real(ypos + height), Real(ypos), Real(ypos + height), Real(ypos)};
+	for (Int i = 0; i < 4; ++i)
+	{
+		vertices[i] = {};
+		vertices[i].x = 2.0f * px[i] / Real(outputWidth) - 1.0f;
+		vertices[i].y = 1.0f - 2.0f * py[i] / Real(outputHeight);
+		vertices[i].r = vertices[i].g = vertices[i].b = vertices[i].a = 1.0f;
+		vertices[i].u = px[i] / Real(outputWidth);
+		vertices[i].v = py[i] / Real(outputHeight);
+	}
+	return true;
+}
+
+RenderBackendMaterialState Screen_Filter_Material()
+{
+	RenderBackendMaterialState material;
+	material.depth_test = RenderBackendDepthTest::Always;
+	material.depth_write = false;
+	material.cull = RenderBackendCullMode::None;
+	material.texture_combine = RenderBackendTextureCombine::Replace;
+	material.screen_space = true;
+	material.clamp_texture = true;
+	material.sampler.address_u = material.sampler.address_v = RenderBackendTextureAddress::Clamp;
+	material.sampler.min_filter = material.sampler.mag_filter = RenderBackendTextureFilter::Linear;
+	material.sampler.mipmaps = false;
+	return material;
+}
+
 } // namespace
 
 
@@ -163,6 +199,13 @@ ChipsetType W3DShaderManager::m_currentChipset;
 GraphicsVenderID W3DShaderManager::m_currentVendor;
 __int64 W3DShaderManager::m_driverVersion;
 
+TextureClass *W3DShaderManager::m_backendCapture = nullptr;
+IRenderBackend *W3DShaderManager::m_backendCaptureOwner = nullptr;
+Int W3DShaderManager::m_backendCaptureWidth = 0;
+Int W3DShaderManager::m_backendCaptureHeight = 0;
+Bool W3DShaderManager::m_backendCapturing = false;
+Bool W3DShaderManager::m_backendCaptureHasScene = false;
+unsigned int W3DShaderManager::m_backendOutputWriteMask = 15;
 Bool W3DShaderManager::m_renderingToTexture = false;
 IDirect3DSurface8 *W3DShaderManager::m_oldRenderSurface=nullptr;	///<previous render target
 IDirect3DTexture8 *W3DShaderManager::m_renderTexture=nullptr;		///<texture into which rendering will be redirected.
@@ -189,50 +232,94 @@ Int ScreenBWFilter::init()
 	return TRUE;
 }
 
-Bool ScreenBWFilter::restoreOutput()
+Bool W3DShaderManager::restoreBackendOutput()
 {
-	if (!m_capturing) return true;
+	if (!m_backendCapturing) return true;
 	IRenderBackend *backend = WW3D::Get_Render_Backend();
-	// A replacement backend no longer owns the old target or its saved state.
-	// The texture also validates the backend generation if its address is reused.
-	if (backend == m_captureBackend && m_capture &&
-		m_capture->Get_Renderer_Texture().Is_Valid() && !WW3D::Set_Render_Texture(nullptr))
-		return false;
-	m_capturing = false;
-	m_captureBackend = nullptr;
+	// Validate both owner and generation before restoring borrowed output state.
+	if (backend == m_backendCaptureOwner && m_backendCapture && m_backendCapture->Get_Renderer_Texture().Is_Valid())
+	{
+		if (!WW3D::Set_Render_Texture(nullptr)) return false;
+		backend->Set_Pass_Color_Write_Mask(m_backendOutputWriteMask);
+	}
+	m_backendCapturing = false;
+	m_backendCaptureOwner = nullptr;
 	return true;
+}
+
+Bool W3DShaderManager::startBackendCapture(Bool preserveColor, Bool *newCapture)
+{
+	if (newCapture) *newCapture = false;
+	if (!restoreBackendOutput()) return false;
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (!backend || !backend->Is_Device_Ready()) return false;
+	Int width, height, bits;
+	bool windowed;
+	if (!backend->Get_Output_Description(width, height, bits, windowed) || width <= 0 || height <= 0)
+		return false;
+	if (m_backendCapture && (m_backendCaptureWidth != width || m_backendCaptureHeight != height ||
+		!m_backendCapture->Get_Renderer_Texture().Is_Valid()))
+		REF_PTR_RELEASE(m_backendCapture);
+	if (!m_backendCapture)
+	{
+		m_backendCaptureHasScene = false;
+		m_backendCapture = WW3D::Create_Render_Texture(width, height, true);
+		if (!m_backendCapture) return false;
+		m_backendCaptureWidth = width;
+		m_backendCaptureHeight = height;
+	}
+	if (newCapture) *newCapture = !m_backendCaptureHasScene;
+	// The scene reapplies its camera after selection; output state is saved by the backend.
+	if (!WW3D::Set_Render_Texture(m_backendCapture, true)) return false;
+	m_backendOutputWriteMask = backend->Get_Pass_Color_Write_Mask();
+	m_backendCaptureOwner = backend;
+	m_backendCapturing = true;
+	if (!m_backendCaptureHasScene && preserveColor)
+		backend->Clear(true, false, Vector3(0.0f,0.0f,0.0f), TheWaterTransparency->m_minWaterOpacity);
+	if (TheGlobalData->m_showSoftWaterEdge)
+	{
+		if (!preserveColor)
+			backend->Clear(true, false, Vector3(0.0f, 0.0f, 0.0f), TheWaterTransparency->m_minWaterOpacity);
+		else
+		{
+			// Frozen raw scene RGB must survive skipped renders. The old alpha-only
+			// viewport quad quantized opacity through a packed diffuse byte.
+			RenderBackendTexturedVertex vertices[4];
+			if (!Build_Screen_Filter_Quad(width, height, vertices))
+			{
+				restoreBackendOutput();
+				return false;
+			}
+			const Real alpha = Real((Int)(TheWaterTransparency->m_minWaterOpacity * 255.0f)) / 255.0f;
+			for (Int i = 0; i < 4; ++i) vertices[i].a = alpha;
+			const unsigned short indices[6] = {0, 1, 2, 2, 1, 3};
+			RenderBackendMaterialState material = Screen_Filter_Material();
+			material.color_write_mask = 8;
+			material.override_pass_color_write_mask = true;
+			if (!backend->Draw_Indexed_Material_Triangles(vertices, 4, indices, 6, {}, material))
+			{
+				restoreBackendOutput();
+				return false;
+			}
+		}
+		if (preserveColor) backend->Set_Pass_Color_Write_Mask(7);
+	}
+	return true;
+}
+
+TextureClass *W3DShaderManager::endBackendCapture()
+{
+	const Bool captured = m_backendCapturing;
+	if (!restoreBackendOutput()) return nullptr;
+	if (!captured || !m_backendCapture || !m_backendCapture->Get_Renderer_Texture().Is_Valid()) return nullptr;
+	m_backendCaptureHasScene = true;
+	return m_backendCapture;
 }
 
 Bool ScreenBWFilter::preRender(Bool &skipRender, CustomScenePassModes &scenePassMode)
 {
 	skipRender = false;
-	if (!restoreOutput()) return false;
-	IRenderBackend *backend = WW3D::Get_Render_Backend();
-	if (!backend || !backend->Is_Device_Ready()) return false;
-
-	Int width, height, bits;
-	bool windowed;
-	if (!backend->Get_Output_Description(width, height, bits, windowed) || width <= 0 || height <= 0)
-		return false;
-	if (m_capture && (m_captureWidth != width || m_captureHeight != height ||
-		!m_capture->Get_Renderer_Texture().Is_Valid()))
-		REF_PTR_RELEASE(m_capture);
-	if (!m_capture)
-	{
-		m_capture = WW3D::Create_Render_Texture(width, height, true);
-		if (!m_capture) return false;
-		m_captureWidth = width;
-		m_captureHeight = height;
-	}
-
-	// Full-output color capture shares output depth and saves output camera/viewport.
-	// The following scene render applies its tactical camera and viewport again.
-	if (!WW3D::Set_Render_Texture(m_capture, true)) return false;
-	m_captureBackend = backend;
-	m_capturing = true;
-	if (TheGlobalData->m_showSoftWaterEdge)
-		backend->Clear(true, false, Vector3(0.0f, 0.0f, 0.0f), TheWaterTransparency->m_minWaterOpacity);
-	return true;
+	return W3DShaderManager::startBackendCapture(false);
 }
 
 void ScreenBWFilter::advanceFade()
@@ -267,64 +354,23 @@ void ScreenBWFilter::advanceFade()
 
 Bool ScreenBWFilter::postRender(FilterModes mode, Coord2D &scrollDelta, Bool &doExtraRender)
 {
-	const Bool captured = m_capturing;
-	// Restore before validating the filter mode, resource, or quad. The
-	// following UI and scene passes must always draw into the output surface.
-	if (!restoreOutput()) return false;
+	TextureClass *capture = W3DShaderManager::endBackendCapture();
 	IRenderBackend *backend = WW3D::Get_Render_Backend();
-	if (!captured || !backend || !m_capture || mode <= FM_NULL_MODE) return false;
-	const RenderBackendTextureHandle texture = m_capture->Get_Renderer_Texture();
-	if (!texture.Is_Valid()) return false;
-
-	// One step per successfully captured view, including the final fade-out
-	// frame. Script durations are frame counts, not simulation time.
+	if (!capture || !backend || mode <= FM_NULL_MODE) return false;
+	// One step per successful capture, including the final fade-out frame.
 	advanceFade();
-	Int xpos, ypos;
-	TheTacticalView->getOrigin(&xpos, &ypos);
-	const Int width = TheTacticalView->getWidth();
-	const Int height = TheTacticalView->getHeight();
-	if (width <= 0 || height <= 0) return false;
-
-	const Real px[4] = {Real(xpos + width), Real(xpos + width), Real(xpos), Real(xpos)};
-	const Real py[4] = {Real(ypos + height), Real(ypos), Real(ypos + height), Real(ypos)};
-	RenderBackendTexturedVertex vertices[4] = {};
-	for (Int i = 0; i < 4; ++i)
-	{
-		vertices[i].x = 2.0f * px[i] / Real(m_captureWidth) - 1.0f;
-		vertices[i].y = 1.0f - 2.0f * py[i] / Real(m_captureHeight);
-		vertices[i].r = vertices[i].g = vertices[i].b = vertices[i].a = 1.0f;
-		vertices[i].u = px[i] / Real(m_captureWidth);
-		vertices[i].v = py[i] / Real(m_captureHeight);
-	}
+	RenderBackendTexturedVertex vertices[4];
+	if (!Build_Screen_Filter_Quad(capture->Get_Width(), capture->Get_Height(), vertices)) return false;
 	const unsigned short indices[6] = {0, 1, 2, 2, 1, 3};
-	RenderBackendMaterialState material;
-	material.depth_test = RenderBackendDepthTest::Always;
-	material.depth_write = false;
-	material.cull = RenderBackendCullMode::None;
-	material.texture_combine = RenderBackendTextureCombine::Replace;
-	material.screen_space = true;
-	material.clamp_texture = true;
-	material.sampler.address_u = material.sampler.address_v = RenderBackendTextureAddress::Clamp;
-	material.sampler.min_filter = material.sampler.mag_filter = RenderBackendTextureFilter::Linear;
-	material.sampler.mipmaps = false;
-	// BW captures SCENE_PASS_DEFAULT. Its normal scene path writes RGBA;
-	// monochrome.pso wrote luminance to alpha independently of its RGB fade.
-	material.color_write_mask = 15;
+	RenderBackendMaterialState material = Screen_Filter_Material();
+	// SCENE_PASS_DEFAULT uses RGBA; monochrome alpha is luminance even at fade zero.
 	material.monochrome = true;
 	material.monochrome_fade = m_curFadeValue;
 	if (mode == FM_VIEW_BW_RED_AND_WHITE)
 		material.monochrome_tint[1] = material.monochrome_tint[2] = 0.0f;
 	else if (mode == FM_VIEW_BW_GREEN_AND_WHITE)
 		material.monochrome_tint[0] = material.monochrome_tint[2] = 0.0f;
-	return backend->Draw_Indexed_Material_Triangles(vertices, 4, indices, 6, texture, material);
-}
-
-Int ScreenBWFilter::shutdown()
-{
-	if (!restoreOutput()) return FALSE;
-	REF_PTR_RELEASE(m_capture);
-	m_captureWidth = m_captureHeight = 0;
-	return TRUE;
+	return backend->Draw_Indexed_Material_Triangles(vertices, 4, indices, 6, capture->Get_Renderer_Texture(), material);
 }
 
 /*=========  ScreenCrossFadeFilter	=============================================================*/
@@ -339,24 +385,12 @@ Bool ScreenCrossFadeFilter::m_skipRender = FALSE;
 
 ScreenCrossFadeFilter screenCrossFadeFilter;
 
-///List of different BW shader implementations in order of preference
-///@todo: Add a version that doesn't require pixel shader
-W3DFilterInterface *ScreenCrossFadeFilterList[]=
-{
-	&screenCrossFadeFilter,
-	nullptr
-};
-
 Int ScreenCrossFadeFilter::init()
 {
 	if (!TheDisplay)
 		return FALSE;	//effect is useless without a view so no point initializing for the WB, etc.
 
 	m_curFadeFrame = 0;
-
-	if (!W3DShaderManager::canRenderToTexture())
-		// Have to be able to render to texture.
-		return FALSE;
 
 	//Load an alpha mask texture that will mix foreground/background views.
 	m_fadePatternTexture=WW3DAssetManager::Get_Instance()->Get_Texture("exmask_g.tga");
@@ -413,152 +447,54 @@ Bool ScreenCrossFadeFilter::updateFadeLevel()
 
 Bool ScreenCrossFadeFilter::preRender(Bool &skipRender, CustomScenePassModes &scenePassMode)
 {
-	if (updateFadeLevel())
-	{	//if fade has not completed
-		W3DShaderManager::startRenderToTexture();
-		scenePassMode=SCENE_PASS_ALPHA_MASK;
-		skipRender = false;
-		m_skipRender=true;	//tell the postRender function not to draw into framebuffer yet.
-		return true;
-	}
-	//fade must have completed
+	skipRender = false;
+	m_skipRender = false;
+	if (!updateFadeLevel()) return true; // Composite the final retained frame.
+	Bool newCapture = false;
+	if (!W3DShaderManager::startBackendCapture(true, &newCapture)) return false;
+	// A lost/resized target has no previous RGB. Seed it with a real scene once;
+	// subsequent frames update only mask alpha/depth in this shared capture.
+	scenePassMode = newCapture ? SCENE_PASS_DEFAULT : SCENE_PASS_ALPHA_MASK;
+	m_skipRender = true;
 	return true;
 }
 
-Bool ScreenCrossFadeFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doExtraRender)
+Bool ScreenCrossFadeFilter::postRender(FilterModes mode, Coord2D &scrollDelta, Bool &doExtraRender)
 {
-	IDirect3DTexture8 * tex;
-
 	if (m_skipRender)
 	{
-		//don't render anything to frame buffer because we still need to draw the new scene
-		//that we're fading into.  Okay to render on the next call.
 		m_skipRender = false;
-		doExtraRender = TRUE;
-		tex =	W3DShaderManager::endRenderToTexture();
+		if (!W3DShaderManager::endBackendCapture()) return false;
+		doExtraRender = true;
 		return true;
 	}
-
-	tex=W3DShaderManager::getRenderTexture();
-
-	DEBUG_ASSERTCRASH(tex, ("Require last rendered texture."));
-	if (!tex) return false;
-	if (!set(mode)) return false;
-
-	LPDIRECT3DDEVICE8 pDev=DX8Wrapper::_Get_D3D_Device8();
-
-	struct _TRANS_LIT_TEX_VERTEX {
-		Vector4 p;
-		DWORD color;   // diffuse color
-		float	u;
-		float	v;
-		float	u1;
-		float	v1;
-	} v[4];
-
-	Int xpos, ypos, width, height;
-	Real radius = 0.0f;
-
-	DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,tex);	//previously rendered frame inside this texture
-	if (mode == FM_VIEW_CROSSFADE_CIRCLE)
-	{	DX8Wrapper::_Get_D3D_Device8()->SetTexture(1,m_fadePatternTexture->Peek_D3D_Texture());
-		//Use the current fade level to scale the mask texture, for other modes the texture
-		//comes pre-scaled so doesn't require uv scaling.
-		radius = (1.0f-m_curFadeValue)*2.0f;
-		if (radius <= 0)
-			radius = 0.01f;
-		radius = 0.5f/radius;
-	}
-
-	TheTacticalView->getOrigin(&xpos,&ypos);
-	width=TheTacticalView->getWidth();
-	height=TheTacticalView->getHeight();
-
-/*	Real radius = (1.0f-m_curFadeValue);
-	if (radius <= 0)
-		radius = 0.01f;
-	radius = 25.0f-radius*24.75f;
-*/
-	//bottom right
-	v[0].p = Vector4( xpos+width-0.5f, ypos+height-0.5f, 0.0f, 1.0f );
-	v[0].u = (Real)(xpos+width)/(Real)TheDisplay->getWidth();	v[0].v = (Real)(ypos+height)/(Real)TheDisplay->getHeight();
-	v[0].u1 = 0.5f+radius;	v[0].v1 = 0.5f+radius;
-	//top right
-	v[1].p = Vector4( xpos+width-0.5f, ypos-0.5f, 0.0f, 1.0f );
-	v[1].u = (Real)(xpos+width)/(Real)TheDisplay->getWidth();	v[1].v = (Real)(ypos)/(Real)TheDisplay->getHeight();
-	v[1].u1 = 0.5f+radius;	v[1].v1 = 0.5f-radius;
-	//bottom left
-	v[2].p = Vector4(  xpos-0.5f, ypos+height-0.5f, 0.0f, 1.0f );
-	v[2].u = (Real)(xpos)/(Real)TheDisplay->getWidth();	v[2].v = (Real)(ypos+height)/(Real)TheDisplay->getHeight();
-	v[2].u1 = 0.5f-radius;	v[2].v1 = 0.5f+radius;
-	//top left
-	v[3].p = Vector4(  xpos-0.5f,  ypos-0.5f, 0.0f, 1.0f );
-	v[3].u = (Real)(xpos)/(Real)TheDisplay->getWidth();	v[3].v = (Real)(ypos)/(Real)TheDisplay->getHeight();
-	v[3].u1 = 0.5f-radius;	v[3].v1 = 0.5f-radius;
-
-	DWORD diffuse = 0xffffffff;//((Int)((m_curFadeValue) * 255.0f) << 24) | 0x00ffffff;	//store alpha value in vertex diffuse
-
-	v[0].color = diffuse;
-	v[1].color = diffuse;
-	v[2].color = diffuse;
-	v[3].color = diffuse;
-
-	//draw polygons like this is very inefficient but for only 2 triangles, it's
-	//not worth bothering with index/vertex buffers.
-	pDev->SetVertexShader(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX2);
-
-//		m_pDev->SetTextureStageState(0,D3DTSS_MAGFILTER,D3DTEXF_POINT);
-//		m_pDev->SetTextureStageState(0,D3DTSS_MINFILTER,D3DTEXF_POINT);
-
-	pDev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, v, sizeof(_TRANS_LIT_TEX_VERTEX));
-
-	reset();
-	return true;
-}
-
-Int ScreenCrossFadeFilter::set(FilterModes mode)
-{
-	if (mode > FM_NULL_MODE)
-	{	//rendering a quad with redirected rendering surface
-		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-		DX8Wrapper::Set_Material(vmat);
-		REF_PTR_RELEASE(vmat);	//no need to keep a reference since it's a preset.
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetAlphaShader);
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Set_Texture(1,nullptr);
-		DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
-
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP);
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-
-		if (mode == FM_VIEW_CROSSFADE_CIRCLE)
-		{	//cross-fading using circle mask stored in stage 1
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLORARG1, D3DTA_TEXTURE );
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLORARG2, D3DTA_CURRENT );
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLOROP,   D3DTOP_MODULATE );
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_ALPHAARG1, D3DTA_TEXTURE );
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_ALPHAARG2, D3DTA_CURRENT );
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_ALPHAOP,   D3DTOP_MODULATE );
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_TEXCOORDINDEX, 1 );
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_MIPFILTER, D3DTEXF_NONE);
-		}
-
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC,D3DCMP_ALWAYS);
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE,FALSE);
-
-		return true;
-	}
-	return false;
-}
-
-void ScreenCrossFadeFilter::reset()
-{
-	DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLOROP,   D3DTOP_DISABLE );
-	DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_ALPHAOP,   D3DTOP_DISABLE );
-	DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,nullptr);	//previously rendered frame inside this texture
-	DX8Wrapper::Invalidate_Cached_Render_States();
+	TextureClass *capture = W3DShaderManager::getBackendCapture();
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (!capture || !backend || mode <= FM_NULL_MODE || !capture->Get_Renderer_Texture().Is_Valid()) return false;
+	RenderBackendTexturedVertex vertices[4];
+	if (!Build_Screen_Filter_Quad(capture->Get_Width(), capture->Get_Height(), vertices)) return false;
+	const unsigned short indices[6] = {0, 1, 2, 2, 1, 3};
+	RenderBackendMaterialState material = Screen_Filter_Material();
+	material.source_blend = RenderBackendBlendFactor::SourceAlpha;
+	material.destination_blend = RenderBackendBlendFactor::InverseSourceAlpha;
+	material.color_write_mask = 7; // The mask scene never changed output alpha.
+	if (mode != FM_VIEW_CROSSFADE_CIRCLE)
+		return backend->Draw_Indexed_Material_Triangles(vertices, 4, indices, 6, capture->Get_Renderer_Texture(), material);
+	if (!m_fadePatternTexture || !m_fadePatternTexture->Ensure_Renderer_Texture()) return false;
+	Real radius = (1.0f - m_curFadeValue) * 2.0f;
+	if (radius <= 0.0f) radius = 0.01f;
+	radius = 0.5f / radius;
+	RenderBackendTerrainVertex masked[4];
+	const Real u[4] = {.5f+radius, .5f+radius, .5f-radius, .5f-radius};
+	const Real v[4] = {.5f+radius, .5f-radius, .5f+radius, .5f-radius};
+	for (Int i=0; i<4; ++i)
+		masked[i] = {vertices[i].x,vertices[i].y,vertices[i].z,1,1,1,1,vertices[i].u,vertices[i].v,u[i],v[i],0,0,0,0};
+	RenderBackendTerrainState terrain;
+	terrain.shroud_texture = m_fadePatternTexture->Get_Renderer_Texture();
+	if (!m_fadePatternTexture->Get_Filter().Get_Render_Sampler(terrain.shroud_sampler)) return false;
+	material.texture_combine = RenderBackendTextureCombine::Modulate;
+	// This existing layer operation multiplies both RGB and alpha, with independent UVs.
+	return backend->Draw_Indexed_Terrain_Triangles(masked,4,indices,6,capture->Get_Renderer_Texture(),material,terrain);
 }
 
 Int ScreenCrossFadeFilter::shutdown()
@@ -582,86 +518,37 @@ m_maxCount(0),
 m_lastFrame(0),
 m_skipRender(false)
 {
+	m_priorDelta.x = m_priorDelta.y = 0.0f;
 }
-///List of different motion blur implementations in order of preference
-W3DFilterInterface *ScreenMotionBlurFilterList[]=
-{
-	&screenMotionBlurFilter,
-	nullptr
-};
-
 Int ScreenMotionBlurFilter::init()
 {
-	if (!W3DShaderManager::canRenderToTexture()) {
-		// Have to be able to render to texture.
-		return false;
-	}
-	W3DFilters[FT_VIEW_MOTION_BLUR_FILTER]=this;
+	W3DFilters[FT_VIEW_MOTION_BLUR_FILTER] = this;
 	return true;
 }
 
 Bool ScreenMotionBlurFilter::preRender(Bool &skipRender, CustomScenePassModes &scenePassMode)
 {
-	skipRender = m_skipRender;
-	W3DShaderManager::startRenderToTexture();
+	skipRender = false;
+	Bool newCapture = false;
+	if (!W3DShaderManager::startBackendCapture(true, &newCapture)) return false;
+	// A resize or backend replacement has no retained raw scene to reuse.
+	skipRender = m_skipRender && !newCapture;
 	return true;
 }
 
-Bool ScreenMotionBlurFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doExtraRender)
+Bool ScreenMotionBlurFilter::postRender(FilterModes mode, Coord2D &scrollDelta, Bool &doExtraRender)
 {
-	IDirect3DTexture8 * tex =	W3DShaderManager::endRenderToTexture();
-	DEBUG_ASSERTCRASH(tex, ("Require rendered texture."));
-	if (!tex) return false;
-	if (!set(mode)) return false;
-
-	LPDIRECT3DDEVICE8 pDev=DX8Wrapper::_Get_D3D_Device8();
-
+	TextureClass *capture = W3DShaderManager::endBackendCapture();
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (!capture || !backend) return false;
+	const RenderBackendTextureHandle texture = capture->Get_Renderer_Texture();
+	RenderBackendTexturedVertex vertices[4];
+	if (!Build_Screen_Filter_Quad(capture->Get_Width(), capture->Get_Height(), vertices)) return false;
+	const unsigned short indices[6] = {0, 1, 2, 2, 1, 3};
+	RenderBackendMaterialState material = Screen_Filter_Material();
+	material.vertex_alpha = true; // Stage zero selected diffuse alpha, not capture alpha.
+	material.color_write_mask = TheGlobalData->m_showSoftWaterEdge ? 7 : 15;
 	Bool continueEffect = true;
-	struct _TRANS_LIT_TEX_VERTEX {
-		Vector4 p;
-		DWORD color;   // diffuse color
-		float	u;
-		float	v;
-	} v[4];
-
-	Int xpos, ypos, width, height;
-
-	DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,tex);	//previously rendered frame inside this texture
-	TheTacticalView->getOrigin(&xpos,&ypos);
-	width=TheTacticalView->getWidth();
-	height=TheTacticalView->getHeight();
-
-	//bottom right
-	v[0].p = Vector4( xpos+width-0.5f, ypos+height-0.5f, 0.0f, 1.0f );
-	v[0].u = (Real)(xpos+width)/(Real)TheDisplay->getWidth();	v[0].v = (Real)(ypos+height)/(Real)TheDisplay->getHeight();
-	//top right
-	v[1].p = Vector4( xpos+width-0.5f, ypos-0.5f, 0.0f, 1.0f );
-	v[1].u = (Real)(xpos+width)/(Real)TheDisplay->getWidth();	v[1].v = (Real)(ypos)/(Real)TheDisplay->getHeight();
-	//bottom left
-	v[2].p = Vector4(  xpos-0.5f, ypos+height-0.5f, 0.0f, 1.0f );
-	v[2].u = (Real)(xpos)/(Real)TheDisplay->getWidth();	v[2].v = (Real)(ypos+height)/(Real)TheDisplay->getHeight();
-	//top left
-	v[3].p = Vector4(  xpos-0.5f,  ypos-0.5f, 0.0f, 1.0f );
-	v[3].u = (Real)(xpos)/(Real)TheDisplay->getWidth();	v[3].v = (Real)(ypos)/(Real)TheDisplay->getHeight();
-	v[0].color = 0xffffffff;
-	v[1].color = 0xffffffff;
-	v[2].color = 0xffffffff;
-	v[3].color = 0xffffffff;
-
-
-	if (m_additive) {
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_SRCBLEND,D3DBLEND_SRCALPHA);
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_DESTBLEND,D3DBLEND_ONE);
-	} else {
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_SRCBLEND,D3DBLEND_SRCALPHA);
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_DESTBLEND,D3DBLEND_INVSRCALPHA);
-	}
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE,false);
-	//draw polygons like this is very inefficient but for only 2 triangles, it's
-	//not worth bothering with index/vertex buffers.
-	DX8Wrapper::Apply_Render_State_Changes();
-	pDev->SetVertexShader(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1);
-
 	Coord2D center;
 	center.x = 0.5f;
 	center.y = 0.5f;
@@ -680,8 +567,10 @@ Bool ScreenMotionBlurFilter::postRender(FilterModes mode, Coord2D &scrollDelta,B
 		m_priorDelta = scrollDelta;
 	} else if (mode == FM_VIEW_MB_END_PAN_ALPHA) {
 		Real len = sqrt(m_priorDelta.x*m_priorDelta.x + m_priorDelta.y*m_priorDelta.y);
-		center.x += 0.5f * (m_priorDelta.x/len);
-		center.y -= 0.5f * (m_priorDelta.y/len);
+		if (len > 0.0f) {
+			center.x += 0.5f * (m_priorDelta.x/len);
+			center.y -= 0.5f * (m_priorDelta.y/len);
+		}
 		m_decrement = false;
 		m_maxCount--;
 		if (m_maxCount<2) {
@@ -720,17 +609,13 @@ Bool ScreenMotionBlurFilter::postRender(FilterModes mode, Coord2D &scrollDelta,B
 		for (i=0; i<4; i++) {
 			Real factor = 1.0f - (m_maxCount/(Real)MAX_COUNT)*0.90f;
 			factor = sqrt(factor);
-			v[i].u = ((v[i].u-center.x)*factor) + center.x;
-			v[i].v = ((v[i].v-center.y)*factor) + center.y;
+			vertices[i].u = ((vertices[i].u-center.x)*factor) + center.x;
+			vertices[i].v = ((vertices[i].v-center.y)*factor) + center.y;
 		}
 	}
-	pDev->SetTextureStageState(0,D3DTSS_ALPHAARG1, D3DTA_CURRENT);
-	pDev->SetTextureStageState(0,D3DTSS_ALPHAARG2, D3DTA_TEXTURE);
-	pDev->SetTextureStageState(0,D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
-	pDev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, v, sizeof(_TRANS_LIT_TEX_VERTEX));
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE,true);
-
-	DX8Wrapper::Apply_Render_State_Changes();
+	if (!backend->Draw_Indexed_Material_Triangles(vertices, 4, indices, 6, texture, material)) return false;
+	material.source_blend = RenderBackendBlendFactor::SourceAlpha;
+	material.destination_blend = m_additive ? RenderBackendBlendFactor::One : RenderBackendBlendFactor::InverseSourceAlpha;
 	{
 		Int limit = m_maxCount;
 		if (m_maxCount>30) limit = 30;
@@ -746,27 +631,22 @@ Bool ScreenMotionBlurFilter::postRender(FilterModes mode, Coord2D &scrollDelta,B
 					}
 					if (m_maxCount==MAX_COUNT) alpha += 60;
 				}
-				v[i].color = (alpha<<24)|0x00ffffff; //
+				vertices[i].a = Real(alpha) / 255.0f;
 				if (pan) {
-					v[i].u = ((v[i].u-center.x)*(factor+.006)) + center.x;
-					v[i].v = ((v[i].v-center.y)*factor) + center.y;
+					vertices[i].u = ((vertices[i].u-center.x)*(factor+.006)) + center.x;
+					vertices[i].v = ((vertices[i].v-center.y)*factor) + center.y;
 				} else {
-					v[i].u = ((v[i].u-center.x)*factor) + center.x;
-					v[i].v = ((v[i].v-center.y)*factor) + center.y;
+					vertices[i].u = ((vertices[i].u-center.x)*factor) + center.x;
+					vertices[i].v = ((vertices[i].v-center.y)*factor) + center.y;
 				}
 			}
-			pDev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, v, sizeof(_TRANS_LIT_TEX_VERTEX));
+			if (!backend->Draw_Indexed_Material_Triangles(vertices, 4, indices, 6, texture, material)) return false;
 
 		}
 	}
 	m_lastFrame = TheGameLogic->getFrame();
-	if (pan){
-		m_skipRender = false;
-	}
-	reset();
-	if (!continueEffect) {
-		m_zoomToValid = false;
-	}
+	if (pan) m_skipRender = false;
+	if (!continueEffect) m_zoomToValid = false;
 	return continueEffect;
 }
 
@@ -803,37 +683,6 @@ Bool ScreenMotionBlurFilter::setup(FilterModes mode)
 			break;
 	}
 	return true;
-}
-
-Int ScreenMotionBlurFilter::set(FilterModes mode)
-{
-	if (mode > FM_NULL_MODE)
-	{	//rendering a quad with redirected rendering surface motion blurred
-
-		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-		DX8Wrapper::Set_Material(vmat);
-		REF_PTR_RELEASE(vmat);	//no need to keep a reference since it's a preset.
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Set_Texture(1,nullptr);
-		DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
-
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC,D3DCMP_ALWAYS);
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE,FALSE);
-		DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
-	}
-	return TRUE;
-}
-
-void ScreenMotionBlurFilter::reset()
-{
-	DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,nullptr);	//previously rendered frame inside this texture
-	DX8Wrapper::Invalidate_Cached_Render_States();
-}
-
-Int ScreenMotionBlurFilter::shutdown()
-{
-	return TRUE;
 }
 
 /*===========================================================================================*/
@@ -1033,113 +882,6 @@ void FlatShroudTextureShader::reset()
 	DX8Wrapper::Set_DX8_Texture_Stage_State(m_stageOfSet,  D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
 }
 
-///Mask layer rendering shader
-class MaskTextureShader : public W3DShaderInterface
-{
-	virtual Int set(Int pass) override;		///<setup shader for the specified rendering pass.
-	virtual Int init() override;			///<perform any one time initialization and validation
-	virtual void reset() override;		///<do any custom resetting necessary to bring W3D in sync.
-} maskTextureShader;
-
-///List of different shroud shader implementations in order of preference
-W3DShaderInterface *MaskShaderList[]=
-{
-	&maskTextureShader,
-	nullptr
-};
-
-Int MaskTextureShader::init()
-{
-	W3DShaders[W3DShaderManager::ST_MASK_TEXTURE]=&maskTextureShader;
-	W3DShadersPassCount[W3DShaderManager::ST_MASK_TEXTURE]=1;
-
-	return TRUE;
-}
-
-Int MaskTextureShader::set(Int pass)
-{
-	Real fadeLevel=ScreenCrossFadeFilter::getCurrentFadeValue();
-
-	//Use the current fade level to scale the mask texture
-	Real radius = (1.0f-fadeLevel)*2.0f;
-	if (radius <= 0)
-		radius = 0.01f;
-	radius = 0.5f/radius;
-
-	//force WW3D2 system to set it's states so it won't later overwrite our custom settings.
-	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
-	REF_PTR_RELEASE(vmat);	//no need to keep a reference since it's a preset.
-
-	//For now we're always going to project the texture coming from the crossfade effect
-	DX8Wrapper::Set_Texture(0, ScreenCrossFadeFilter::getCurrentMaskTexture());
-	ShaderClass shader=ShaderClass::_PresetOpaqueShader;
-	shader.Set_Primary_Gradient(ShaderClass::GRADIENT_DISABLE);
-	DX8Wrapper::Set_Shader(shader);
-	DX8Wrapper::Apply_Render_State_Changes();
-
-	D3DMATRIX curView;
-	DX8Wrapper::_Get_DX8_Transform(D3DTS_VIEW, curView);
-
-	DX8Wrapper::Set_DX8_Texture_Stage_State(0,  D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_CAMERASPACEPOSITION);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(0,  D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT2);
-
-	D3DMATRIX inv;
-	float det;
-
-	//Get inverse view matrix so we can transform camera space points back to world space
-	Invert_Legacy_Shader_Matrix(inv, det, curView);
-
-	D3DMATRIX scale,offset,offsetTextureCenter;
-	Coord3D centerPos;
-	centerPos.zero();
-
-	//Find center of projection (this should be returned from some other filter, etc. but
-	//for now assume terrain location at center of screen.
-	if (TheTacticalView)
-	{	Int xpos,ypos;
-
-		TheTacticalView->getOrigin(&xpos,&ypos);
-
-		ICoord2D screenPos;
-		screenPos.x=(Real)TheTacticalView->getWidth()*0.5f;
-		screenPos.y=(Real)TheTacticalView->getHeight()*0.5f;
-		TheTacticalView->screenToTerrain(&screenPos,&centerPos);
-	}
-
-	Make_Legacy_Shader_Translation(offset, -centerPos.x, -centerPos.y, 0.0f);
-
-	Make_Legacy_Shader_Translation(offsetTextureCenter, 0.5f, 0.5f, 0.0f);	//shift coordinates so center of projection falls at uv 0.5,0.5
-
-	Real worldTexelWidth=(1.0f-fadeLevel)*25.0f;	//9 worked well for circle but weird shape requires more stretch to cover.
-	Real worldTexelHeight=(1.0f-fadeLevel)*25.0f;
-
-	///@todo: Fix this to work with non 128x128 textures.
-	if (worldTexelWidth != 0 && worldTexelHeight != 0)
-	{
-		Real widthScale = 1.0f/(worldTexelWidth*128.0f);
-		Real heightScale = 1.0f/(worldTexelHeight*128.0f);
-		Make_Legacy_Shader_Scaling(scale, widthScale, heightScale, 1.0f);
-		curView = Multiply_Legacy_Shader_Matrices(Multiply_Legacy_Shader_Matrices(Multiply_Legacy_Shader_Matrices(inv, offset), scale), offsetTextureCenter);
-	}
-	else
-	{
-		Make_Legacy_Shader_Scaling(scale, 0.0f, 0.0f, 1.0f);	//scaling by 0 will set uv coordinates to 0,0
-		curView = Multiply_Legacy_Shader_Matrices(Multiply_Legacy_Shader_Matrices(inv, offset), scale);
-	}
-
-	DX8Wrapper::_Set_DX8_Transform(D3DTS_TEXTURE0, curView);
-
-	return TRUE;
-}
-
-void MaskTextureShader::reset()
-{
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(0,  D3DTSS_TEXCOORDINDEX, 0);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(0,  D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
-}
-
 // Local renderer cloud animation; projection is evaluated by canonical HLSL.
 static float terrainCloudOffsetX = 0;
 static float terrainCloudOffsetY = 0;
@@ -1151,17 +893,6 @@ W3DShaderInterface **MasterShaderList[]=
 {
 	ShroudShaderList,
 	FlatShroudShaderList,
-	MaskShaderList,
-	nullptr
-};
-
-/** List of all custom filter lists - each list in this list contains variations of the same
-	filter to allow it to work on different hardware configurations.
-*/
-W3DFilterInterface **MasterFilterList[]=
-{
-	ScreenMotionBlurFilterList,
-	ScreenCrossFadeFilterList,
 	nullptr
 };
 
@@ -1197,8 +928,10 @@ W3DShaderManager::W3DShaderManager()
 //=============================================================================
 void W3DShaderManager::init()
 {
-	// The backend BW filter is independent of legacy native RTT/capability setup.
+	// Backend filters are independent of legacy native RTT/capability setup.
 	screenBWFilter.init();
+	screenMotionBlurFilter.init();
+	screenCrossFadeFilter.init();
 	terrainCloudOffsetX = terrainCloudOffsetY = 0;
 	int i,j;
 
@@ -1263,18 +996,6 @@ void W3DShaderManager::init()
 				break;	//found a working shader
 		}
 	}
-	W3DFilterInterface **filters;
-
-	for (i=0; MasterFilterList[i] != nullptr; i++)
-	{
-		filters=MasterFilterList[i];
-		for (j=0; filters[j] != nullptr; j++)
-		{
-			if (filters[j]->init())
-				break;	//found a working shader
-		}
-	}
-
 	DEBUG_LOG(("ShaderManager ChipsetID %d", res));
 }
 
@@ -1283,6 +1004,12 @@ void W3DShaderManager::init()
 //=============================================================================
 void W3DShaderManager::shutdown()
 {
+	if (restoreBackendOutput())
+	{
+		REF_PTR_RELEASE(m_backendCapture);
+		m_backendCaptureWidth = m_backendCaptureHeight = 0;
+		m_backendCaptureHasScene = false;
+	}
 	SAFE_RELEASE(m_newRenderSurface);
 	SAFE_RELEASE(m_renderTexture);
 	SAFE_RELEASE(m_oldRenderSurface);

@@ -559,6 +559,10 @@ void D3D12Backend::createPrimitivePipeline()
         m_terrain_texture_shader = compileShaderFromFile(shader_path.c_str(), "PSTerrainTexture", "ps_5_1");
         m_material_vertex_shader = textured_vertex_shader;
         m_material_vertex_shader->AddRef();
+        m_primitive_vertex_shader = color_vertex_shader;
+        m_primitive_color_shader = color_pixel_shader;
+        m_primitive_vertex_shader->AddRef();
+        m_primitive_color_shader->AddRef();
 
         D3D12_BLEND_DESC blend{};
         blend.RenderTarget[0].BlendEnable = FALSE;
@@ -1477,6 +1481,19 @@ bool D3D12Backend::Draw_Indexed_Triangles(
     const unsigned short *indices,
     unsigned int index_count)
 {
+    if (Get_Pass_Color_Write_Mask() != 15)
+    {
+        RenderBackendMaterialState material;
+        material.cull = RenderBackendCullMode::None;
+        if (!activeTargetHasDepth()) {
+            material.depth_test = RenderBackendDepthTest::Disabled;
+            material.depth_write = false;
+        }
+        try {
+            return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendColorVertex), indices, index_count,
+                materialPipeline(material, false, false, true), false);
+        } catch (...) { return false; }
+    }
     return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendColorVertex), indices, index_count,
         activeTargetHasDepth() ? m_primitive_pipeline : m_color_only_pipeline, false);
 }
@@ -1488,6 +1505,23 @@ bool D3D12Backend::Draw_2D_Indexed_Triangles(
     unsigned int index_count,
     RenderBackend2DBlendMode blend_mode)
 {
+    if (Get_Pass_Color_Write_Mask() != 15)
+    {
+        RenderBackendMaterialState material;
+        material.depth_test = RenderBackendDepthTest::Disabled;
+        material.depth_write = false;
+        material.cull = RenderBackendCullMode::None;
+        if (blend_mode == RenderBackend2DBlendMode::Alpha) {
+            material.source_blend = RenderBackendBlendFactor::SourceAlpha;
+            material.destination_blend = RenderBackendBlendFactor::InverseSourceAlpha;
+        } else if (blend_mode == RenderBackend2DBlendMode::Additive) {
+            material.source_blend = material.destination_blend = RenderBackendBlendFactor::One;
+        }
+        try {
+            return drawDynamicGeometry(vertices, vertex_count, sizeof(RenderBackendColorVertex), indices, index_count,
+                materialPipeline(material, false, false, true), true);
+        } catch (...) { return false; }
+    }
     const bool offscreen = !activeTargetHasDepth();
     ID3D12PipelineState *pipeline = offscreen ? m_color_only_pipeline : m_2d_opaque_pipeline;
     switch (blend_mode)
@@ -1607,7 +1641,8 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
         const Constants constants{static_cast<unsigned int>(material->texture_combine),
             static_cast<unsigned int>(material->alpha_test), material->alpha_reference,
             material->clamp_texture ? 1u : 0u,
-            (material->secondary_rgb_modulate ? 1u : 0u) | (material->monochrome ? 2u : 0u),
+            (material->secondary_rgb_modulate ? 1u : 0u) | (material->monochrome ? 2u : 0u) |
+                (material->vertex_alpha ? 4u : 0u),
             terrain ? (terrain->shroud_texture.Is_Valid() ? 1u : 0u) |
                 (terrain->cloud_texture.Is_Valid() ? 2u : 0u) |
                 (terrain->noise_texture.Is_Valid() ? 4u : 0u) |
@@ -1916,7 +1951,18 @@ bool D3D12Backend::drawStaticGeometry(RenderBackendGeometryHandle geometry_handl
 
     m_command_list->SetGraphicsRootSignature(m_primitive_root_signature);
     m_command_list->SetGraphicsRoot32BitConstants(1, 16, m_view_projection, 0);
-    m_command_list->SetPipelineState(activeTargetHasDepth() ? m_primitive_pipeline : m_color_only_pipeline);
+    ID3D12PipelineState *pipeline = activeTargetHasDepth() ? m_primitive_pipeline : m_color_only_pipeline;
+    if (Get_Pass_Color_Write_Mask() != 15) {
+        RenderBackendMaterialState material;
+        material.cull = RenderBackendCullMode::None;
+        if (!activeTargetHasDepth()) {
+            material.depth_test = RenderBackendDepthTest::Disabled;
+            material.depth_write = false;
+        }
+        try { pipeline = materialPipeline(material, false, false, true); }
+        catch (...) { return false; }
+    }
+    m_command_list->SetPipelineState(pipeline);
     m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     m_command_list->IASetVertexBuffers(0, 1, &vertex_view);
     m_command_list->IASetIndexBuffer(&index_view);
@@ -2142,6 +2188,15 @@ bool D3D12Backend::Draw_Static_Indexed_Textured_Geometry(
     RenderBackendGeometryHandle geometry_handle,
     RenderBackendTextureHandle texture_handle)
 {
+    if (Get_Pass_Color_Write_Mask() != 15) {
+        RenderBackendMaterialState material;
+        material.cull = RenderBackendCullMode::None;
+        if (!activeTargetHasDepth()) {
+            material.depth_test = RenderBackendDepthTest::Disabled;
+            material.depth_write = false;
+        }
+        return Draw_Static_Indexed_Material_Geometry(geometry_handle, texture_handle, material);
+    }
     if ((texture_handle.slot == m_selected_texture.slot && texture_handle.generation == m_selected_texture.generation) ||
         !m_scene_open || !Is_Geometry_Valid(geometry_handle) || !texture_handle.Is_Valid() ||
         m_texture_srv_heap == nullptr || m_textured_pipeline == nullptr)
@@ -2237,8 +2292,11 @@ unsigned int D3D12Backend::materialSampler(const RenderBackendSamplerState &stat
     return slot;
 }
 
-ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialState &material, bool textured, bool terrain)
+ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialState &material, bool textured,
+    bool terrain, bool primitive_color)
 {
+    const unsigned int write_mask = material.override_pass_color_write_mask ? material.color_write_mask :
+        material.color_write_mask & Get_Pass_Color_Write_Mask();
     const unsigned int depth = static_cast<unsigned int>(material.depth_test);
     const unsigned int source = static_cast<unsigned int>(material.source_blend);
     const unsigned int destination = static_cast<unsigned int>(material.destination_blend);
@@ -2258,9 +2316,10 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
         (static_cast<std::uint64_t>(material.stencil.read_mask) << 17) |
         (static_cast<std::uint64_t>(material.stencil.write_mask) << 25) |
         (face_key(material.stencil.front) << 33) | (face_key(material.stencil.back) << 45) |
-        (static_cast<std::uint64_t>(material.color_write_mask) << 57) |
+        (static_cast<std::uint64_t>(write_mask) << 57) |
         (static_cast<std::uint64_t>(terrain) << 61) |
-        (static_cast<std::uint64_t>(material.wireframe) << 62);
+        (static_cast<std::uint64_t>(material.wireframe) << 62) |
+        (static_cast<std::uint64_t>(primitive_color) << 63);
     for (const auto &entry : m_material_pipelines)
         if (entry.key == key && entry.depth_bias == material.depth_bias) return entry.pipeline;
 
@@ -2270,9 +2329,11 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
         D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA};
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline{};
     pipeline.pRootSignature = m_primitive_root_signature;
-    auto *vertex_shader = terrain ? m_terrain_vertex_shader : m_material_vertex_shader;
+    auto *vertex_shader = primitive_color ? m_primitive_vertex_shader :
+        terrain ? m_terrain_vertex_shader : m_material_vertex_shader;
     pipeline.VS = {vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize()};
-    auto *pixel_shader = terrain ? (textured ? m_terrain_texture_shader : m_terrain_color_shader) :
+    auto *pixel_shader = primitive_color ? m_primitive_color_shader :
+        terrain ? (textured ? m_terrain_texture_shader : m_terrain_color_shader) :
         (textured ? m_material_texture_shader : m_material_color_shader);
     pipeline.PS = {pixel_shader->GetBufferPointer(), pixel_shader->GetBufferSize()};
     const D3D12_INPUT_ELEMENT_DESC elements[] = {
@@ -2281,6 +2342,7 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
         {"TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"TEXCOORD", 1, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
     pipeline.InputLayout = {elements, 4};
+    if (primitive_color) pipeline.InputLayout.NumElements = 2;
     const D3D12_INPUT_ELEMENT_DESC terrain_elements[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
@@ -2297,7 +2359,7 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
     blend.DestBlendAlpha = alpha_factors[destination];
     blend.BlendOp = blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
     blend.LogicOp = D3D12_LOGIC_OP_NOOP;
-    blend.RenderTargetWriteMask = material.color_write ? static_cast<UINT8>(material.color_write_mask) : 0;
+    blend.RenderTargetWriteMask = material.color_write ? static_cast<UINT8>(write_mask) : 0;
     pipeline.SampleMask = std::numeric_limits<UINT>::max();
     pipeline.RasterizerState.FillMode = material.wireframe ? D3D12_FILL_MODE_WIREFRAME : D3D12_FILL_MODE_SOLID;
     pipeline.RasterizerState.CullMode = cull == 0 ? D3D12_CULL_MODE_NONE : D3D12_CULL_MODE_BACK;
@@ -2708,6 +2770,8 @@ void D3D12Backend::releaseObjects() noexcept
     releaseCom(m_material_texture_shader);
     releaseCom(m_material_color_shader);
     releaseCom(m_material_vertex_shader);
+    releaseCom(m_primitive_vertex_shader);
+    releaseCom(m_primitive_color_shader);
     releaseCom(m_textured_pipeline);
     releaseCom(m_2d_additive_pipeline);
     releaseCom(m_2d_alpha_pipeline);

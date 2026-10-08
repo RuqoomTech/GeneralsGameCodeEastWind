@@ -183,7 +183,8 @@ private:
         const RenderBackendMaterialState *material = nullptr,
         RenderBackendTextureHandle secondary_texture = {},
         const RenderBackendTerrainState *terrain = nullptr);
-    ID3D12PipelineState *materialPipeline(const RenderBackendMaterialState &material, bool textured, bool terrain = false);
+    ID3D12PipelineState *materialPipeline(const RenderBackendMaterialState &material, bool textured,
+        bool terrain = false, bool primitive_color = false);
     void bindDrawState(ID3D12PipelineState *pipeline, bool screen_space,
         RenderBackendTextureHandle texture, const RenderBackendMaterialState *material,
         RenderBackendTextureHandle secondary_texture, const RenderBackendTerrainState *terrain);
@@ -252,6 +253,8 @@ private:
     struct MaterialPipeline { std::uint64_t key; int depth_bias; ID3D12PipelineState *pipeline; };
     std::vector<MaterialPipeline> m_material_pipelines;
     ID3D10Blob *m_material_vertex_shader = nullptr;
+    ID3D10Blob *m_primitive_vertex_shader = nullptr;
+    ID3D10Blob *m_primitive_color_shader = nullptr;
     ID3D10Blob *m_material_color_shader = nullptr;
     ID3D10Blob *m_material_texture_shader = nullptr;
     ID3D10Blob *m_terrain_vertex_shader = nullptr;

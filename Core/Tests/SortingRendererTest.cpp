@@ -32,8 +32,9 @@ public:
     std::vector<Matrix4x4> matrices;
     std::vector<float> alphas;
     std::vector<float> coordinates;
+    std::vector<unsigned int> write_masks;
     bool reject = false;
-    void Reset_Trace() { order.clear(); matrices.clear(); alphas.clear(); coordinates.clear(); reject=false; }
+    void Reset_Trace() { order.clear(); matrices.clear(); alphas.clear(); coordinates.clear(); write_masks.clear(); reject=false; }
     bool Draw_Indexed_Material_Triangles(const RenderBackendTexturedVertex *vertices, unsigned,
         const unsigned short *indices, unsigned count, RenderBackendTextureHandle,
         const RenderBackendMaterialState &state, RenderBackendTextureHandle) override
@@ -42,6 +43,7 @@ public:
             order.push_back(vertices[indices[i]].r);
             coordinates.push_back(vertices[indices[i]].x);
             alphas.push_back(state.alpha_reference);
+            write_masks.push_back(state.color_write_mask);
             matrices.push_back(matrix);
         }
         return !reject;
@@ -134,7 +136,13 @@ void Test_Equal_Z_Node_Order()
     backend.Reset_Trace();
     for (unsigned i=0;i<20;++i) Check(Submit(float(i),-5,0,false),"Large equal-Z submission");
     Check(SortingRendererClass::Flush(),"Large equal-Z flush");
-    const std::vector<float> expected={0,10,18,17,16,15,14,13,12,11,9,8,7,6,5,4,3,2,1,19};
+    // Characterized from the unchanged historical sorter at e6f36e322.
+    const std::vector<float> expected={11,10,18,17,16,15,14,13,12,0,1,9,8,7,6,5,4,3,2,19};
+    if (backend.order!=expected) {
+        std::cerr << "Observed equal-Z order:";
+        for (const auto id : backend.order) std::cerr << ' ' << id;
+        std::cerr << '\n';
+    }
     Check(backend.order==expected,"Original equal-Z quicksort partition sequence");
 }
 
@@ -177,6 +185,18 @@ void Test_Rejection_And_Deinit()
     SortingRendererClass::Deinit();
     Check(SortingRendererClass::Flush() && backend.order.empty(),"Deinit discards CPU queue");
 }
+
+void Test_Pass_Mask_Snapshot()
+{
+    backend.Reset_Trace();
+    backend.Set_Pass_Color_Write_Mask(8);
+    Check(Submit(1,-5,0,false),"Alpha-only deferred submission");
+    backend.Set_Pass_Color_Write_Mask(7);
+    Check(Submit(2,-5,0,false),"RGB-only deferred submission");
+    backend.Set_Pass_Color_Write_Mask(15);
+    Check(SortingRendererClass::Flush(),"Pass-scoped deferred flush");
+    Check(backend.write_masks==std::vector<unsigned int>({8,7}),"Deferred draws retain submission channel masks after restoration");
+}
 }
 
 IRenderBackend *WW3D::RenderBackend=&backend;
@@ -187,6 +207,7 @@ int main()
     Test_Equal_Z_Node_Order();
     Test_Snapshot_And_Restore();
     Test_Rejection_And_Deinit();
+    Test_Pass_Mask_Snapshot();
     SortingRendererClass::Deinit();
     return failures ? 1 : 0;
 }

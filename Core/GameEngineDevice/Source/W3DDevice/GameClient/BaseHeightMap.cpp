@@ -2300,6 +2300,7 @@ void BaseHeightMapRenderObjClass::renderShoreLines(CameraClass *pCamera)
 	}
 	// Keep the depth-tested LUT coverage in destination alpha for the water pass.
 	material.color_write_mask = 8;
+	material.override_pass_color_write_mask = true;
 	const auto coverageTexture = m_destAlphaTexture->Get_Renderer_Texture();
 	pCamera->Apply();
 	std::vector<RenderBackendTexturedVertex> vertices(DEFAULT_MAX_BATCH_SHORELINE_TILES*4);
@@ -2461,6 +2462,7 @@ void BaseHeightMapRenderObjClass::renderShoreLinesSorted(CameraClass *pCamera)
 	}
 	// Keep the depth-tested LUT coverage in destination alpha for the water pass.
 	material.color_write_mask = 8;
+	material.override_pass_color_write_mask = true;
 	const auto coverageTexture = m_destAlphaTexture->Get_Renderer_Texture();
 	pCamera->Apply();
 	std::vector<RenderBackendTexturedVertex> vertices(DEFAULT_MAX_BATCH_SHORELINE_TILES*4);

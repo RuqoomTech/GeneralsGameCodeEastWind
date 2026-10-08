@@ -122,6 +122,7 @@ float4 PSMaterialTexture(TexturedPSInput input) : SV_TARGET
         color = float4(lerp(textureColor.rgb, luminance * MonochromeTintFade.rgb,
                             MonochromeTintFade.a), luminance);
     }
+    if ((MaterialEffects & 4) != 0) color.a = input.color.a;
     return TestMaterialAlpha(color);
 }
 

@@ -862,18 +862,3 @@ void W3DShroudMaterialPassClass::UnInstall_Materials() const
 {
 	W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
 }
-
-//-----------------------------------------------------------------------------
-///Set render states required to draw shroud pass.
-void W3DMaskMaterialPassClass::Install_Materials() const
-{
-	W3DShaderManager::setShader(W3DShaderManager::ST_MASK_TEXTURE, 0);
-}
-
-//-----------------------------------------------------------------------------
-///Restore render states that W3D doesn't know about.
-void W3DMaskMaterialPassClass::UnInstall_Materials() const
-{
-	if (m_allowUninstall)
-		W3DShaderManager::resetShader(W3DShaderManager::ST_MASK_TEXTURE);
-}
