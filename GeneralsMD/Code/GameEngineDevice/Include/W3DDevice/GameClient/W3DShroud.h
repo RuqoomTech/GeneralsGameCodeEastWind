@@ -46,16 +46,13 @@ typedef UnsignedByte W3DShroudLevel;
 class W3DShroudMaterialPassClass : public MaterialPassClass
 {
 public:
-	W3DShroudMaterialPassClass() : m_isTransparentObjectPass(FALSE) {}
 	virtual void	Install_Materials() const override;
 	virtual void	UnInstall_Materials() const override;
-	// Explicit terrain draw state; texture is borrowed and projection uses world XY.
+	// Terrain and mesh overlays share the shroud sampler and world-XY projection.
 	bool Prepare_Terrain_Pass(RenderBackendMaterialState &material,
 		RenderBackendTerrainState &terrain, TextureClass *&texture) const;
-	void enableTransparentObjectPass(Bool enable) {m_isTransparentObjectPass = enable;}
-protected:
-	//customized version to deal with transparent (alpha-tested) polys.
-	Bool m_isTransparentObjectPass;
+	bool Prepare_Projected_Mesh_Pass(RenderBackendMaterialState &material,
+		RenderBackendTerrainState &terrain, TextureClass *&texture) const override;
 };
 
 /** Custom W3D material pass which has been modified to apply

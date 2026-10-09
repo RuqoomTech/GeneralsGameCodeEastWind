@@ -1,5 +1,26 @@
 # Project state
 
+## Projected mesh shroud - 2026-10-09
+
+The verified source parent is local commit `436c056c9a1aede46d94040c7b5dbe5a53823591`. Verified coherent milestones are committed locally; GitHub pushes remain forbidden.
+
+Both game variants now forward their actual mesh shroud material pass to the existing renderer-neutral terrain/projection preparation. Mesh geometry reaches WW3D/IRenderBackend/D3D12 with the original shroud texture, sampler, world-XY projection, texture Replace, Equal depth, disabled depth writes and RGB-only multiplicative blend (debug fog uses its existing alpha blend). Exact-depth mesh overlays reuse the base pass's CPU world positions, including ALIGNED/ORIENTED camera-facing meshes and world-space skins; projection stays in canonical HLSL. This intentionally preserves base arithmetic instead of separately rounding its transform on the GPU.
+
+The unused transparent-object flag had no callers or reads and is removed; no invented alternate transparent shader is added. Alpha-tested holes rely on stored base depth, as in the native pass. Procedural shroud submission stays immediate, including SORT meshes: the exact native owner at `d15625e4f^` used Render/Draw_Sorting_IB_VB immediately for additional passes and deferred only base categories through Render_Sorted/Insert_Triangles. Sorted-base visibility limitations are preserved, not fixed or claimed improved. Unused FlatShroudTextureShader, registration/list/enum and setShroudTex utility are retired after full active-source no-caller searches. Actual ShroudTextureShader and its water hooks remain pending renderer owners.
+
+Validation receipts:
+
+- `build/shroud-tests-build.txt`: focused graph builds and links.
+- `build/shroud-regressions.txt`: **32/32 non-browser tests pass**, GPU 5.06 seconds, total 17.96 seconds. Browser was excluded.
+- Production GPU fixture uses nonidentity CPU rigid rotation/translation, camera translation and depth slope. Three covered pixels verify projected RGB multiplication at distinct D24 values. Zero shroud alpha preserves destination alpha; alpha-tested holes, background and a base without depth writes stay unshrouded. Conflicting authored UVs detect projection omission.
+- `build/shroud-syntax.txt` and `build/shroud-mesh-syntax.txt`: fourteen paired/shared owners pass MinGW syntax checks.
+- `build/mingw64-game/shroud-verified-game-build.txt`: exact serial game compilation passes, executable link fails. `build/shroud-link-summary.json`: **54 unique unresolved symbols / 185 printed references**, unchanged and none added. First owner remains ShroudTextureShader::set(int), W3DShaderManager.cpp:738, Apply_Render_State_Changes. Removing already-unreferenced utilities does not remove the genuine water link dependency.
+- `build/shroud-patchcheck.txt`: fresh original-baseline reconstruction and byte comparison after source/document edits; **4535 candidate / 4535 reconstructed files, zero missing, extra or different files**.
+
+Next migrate actual water shroud callers with their complete rendering behavior. Sea needs its 256x256 reflection target with depth, signed bump/reflection sampling and initialized strip index count. Grid needs full RGBA shroud modulation and its base alpha-add operation. Trapezoid shader needs sparkle/noise, RGB-only shroud and destination-alpha shoreline feathering; shared flat-water setup serves both grid and trapezoid. River already applies shroud in vertex color and must not receive a second projected shroud. The `late` water donor omits required behavior and cannot be copied wholesale.
+
+Normal game link/boot, backend creation, first visible game/UI frame, complete DX8 removal, measured speedup, sealing and user Windows sign-off remain unproven. SDL3 Step06 and major W3X runtime remain deferred.
+
 ## Shared scene capture, motion blur and crossfade - 2026-10-08
 
 The verified source parent is local commit `872f6b535580b315f51118fead265c061f177fd9`. The user requires verified coherent local commits and forbids pushes. This batch advances the real game migration; normal game link/boot, a visible frame, complete DX8 removal and user Windows sign-off remain unproven.

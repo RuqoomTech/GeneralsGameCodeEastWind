@@ -4,6 +4,7 @@
 #include "WW3D2/IRenderBackend.h"
 #include "WWMath/vector3.h"
 #include "WWMath/matrix4.h"
+#include "WWMath/matrix3d.h"
 
 #include <windows.h>
 
@@ -827,6 +828,108 @@ bool verifyBridgePasses(IRenderBackend &backend)
     backend.Release_Static_Geometry(geometry);
     backend.Release_Texture(base);backend.Release_Texture(cloud);backend.Release_Texture(shroud);
     if(!ok) std::cerr << "Bridge projection, pass depth/alpha/blend, or resource contract failed.\n";
+    return ok;
+}
+
+bool verifyProjectedMeshShroud(IRenderBackend &backend)
+{
+    const unsigned char basePixels[]{200,140,80,255, 200,140,80,0};
+    const unsigned char shroudPixels[]{128,192,64,0, 240,16,64,255,
+        16,240,64,255, 64,16,240,255};
+    const auto base=backend.Create_Static_RGBA8_Texture(2,1,basePixels,8);
+    const auto shroud=backend.Create_Static_RGBA8_Texture(2,2,shroudPixels,8);
+    const Vector3 local[]{Vector3(-.6f,-.5f,.4f),Vector3(-.6f,.5f,.4f),
+        Vector3(.6f,.5f,.4f),Vector3(.6f,-.5f,.4f)};
+    const float uv[][2]{{0,1},{0,0},{1,0},{1,1}};
+    const unsigned short indices[]{0,2,1,0,3,2};
+    Matrix3D world(true);
+    world.Rotate_Z(1.f,0.f);
+    world.Set_Translation(Vector3(.15f,-.1f,.1f));
+    RenderBackendTexturedVertex mesh[4];
+    RenderBackendTerrainVertex projected[4];
+    for (unsigned i=0; i<4; ++i) {
+        // Match MeshClass's CPU-transformed rigid positions in both passes.
+        // The overlay's TerrainWorld stays identity: transforming twice must
+        // not move projected UVs or break the base pass's exact depth match.
+        Vector3 position;
+        Matrix3D::Transform_Vector(world,local[i],&position);
+        mesh[i]={position.X,position.Y,position.Z,.8f,.6f,.4f,.75f,uv[i][0],uv[i][1]};
+        projected[i]={position.X,position.Y,position.Z,.8f,.6f,.4f,.75f,
+            .9f,.9f,.9f,.9f,0,0,0,0};
+    }
+    RenderBackendTerrainState projection;
+    projection.project_world_coordinates=true;
+    projection.project_base_to_shroud=true;
+    projection.shroud_projection[0]=projection.shroud_projection[1]=.5f;
+    projection.shroud_projection[2]=.3f;
+    projection.shroud_projection[3]=.5f;
+    RenderBackendMaterialState material;
+    material.cull=RenderBackendCullMode::None;
+    material.source_blend=RenderBackendBlendFactor::SourceAlpha;
+    material.destination_blend=RenderBackendBlendFactor::InverseSourceAlpha;
+    material.alpha_test=RenderBackendAlphaTest::GreaterEqual;
+    material.alpha_reference=96.f/255.f;
+    material.color_write_mask=7;
+    material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    RenderBackendMaterialState overlay=material;
+    overlay.texture_combine=RenderBackendTextureCombine::Replace;
+    overlay.depth_test=RenderBackendDepthTest::Equal;
+    overlay.depth_write=false;
+    overlay.alpha_test=RenderBackendAlphaTest::Disabled;
+    overlay.source_blend=RenderBackendBlendFactor::Zero;
+    overlay.destination_blend=RenderBackendBlendFactor::SourceColor;
+    overlay.sampler.address_u=overlay.sampler.address_v=RenderBackendTextureAddress::Clamp;
+    overlay.sampler.mipmaps=false;
+    Matrix4x4 camera(true);
+    camera[0][3]=.1f;
+    camera[1][3]=.15f;
+    // Vary D24 depth across the rigid quad while preserving the XY probes.
+    camera[2][0]=.125f;
+    camera[2][1]=.0625f;
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Set_View_Projection(camera);
+    const float background[]{.2f,.4f,.6f},diffuse[]{.8f,.6f,.4f};
+    bool ok=base.Is_Valid() && shroud.Is_Valid();
+    for (unsigned writeDepth=0; writeDepth<2; ++writeDepth) {
+        material.depth_write=writeDepth!=0;
+        backend.Clear(true,true,Vector3(background[0],background[1],background[2]),.7f,1,0);
+        backend.Begin_Scene();
+        bool passed=backend.Draw_Indexed_Material_Triangles(mesh,4,indices,6,base,material);
+        passed=backend.Draw_Indexed_Terrain_Triangles(projected,4,indices,6,shroud,overlay,projection) && passed;
+        backend.End_Scene(false);
+        unsigned width=0,height=0;
+        std::vector<unsigned char> pixels;
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        passed=read && passed;
+        if (read) {
+            // CPU world + camera maps the opaque half here. Its projection
+            // samples top-left shroud, not the deliberately unrelated .9 UVs.
+            const unsigned covered[]{300u*640u+336u,300u*640u+400u,300u*640u+464u};
+            for (auto pixel : covered) {
+                for (unsigned channel=0; channel<3; ++channel) {
+                    float expected=std::lround(basePixels[channel]*diffuse[channel]*.75f+
+                        255*background[channel]*.25f);
+                    if (writeDepth) expected*=shroudPixels[channel]/255.f;
+                    passed=std::abs(int(pixels[pixel*4+channel])-int(std::lround(expected)))<=2 && passed;
+                }
+                passed=std::abs(int(pixels[pixel*4+3])-179)<=1 && passed;
+            }
+            // An alpha-tested hole and pixels outside geometry never acquired
+            // matching depth. Shroud must not darken their background or alpha.
+            const unsigned untouched[]{156u*640u+400u,20u*640u+20u};
+            for (auto pixel : untouched) {
+                for (unsigned channel=0; channel<3; ++channel)
+                    passed=std::abs(int(pixels[pixel*4+channel])-int(std::lround(255*background[channel])))<=1 && passed;
+                passed=std::abs(int(pixels[pixel*4+3])-179)<=1 && passed;
+            }
+        }
+        backend.Flip_To_Primary();
+        if (!passed) std::cerr << "Projected rigid-mesh shroud depth-write case " << writeDepth << " failed.\n";
+        ok=passed && ok;
+    }
+    backend.Set_View_Projection(Matrix4x4(true));
+    backend.Release_Texture(base);
+    backend.Release_Texture(shroud);
     return ok;
 }
 
@@ -2135,7 +2238,7 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyMotionBlurSceneCapture(*backend) || !verifySceneWriteMasks(*backend) || !verifyCrossFadeComposite(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyProjectedMeshShroud(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyMotionBlurSceneCapture(*backend) || !verifySceneWriteMasks(*backend) || !verifyCrossFadeComposite(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

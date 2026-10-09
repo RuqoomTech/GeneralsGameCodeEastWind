@@ -220,10 +220,27 @@ struct MeshRendererClass::Impl
         if (task.pass && task.pass->Prepare_Projected_Mesh_Pass(projected_material, projection, projected_texture)) {
             if (!projected_texture || !projected_texture->Ensure_Renderer_Texture())
                 return failure(mesh, "projected mesh texture unavailable");
-            // Rigid local geometry and world projection stay on the GPU. Skin
-            // positions are already deformed in world space by the existing owner.
+            const bool match_base_depth = projected_material.depth_test == RenderBackendDepthTest::Equal;
+            // Equal-depth overlays reuse the base pass's CPU world positions.
+            // A separately rounded GPU transform can miss its stored D24 depth.
+            // Match camera-facing rigid meshes as well; skin positions are world-space.
+            if (match_base_depth && !skin) {
+                if (model->Get_Flag(MeshGeometryClass::ALIGNED)) {
+                    const Vector3 position = task.transform.Get_Translation();
+                    Vector3 camera_z;
+                    camera->Get_Transform().Get_Z_Vector(&camera_z);
+                    world.Obj_Look_At(position, position + camera_z, 0.0f);
+                } else if (model->Get_Flag(MeshGeometryClass::ORIENTED)) {
+                    world.Obj_Look_At(task.transform.Get_Translation(),
+                        camera->Get_Transform().Get_Translation(), 0.0f);
+                }
+            }
+            Matrix3D projection_world = world;
+            if (match_base_depth) projection_world.Make_Identity();
             for (int row=0; row<3; ++row) for (int column=0; column<4; ++column)
-                projection.world_transform[row*4+column] = world[row][column];
+                projection.world_transform[row*4+column] = projection_world[row][column];
+            // Native procedural passes draw immediately even for SORT meshes;
+            // only their base texture categories enter the deferred sorter.
             std::vector<RenderBackendTerrainVertex> projected_vertices;
             std::vector<unsigned short> projected_indices;
             const auto flush_projected = [&]() {
@@ -244,7 +261,9 @@ struct MeshRendererClass::Impl
                 for (int corner=0; corner<3; ++corner) {
                     const int index = triangle[corner];
                     if (index < 0 || index >= vertex_count) return failure(mesh, "invalid projected vertex");
-                    const Vector3 &position = positions[index];
+                    Vector3 position = positions[index];
+                    if (match_base_depth)
+                        Matrix3D::Transform_Vector(world, positions[index], &position);
                     projected_indices.push_back(static_cast<unsigned short>(projected_vertices.size()));
                     projected_vertices.push_back({position.X,position.Y,position.Z,1,1,1,1,0,0,0,0,0,0,0,0});
                 }

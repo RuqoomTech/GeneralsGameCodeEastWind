@@ -808,6 +808,13 @@ bool W3DShroudMaterialPassClass::Prepare_Terrain_Pass(
 	return true;
 }
 
+bool W3DShroudMaterialPassClass::Prepare_Projected_Mesh_Pass(
+	RenderBackendMaterialState &material, RenderBackendTerrainState &terrain,
+	TextureClass *&texture) const
+{
+	return Prepare_Terrain_Pass(material, terrain, texture);
+}
+
 bool W3DMaskMaterialPassClass::Prepare_Terrain_Pass(
 	RenderBackendMaterialState &material, RenderBackendTerrainState &terrain,
 	TextureClass *&texture) const
