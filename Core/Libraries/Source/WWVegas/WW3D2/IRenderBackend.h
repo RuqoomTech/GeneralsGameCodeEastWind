@@ -128,7 +128,7 @@ enum class RenderBackendDecalBlendMode
 // Explicit draw state for migrated W3D material passes. This is runtime-only;
 // the asset's fixed-width ShaderClass representation remains above the backend.
 enum class RenderBackendDepthTest { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always, Disabled };
-enum class RenderBackendBlendFactor { Zero, One, SourceColor, InverseSourceColor, SourceAlpha, InverseSourceAlpha, DestinationColor };
+enum class RenderBackendBlendFactor { Zero, One, SourceColor, InverseSourceColor, SourceAlpha, InverseSourceAlpha, DestinationColor, DestinationAlpha, InverseDestinationAlpha };
 enum class RenderBackendCullMode { None, Clockwise, CounterClockwise };
 enum class RenderBackendTextureCombine { Replace, Modulate, Add, Modulate2X };
 enum class RenderBackendAlphaTest { Disabled, GreaterEqual, LessEqual };
@@ -237,6 +237,10 @@ struct RenderBackendTerrainState
     bool project_base_to_shroud = false; // Separate bridge shroud pass; texture Replace ignores diffuse.
     bool blend_secondary_by_vertex_alpha = false;
     bool use_constant_color = false; // Terrain clear-line pass retains geometry and overrides lighting.
+    bool flat_water = false; // Authored tile/sparkle UVs, projected noise and RGB-only shroud.
+    unsigned int flat_water_animation = 0; // 0 authored UVs, 1 flat, 2 feathered flat, 3 water grid.
+    float flat_water_uv_scale = 1.0f / 150.0f;
+    float flat_water_phase_scale = 0.0f;
     float constant_color[4]{1, 1, 1, 1};
     float world_transform[12]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
     float shroud_projection[4]{1, 1, 0, 0};

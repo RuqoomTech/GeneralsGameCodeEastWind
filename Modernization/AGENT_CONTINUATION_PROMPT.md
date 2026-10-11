@@ -1,6 +1,6 @@
 # GeneralsGameCodeEastWind continuation prompt
 
-Copy the prompt below into Claude Code, Codex, or another coding agent running in this repository. The status snapshot is dated 2026-10-09; verify the live checkout and build before relying on it.
+Copy the prompt below into Claude Code, Codex, or another coding agent running in this repository. The status snapshot is dated 2026-10-11; verify the live checkout and build before relying on it.
 
 ---
 
@@ -66,6 +66,30 @@ Source has advanced well past H1N. Recent work includes real mesh/material/textu
 The normal game previously completed compilation and failed at the executable linker with remaining legacy renderer references. It has **not** been established to link, boot, or show a real game frame. Focused GPU tests passing does not establish those milestones. Current symbol counts and line numbers are volatile: obtain them from a fresh build.
 
 Foreground `HeightMap.cpp` terrain now uses persistent dirty GPU tiles, GPU world/projection constants, and the actual `lerp(base, blend, vertexAlpha)` atlas behavior. Its blend differs from flat terrain/road multiplication. Explicit shroud, mask, and wireframe clear-line passes preserve their state. Retired terrain/cloud shader registrations and six assembly assets are removed. The blank native atlas alias is removed; both atlas stages sample the actual terrain texture. Static/dynamic lighting and simulation remain CPU-owned. Do not redo this migration or restore retired owners.
+
+### Latest GPU flat and grid water - 2026-10-11
+
+The verified source parent is local commit `864299da19a949c051d51cce68f048905142647a`. Verified coherent milestones are committed locally; GitHub pushes remain forbidden.
+
+The actual shared WaterRenderObjClass grid and trapezoid callers now draw through WW3D/IRenderBackend/D3D12. Canonical HLSL performs world/camera transforms, UV scrolling, flat-water wave/feather deformation, noise projection, sparkle/noise composition and RGB-only projected shroud. Trapezoid topology uploads once to retained default-heap geometry; trigger/sector/layer identity bounds the runtime cache when heights move. Grid topology is cached, resting grid geometry is retained, and height mutations invalidate uploads. Moving grid heights still use the existing dynamic upload path: physics, height decisions, animation timing and Xfer remain CPU-owned and unchanged. Lighting color and render transforms are uniforms. Runtime cache pointers, native resource state and dirty hints are never serialized or hashed.
+
+The complete ps.1.1 flat-water behavior is translated: base RGBA times diffuse, sparkle times noise added to RGB, optional RGB-only shroud, authored alpha, normal/additive blend and destination-alpha shoreline coverage. The selected full grid shader also uses RGB-only shroud; the old native capability fallback's alpha-add/full-RGBA stage behavior is not the canonical shader contract. Both preserve LessEqual depth and disabled depth writes; grid preserves winding/cull and trapezoids disable cull. Explicit linear samplers disable anisotropy as the old caller required. DestinationAlpha and InverseDestinationAlpha are backend state only; a separate complete blend discriminator prevents PSO key collisions. GPU water vertex flags use vertex-visible projection constants, preserving the 64-DWORD root signature.
+
+The obsolete trapezoid assembly shader creation/handle, flat-water native setup, grid native buffer allocation and unused grid material/light allocations are removed. Shared sea/river/sky native resources still have real callers and remain pending migration. GPU sin/cos and reciprocal tessellation arithmetic can differ slightly from historical CPU lookup/double arithmetic; these are rendering-only changes. No simulation fast-math or deterministic representation changes are introduced. Fewer CPU transforms and uploads are established structurally; no measured frame-time speedup is claimed.
+
+Validation receipts:
+
+- `build/flat-water-complete-tests-build.txt`: focused graph compiles and links.
+- `build/flat-water-final-regressions.txt`: **32/32 non-browser tests pass**, GPU 7.32 seconds, total 30.82 seconds. Browser was excluded.
+- GPU fixtures exercise distinct layer/projection textures, nonidentity world/camera transforms, RGB-only shroud with zero layer alpha, destination-alpha and additive blending, PSO factor-key separation, depth occlusion and disabled depth writes. Flat, feathered and grid animation modes run multiple uniform-only frames on the same retained handle with zero additional static geometry uploads.
+- Initial GPU validation caught vertex reads of pixel-visible constants; final source uses vertex-visible flags. A new fixture's depth probe also needed the same world transform as water to cover its sampled pixel; its expected red/depth assertion was preserved.
+- `build/flat-water-final-syntax.txt`: actual shared water owner passes MinGW syntax checking. Focused read-only contract review found no introduced material defect.
+- `build/mingw64-game/flat-water-verified-game-build.txt`: exact serial `z_generals` compilation passes, executable link fails. `build/flat-water-link-summary.json`: **53 unique unresolved symbols / 168 printed references**, down from 54/185, none added. DX8Wrapper::getBackBufferFormat is removed from the linker queue; first remaining owner is still ShroudTextureShader::set(int), W3DShaderManager.cpp:738, Apply_Render_State_Changes, through genuine remaining sea callers.
+- `build/flat-water-patchcheck.txt`: fresh original-baseline reconstruction and byte comparison after all source/document edits; **4535 candidate / 4535 reconstructed files, zero missing, extra or different**; reconstruction passed.
+
+Next migrate actual sea/reflection and river owners coherently. Sea requires its 256x256 reflection target with depth, signed bump/reflection sampling, initialized strip count and projected shroud behavior. River already applies shroud to vertex color and must not receive it twice; move its real render transforms/UV work into GPU constants where the contract permits. Retire the shared ShroudTextureShader hooks only after their remaining real callers have migrated. The `late` water donor omits required behavior and cannot be copied wholesale.
+
+Normal game link/boot, D3D12 creation in that executable, first visible game/UI frame, complete DX8 removal, measured speedup, sealing and user Windows sign-off remain unproven. SDL3 Step06 and major W3X runtime remain deferred. Keep the persistent goal active.
 
 ### Latest projected mesh shroud - 2026-10-09
 

@@ -1079,6 +1079,250 @@ bool verifyForegroundTerrainAndWireframe(IRenderBackend &backend)
     return ok;
 }
 
+bool verifyFlatWater(IRenderBackend &backend)
+{
+    // The real flat-water shader uses authored tile UVs for both water and
+    // sparkles, but projects noise and shroud from world XY on the GPU.
+    const unsigned char texels[4][16] = {
+        {160,96,64,128, 32,192,224,224, 224,32,96,32, 64,224,32,192},
+        {48,80,112,0, 224,16,64,192, 16,192,32,128, 128,32,224,255},
+        {192,64,128,0, 96,224,32,192, 64,160,224,0, 224,32,96,255},
+        {224,32,96,255, 128,192,64,0, 32,224,128,128, 96,64,224,192}};
+    RenderBackendTextureHandle textures[4];
+    bool ok = true;
+    for (unsigned i=0; i<4; ++i) {
+        textures[i] = backend.Create_Static_RGBA8_Texture(2,2,texels[i],8);
+        ok = textures[i].Is_Valid() && ok;
+    }
+    RenderBackendTerrainVertex quad[] = {
+        {-.8f,-.8f,.5f,.8f,.6f,.4f,.5f,.25f,.25f,0,0,0,0,0,0},
+        {-.8f,.8f,.5f,.8f,.6f,.4f,.5f,.25f,.25f,0,0,0,0,0,0},
+        {.8f,.8f,.5f,.8f,.6f,.4f,.5f,.25f,.25f,0,0,0,0,0,0},
+        {.8f,-.8f,.5f,.8f,.6f,.4f,.5f,.25f,.25f,0,0,0,0,0,0}};
+    const unsigned short indices[] = {0,2,1,0,3,2};
+    RenderBackendMaterialState material;
+    material.cull = RenderBackendCullMode::None;
+    material.depth_write = false;
+    material.sampler.min_filter = material.sampler.mag_filter = RenderBackendTextureFilter::Point;
+    RenderBackendTerrainState terrain;
+    terrain.flat_water = true;
+    terrain.project_world_coordinates = true;
+    terrain.cloud_texture = textures[1];
+    terrain.noise_texture = textures[2];
+    terrain.world_transform[0] = 1.25f;
+    terrain.world_transform[3] = 1.5f;
+    terrain.world_transform[5] = .75f;
+    terrain.world_transform[7] = 2.5f;
+    terrain.world_transform[10] = .8f;
+    terrain.world_transform[11] = .04f;
+    terrain.cloud_noise_projection[0] = .25f;
+    terrain.cloud_noise_projection[1] = -.125f;
+    terrain.cloud_noise_projection[2] = -.1f;
+    terrain.shroud_projection[0] = terrain.shroud_projection[1] = .25f;
+    terrain.shroud_projection[2] = .375f;
+    terrain.shroud_projection[3] = -.5f;
+    for (auto *sampler : {&terrain.cloud_sampler, &terrain.noise_sampler, &terrain.shroud_sampler}) {
+        sampler->min_filter = sampler->mag_filter = RenderBackendTextureFilter::Point;
+        sampler->address_u = sampler->address_v = RenderBackendTextureAddress::Clamp;
+        sampler->mipmaps = false;
+    }
+    Matrix4x4 camera(true);
+    camera[0][0] = camera[1][1] = .5f;
+    camera[0][3] = -.55f;
+    camera[1][3] = -1.35f;
+    backend.Set_Viewport({0,0,640,480,0,1});
+    backend.Set_View_Projection(camera);
+    unsigned width=0, height=0, sampleX=384;
+    std::vector<unsigned char> pixels;
+    unsigned testCase=0;
+    auto value = [&](unsigned texture, unsigned texel, unsigned channel) {
+        return texels[texture][4*texel+channel]/255.f;
+    };
+    auto water = [&](unsigned noiseTexel, bool shroud, unsigned tileTexel=0) {
+        std::array<float,4> color{};
+        const float diffuse[] = {.8f,.6f,.4f,.5f};
+        for (unsigned c=0; c<4; ++c) {
+            color[c] = value(0,tileTexel,c)*diffuse[c];
+            if (c<3) {
+                color[c] += value(1,tileTexel,c)*value(2,noiseTexel,c);
+                if (shroud) color[c] *= value(3,1,c);
+            }
+        }
+        return color;
+    };
+    auto finish = [&](bool drew, const std::array<float,4> &expected) {
+        ++testCase;
+        backend.End_Scene(false);
+        const bool read = backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        bool passed = drew && read;
+        if (read) for (unsigned c=0; c<4; ++c)
+            passed = std::abs(int(pixels[(264*width+sampleX)*4+c])-
+                int(std::lround(std::clamp(expected[c],0.f,1.f)*255.f)))<=2 && passed;
+        if (!passed) {
+            std::cerr << "Flat-water pixel case " << testCase << " failed (draw=" << drew << ", read=" << read << ")";
+            if (read) for (unsigned c=0; c<4; ++c)
+                std::cerr << ' ' << int(pixels[(264*width+sampleX)*4+c]) << '/'
+                    << int(std::lround(std::clamp(expected[c],0.f,1.f)*255.f));
+            std::cerr << '\n';
+        }
+        backend.Flip_To_Primary();
+        return passed;
+    };
+    const std::array<float,4> background = {26.f/255.f,51.f/255.f,77.f/255.f,191.f/255.f};
+    auto begin = [&](float depth=1.f) {
+        backend.Clear(true,true,Vector3(background[0],background[1],background[2]),background[3],depth,0);
+        backend.Begin_Scene();
+    };
+    auto draw = [&]() {
+        return backend.Draw_Indexed_Terrain_Triangles(quad,4,indices,6,textures[0],material,terrain);
+    };
+    // Zero sparkles/noise/shroud alpha must never erase base-water alpha.
+    begin(); ok = finish(draw(),water(2,false)) && ok;
+    terrain.shroud_texture = textures[3];
+    begin(); ok = finish(draw(),water(2,true)) && ok;
+    terrain.cloud_noise_projection[1] += .5f;
+    begin(); ok = finish(draw(),water(3,true)) && ok;
+    terrain.cloud_noise_projection[1] -= .5f;
+    terrain.cloud_noise_projection[2] -= .4f;
+    begin(); ok = finish(draw(),water(0,true)) && ok;
+    terrain.cloud_noise_projection[2] += .4f;
+    // Changing camera position must move coverage without changing world UVs.
+    camera[0][3] = -1.15f;
+    backend.Set_View_Projection(camera);
+    sampleX = 192;
+    begin(); ok = finish(draw(),water(2,true)) && ok;
+    camera[0][3] = -.55f;
+    backend.Set_View_Projection(camera);
+    sampleX = 384;
+    material.color_write_mask = 7;
+    const auto source = water(2,true);
+    auto blend = [&](float sourceFactor, float destinationFactor) {
+        auto color = background;
+        for (unsigned c=0; c<3; ++c) color[c] = source[c]*sourceFactor+background[c]*destinationFactor;
+        return color;
+    };
+    material.source_blend = RenderBackendBlendFactor::DestinationAlpha;
+    material.destination_blend = RenderBackendBlendFactor::InverseDestinationAlpha;
+    begin(); ok = finish(draw(),blend(background[3],1-background[3])) && ok;
+    material.destination_blend = RenderBackendBlendFactor::One;
+    begin(); ok = finish(draw(),blend(background[3],1)) && ok;
+    // Exercise enum value 8 in both packed PSO fields and then return to old
+    // value 0. A three-bit key aliases these states (including cull bits).
+    material.source_blend = RenderBackendBlendFactor::One;
+    material.destination_blend = RenderBackendBlendFactor::InverseDestinationAlpha;
+    begin(); ok = finish(draw(),blend(1,1-background[3])) && ok;
+    material.destination_blend = RenderBackendBlendFactor::Zero;
+    begin(); ok = finish(draw(),blend(1,0)) && ok;
+    material.source_blend = RenderBackendBlendFactor::InverseDestinationAlpha;
+    begin(); ok = finish(draw(),blend(1-background[3],0)) && ok;
+    material.source_blend = RenderBackendBlendFactor::Zero;
+    begin(); ok = finish(draw(),blend(0,0)) && ok;
+    material.source_blend = RenderBackendBlendFactor::One;
+    material.cull = RenderBackendCullMode::Clockwise;
+    begin(); ok = finish(draw(),blend(1,0)) && ok;
+    material.cull = RenderBackendCullMode::None;
+    // The real caller retains positions once and changes animation uniforms.
+    // The CPU oracle below is test-only: it predicts VS outputs at each vertex
+    // and then interpolates, rather than applying sine at the sampled pixel.
+    backend.Reset_Frame_Statistics();
+    const auto geometry = backend.Create_Static_Indexed_Terrain_Geometry(quad,4,indices,6);
+    ok = backend.Is_Geometry_Valid(geometry) && backend.Get_Frame_Statistics().static_geometry_uploads==1 && ok;
+    const float localX = ((2.f*((sampleX+.5f)/640.f)-1.f-camera[0][3])/.5f-1.5f)/1.25f;
+    const float localY = ((1.f-2.f*(264.5f/480.f)-camera[1][3])/.5f-2.5f)/.75f;
+    // Sample lies in triangle (0,3,2) of the unchanged retained quad.
+    const float weights[] = {(.8f-localX)/1.6f, (localX-localY)/1.6f, (localY+.8f)/1.6f};
+    const unsigned vertices[] = {0,3,2};
+    auto pointTexel = [](float u, float v) {
+        return (u>=.5f ? 1u : 0u) + (v>=.5f ? 2u : 0u);
+    };
+    struct AnimationCase { unsigned mode; float time, phase; };
+    const AnimationCase animationCases[] = {
+        {1,.06f,0}, {1,.35f,0}, {1,.35f,.75f},
+        {2,.18f,0}, {3,.35f,.75f}, {3,.65f,.75f}};
+    for (const auto &animation : animationCases) {
+        terrain.flat_water_animation = animation.mode;
+        terrain.flat_water_uv_scale = .335f;
+        terrain.flat_water_phase_scale = animation.phase;
+        terrain.cloud_noise_projection[1] = animation.time;
+        terrain.world_transform[10] = animation.mode==2 ? .1f : .8f;
+        terrain.world_transform[11] = animation.mode==2 ? .3f : .04f;
+        float u=0, v=0;
+        for (unsigned corner=0; corner<3; ++corner) {
+            const auto &vertex = quad[vertices[corner]];
+            const float worldX = vertex.x*1.25f+1.5f;
+            const float worldY = vertex.y*.75f+2.5f;
+            float vertexU=0, vertexV=0;
+            if (animation.mode==3) {
+                vertexU = vertex.x*.335f;
+                vertexV = animation.time+vertex.y*.335f+.02f*std::cos(3*animation.time)*
+                    std::sin(25*animation.time+vertex.y*animation.phase);
+            } else if (animation.mode==2) {
+                const float wave = (std::sin(25*animation.time+worldX*animation.phase)-1)*.5f;
+                vertexU = worldX*.335f+.02f*std::cos(11*animation.time)*wave;
+                vertexV = worldY*.335f+.02f*std::cos(5*animation.time)*wave;
+            } else {
+                vertexU = worldX*.335f+.02f*std::cos(11*animation.time)*
+                    std::sin(25*animation.time+worldX*animation.phase);
+                vertexV = worldY*.335f+.02f*std::cos(5*animation.time)*
+                    std::sin(25*animation.time+worldY*animation.phase);
+            }
+            u += weights[corner]*vertexU;
+            v += weights[corner]*vertexV;
+        }
+        const unsigned tile = pointTexel(u,v);
+        const float worldX = localX*1.25f+1.5f;
+        const float worldY = localY*.75f+2.5f;
+        const unsigned noise = pointTexel(worldX*.25f+animation.time,worldY*.25f-.1f);
+        auto expected = water(noise,true,tile);
+        expected[3] = background[3];
+        backend.Reset_Frame_Statistics();
+        // Feathered VS displacement crosses this depth plane; unchanged CPU
+        // positions remain behind it. All other variants use the clear depth.
+        begin(animation.mode==2 ? .3f : 1.f);
+        const bool drew = backend.Draw_Static_Indexed_Terrain_Geometry(geometry,textures[0],material,terrain);
+        ok = finish(drew,expected) && backend.Is_Geometry_Valid(geometry) &&
+            backend.Get_Frame_Statistics().static_geometry_uploads==0 && ok;
+        if (animation.mode==2) {
+            begin(.3f);
+            bool layered = backend.Draw_Static_Indexed_Terrain_Geometry(geometry,textures[0],material,terrain);
+            auto behindFeather = terrain;
+            behindFeather.flat_water = false;
+            behindFeather.flat_water_animation = 0;
+            behindFeather.shroud_texture = behindFeather.cloud_texture = behindFeather.noise_texture = {};
+            behindFeather.world_transform[10] = .1f;
+            behindFeather.world_transform[11] = .22f; // .27: behind GPU water (.251), in front of clear (.3).
+            RenderBackendTerrainVertex redQuad[4];
+            std::copy(quad,quad+4,redQuad);
+            for (auto &vertex : redQuad) { vertex.r=1; vertex.g=vertex.b=0; vertex.a=1; }
+            layered = backend.Draw_Indexed_Terrain_Triangles(redQuad,4,indices,6,{},material,behindFeather) && layered;
+            ok = finish(layered,{1,0,0,background[3]}) && ok;
+        }
+    }
+    backend.Release_Static_Geometry(geometry);
+    ok = !backend.Is_Geometry_Valid(geometry) && ok;
+    terrain.flat_water_animation = 0;
+    terrain.cloud_noise_projection[1] = -.125f;
+    terrain.world_transform[10] = .8f;
+    terrain.world_transform[11] = .04f;
+    // Water must obey existing terrain depth, while leaving that depth intact.
+    begin(.2f); ok = finish(draw(),background) && ok;
+    begin();
+    bool drew = draw();
+    auto redTerrain = terrain;
+    redTerrain.flat_water = false;
+    // Keep the same GPU world transform so the red depth probe covers water.
+    // Disabling projection also bypasses that transform and moves the quad.
+    redTerrain.project_world_coordinates = true;
+    redTerrain.shroud_texture = redTerrain.cloud_texture = redTerrain.noise_texture = {};
+    for (auto &vertex : quad) { vertex.z=.6f; vertex.r=1; vertex.g=vertex.b=0; vertex.a=1; }
+    drew = backend.Draw_Indexed_Terrain_Triangles(quad,4,indices,6,{},material,redTerrain) && drew;
+    ok = finish(drew,{1,0,0,background[3]}) && ok;
+    backend.Set_View_Projection(Matrix4x4(true));
+    for (const auto texture : textures) backend.Release_Texture(texture);
+    if (!ok) std::cerr << "Flat-water GPU projection, layer alpha, blend or depth check failed.\n";
+    return ok;
+}
+
 bool verifyTerrain(IRenderBackend &backend)
 {
     const unsigned char texels[4][16]={
@@ -1411,8 +1655,8 @@ bool verifyMaterials(IRenderBackend &backend)
     };
     material.color_write_mask=16; ok=rejected(material) && ok; material={};
     material.depth_test=static_cast<RenderBackendDepthTest>(9); ok=rejected(material) && ok; material={};
-    material.source_blend=static_cast<RenderBackendBlendFactor>(7); ok=rejected(material) && ok; material={};
-    material.destination_blend=static_cast<RenderBackendBlendFactor>(7); ok=rejected(material) && ok; material={};
+    material.source_blend=static_cast<RenderBackendBlendFactor>(9); ok=rejected(material) && ok; material={};
+    material.destination_blend=static_cast<RenderBackendBlendFactor>(9); ok=rejected(material) && ok; material={};
     material.cull=static_cast<RenderBackendCullMode>(3); ok=rejected(material) && ok; material={};
     material.texture_combine=static_cast<RenderBackendTextureCombine>(4); ok=rejected(material) && ok; material={};
     material.alpha_test=static_cast<RenderBackendAlphaTest>(3); ok=rejected(material) && ok; material={};
@@ -2238,7 +2482,7 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyProjectedMeshShroud(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyMotionBlurSceneCapture(*backend) || !verifySceneWriteMasks(*backend) || !verifyCrossFadeComposite(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyFlatWater(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyProjectedMeshShroud(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyMotionBlurSceneCapture(*backend) || !verifySceneWriteMasks(*backend) || !verifyCrossFadeComposite(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

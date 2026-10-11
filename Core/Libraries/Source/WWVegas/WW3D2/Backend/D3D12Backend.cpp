@@ -72,8 +72,8 @@ bool validMaterialState(const RenderBackendMaterialState &material)
     };
     return validMaterialSampler(material.sampler) && material.color_write_mask <= 15 &&
         static_cast<unsigned int>(material.depth_test) <= 8 &&
-        static_cast<unsigned int>(material.source_blend) <= 6 &&
-        static_cast<unsigned int>(material.destination_blend) <= 6 &&
+        static_cast<unsigned int>(material.source_blend) <= static_cast<unsigned int>(RenderBackendBlendFactor::InverseDestinationAlpha) &&
+        static_cast<unsigned int>(material.destination_blend) <= static_cast<unsigned int>(RenderBackendBlendFactor::InverseDestinationAlpha) &&
         static_cast<unsigned int>(material.cull) <= 2 &&
         static_cast<unsigned int>(material.texture_combine) <= 3 &&
         static_cast<unsigned int>(material.alpha_test) <= 2 &&
@@ -1647,7 +1647,8 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
                 (terrain->cloud_texture.Is_Valid() ? 2u : 0u) |
                 (terrain->noise_texture.Is_Valid() ? 4u : 0u) |
                 (terrain->diffuse_after_layers ? 8u : 0u) |
-                (terrain->blend_secondary_by_vertex_alpha ? 16u : 0u) : 0u, {0,0},
+                (terrain->blend_secondary_by_vertex_alpha ? 16u : 0u) |
+                (terrain->flat_water ? 32u : 0u) : 0u, {0,0},
             {material->monochrome_tint[0], material->monochrome_tint[1], material->monochrome_tint[2]},
             material->monochrome_fade};
         static_assert(sizeof(Constants) == 12 * sizeof(unsigned int), "Material root constants");
@@ -1704,7 +1705,8 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
     {
         struct ProjectionConstants {
             float world[12], shroud[4], cloud_noise[4];
-            unsigned int project, padding[3];
+            unsigned int project, water_animation;
+            float water_uv_scale, water_phase_scale;
             float color[4];
         } constants{};
         static_assert(sizeof(ProjectionConstants) == 28 * sizeof(unsigned int), "Terrain root constants");
@@ -1715,7 +1717,11 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
         constants.project = (terrain->project_world_coordinates ? 1u : 0u) |
             (terrain->project_base_to_shroud ? 2u : 0u) |
             (terrain->blend_secondary_by_vertex_alpha ? 4u : 0u) |
-            (terrain->use_constant_color ? 8u : 0u);
+            (terrain->use_constant_color ? 8u : 0u) |
+            (terrain->flat_water ? 16u : 0u);
+        constants.water_animation = terrain->flat_water_animation;
+        constants.water_uv_scale = terrain->flat_water_uv_scale;
+        constants.water_phase_scale = terrain->flat_water_phase_scale;
         m_command_list->SetGraphicsRoot32BitConstants(10, 28, &constants, 0);
     }
 }
@@ -2308,7 +2314,10 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
             (static_cast<std::uint64_t>(face.depth_fail) << 6) |
             (static_cast<std::uint64_t>(face.pass) << 9);
     };
-    const std::uint64_t key = depth | (source << 4) | (destination << 7) | (cull << 10) |
+    // Blend enums can exceed the old three-bit lanes. Keep their complete
+    // discriminator separate from the packed raster/depth/stencil key.
+    const unsigned int blend_key = source | (destination << 8);
+    const std::uint64_t key = depth | (cull << 10) |
         (static_cast<unsigned int>(material.depth_write) << 12) |
         (static_cast<unsigned int>(material.color_write) << 13) |
         (static_cast<unsigned int>(textured) << 14) | (static_cast<unsigned int>(color_only) << 15) |
@@ -2321,12 +2330,14 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
         (static_cast<std::uint64_t>(material.wireframe) << 62) |
         (static_cast<std::uint64_t>(primitive_color) << 63);
     for (const auto &entry : m_material_pipelines)
-        if (entry.key == key && entry.depth_bias == material.depth_bias) return entry.pipeline;
+        if (entry.key == key && entry.blend_key == blend_key && entry.depth_bias == material.depth_bias) return entry.pipeline;
 
     static const D3D12_BLEND factors[] = {D3D12_BLEND_ZERO, D3D12_BLEND_ONE,
-        D3D12_BLEND_SRC_COLOR, D3D12_BLEND_INV_SRC_COLOR, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_COLOR};
+        D3D12_BLEND_SRC_COLOR, D3D12_BLEND_INV_SRC_COLOR, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
+        D3D12_BLEND_DEST_COLOR, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA};
     static const D3D12_BLEND alpha_factors[] = {D3D12_BLEND_ZERO, D3D12_BLEND_ONE,
-        D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA};
+        D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
+        D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA};
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline{};
     pipeline.pRootSignature = m_primitive_root_signature;
     auto *vertex_shader = primitive_color ? m_primitive_vertex_shader :
@@ -2390,7 +2401,7 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
     ID3D12PipelineState *created = nullptr;
     checkHresult("CreateGraphicsPipelineState(W3D material)",
         m_device->CreateGraphicsPipelineState(&pipeline, IID_PPV_ARGS(&created)));
-    m_material_pipelines.push_back({key, material.depth_bias, created});
+    m_material_pipelines.push_back({key, blend_key, material.depth_bias, created});
     return created;
 }
 
@@ -2457,6 +2468,15 @@ bool D3D12Backend::validTerrainDraw(RenderBackendTextureHandle base_texture,
             ((texture.slot == 0 && texture.generation == 0) || valid_texture(texture));
     };
     const bool textured = base_texture.Is_Valid();
+    if (terrain.flat_water_animation > 3 || (terrain.flat_water_animation != 0 && !terrain.flat_water)) return false;
+    if (terrain.flat_water && (!textured || !terrain.cloud_texture.Is_Valid() ||
+        !terrain.noise_texture.Is_Valid() || !terrain.project_world_coordinates ||
+        terrain.project_base_to_shroud || terrain.diffuse_after_layers ||
+        terrain.blend_secondary_by_vertex_alpha ||
+        material.texture_combine != RenderBackendTextureCombine::Modulate ||
+        !std::isfinite(terrain.flat_water_uv_scale) || !std::isfinite(terrain.flat_water_phase_scale) ||
+        !std::isfinite(terrain.cloud_noise_projection[0]) || !std::isfinite(terrain.cloud_noise_projection[1]) ||
+        !std::isfinite(terrain.cloud_noise_projection[2]))) return false;
     if (terrain.blend_secondary_by_vertex_alpha && (!textured || !terrain.shroud_texture.Is_Valid() ||
         terrain.project_base_to_shroud || terrain.diffuse_after_layers ||
         material.texture_combine != RenderBackendTextureCombine::Modulate)) return false;

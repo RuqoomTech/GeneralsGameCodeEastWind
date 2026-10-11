@@ -51,6 +51,9 @@
 class PolygonTrigger;
 class WaterTracksRenderSystem;
 class Xfer;
+struct RenderBackendMaterialState;
+struct RenderBackendTerrainState;
+struct RenderBackendTextureHandle;
 /// Custom render object that draws mirrors, water, and skies.
 /**
 This render object handles drawing reflected W3D scenes.  It will only work
@@ -105,7 +108,7 @@ public:
 	void setTimeOfDay(TimeOfDay tod); ///<change sky/water for time of day
 	void toggleCloudLayer(Bool state)	{	m_useCloudLayer=state;}	///<enables/disables the cloud layer
 	void updateRenderTargetTextures(CameraClass *cam);	///< renders into any required textures.
-	void ReleaseResources();	///< Release all dx8 resources so the device can be reset.
+	void ReleaseResources();	///< Release renderer resources before device reset.
 	void ReAcquireResources();  ///< Reacquire all resources after device reset.
 	Real getWaterHeight(Real x, Real y);	///<return water height at given point - for use by WB.
 	void setGridHeightClamps(Real minz, Real maxz);	///<set min/max height values alllowed in grid
@@ -125,12 +128,13 @@ public:
 	void replaceSkyboxTexture(const AsciiString& oldTexName, const AsciiString& newTextName);
 
 protected:
+	struct BackendWaterGeometry;
+	BackendWaterGeometry *m_backendWaterGeometry; // Runtime GPU geometry, never Xfer/CRC data.
+	Bool m_gridGeometryDirty; // Renderer upload hint, excluded from snapshots.
 	DX8IndexBufferClass			*m_indexBuffer;	///<indices defining quad
 	SceneClass							*m_parentScene;	///<scene to be reflected
 	ShaderClass m_shaderClass; ///<shader or rendering state for heightmap
 	VertexMaterialClass	  		*m_vertexMaterialClass;	///<vertex lighting material
-	VertexMaterialClass			*m_meshVertexMaterialClass; ///<vertex lighting marial for 3D water.
-	LightClass					*m_meshLight;				///<light used for 3D Mesh Water.
 	TextureClass *m_alphaClippingTexture;	///<used for faked clipping using alpha
 	Real	m_dx;	///<x extent of water surface (offset from local center)
 	Real	m_dy;	///<y extent of water surface (offset from local center)
@@ -209,7 +213,6 @@ protected:
 	TextureClass *m_waterNoiseTexture;
 	DWORD	m_waterPixelShader;		///<D3D handle to pixel shader.
 	DWORD	m_riverWaterPixelShader;		///<D3D handle to pixel shader.
-	DWORD	m_trapezoidWaterPixelShader;	///<handle to D3D vertex shader
 	TextureClass *m_waterSparklesTexture;
 	Real m_riverXOffset;
 	Real m_riverYOffset;
@@ -237,7 +240,7 @@ protected:
 
 	Setting m_settings[ TIME_OF_DAY_COUNT ];	///< settings for each time of day
 	void drawRiverWater(PolygonTrigger *pTrig);
-	void drawTrapezoidWater(Vector3 points[4]);
+	void drawTrapezoidWater(Vector3 points[4], Int triggerID, Int sector, Int layer);
 	void loadSetting ( Setting *skySetting, TimeOfDay timeOfDay );	///<init sky/water settings from GDF
 	void renderSky();	///<draw the sky layer (clouds, stars, etc.)
 	void testCurvedWater();	///<draw the sky layer (clouds, stars, etc.)
@@ -249,7 +252,8 @@ protected:
 	///bounding box of frustum clipped polygon plane
 	Bool getClippedWaterPlane(CameraClass *cam, AABoxClass *box);
 
-	void setupFlatWaterShader();
+	bool prepareFlatWater(RenderBackendMaterialState &material,
+		RenderBackendTerrainState &terrain, RenderBackendTextureHandle &texture);
 	void setupJbaWaterShader();
 	void cleanupJbaWaterShader();
 

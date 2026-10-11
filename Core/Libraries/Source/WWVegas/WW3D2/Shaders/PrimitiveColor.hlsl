@@ -147,7 +147,9 @@ cbuffer TerrainProjection : register(b2)
     float4 ShroudProjection;
     float4 CloudNoiseProjection;
     uint ProjectWorldCoordinates;
-    uint3 TerrainProjectionPadding;
+    uint FlatWaterAnimation;
+    float FlatWaterUVScale;
+    float FlatWaterPhaseScale;
     float4 TerrainConstantColor;
 };
 
@@ -174,7 +176,32 @@ TerrainPSInput VSTerrain(TerrainVSInput input)
         output.color = TerrainConstantColor;
     if ((ProjectWorldCoordinates & 1) != 0)
     {
-        float3 worldPosition = mul(TerrainWorld, float4(input.position, 1.0f));
+        float3 localPosition = input.position;
+        float3 worldPosition = mul(TerrainWorld, float4(localPosition, 1.0f));
+        if ((ProjectWorldCoordinates & 16) != 0 && FlatWaterAnimation != 0)
+        {
+            float time = CloudNoiseProjection.y;
+            if (FlatWaterAnimation == 3)
+            {
+                output.tileTexcoord = float2(localPosition.x * FlatWaterUVScale,
+                    time + localPosition.y * FlatWaterUVScale + 0.02f * cos(3.0f * time) *
+                    sin(25.0f * time + localPosition.y * FlatWaterPhaseScale));
+            }
+            else
+            {
+                float2 amplitude = 0.02f * cos(float2(11.0f, 5.0f) * time);
+                if (FlatWaterAnimation == 2)
+                {
+                    float wave = (sin(25.0f * time + worldPosition.x * FlatWaterPhaseScale) - 1.0f) * 0.5f;
+                    localPosition.z += wave;
+                    worldPosition = mul(TerrainWorld, float4(localPosition, 1.0f));
+                    output.tileTexcoord = worldPosition.xy * FlatWaterUVScale + amplitude * wave;
+                }
+                else
+                    output.tileTexcoord = worldPosition.xy * FlatWaterUVScale + amplitude *
+                        sin(25.0f * time + worldPosition.xy * FlatWaterPhaseScale);
+            }
+        }
         output.position = mul(ViewProjection, float4(worldPosition, 1.0f));
         // Foreground terrain's second atlas uses authored UVs, even as world
         // transforms and cloud/noise projection move to the GPU.
@@ -182,6 +209,11 @@ TerrainPSInput VSTerrain(TerrainVSInput input)
             output.shroudTexcoord = worldPosition.xy * ShroudProjection.xy + ShroudProjection.zw;
         output.cloudTexcoord = worldPosition.xy * CloudNoiseProjection.x + CloudNoiseProjection.yz;
         output.noiseTexcoord = worldPosition.xy * CloudNoiseProjection.x;
+        if ((ProjectWorldCoordinates & 16) != 0)
+        {
+            output.cloudTexcoord = output.tileTexcoord;
+            output.noiseTexcoord += CloudNoiseProjection.yz;
+        }
     }
     if ((ProjectWorldCoordinates & 2) != 0)
         output.tileTexcoord = output.shroudTexcoord;
@@ -198,6 +230,17 @@ float4 PSTerrainColor(TerrainPSInput input) : SV_TARGET
 float4 PSTerrainTexture(TerrainPSInput input) : SV_TARGET
 {
     float4 color = PrimitiveTexture.Sample(MaterialSampler, input.tileTexcoord);
+    if ((TerrainLayers & 32) != 0)
+    {
+        // Flat-water ps.1.1 adds sparkle * noise to diffuse-modulated RGB;
+        // shroud darkens RGB without changing the water's authored opacity.
+        color *= input.color;
+        color.rgb += TerrainCloudTexture.Sample(TerrainCloudSampler, input.cloudTexcoord).rgb *
+            TerrainNoiseTexture.Sample(TerrainNoiseSampler, input.noiseTexcoord).rgb;
+        if ((TerrainLayers & 1) != 0)
+            color.rgb *= SecondaryTexture.Sample(SecondarySampler, input.shroudTexcoord).rgb;
+        return TestMaterialAlpha(color);
+    }
     if ((TerrainLayers & 16) != 0)
         color = lerp(color, SecondaryTexture.Sample(SecondarySampler, input.shroudTexcoord), input.color.a);
     else if ((TerrainLayers & 1) != 0)
