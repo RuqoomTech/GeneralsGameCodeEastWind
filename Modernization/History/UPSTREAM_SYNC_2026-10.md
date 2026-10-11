@@ -79,3 +79,18 @@ Result: tests build clean; `ctest` 31 of 32 (the same `d3d12_backend_smoke` samp
 the baseline); `z_generals` compiles, link shows 48 unique unresolved symbols / 120 references,
 identical to the baseline list.
 
+### Waypoint 2 — `efe3d03e6..a821f54d7` (2 commits)
+
+Arrived: `W3DDisplay`, `W3DDisplayString`, `W3DDisplayStringManager`, `W3DDebugDisplay` and
+`W3DDebugIcons` unified and moved from the game trees into `Core/GameEngineDevice` (`#3260`).
+
+Conflicts (1 file):
+
+| File | Resolution |
+|---|---|
+| `Generals/.../W3DDisplay.cpp` (deleted upstream, modified by EastWind) | Deleted. EastWind's Zero Hour edits were a superset of its Generals edits, and git carried them through the rename; the resulting `Core/.../W3DDisplay.cpp` is byte-identical to EastWind's previous Zero Hour file. |
+
+Not applicable: none. No policy test or CMake script referenced the moved paths.
+
+Result: unchanged from the baseline (31 of 32 tests, 48 unique unresolved symbols).
+
