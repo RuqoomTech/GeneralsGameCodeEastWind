@@ -238,6 +238,7 @@ struct RenderBackendTerrainState
     bool blend_secondary_by_vertex_alpha = false;
     bool use_constant_color = false; // Terrain clear-line pass retains geometry and overrides lighting.
     bool flat_water = false; // Authored tile/sparkle UVs, projected noise and RGB-only shroud.
+    bool river_water = false; // Secondary=edge, cloud=sparkle; tile V stores authored river progress.
     unsigned int flat_water_animation = 0; // 0 authored UVs, 1 flat, 2 feathered flat, 3 water grid.
     float flat_water_uv_scale = 1.0f / 150.0f;
     float flat_water_phase_scale = 0.0f;
@@ -456,6 +457,10 @@ public:
     virtual RenderBackendGeometryHandle Create_Static_Indexed_Terrain_Geometry(
         const RenderBackendTerrainVertex *vertices, unsigned int vertex_count,
         const unsigned short *indices, unsigned int index_count) = 0;
+    // Same-size retained vertex update on the current scene command list;
+    // earlier and later draws observe their respective versions without a CPU wait.
+    virtual bool Update_Static_Indexed_Terrain_Geometry(RenderBackendGeometryHandle,
+        const RenderBackendTerrainVertex *, unsigned int) { return false; }
     virtual bool Is_Geometry_Valid(RenderBackendGeometryHandle geometry) const = 0;
     virtual bool Draw_Static_Indexed_Terrain_Geometry(
         RenderBackendGeometryHandle geometry, RenderBackendTextureHandle base_texture,

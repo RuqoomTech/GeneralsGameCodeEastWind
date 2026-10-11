@@ -211,8 +211,6 @@ protected:
 	TextureClass *m_riverTexture;
 	TextureClass *m_whiteTexture;		///< a texture containing only white used for null pixel shader stages.
 	TextureClass *m_waterNoiseTexture;
-	DWORD	m_waterPixelShader;		///<D3D handle to pixel shader.
-	DWORD	m_riverWaterPixelShader;		///<D3D handle to pixel shader.
 	TextureClass *m_waterSparklesTexture;
 	Real m_riverXOffset;
 	Real m_riverYOffset;
@@ -252,10 +250,8 @@ protected:
 	///bounding box of frustum clipped polygon plane
 	Bool getClippedWaterPlane(CameraClass *cam, AABoxClass *box);
 
-	bool prepareFlatWater(RenderBackendMaterialState &material,
-		RenderBackendTerrainState &terrain, RenderBackendTextureHandle &texture);
-	void setupJbaWaterShader();
-	void cleanupJbaWaterShader();
+	bool prepareWaterMaterial(RenderBackendMaterialState &material,
+		RenderBackendTerrainState &terrain, RenderBackendTextureHandle &texture, bool river);
 
 	//Methods used for GeForce3 specific water
 	HRESULT generateIndexBuffer(int sizeX, int sizeY);	///<Generate static index buufer

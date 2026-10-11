@@ -214,6 +214,16 @@ TerrainPSInput VSTerrain(TerrainVSInput input)
             output.cloudTexcoord = output.tileTexcoord;
             output.noiseTexcoord += CloudNoiseProjection.yz;
         }
+        if ((ProjectWorldCoordinates & 32) != 0)
+        {
+            float time = CloudNoiseProjection.y;
+            float progress = input.tileTexcoord.y;
+            float riverV = -time + progress + sin(6.283185307179586f * progress - 3.0f * time) / 22.0f;
+            output.tileTexcoord = float2(input.tileTexcoord.x, riverV);
+            output.shroudTexcoord = float2(input.shroudTexcoord.x, riverV);
+            output.cloudTexcoord = output.tileTexcoord;
+            output.noiseTexcoord = worldPosition.xy / 16.0f + time;
+        }
     }
     if ((ProjectWorldCoordinates & 2) != 0)
         output.tileTexcoord = output.shroudTexcoord;
@@ -230,6 +240,17 @@ float4 PSTerrainColor(TerrainPSInput input) : SV_TARGET
 float4 PSTerrainTexture(TerrainPSInput input) : SV_TARGET
 {
     float4 color = PrimitiveTexture.Sample(MaterialSampler, input.tileTexcoord);
+    if ((TerrainLayers & 64) != 0)
+    {
+        // River ps.1.1 keeps the base/edge opacity separate from the packed
+        // vertex alpha that weights its sparkle, noise and edge RGB layer.
+        float4 edge = SecondaryTexture.Sample(SecondarySampler, input.shroudTexcoord);
+        float3 sparkleNoise = TerrainCloudTexture.Sample(TerrainCloudSampler, input.cloudTexcoord).rgb *
+            TerrainNoiseTexture.Sample(TerrainNoiseSampler, input.noiseTexcoord).rgb;
+        color.rgb = color.rgb * input.color.rgb + (sparkleNoise + edge.rgb) * input.color.a;
+        color.a *= edge.a;
+        return TestMaterialAlpha(color);
+    }
     if ((TerrainLayers & 32) != 0)
     {
         // Flat-water ps.1.1 adds sparkle * noise to diffuse-modulated RGB;

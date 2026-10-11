@@ -531,18 +531,22 @@ rts_policy_require_absent(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
     "D3DXMatrix"
     "Evolution water matrix operations must use existing WWMath conversions")
-rts_policy_require_contains(
+rts_policy_require_absent(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
     "Build_Water_Noise_Texture_Transform"
-    "water texture-coordinate generation must preserve the legacy inverse-view transform without D3DX8")
+    "migrated river noise projection must not restore the retired CPU inverse-view path")
+rts_policy_require_contains(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "Update_Static_Indexed_Terrain_Geometry"
+    "river vertex changes must update retained GPU geometry through the backend")
 rts_policy_require_contains(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
     "Build_Water_World_View_Projection_Constants"
     "water vertex-shader constants must preserve the legacy transposed WVP calculation through WWMath")
-rts_policy_require_contains(
+rts_policy_require_absent(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
-    "#if !defined(RTS_EVOLUTION_X64)"
-    "legacy D3DX8 shader assembly must stay outside the Evolution x64 path")
+    "D3DXAssembleShader"
+    "migrated river shader assembly must stay retired")
 
 message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, sampled textures, the Step05H real Render2D path, and active Evolution shader/tree/water math no longer depends on D3DX8")
 

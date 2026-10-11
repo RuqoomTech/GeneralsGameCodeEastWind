@@ -119,6 +119,8 @@ public:
     RenderBackendGeometryHandle Create_Static_Indexed_Terrain_Geometry(
         const RenderBackendTerrainVertex *vertices, unsigned int vertex_count,
         const unsigned short *indices, unsigned int index_count) override;
+    bool Update_Static_Indexed_Terrain_Geometry(RenderBackendGeometryHandle geometry,
+        const RenderBackendTerrainVertex *vertices, unsigned int vertex_count) override;
     bool Is_Geometry_Valid(RenderBackendGeometryHandle geometry) const override;
     bool Draw_Static_Indexed_Terrain_Geometry(
         RenderBackendGeometryHandle geometry, RenderBackendTextureHandle base_texture,

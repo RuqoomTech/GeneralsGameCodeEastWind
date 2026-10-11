@@ -1323,6 +1323,190 @@ bool verifyFlatWater(IRenderBackend &backend)
     return ok;
 }
 
+bool verifyRiverWater(IRenderBackend &backend)
+{
+    const unsigned char texels[4][16] = {
+        {160,80,48,128, 32,192,224,224, 96,144,192,224, 224,32,80,32},
+        {128,192,64,0, 32,48,80,64, 64,224,96,255, 80,16,32,192},
+        {48,80,112,0, 224,16,64,192, 32,64,16,0, 128,32,224,255},
+        {64,160,224,0, 96,224,32,192, 192,64,128,128, 160,96,64,0}};
+    RenderBackendTextureHandle textures[4];
+    bool ok=true;
+    for (unsigned i=0; i<4; ++i) {
+        textures[i]=backend.Create_Static_RGBA8_Texture(2,2,texels[i],8);
+        ok=textures[i].Is_Valid() && ok;
+    }
+    RenderBackendTerrainVertex quad[] = {
+        {-.8f,-.8f,.4f,.6f,.5f,.4f,0,.25f,.1f,.75f,.1f,0,0,0,0},
+        {-.8f,.8f,.4f,.6f,.5f,.4f,0,.25f,.9f,.75f,.9f,0,0,0,0},
+        {.8f,.8f,.4f,.6f,.5f,.4f,0,.25f,.9f,.75f,.9f,0,0,0,0},
+        {.8f,-.8f,.4f,.6f,.5f,.4f,0,.25f,.1f,.75f,.1f,0,0,0,0}};
+    const unsigned short front[]={0,2,1,0,3,2}, reverse[]={0,1,2,0,2,3};
+    RenderBackendMaterialState material;
+    material.cull=RenderBackendCullMode::None;
+    material.depth_write=false;
+    material.sampler.min_filter=material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    material.sampler.mipmaps=false;
+    RenderBackendTerrainState terrain;
+    terrain.river_water=true;
+    terrain.project_world_coordinates=true;
+    terrain.shroud_texture=textures[1]; // River edge texture, not projected fog.
+    terrain.cloud_texture=textures[2];
+    terrain.noise_texture=textures[3];
+    terrain.world_transform[0]=1.25f; terrain.world_transform[3]=2;
+    terrain.world_transform[5]=.75f; terrain.world_transform[7]=4;
+    // Poison unrelated projection fields: river noise uses world XY / 16 + time.
+    terrain.cloud_noise_projection[0]=3;
+    terrain.cloud_noise_projection[2]=-2;
+    for (auto *sampler : {&terrain.shroud_sampler,&terrain.cloud_sampler,&terrain.noise_sampler}) {
+        sampler->min_filter=sampler->mag_filter=RenderBackendTextureFilter::Point;
+        sampler->mipmaps=false;
+    }
+    Matrix4x4 camera(true);
+    camera[0][0]=camera[1][1]=.5f;
+    camera[0][3]=-.8f; camera[1][3]=-2.1f;
+    backend.Set_Viewport({0,0,640,480,0,1}); backend.Set_View_Projection(camera);
+    const auto zeroAlpha=backend.Create_Static_Indexed_Terrain_Geometry(quad,4,front,6);
+    for (auto &vertex : quad) vertex.a=.75f;
+    const auto coloredAlpha=backend.Create_Static_Indexed_Terrain_Geometry(quad,4,reverse,6);
+    ok=backend.Is_Geometry_Valid(zeroAlpha) && backend.Is_Geometry_Valid(coloredAlpha) && ok;
+    const std::array<float,4> background={26.f/255.f,51.f/255.f,77.f/255.f,191.f/255.f};
+    unsigned width=0,height=0,testCase=0;
+    std::vector<unsigned char> pixels;
+    auto begin=[&](float depth=1.f) {
+        backend.Clear(true,true,Vector3(background[0],background[1],background[2]),background[3],depth,0);
+        backend.Begin_Scene();
+    };
+    auto finish=[&](bool drew,const std::array<float,4> &expected) {
+        ++testCase; backend.End_Scene(false);
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        bool passed=drew && read;
+        if (read) for (unsigned c=0; c<4; ++c)
+            passed=std::abs(int(pixels[(264*width+384)*4+c])-
+                int(std::lround(std::clamp(expected[c],0.f,1.f)*255.f)))<=2 && passed;
+        if (!passed) {
+            std::cerr << "River-water pixel case " << testCase << " failed (draw=" << drew << ", read=" << read << ")";
+            if (read) for (unsigned c=0; c<4; ++c)
+                std::cerr << ' ' << int(pixels[(264*width+384)*4+c]) << '/'
+                    << int(std::lround(std::clamp(expected[c],0.f,1.f)*255.f));
+            std::cerr << '\n';
+        }
+        backend.Flip_To_Primary(); return passed;
+    };
+    const float localY=((1.f-2.f*264.5f/480.f-camera[1][3])/.5f-4)/.75f;
+    const float upperWeight=(localY+.8f)/1.6f;
+    auto wrapped=[](float coordinate) { return coordinate-std::floor(coordinate); };
+    auto texel=[&](float u,float v) { return (wrapped(u)>=.5f ? 1u : 0u)+(wrapped(v)>=.5f ? 2u : 0u); };
+    auto value=[&](unsigned texture,unsigned pixel,unsigned channel) { return texels[texture][4*pixel+channel]/255.f; };
+    std::array<float,3> diffuse={.6f,.5f,.4f};
+    auto expected=[&](float time,float alpha) {
+        auto animated=[&](float progress) { return -time+progress+std::sin(6.28318530718f*progress-3*time)/22; };
+        // Predict VS animation first, then raster interpolation. Evaluating the
+        // nonlinear wobble at an interpolated progress would be a different path.
+        const float v=animated(.1f)*(1-upperWeight)+animated(.9f)*upperWeight;
+        const unsigned base=texel(.25f,v), edge=texel(.75f,v);
+        const float worldX=(2.f*384.5f/640.f-1.f-camera[0][3])/.5f;
+        const float worldY=(1.f-2.f*264.5f/480.f-camera[1][3])/.5f;
+        const unsigned noise=texel(worldX/16+time,worldY/16+time);
+        std::array<float,4> color{};
+        for (unsigned c=0; c<3; ++c)
+            color[c]=diffuse[c]*value(0,base,c)+
+                (value(2,base,c)*value(3,noise,c)+value(1,edge,c))*alpha;
+        color[3]=value(0,base,3)*value(1,edge,3);
+        return color;
+    };
+    auto draw=[&](RenderBackendGeometryHandle geometry) {
+        return backend.Draw_Static_Indexed_Terrain_Geometry(geometry,textures[0],material,terrain);
+    };
+    for (float time : {.1f,.65f,.1f}) for (unsigned opacity=0; opacity<2; ++opacity) {
+        terrain.cloud_noise_projection[1]=time;
+        backend.Reset_Frame_Statistics(); begin();
+        ok=finish(draw(opacity ? coloredAlpha : zeroAlpha),expected(time,opacity ? .75f : 0)) &&
+            backend.Get_Frame_Statistics().static_geometry_uploads==0 &&
+            backend.Is_Geometry_Valid(zeroAlpha) && backend.Is_Geometry_Valid(coloredAlpha) && ok;
+    }
+    terrain.cloud_noise_projection[1]=.1f;
+    auto source=expected(.1f,.75f);
+    material.source_blend=RenderBackendBlendFactor::SourceAlpha;
+    material.color_write_mask=7;
+    for (bool additive : {false,true}) {
+        material.destination_blend=additive ? RenderBackendBlendFactor::One : RenderBackendBlendFactor::InverseSourceAlpha;
+        auto color=background;
+        for (unsigned c=0; c<3; ++c) color[c]=source[c]*source[3]+background[c]*(additive ? 1.f : 1-source[3]);
+        begin(); ok=finish(draw(coloredAlpha),color) && ok;
+    }
+    material.source_blend=RenderBackendBlendFactor::One;
+    material.destination_blend=RenderBackendBlendFactor::Zero;
+    material.color_write_mask=15;
+    material.cull=RenderBackendCullMode::Clockwise;
+    begin(); ok=finish(draw(coloredAlpha),background) && ok;
+    begin(); ok=finish(draw(zeroAlpha),expected(.1f,0)) && ok;
+    material.cull=RenderBackendCullMode::None;
+    begin(.2f); ok=finish(draw(coloredAlpha),background) && ok;
+    begin(); bool drew=draw(coloredAlpha);
+    auto redTerrain=terrain;
+    redTerrain.river_water=false;
+    redTerrain.shroud_texture=redTerrain.cloud_texture=redTerrain.noise_texture={};
+    for (auto &vertex : quad) { vertex.z=.7f; vertex.r=1; vertex.g=vertex.b=0; vertex.a=1; }
+    drew=backend.Draw_Indexed_Terrain_Triangles(quad,4,front,6,{},material,redTerrain) && drew;
+    ok=finish(drew,{1,0,0,1}) && ok;
+    // Local shroud changes packed vertex color without rebuilding topology.
+    // Ordered draws must see the colors that existed at each submission.
+    for (auto &vertex : quad) { vertex.z=.4f; vertex.r=.25f; vertex.g=.75f; vertex.b=.5f; vertex.a=.25f; }
+    const auto priorColor=expected(.1f,.75f);
+    diffuse={.25f,.75f,.5f};
+    const auto updatedColor=expected(.1f,.25f);
+    ok=!backend.Update_Static_Indexed_Terrain_Geometry(coloredAlpha,quad,4) && ok; // Requires an open scene.
+    camera[0][3]=-1.4f; backend.Set_View_Projection(camera);
+    begin();
+    bool ordered=draw(coloredAlpha);
+    ordered=backend.Update_Static_Indexed_Terrain_Geometry(coloredAlpha,quad,4) && ordered;
+    camera[0][3]=-.6f; backend.Set_View_Projection(camera);
+    ordered=draw(coloredAlpha) && ordered;
+    backend.End_Scene(false);
+    const bool orderedRead=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    bool updated=ordered && orderedRead && backend.Is_Geometry_Valid(coloredAlpha);
+    if (orderedRead) for (unsigned c=0; c<4; ++c) {
+        updated=std::abs(int(pixels[(264*width+192)*4+c])-int(std::lround(priorColor[c]*255)))<=2 && updated;
+        updated=std::abs(int(pixels[(264*width+448)*4+c])-int(std::lround(updatedColor[c]*255)))<=2 && updated;
+    }
+    if (!updated) std::cerr << "River vertex update did not preserve ordered colors on its retained handle.\n";
+    ok=updated && ok; backend.Flip_To_Primary();
+    camera[0][3]=-.8f; backend.Set_View_Projection(camera);
+    backend.Reset_Frame_Statistics(); begin();
+    ok=finish(draw(coloredAlpha),updatedColor) && backend.Get_Frame_Statistics().static_geometry_uploads==0 && ok;
+    // Reject conflicting shader modes and missing required river resources.
+    backend.Begin_Scene();
+    const RenderBackendColorVertex wrongVertices[]={{0,0,.5f,1,0,0,1},{.1f,0,.5f,1,0,0,1},{0,.1f,.5f,1,0,0,1}};
+    const unsigned short triangle[]={0,1,2};
+    const auto wrongGeometry=backend.Create_Static_Indexed_Color_Geometry(wrongVertices,3,triangle,3);
+    ok=wrongGeometry.Is_Valid() &&
+        !backend.Update_Static_Indexed_Terrain_Geometry(wrongGeometry,quad,3) &&
+        !backend.Update_Static_Indexed_Terrain_Geometry(coloredAlpha,quad,3) &&
+        !backend.Update_Static_Indexed_Terrain_Geometry(coloredAlpha,nullptr,4) &&
+        !backend.Update_Static_Indexed_Terrain_Geometry({},quad,4) && ok;
+    backend.Release_Static_Geometry(wrongGeometry);
+    auto bad=terrain; bad.flat_water=true;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(coloredAlpha,textures[0],material,bad) && ok;
+    bad=terrain; bad.project_world_coordinates=false;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(coloredAlpha,textures[0],material,bad) && ok;
+    for (auto layer : {0u,1u,2u}) {
+        bad=terrain;
+        if (layer==0) bad.shroud_texture={}; else if (layer==1) bad.cloud_texture={}; else bad.noise_texture={};
+        ok=!backend.Draw_Static_Indexed_Terrain_Geometry(coloredAlpha,textures[0],material,bad) && ok;
+    }
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(coloredAlpha,{},material,terrain) && ok;
+    backend.End_Scene(false); backend.Flip_To_Primary();
+    backend.Release_Static_Geometry(zeroAlpha); backend.Release_Static_Geometry(coloredAlpha);
+    backend.Begin_Scene();
+    ok=!backend.Update_Static_Indexed_Terrain_Geometry(coloredAlpha,quad,4) && ok;
+    backend.End_Scene(false); backend.Flip_To_Primary();
+    for (auto texture : textures) backend.Release_Texture(texture);
+    backend.Set_View_Projection(Matrix4x4(true));
+    if (!ok) std::cerr << "River GPU animation, layer alpha, blending, depth or validation failed.\n";
+    return ok;
+}
+
 bool verifyTerrain(IRenderBackend &backend)
 {
     const unsigned char texels[4][16]={
@@ -2482,7 +2666,7 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyFlatWater(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyProjectedMeshShroud(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyMotionBlurSceneCapture(*backend) || !verifySceneWriteMasks(*backend) || !verifyCrossFadeComposite(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyFlatWater(*backend) || !verifyRiverWater(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyProjectedMeshShroud(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyMotionBlurSceneCapture(*backend) || !verifySceneWriteMasks(*backend) || !verifyCrossFadeComposite(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

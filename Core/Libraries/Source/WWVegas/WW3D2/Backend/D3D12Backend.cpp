@@ -1648,7 +1648,8 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
                 (terrain->noise_texture.Is_Valid() ? 4u : 0u) |
                 (terrain->diffuse_after_layers ? 8u : 0u) |
                 (terrain->blend_secondary_by_vertex_alpha ? 16u : 0u) |
-                (terrain->flat_water ? 32u : 0u) : 0u, {0,0},
+                (terrain->flat_water ? 32u : 0u) |
+                (terrain->river_water ? 64u : 0u) : 0u, {0,0},
             {material->monochrome_tint[0], material->monochrome_tint[1], material->monochrome_tint[2]},
             material->monochrome_fade};
         static_assert(sizeof(Constants) == 12 * sizeof(unsigned int), "Material root constants");
@@ -1718,7 +1719,8 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
             (terrain->project_base_to_shroud ? 2u : 0u) |
             (terrain->blend_secondary_by_vertex_alpha ? 4u : 0u) |
             (terrain->use_constant_color ? 8u : 0u) |
-            (terrain->flat_water ? 16u : 0u);
+            (terrain->flat_water ? 16u : 0u) |
+            (terrain->river_water ? 32u : 0u);
         constants.water_animation = terrain->flat_water_animation;
         constants.water_uv_scale = terrain->flat_water_uv_scale;
         constants.water_phase_scale = terrain->flat_water_phase_scale;
@@ -2469,6 +2471,17 @@ bool D3D12Backend::validTerrainDraw(RenderBackendTextureHandle base_texture,
     };
     const bool textured = base_texture.Is_Valid();
     if (terrain.flat_water_animation > 3 || (terrain.flat_water_animation != 0 && !terrain.flat_water)) return false;
+    if (terrain.river_water)
+    {
+        if (!textured || !terrain.shroud_texture.Is_Valid() || !terrain.cloud_texture.Is_Valid() ||
+            !terrain.noise_texture.Is_Valid() || !terrain.project_world_coordinates || terrain.flat_water ||
+            terrain.project_base_to_shroud || terrain.diffuse_after_layers ||
+            terrain.blend_secondary_by_vertex_alpha || terrain.use_constant_color ||
+            material.texture_combine != RenderBackendTextureCombine::Modulate ||
+            !std::isfinite(terrain.cloud_noise_projection[1])) return false;
+        for (float value : terrain.world_transform)
+            if (!std::isfinite(value)) return false;
+    }
     if (terrain.flat_water && (!textured || !terrain.cloud_texture.Is_Valid() ||
         !terrain.noise_texture.Is_Valid() || !terrain.project_world_coordinates ||
         terrain.project_base_to_shroud || terrain.diffuse_after_layers ||
@@ -2502,6 +2515,52 @@ RenderBackendGeometryHandle D3D12Backend::Create_Static_Indexed_Terrain_Geometry
     const unsigned short *indices, unsigned int index_count)
 {
     return createStaticGeometry(vertices, vertex_count, sizeof(RenderBackendTerrainVertex), indices, index_count, true);
+}
+
+bool D3D12Backend::Update_Static_Indexed_Terrain_Geometry(RenderBackendGeometryHandle handle,
+    const RenderBackendTerrainVertex *vertices, unsigned int vertex_count)
+{
+    if (!m_scene_open || vertices == nullptr || vertex_count == 0 || !Is_Geometry_Valid(handle) ||
+        vertex_count > std::numeric_limits<std::size_t>::max() / sizeof(RenderBackendTerrainVertex)) return false;
+    const std::size_t vertex_bytes = static_cast<std::size_t>(vertex_count) * sizeof(RenderBackendTerrainVertex);
+    const auto &geometry = m_static_geometry[handle.slot - 1];
+    if (!geometry.textured || geometry.vertex_stride != sizeof(RenderBackendTerrainVertex) ||
+        vertex_bytes > std::numeric_limits<UINT>::max() || vertex_bytes != geometry.vertex_bytes) return false;
+
+    ID3D12Resource *upload = nullptr;
+    try
+    {
+        auto &frame_uploads = m_frame_uploads[m_frame_index];
+        frame_uploads.reserve(frame_uploads.size() + 1);
+        upload = createUploadBuffer(m_device, vertex_bytes);
+        D3D12_RANGE no_read{0, 0};
+        void *mapped = nullptr;
+        checkHresult("ID3D12Resource::Map(retained terrain update)", upload->Map(0, &no_read, &mapped));
+        std::memcpy(mapped, vertices, vertex_bytes);
+        upload->Unmap(0, nullptr);
+        // Transfer ownership before recording references. No operation below
+        // can throw; the existing frame fence retires this upload allocation.
+        frame_uploads.push_back(upload);
+        ID3D12Resource *staging = upload;
+        upload = nullptr;
+        D3D12_RESOURCE_BARRIER barrier{};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = geometry.vertex_buffer;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+        m_command_list->ResourceBarrier(1, &barrier);
+        m_command_list->CopyBufferRegion(geometry.vertex_buffer, 0, staging, 0, vertex_bytes);
+        std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+        m_command_list->ResourceBarrier(1, &barrier);
+        ++m_frame_statistics.static_geometry_uploads;
+        return true;
+    }
+    catch (...)
+    {
+        releaseCom(upload);
+        return false;
+    }
 }
 
 bool D3D12Backend::Is_Geometry_Valid(RenderBackendGeometryHandle handle) const
