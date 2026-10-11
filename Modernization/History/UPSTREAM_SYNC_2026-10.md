@@ -50,3 +50,32 @@ Rebuilt at `f0021f294` on 2026-10-12, Windows 11, MinGW-w64 GCC 16.2.0, AMD Rade
 
 ## Waypoints
 
+### Waypoint 1 — `ab0e4fc04..efe3d03e6` (46 commits)
+
+Arrived: CI permission fixes; retail-compatibility CMake option (`#2379`); mesh material colour
+fix (`#3246`); pathfinder crash fix, retail-compat restore and three perf commits; replay from
+the command line (`#3227`); audio, hash table, Miles provider, filesystem, LAN name, control bar,
+point group, terrain visual, INI, game info, model draw and recorder null/overflow fixes;
+`MessageDelayMS` conversion; GameLogic map files unified into Core (`#3189`); Xfer version-check
+fixes (`#3299`, `#3300`); script engine UB fix; particle system refactor and the move of client
+and particle updates out of `W3DDisplay::draw` (`#2709`).
+
+Conflicts (4 files):
+
+| File | Resolution |
+|---|---|
+| `Core/GameEngine/Include/Common/GameDefines.h` | EastWind keeps the retail-compatibility note at the top of the file; upstream's wording (adds `RETAIL_COMPATIBLE_DATA`) applied there. Upstream's new `RETAIL_COMPATIBLE_DATA` macro taken. |
+| `Core/Libraries/Source/WWVegas/WW3D2/pointgr.cpp` | Upstream's new `WWASSERT` kept; its local `Matrix4x4 view` dropped because EastWind's migrated code takes `view` from the caller. Upstream's null-safe `pointSize` form taken for `shiftInc` (same behaviour as EastWind's). |
+| `Generals/.../W3DDisplay.cpp`, `GeneralsMD/.../W3DDisplay.cpp` | EastWind's backend device-ready check kept; upstream's `if (!viewsUpdated)` body taken. |
+
+Adapted outside conflict hunks: upstream's new `W3DDisplay::update` in both game variants
+tested the D3D8 device (`DX8Wrapper::_Get_D3D_Device8()->TestCooperativeLevel()`). Replaced
+with the same `IRenderBackend::Is_Device_Ready()` check `draw` uses, so no new DX8 dependency
+enters the x64 graph.
+
+Not applicable: none in this waypoint.
+
+Result: tests build clean; `ctest` 31 of 32 (the same `d3d12_backend_smoke` sampler failure as
+the baseline); `z_generals` compiles, link shows 48 unique unresolved symbols / 120 references,
+identical to the baseline list.
+
