@@ -851,21 +851,3 @@ bool W3DMaskMaterialPassClass::Prepare_Terrain_Pass(
 	texture = maskTexture;
 	return true;
 }
-
-//-----------------------------------------------------------------------------
-///Set render states required to draw shroud pass.
-void W3DShroudMaterialPassClass::Install_Materials() const
-{
-	if (TheTerrainRenderObject->getShroud())
-	{
- 		W3DShaderManager::setTexture(0,TheTerrainRenderObject->getShroud()->getShroudTexture());
-		W3DShaderManager::setShader(W3DShaderManager::ST_SHROUD_TEXTURE, 0);
-	}
-}
-
-//-----------------------------------------------------------------------------
-///Restore render states that W3D doesn't know about.
-void W3DShroudMaterialPassClass::UnInstall_Materials() const
-{
-	W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
-}

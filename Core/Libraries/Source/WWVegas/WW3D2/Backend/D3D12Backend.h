@@ -29,6 +29,7 @@ struct ID3D12Resource;
 struct ID3D12RootSignature;
 struct D3D12_VERTEX_BUFFER_VIEW;
 struct D3D12_INDEX_BUFFER_VIEW;
+struct D3D12_CPU_DESCRIPTOR_HANDLE;
 
 // Direct3D 12 implementation of the existing WW3D render-backend seam.
 // This is the only renderer backend supported by the x64 Evolution runtime.
@@ -53,8 +54,9 @@ public:
     void Set_View_Projection(const Matrix4x4 &view_projection) override;
     void Get_View_Projection(Matrix4x4 &view_projection) const override;
     RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height,
-        bool use_output_depth = false) override;
-    bool Set_Render_Texture(RenderBackendTextureHandle texture, bool use_output_depth = false) override;
+        RenderBackendRenderDepth depth = RenderBackendRenderDepth::None) override;
+    bool Set_Render_Texture(RenderBackendTextureHandle texture,
+        RenderBackendRenderDepth depth = RenderBackendRenderDepth::None) override;
     bool Get_Render_Target_Size(int &width, int &height) const override;
     bool Copy_Texture(RenderBackendTextureHandle destination, RenderBackendTextureHandle source) override;
     void Invalidate_Cached_Render_States() override;
@@ -100,6 +102,8 @@ public:
         RenderBackendGeometryHandle geometry,
         RenderBackendTextureHandle texture) override;
     RenderBackendTextureHandle Create_Static_RGBA8_Texture(
+        const RenderBackendTextureMipLevel *levels, unsigned int level_count) override;
+    RenderBackendTextureHandle Create_Static_RG8_SNORM_Texture(
         const RenderBackendTextureMipLevel *levels, unsigned int level_count) override;
     bool Is_Texture_Valid(RenderBackendTextureHandle texture) const override;
     bool Draw_Indexed_Decal_Triangles(
@@ -155,6 +159,8 @@ private:
     {
         ID3D12Resource *texture = nullptr;
         ID3D12DescriptorHeap *rtv_heap = nullptr;
+        ID3D12Resource *depth = nullptr;
+        ID3D12DescriptorHeap *dsv_heap = nullptr;
         unsigned int width = 0;
         unsigned int height = 0;
         unsigned int generation = 0;
@@ -208,8 +214,11 @@ private:
         bool textured);
     bool drawStaticGeometry(RenderBackendGeometryHandle geometry, bool textured);
     TextureResource *findTexture(RenderBackendTextureHandle texture);
+    RenderBackendTextureHandle createStaticTexture(const RenderBackendTextureMipLevel *levels,
+        unsigned int level_count, unsigned int format, unsigned int bytes_per_pixel);
     ID3D12Resource *activeColorTarget() const;
     bool activeTargetHasDepth() const;
+    D3D12_CPU_DESCRIPTOR_HANDLE activeDepthView() const;
     void bindActiveTarget();
     void applyPendingClear();
     void submitScene(bool present);
@@ -243,6 +252,7 @@ private:
     ID3D12Resource *m_depth_stencil = nullptr;
     ID3D12Resource *m_output_capture = nullptr;
     ID3D12CommandAllocator *m_command_allocators[FrameCount]{};
+    ID3D12CommandAllocator *m_reflection_allocators[FrameCount]{};
     ID3D12GraphicsCommandList *m_command_list = nullptr;
     ID3D12RootSignature *m_primitive_root_signature = nullptr;
     ID3D12PipelineState *m_primitive_pipeline = nullptr;
@@ -270,7 +280,7 @@ private:
     RenderBackendViewport m_viewport{};
     RenderBackendViewport m_output_viewport{};
     RenderBackendTextureHandle m_selected_texture;
-    bool m_selected_output_depth = false;
+    RenderBackendRenderDepth m_selected_depth = RenderBackendRenderDepth::None;
     float m_output_view_projection[16]{};
     float m_view_projection[16]{
         1.0f, 0.0f, 0.0f, 0.0f,
@@ -283,12 +293,14 @@ private:
     bool m_clear_color_pending = false;
     bool m_clear_depth_pending = false;
     bool m_scene_open = false;
+    bool m_scene_uses_reflection_allocator = false;
     bool m_present_pending = false;
 
     std::uint32_t m_rtv_descriptor_size = 0;
     std::uint32_t m_srv_descriptor_size = 0;
     std::uint32_t m_texture_descriptor_capacity = 0;
     std::uint32_t m_frame_index = 0;
+    std::uint32_t m_reflection_submitted_frame = FrameCount;
     std::uint64_t m_next_fence_value = 1;
     std::uint64_t m_frame_fence_values[FrameCount]{};
     std::vector<ID3D12Resource *> m_frame_uploads[FrameCount];

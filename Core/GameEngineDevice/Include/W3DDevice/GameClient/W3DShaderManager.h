@@ -52,18 +52,6 @@ class W3DShaderManager
 {
 public:
 
-	//put any custom shaders (not going through W3D) in here.
-	enum ShaderTypes
-	{	ST_INVALID,			//invalid shader type.
-		ST_SHROUD_TEXTURE,		//shader to apply shroud texture projection.
-		ST_FLAT_TERRAIN_BASE,	//shader to apply base terrain texture only
-		ST_FLAT_TERRAIN_BASE_NOISE1,	//shader to apply base texture and cloud/noise 1.
-		ST_FLAT_TERRAIN_BASE_NOISE2,	//shader to apply base texture and cloud/noise 2.
-		ST_FLAT_TERRAIN_BASE_NOISE12,//shader to apply base texture and both cloud/noise
-		ST_MAX
-	};
-
-
 	W3DShaderManager();	///<constructor
 	static void init();	///<determine optimal shaders for current device.
 	static void shutdown();	///<release resources used by shaders
@@ -73,18 +61,6 @@ public:
 	static ChipsetType getChipset();	///<return current device chipset.
 	static GraphicsVenderID getCurrentVendor() {return m_currentVendor;}	///<return current card vendor.
 	static __int64 getCurrentDriverVersion() {return m_driverVersion; }	///<return current driver version.
-	static Int getShaderPasses(ShaderTypes shader);	///<rendering passes required for shader
-	static Int setShader(ShaderTypes shader, Int pass);	///<enable specific shader pass.
-	static void resetShader(ShaderTypes shader);	///<make sure W3D2 gets restored to normal
-	///Specify all textures (up to 8) which can be accessed by the shaders.
-	static void setTexture(Int stage,TextureClass* texture) {m_Textures[stage]=texture;}
-	///Return current texture available to shaders.
-	static TextureClass *getShaderTexture(Int stage) { return m_Textures[stage];}	///<returns currently selected texture for given stage
-	///Return last activated shader.
-	static ShaderTypes getCurrentShader() {return m_currentShader;}
-	/// Loads a .vso file and creates a vertex shader for it
-	static HRESULT LoadAndCreateD3DShader(const char* strFilePath, const DWORD* pDeclaration, DWORD Usage, Bool ShaderType, DWORD* pHandle);
-
 	static Bool testMinimumRequirements(ChipsetType *videoChipType, CpuType *cpuType, Int *cpuFreq, MemValueType *numRAM, Real *intBenchIndex, Real *floatBenchIndex, Real *memBenchIndex);
 	static StaticGameLODLevel getGPUPerformanceIndex();
 	static Real GetCPUBenchTime();
@@ -108,12 +84,9 @@ public:
 
 
 protected:
-	static TextureClass *m_Textures[8];	///textures assigned to each of the possible stages
 	static ChipsetType m_currentChipset;	///<last video card chipset that was detected.
 	static GraphicsVenderID m_currentVendor;	///<last video card vendor
 	static __int64 m_driverVersion;			///<driver version of last chipset.
-	static ShaderTypes m_currentShader;	///<last shader that was set.
-	static Int m_currentShaderPass;		///<pass of last shader that was set.
 
 	static FilterTypes m_currentFilter; ///< Last filter that was set.
 	// Info for a render to texture surface for special effects.

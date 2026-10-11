@@ -27,6 +27,24 @@ class ShaderClass;
 
 namespace Debug_Statistics
 {
+#ifdef EXTENDED_STATS
+	// Local renderer timing controls; never part of simulation or saved state.
+	struct ExtendedStatistics
+	{
+		bool m_showingStats;
+		bool m_disableTerrain;
+		bool m_disableWater;
+		bool m_disableObjects;
+		bool m_disableOverhead;
+		bool m_disableConsole;
+		int m_debugLinesToShow;
+		int m_sleepTime;
+
+		ExtendedStatistics();
+	};
+	extern ExtendedStatistics Extended_Stats;
+#endif
+
 	enum RecordTextureMode
 	{
 		RECORD_TEXTURE_NONE,

@@ -1,5 +1,55 @@
 # Project state
 
+## GPU sea reflection and sky - 2026-10-11
+
+The verified source parent is local commit `de3dce25f`. Preserve concurrent user commits. Verified milestones stay locally committed; GitHub pushes remain forbidden.
+
+The actual shared sea, mirror, sky and moon callers now use WW3D/IRenderBackend/D3D12. Sea patch topology, sky quads and moon geometry stay in default-heap resources. Canonical HLSL performs world/camera transforms, signed bump sampling, vertex-predivided reflection projection and sky UV projection/scrolling. Sea preserves its initialized 392-triangle topology and a-d diagonal, signed filtered RG displacement, reflection RGBA times vertex RGBA, clamp/wrap samplers, source-alpha blend, LessEqual with no depth writes, and the separate Equal-depth shroud pass. Procedural bump preparation occurs once from real authored caustic images; temporary RGBA asset-cache references are dropped afterward. Missing assets do not substitute flat-water rendering.
+
+Render textures now select None, Output or Owned depth in the existing resource owner. The 256x256 mirror has independent D24S8 depth. It renders the actual scene with the reflected camera/culling, sky and night moon, preserves the old XRGB reflection's implicit alpha-one contract through RGB-only writes, and restores camera, viewport, culling, write mask and output target. Reflected shoreline alpha-only submissions are skipped before CPU geometry preparation. Cleanup attempts End once and propagates submission/output-restoration failure.
+
+A retained reflection allocator per frame allows the immediate mirror-to-main transition without an additional CPU fence wait. The queue preserves copy/draw order and the final frame fence protects both passes and uploads. Normal prior-frame pacing remains. Animation-only sea/sky frames do not reupload retained geometry. Simulation water methods, physics, heights, CRC and Xfer remain unchanged; renderer resource/timing state is not deterministic state. This is structural CPU-work removal; no measured frame-time speedup is claimed.
+
+The shared water owner no longer contains DX8/native texture, buffer or shader responsibilities. Obsolete wave.nvp/wave.nvv assets and shader-registry/shroud-install machinery with no remaining callers are removed. Existing debug statistics now belong to Debug_Statistics rather than DX8Wrapper, including both game variants. The 64-DWORD root signature is unchanged. No new helper subsystem was introduced.
+
+Validation receipts:
+
+- `build/sea-final-tests-build.txt`: latest focused graph compiles and links.
+- `build/sea-final-regressions.txt`: **32/32 non-browser tests pass**, GPU 6.47 seconds, total 36.95 seconds. Browser was excluded.
+- GPU fixtures cover independent reflection/output depth, camera/viewport restoration, signed filtering and independent clamp/wrap, varying-W reflection interpolation, color/alpha/blend, typed SRV heap regrowth, GPU sky scrolling, retained geometry with zero animation-only uploads, XRGB alpha-one preservation, and immediate reflection-to-main submission across four frame cycles with protected dynamic uploads.
+- `build/sea-final-callers-syntax.txt`: **7/7** shared/paired checks pass. `build/sea-stats-final-syntax.txt`: **14/14** normal and EXTENDED_STATS owner checks pass. Final focused contract review found no remaining actionable defect.
+- `build/mingw64-game/sea-final-game-build.txt`: exact serial z_generals compilation passes; executable link fails. `build/sea-final-link-summary.json`: **48 unique unresolved symbols / 120 printed references**, versus 53/152 before this migration; none added. First remaining reference is W3DShaderManager::startRenderToTexture -> DX8Wrapper::Clear, currently W3DShaderManager.cpp:868.
+- `build/sea-patchcheck.txt`: fresh original-baseline reconstruction and byte comparison after all source/document edits; **4533 candidate / 4533 reconstructed files, zero missing, extra or different**; reconstruction passed.
+
+Next inspect actual shader-manager capture/capability and smudge callers. Prove obsolete capture entry points have no callers before retiring them; the smudge effect's native capture accessor is a real caller and must cross the backend seam coherently. Prefer GPU capture, transforms, projection and retained geometry over CPU readback/per-vertex work. Continue using the real serial target as the migration queue.
+
+Normal game link/boot, D3D12 creation in that executable, first visible game/UI frame, complete DX8 removal, measured speedup, sealing and user Windows sign-off remain unproven. SDL3 Step06 and major W3X runtime work remain deferred. Keep the persistent goal active.
+
+## GPU sea reflection and sky - 2026-10-11
+
+The verified source parent is local commit `de3dce25f`. Preserve concurrent user commits. Verified milestones stay locally committed; GitHub pushes remain forbidden.
+
+The actual shared sea, mirror, sky and moon callers now use WW3D/IRenderBackend/D3D12. Sea patch topology, sky quads and moon geometry stay in default-heap resources. Canonical HLSL performs world/camera transforms, signed bump sampling, vertex-predivided reflection projection and sky UV projection/scrolling. Sea preserves its initialized 392-triangle topology and a-d diagonal, signed filtered RG displacement, reflection RGBA times vertex RGBA, clamp/wrap samplers, source-alpha blend, LessEqual with no depth writes, and the separate Equal-depth shroud pass. Procedural bump preparation occurs once from real authored caustic images; temporary RGBA asset-cache references are dropped afterward. Missing assets do not substitute flat-water rendering.
+
+Render textures now select None, Output or Owned depth in the existing texture-resource owner. The 256x256 mirror has independent D24S8 depth. It renders the actual scene with the reflected camera/culling, sky and night moon, preserves the old XRGB reflection's implicit alpha-one contract through RGB-only writes, and restores camera, viewport, culling, write mask and output target. Reflected shoreline alpha-only submissions are skipped before CPU geometry preparation. Cleanup attempts End once and propagates submission/output-restoration failure.
+
+A retained reflection allocator per frame allows the immediate mirror-to-main scene transition without an additional CPU fence wait. The queue preserves copy/draw order and the final frame fence protects both passes and uploads. Normal prior-frame pacing remains. Animation-only sea/sky frames do not reupload retained geometry. Simulation water methods, physics, heights, CRC and Xfer remain unchanged; renderer resource/timing state is not deterministic state. This is structural CPU-work removal; no measured frame-time speedup is claimed.
+
+The shared water owner no longer contains DX8/native texture, buffer or shader responsibilities. Obsolete wave.nvp/wave.nvv assets and shader-registry/shroud-install machinery with no remaining callers are removed. Existing debug statistics now belong to Debug_Statistics rather than DX8Wrapper, including both game variants. The 64-DWORD root signature is unchanged. No new helper subsystem was introduced.
+
+Validation receipts:
+
+- `build/sea-final-tests-build.txt`: latest focused graph compiles and links.
+- `build/sea-final-regressions.txt`: **32/32 non-browser tests pass**, GPU 6.47 seconds, total 36.95 seconds. Browser was excluded.
+- GPU fixtures cover independent reflection/output depth, camera/viewport restoration, signed filtering and independent clamp/wrap, varying-W reflection interpolation, color/alpha/blend, typed SRV heap regrowth, GPU sky scrolling, retained geometry with zero animation-only uploads, XRGB alpha-one preservation, and immediate reflection-to-main submission across four frame cycles with protected dynamic uploads.
+- `build/sea-final-callers-syntax.txt`: **7/7** shared/paired caller checks pass. `build/sea-stats-final-syntax.txt`: **14/14** normal and EXTENDED_STATS owner checks pass. Final focused contract review found no remaining actionable defect.
+- `build/mingw64-game/sea-final-game-build.txt`: exact serial z_generals compilation passes; executable link fails. `build/sea-final-link-summary.json`: **48 unique unresolved symbols / 120 printed references**, versus 53/152 before this migration; none added. First remaining reference is W3DShaderManager::startRenderToTexture -> DX8Wrapper::Clear, currently W3DShaderManager.cpp:868.
+- `build/sea-patchcheck.txt`: fresh original-baseline reconstruction and byte comparison after all source/document edits; **4533 candidate / 4533 reconstructed files, zero missing, extra or different**; reconstruction passed.
+
+Next inspect actual shader-manager capture/capability and smudge callers. Prove obsolete capture entry points have no callers before retiring them; the smudge effect's native capture accessor is a real caller and must cross the backend seam coherently. Prefer GPU capture, transforms, projection and retained geometry over CPU readback/per-vertex work. Continue using the real serial target as the migration queue.
+
+Normal game link/boot, D3D12 creation in that executable, first visible game/UI frame, complete DX8 removal, measured speedup, sealing and user Windows sign-off remain unproven. SDL3 Step06 and major W3X runtime work remain deferred. Keep the persistent goal active.
+
 ## GPU river and retained water updates - 2026-10-11
 
 The live source parent is user commit `8f7b1dec9` (water), which includes the river/backend translation following local `024a670cf`. Preserve concurrent user commits. The current verified batch fixes retained geometry invalidation, extends the GPU height fixture and records the complete river validation. Commits stay local; no GitHub pushes.

@@ -209,6 +209,8 @@ TerrainPSInput VSTerrain(TerrainVSInput input)
             output.shroudTexcoord = worldPosition.xy * ShroudProjection.xy + ShroudProjection.zw;
         output.cloudTexcoord = worldPosition.xy * CloudNoiseProjection.x + CloudNoiseProjection.yz;
         output.noiseTexcoord = worldPosition.xy * CloudNoiseProjection.x;
+        if ((ProjectWorldCoordinates & 128) != 0)
+            output.tileTexcoord = output.cloudTexcoord;
         if ((ProjectWorldCoordinates & 16) != 0)
         {
             output.cloudTexcoord = output.tileTexcoord;
@@ -223,6 +225,13 @@ TerrainPSInput VSTerrain(TerrainVSInput input)
             output.shroudTexcoord = float2(input.shroudTexcoord.x, riverV);
             output.cloudTexcoord = output.tileTexcoord;
             output.noiseTexcoord = worldPosition.xy / 16.0f + time;
+        }
+        if ((ProjectWorldCoordinates & 64) != 0)
+        {
+            // wave.nvv divides at the vertices, then uses ordinary perspective
+            // interpolation for these UVs; its pixel shader does not divide again.
+            output.tileTexcoord = output.position.xy / output.position.w * float2(0.5f, -0.5f) + 0.5f;
+            output.shroudTexcoord = input.tileTexcoord;
         }
     }
     if ((ProjectWorldCoordinates & 2) != 0)
@@ -239,6 +248,11 @@ float4 PSTerrainColor(TerrainPSInput input) : SV_TARGET
 // Keep the register arithmetic unsaturated until the output target converts it.
 float4 PSTerrainTexture(TerrainPSInput input) : SV_TARGET
 {
+    if ((TerrainLayers & 128) != 0)
+    {
+        float2 bump = SecondaryTexture.Sample(SecondarySampler, input.shroudTexcoord).rg;
+        return TestMaterialAlpha(PrimitiveTexture.Sample(MaterialSampler, input.tileTexcoord + bump * 0.06f) * input.color);
+    }
     float4 color = PrimitiveTexture.Sample(MaterialSampler, input.tileTexcoord);
     if ((TerrainLayers & 64) != 0)
     {

@@ -46,6 +46,7 @@ class		SceneClass;
 class		CameraClass;
 class		ShaderClass;
 class		IRenderBackend;
+enum class RenderBackendRenderDepth;
 class		TextureClass;
 
 struct	RenderStatistics;
@@ -125,8 +126,10 @@ public:
 	static WW3DErrorType		Set_Any_Render_Device();
 
 	static void					Get_Pixel_Center(float &x, float &y);
-    static TextureClass *Create_Render_Texture(unsigned width, unsigned height, bool use_output_depth = false);
-	static bool Set_Render_Texture(TextureClass *texture, bool use_output_depth = false);
+    static TextureClass *Create_Render_Texture(unsigned width, unsigned height);
+    static TextureClass *Create_Render_Texture(unsigned width, unsigned height, RenderBackendRenderDepth depth);
+	static bool Set_Render_Texture(TextureClass *texture);
+    static bool Set_Render_Texture(TextureClass *texture, RenderBackendRenderDepth depth);
 	static void					Get_Render_Target_Resolution(int & set_w,int & set_h,int & get_bits,bool & get_windowed);
 	static void					Get_Device_Resolution(int & set_w,int & set_h,int & get_bits,bool & get_windowed);
 	static WW3DErrorType		Set_Device_Resolution(int w=-1,int h=-1,int bits=-1,int windowed=-1, bool resize_window=false );

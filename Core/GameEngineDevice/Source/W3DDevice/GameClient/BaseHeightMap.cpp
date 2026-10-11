@@ -2264,6 +2264,9 @@ water plane.  Applying a custom render to these polygons allows for a smoother l
 transition*/
 void BaseHeightMapRenderObjClass::renderShoreLines(CameraClass *pCamera)
 {
+	// Reflection used an XRGB target: shoreline coverage had no effect there.
+	// Skip the alpha-only pass, including its CPU geometry preparation.
+	if (ShaderClass::Is_Backface_Culling_Inverted()) return;
 	if (!TheGlobalData->m_isWorldBuilder)	//use faster version optimized for game and not world builder?
 	{	renderShoreLinesSorted(pCamera);
 		return;
@@ -2410,6 +2413,7 @@ transition.  This version is exactly like the one above but optimized for the ca
 are assumed to be sorted.  Not used by World Builder. */
 void BaseHeightMapRenderObjClass::renderShoreLinesSorted(CameraClass *pCamera)
 {
+	if (ShaderClass::Is_Backface_Culling_Inverted()) return;
 	m_numVisibleShoreLineTiles=0;
 
 	if (!TheGlobalData->m_showSoftWaterEdge || TheWaterTransparency->m_transparentWaterDepth==0 || m_numShoreLineTiles == 0)

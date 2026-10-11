@@ -280,7 +280,7 @@ void createTextureView(ID3D12Device *device, ID3D12Resource *texture, D3D12_CPU_
 {
     D3D12_SHADER_RESOURCE_VIEW_DESC view{};
     view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    view.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    view.Format = texture->GetDesc().Format;
     view.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     view.Texture2D.MipLevels = texture->GetDesc().MipLevels;
     device->CreateShaderResourceView(texture, &view, destination);
@@ -787,6 +787,11 @@ void D3D12Backend::createCommandObjects()
         checkHresult("ID3D12Device::CreateCommandAllocator",
                      m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator)));
     }
+    for (auto &allocator : m_reflection_allocators)
+    {
+        checkHresult("ID3D12Device::CreateCommandAllocator(reflection)",
+            m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator)));
+    }
 
     checkHresult("ID3D12Device::CreateCommandList",
                  m_device->CreateCommandList(
@@ -928,10 +933,19 @@ void D3D12Backend::Begin_Scene()
         return;
     }
 
-    waitForFrame(m_frame_index);
-    checkHresult("ID3D12CommandAllocator::Reset", m_command_allocators[m_frame_index]->Reset());
+    const bool reflection = m_selected_depth == RenderBackendRenderDepth::Owned;
+    // Reflection waits for the previous use of this frame's allocators. The
+    // following main scene uses a different allocator, so it can record while
+    // reflection executes. Keep both scenes' uploads until the final fence.
+    if (reflection || m_reflection_submitted_frame != m_frame_index)
+        waitForFrame(m_frame_index);
+    m_reflection_submitted_frame = FrameCount;
+    ID3D12CommandAllocator *allocator = reflection
+        ? m_reflection_allocators[m_frame_index] : m_command_allocators[m_frame_index];
+    checkHresult("ID3D12CommandAllocator::Reset", allocator->Reset());
     checkHresult("ID3D12GraphicsCommandList::Reset",
-                 m_command_list->Reset(m_command_allocators[m_frame_index], nullptr));
+                 m_command_list->Reset(allocator, nullptr));
+    m_scene_uses_reflection_allocator = reflection;
 
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -1010,7 +1024,7 @@ void D3D12Backend::applyPendingClear()
         m_clear_depth_pending = false; // Color-only passes have no depth/stencil attachment.
     if (m_clear_depth_pending)
     {
-        const D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_dsv_heap->GetCPUDescriptorHandleForHeapStart();
+        const D3D12_CPU_DESCRIPTOR_HANDLE dsv = activeDepthView();
         m_command_list->ClearDepthStencilView(
             dsv,
             D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
@@ -1076,7 +1090,14 @@ ID3D12Resource *D3D12Backend::activeColorTarget() const
 
 bool D3D12Backend::activeTargetHasDepth() const
 {
-    return !m_selected_texture.Is_Valid() || m_selected_output_depth;
+    return !m_selected_texture.Is_Valid() || m_selected_depth != RenderBackendRenderDepth::None;
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE D3D12Backend::activeDepthView() const
+{
+    if (m_selected_texture.Is_Valid() && m_selected_depth == RenderBackendRenderDepth::Owned)
+        return m_textures[m_selected_texture.slot - 1].dsv_heap->GetCPUDescriptorHandleForHeapStart();
+    return m_dsv_heap->GetCPUDescriptorHandleForHeapStart();
 }
 
 void D3D12Backend::bindActiveTarget()
@@ -1084,16 +1105,18 @@ void D3D12Backend::bindActiveTarget()
     const D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_selected_texture.Is_Valid()
         ? m_textures[m_selected_texture.slot - 1].rtv_heap->GetCPUDescriptorHandleForHeapStart()
         : offsetHandle(m_rtv_heap->GetCPUDescriptorHandleForHeapStart(), m_frame_index, m_rtv_descriptor_size);
-    const D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_dsv_heap->GetCPUDescriptorHandleForHeapStart();
+    const D3D12_CPU_DESCRIPTOR_HANDLE dsv = activeDepthView();
     m_command_list->OMSetRenderTargets(1, &rtv, FALSE, activeTargetHasDepth() ? &dsv : nullptr);
     Set_Viewport(m_viewport);
 }
 
 RenderBackendTextureHandle D3D12Backend::Create_Render_Texture(unsigned int width, unsigned int height,
-    bool use_output_depth)
+    RenderBackendRenderDepth depth_mode)
 {
-    if ((m_scene_open && !use_output_depth) || !Is_Device_Ready() || width == 0 || height == 0 ||
-        (use_output_depth && (width != m_width || height != m_height)) ||
+    if (static_cast<unsigned int>(depth_mode) > static_cast<unsigned int>(RenderBackendRenderDepth::Owned) ||
+        (m_scene_open && depth_mode != RenderBackendRenderDepth::Output) ||
+        !Is_Device_Ready() || width == 0 || height == 0 ||
+        (depth_mode == RenderBackendRenderDepth::Output && (width != m_width || height != m_height)) ||
         width > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION || height > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION)
         return {};
     std::size_t slot = 0;
@@ -1101,6 +1124,8 @@ RenderBackendTextureHandle D3D12Backend::Create_Render_Texture(unsigned int widt
     if (slot >= std::numeric_limits<unsigned int>::max()) return {};
     ID3D12Resource *texture = nullptr;
     ID3D12DescriptorHeap *rtv = nullptr;
+    ID3D12Resource *depth = nullptr;
+    ID3D12DescriptorHeap *dsv = nullptr;
     try
     {
         ensureTextureDescriptorCapacity(slot + 1);
@@ -1124,6 +1149,24 @@ RenderBackendTextureHandle D3D12Backend::Create_Render_Texture(unsigned int widt
         checkHresult("CreateDescriptorHeap(render texture RTV)",
             m_device->CreateDescriptorHeap(&rtv_desc, IID_PPV_ARGS(&rtv)));
         m_device->CreateRenderTargetView(texture, nullptr, rtv->GetCPUDescriptorHandleForHeapStart());
+        if (depth_mode == RenderBackendRenderDepth::Owned)
+        {
+            D3D12_RESOURCE_DESC depth_desc = desc;
+            depth_desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+            depth_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+            D3D12_CLEAR_VALUE clear{};
+            clear.Format = depth_desc.Format;
+            clear.DepthStencil.Depth = 1.0f;
+            checkHresult("CreateCommittedResource(render texture depth)",
+                m_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &depth_desc,
+                    D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear, IID_PPV_ARGS(&depth)));
+            D3D12_DESCRIPTOR_HEAP_DESC dsv_desc{};
+            dsv_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+            dsv_desc.NumDescriptors = 1;
+            checkHresult("CreateDescriptorHeap(render texture DSV)",
+                m_device->CreateDescriptorHeap(&dsv_desc, IID_PPV_ARGS(&dsv)));
+            m_device->CreateDepthStencilView(depth, nullptr, dsv->GetCPUDescriptorHandleForHeapStart());
+        }
         D3D12_CPU_DESCRIPTOR_HANDLE srv = m_texture_srv_heap->GetCPUDescriptorHandleForHeapStart();
         srv.ptr += slot * m_srv_descriptor_size;
         createTextureView(m_device, texture, srv);
@@ -1131,6 +1174,8 @@ RenderBackendTextureHandle D3D12Backend::Create_Render_Texture(unsigned int widt
         TextureResource &stored = m_textures[slot];
         stored.texture = texture;
         stored.rtv_heap = rtv;
+        stored.depth = depth;
+        stored.dsv_heap = dsv;
         stored.width = width;
         stored.height = height;
         stored.generation = nextResourceGeneration();
@@ -1139,26 +1184,32 @@ RenderBackendTextureHandle D3D12Backend::Create_Render_Texture(unsigned int widt
     }
     catch (...)
     {
+        releaseCom(dsv);
+        releaseCom(depth);
         releaseCom(rtv);
         releaseCom(texture);
         return {};
     }
 }
 
-bool D3D12Backend::Set_Render_Texture(RenderBackendTextureHandle handle, bool use_output_depth)
+bool D3D12Backend::Set_Render_Texture(RenderBackendTextureHandle handle, RenderBackendRenderDepth depth_mode)
 {
+    if (static_cast<unsigned int>(depth_mode) > static_cast<unsigned int>(RenderBackendRenderDepth::Owned)) return false;
     TextureResource *texture = nullptr;
     if (handle.Is_Valid())
     {
         texture = findTexture(handle);
         if (texture == nullptr || texture->rtv_heap == nullptr ||
-            (use_output_depth && (texture->width != m_width || texture->height != m_height))) return false;
+            (depth_mode == RenderBackendRenderDepth::Output && (texture->width != m_width || texture->height != m_height)) ||
+            (depth_mode == RenderBackendRenderDepth::Owned && (texture->depth == nullptr || texture->dsv_heap == nullptr))) return false;
     }
     else if (handle.slot != 0 || handle.generation != 0) return false;
-    const bool output_depth = texture != nullptr && use_output_depth;
-    if (m_scene_open && !(output_depth || (texture == nullptr && m_selected_output_depth))) return false;
+    else if (depth_mode != RenderBackendRenderDepth::None) return false;
+    const auto selected_depth = texture != nullptr ? depth_mode : RenderBackendRenderDepth::None;
+    if (m_scene_open && !(selected_depth == RenderBackendRenderDepth::Output ||
+        (texture == nullptr && m_selected_depth == RenderBackendRenderDepth::Output))) return false;
     if (handle.slot == m_selected_texture.slot && handle.generation == m_selected_texture.generation &&
-        output_depth == m_selected_output_depth) return true;
+        selected_depth == m_selected_depth) return true;
     const bool target_changed = handle.slot != m_selected_texture.slot ||
         handle.generation != m_selected_texture.generation;
     if (m_scene_open && target_changed)
@@ -1185,7 +1236,7 @@ bool D3D12Backend::Set_Render_Texture(RenderBackendTextureHandle handle, bool us
         std::memcpy(m_output_view_projection, m_view_projection, sizeof(m_view_projection));
     }
     m_selected_texture = handle;
-    m_selected_output_depth = output_depth;
+    m_selected_depth = selected_depth;
     if (texture != nullptr)
         m_viewport = {0, 0, texture->width, texture->height, 0.0f, 1.0f};
     else
@@ -1210,7 +1261,9 @@ bool D3D12Backend::Copy_Texture(RenderBackendTextureHandle destination, RenderBa
     TextureResource *dest = findTexture(destination);
     TextureResource *src = findTexture(source);
     if (m_scene_open || dest == nullptr || src == nullptr || dest == src ||
-        dest->width != src->width || dest->height != src->height) return false;
+        dest->width != src->width || dest->height != src->height ||
+        dest->texture->GetDesc().Format != DXGI_FORMAT_R8G8B8A8_UNORM ||
+        src->texture->GetDesc().Format != DXGI_FORMAT_R8G8B8A8_UNORM) return false;
     ID3D12CommandAllocator *allocator = nullptr;
     ID3D12GraphicsCommandList *list = nullptr;
     try
@@ -1414,6 +1467,7 @@ bool D3D12Backend::Configure_Output(unsigned int width, unsigned int height, boo
     {
         waitForGpu();
         m_capture_available = false;
+        m_reflection_submitted_frame = FrameCount;
         for (std::uint32_t index = 0; index < FrameCount; ++index)
         {
             releaseFrameUploads(index);
@@ -1649,7 +1703,8 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
                 (terrain->diffuse_after_layers ? 8u : 0u) |
                 (terrain->blend_secondary_by_vertex_alpha ? 16u : 0u) |
                 (terrain->flat_water ? 32u : 0u) |
-                (terrain->river_water ? 64u : 0u) : 0u, {0,0},
+                (terrain->river_water ? 64u : 0u) |
+                (terrain->sea_water ? 128u : 0u) : 0u, {0,0},
             {material->monochrome_tint[0], material->monochrome_tint[1], material->monochrome_tint[2]},
             material->monochrome_fade};
         static_assert(sizeof(Constants) == 12 * sizeof(unsigned int), "Material root constants");
@@ -1720,7 +1775,9 @@ void D3D12Backend::bindDrawState(ID3D12PipelineState *pipeline, bool screen_spac
             (terrain->blend_secondary_by_vertex_alpha ? 4u : 0u) |
             (terrain->use_constant_color ? 8u : 0u) |
             (terrain->flat_water ? 16u : 0u) |
-            (terrain->river_water ? 32u : 0u);
+            (terrain->river_water ? 32u : 0u) |
+            (terrain->sea_water ? 64u : 0u) |
+            (terrain->project_base_to_cloud ? 128u : 0u);
         constants.water_animation = terrain->flat_water_animation;
         constants.water_uv_scale = terrain->flat_water_uv_scale;
         constants.water_phase_scale = terrain->flat_water_phase_scale;
@@ -2024,7 +2081,20 @@ RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
 RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
     const RenderBackendTextureMipLevel *levels, unsigned int level_count)
 {
-    if (levels == nullptr || level_count == 0 || level_count > 15) return {};
+    return createStaticTexture(levels, level_count, DXGI_FORMAT_R8G8B8A8_UNORM, 4);
+}
+
+RenderBackendTextureHandle D3D12Backend::Create_Static_RG8_SNORM_Texture(
+    const RenderBackendTextureMipLevel *levels, unsigned int level_count)
+{
+    return createStaticTexture(levels, level_count, DXGI_FORMAT_R8G8_SNORM, 2);
+}
+
+RenderBackendTextureHandle D3D12Backend::createStaticTexture(
+    const RenderBackendTextureMipLevel *levels, unsigned int level_count,
+    unsigned int format, unsigned int bytes_per_pixel)
+{
+    if (!Is_Device_Ready() || levels == nullptr || level_count == 0 || level_count > 15) return {};
     const unsigned int width = levels[0].width, height = levels[0].height;
     if (width == 0 || height == 0 || width > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION ||
         height > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION) return {};
@@ -2033,7 +2103,7 @@ RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
     {
         const auto &level = levels[index];
         if (level.width != expected_width || level.height != expected_height || level.pixels == nullptr ||
-            level.row_pitch < expected_width*4u) return {};
+            level.row_pitch < expected_width*bytes_per_pixel) return {};
         if (index+1 < level_count && expected_width == 1 && expected_height == 1) return {};
         expected_width = std::max(1u,expected_width/2);
         expected_height = std::max(1u,expected_height/2);
@@ -2071,7 +2141,7 @@ RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
         texture_desc.Height = height;
         texture_desc.DepthOrArraySize = 1;
         texture_desc.MipLevels = static_cast<UINT16>(level_count);
-        texture_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        texture_desc.Format = static_cast<DXGI_FORMAT>(format);
         texture_desc.SampleDesc.Count = 1;
         texture_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 
@@ -2094,8 +2164,8 @@ RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
         if (upload_size > std::numeric_limits<std::size_t>::max())
             throw std::runtime_error("D3D12 mip-chain upload exceeds addressable memory");
         for (unsigned int index=0; index<level_count; ++index)
-            if (row_counts[index] != levels[index].height || row_sizes[index] < levels[index].width*4u)
-                throw std::runtime_error("unexpected D3D12 RGBA8 mip footprint");
+            if (row_counts[index] != levels[index].height || row_sizes[index] < levels[index].width*bytes_per_pixel)
+                throw std::runtime_error("unexpected D3D12 texture mip footprint");
 
         upload = createUploadBuffer(m_device,static_cast<std::size_t>(upload_size));
         D3D12_RANGE no_read{0,0};
@@ -2108,7 +2178,8 @@ RenderBackendTextureHandle D3D12Backend::Create_Static_RGBA8_Texture(
             auto *destination = static_cast<unsigned char *>(mapped) + static_cast<std::size_t>(footprint.Offset);
             for (unsigned int row=0; row<level.height; ++row)
                 std::memcpy(destination + static_cast<std::size_t>(row)*footprint.Footprint.RowPitch,
-                    level.pixels + static_cast<std::size_t>(row)*level.row_pitch,static_cast<std::size_t>(level.width)*4);
+                    level.pixels + static_cast<std::size_t>(row)*level.row_pitch,
+                    static_cast<std::size_t>(level.width)*bytes_per_pixel);
         }
         upload->Unmap(0,nullptr);
 
@@ -2470,7 +2541,34 @@ bool D3D12Backend::validTerrainDraw(RenderBackendTextureHandle base_texture,
             ((texture.slot == 0 && texture.generation == 0) || valid_texture(texture));
     };
     const bool textured = base_texture.Is_Valid();
+    if (terrain.project_base_to_cloud)
+    {
+        if (!textured || !terrain.project_world_coordinates || terrain.project_base_to_shroud ||
+            terrain.flat_water || terrain.river_water || terrain.sea_water || terrain.diffuse_after_layers ||
+            terrain.blend_secondary_by_vertex_alpha || terrain.shroud_texture.Is_Valid() ||
+            terrain.cloud_texture.Is_Valid() || terrain.noise_texture.Is_Valid() ||
+            material.texture_combine != RenderBackendTextureCombine::Modulate) return false;
+        for (float value : terrain.world_transform)
+            if (!std::isfinite(value)) return false;
+        for (unsigned int index = 0; index < 3; ++index)
+            if (!std::isfinite(terrain.cloud_noise_projection[index])) return false;
+    }
     if (terrain.flat_water_animation > 3 || (terrain.flat_water_animation != 0 && !terrain.flat_water)) return false;
+    if (terrain.sea_water)
+    {
+        if (!textured || !Is_Texture_Valid(base_texture) || !Is_Texture_Valid(terrain.shroud_texture) ||
+            !terrain.project_world_coordinates || terrain.flat_water || terrain.river_water ||
+            terrain.project_base_to_shroud || terrain.diffuse_after_layers || terrain.blend_secondary_by_vertex_alpha ||
+            terrain.cloud_texture.Is_Valid() || terrain.noise_texture.Is_Valid() ||
+            material.texture_combine != RenderBackendTextureCombine::Modulate ||
+            m_textures[base_texture.slot - 1].texture->GetDesc().Format != DXGI_FORMAT_R8G8B8A8_UNORM ||
+            m_textures[terrain.shroud_texture.slot - 1].texture->GetDesc().Format != DXGI_FORMAT_R8G8_SNORM) return false;
+        for (float value : terrain.world_transform)
+            if (!std::isfinite(value)) return false;
+        if (terrain.use_constant_color)
+            for (float value : terrain.constant_color)
+                if (!std::isfinite(value)) return false;
+    }
     if (terrain.river_water)
     {
         if (!textured || !terrain.shroud_texture.Is_Valid() || !terrain.cloud_texture.Is_Valid() ||
@@ -2713,6 +2811,8 @@ void D3D12Backend::submitScene(bool present)
     const std::uint64_t signal_value = m_next_fence_value++;
     checkHresult("ID3D12CommandQueue::Signal", m_command_queue->Signal(m_fence, signal_value));
     m_frame_fence_values[submitted_frame] = signal_value;
+    if (m_scene_uses_reflection_allocator)
+        m_reflection_submitted_frame = submitted_frame;
 
     m_scene_open = false;
     if (offscreen && m_textures[m_selected_texture.slot - 1].release_frame != FrameCount)
@@ -2788,6 +2888,8 @@ void D3D12Backend::releaseStaticGeometry(StaticGeometryResource &geometry) noexc
 
 void D3D12Backend::releaseTexture(TextureResource &texture) noexcept
 {
+    releaseCom(texture.dsv_heap);
+    releaseCom(texture.depth);
     releaseCom(texture.rtv_heap);
     releaseCom(texture.texture);
     texture.width = 0;
@@ -2869,6 +2971,8 @@ void D3D12Backend::releaseObjects() noexcept
     {
         releaseCom(allocator);
     }
+    for (auto &allocator : m_reflection_allocators) releaseCom(allocator);
+    m_reflection_submitted_frame = FrameCount;
     releaseCom(m_texture_srv_heap);
     releaseCom(m_material_sampler_heap);
     m_material_sampler_keys.clear();

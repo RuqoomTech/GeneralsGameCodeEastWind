@@ -1154,7 +1154,7 @@ void W3DDisplay::gatherDebugStats()
 #ifdef EXTENDED_STATS
 		static FILE *pListFile = nullptr;
 		static Int64 lastFrameTime=0;
-		static samples = 0;
+		static int samples = 0;
 		if (pListFile == nullptr) {
 			pListFile = fopen("FrameRateLog.txt", "w");
 		}
@@ -1236,76 +1236,76 @@ void W3DDisplay::gatherDebugStats()
 		} else if (statMode == gameOverhead) {
 			gameOverheadMS = ms;
 			statMode = console;
-			DX8Wrapper::stats.m_disableTerrain = true;
-			DX8Wrapper::stats.m_disableOverhead = true;
-			DX8Wrapper::stats.m_disableWater = true;
-			DX8Wrapper::stats.m_disableObjects = true;
-			DX8Wrapper::stats.m_disableConsole = false;
-			DX8Wrapper::stats.m_debugLinesToShow = 1;
+			Debug_Statistics::Extended_Stats.m_disableTerrain = true;
+			Debug_Statistics::Extended_Stats.m_disableOverhead = true;
+			Debug_Statistics::Extended_Stats.m_disableWater = true;
+			Debug_Statistics::Extended_Stats.m_disableObjects = true;
+			Debug_Statistics::Extended_Stats.m_disableConsole = false;
+			Debug_Statistics::Extended_Stats.m_debugLinesToShow = 1;
 		} else if (statMode == console) {
 			consoleMS = ms;
 			statMode = threeDOverhead;
-			DX8Wrapper::stats.m_disableTerrain = true;
-			DX8Wrapper::stats.m_disableOverhead = true;
-			DX8Wrapper::stats.m_disableWater = true;
-			DX8Wrapper::stats.m_disableObjects = true;
-			DX8Wrapper::stats.m_disableConsole = true;
-			DX8Wrapper::stats.m_debugLinesToShow = 1;
+			Debug_Statistics::Extended_Stats.m_disableTerrain = true;
+			Debug_Statistics::Extended_Stats.m_disableOverhead = true;
+			Debug_Statistics::Extended_Stats.m_disableWater = true;
+			Debug_Statistics::Extended_Stats.m_disableObjects = true;
+			Debug_Statistics::Extended_Stats.m_disableConsole = true;
+			Debug_Statistics::Extended_Stats.m_debugLinesToShow = 1;
 		} else if (statMode == threeDOverhead) {
 			threeDOverheadMS = ms;
 			statMode = terrain;
-			DX8Wrapper::stats.m_disableTerrain = false;
-			DX8Wrapper::stats.m_disableOverhead = true;
-			DX8Wrapper::stats.m_disableWater = true;
-			DX8Wrapper::stats.m_disableObjects = true;
-			DX8Wrapper::stats.m_disableConsole = true;
-			DX8Wrapper::stats.m_debugLinesToShow = 1;
+			Debug_Statistics::Extended_Stats.m_disableTerrain = false;
+			Debug_Statistics::Extended_Stats.m_disableOverhead = true;
+			Debug_Statistics::Extended_Stats.m_disableWater = true;
+			Debug_Statistics::Extended_Stats.m_disableObjects = true;
+			Debug_Statistics::Extended_Stats.m_disableConsole = true;
+			Debug_Statistics::Extended_Stats.m_debugLinesToShow = 1;
 		} else if (statMode == terrain) {
 			terrainMS = ms;
 			statMode = objects;
-			DX8Wrapper::stats.m_disableOverhead = true;
-			DX8Wrapper::stats.m_disableTerrain = true;
-			DX8Wrapper::stats.m_disableWater = true;
-			DX8Wrapper::stats.m_disableObjects = false;
-			DX8Wrapper::stats.m_disableConsole = true;
-			DX8Wrapper::stats.m_debugLinesToShow = 1;
+			Debug_Statistics::Extended_Stats.m_disableOverhead = true;
+			Debug_Statistics::Extended_Stats.m_disableTerrain = true;
+			Debug_Statistics::Extended_Stats.m_disableWater = true;
+			Debug_Statistics::Extended_Stats.m_disableObjects = false;
+			Debug_Statistics::Extended_Stats.m_disableConsole = true;
+			Debug_Statistics::Extended_Stats.m_debugLinesToShow = 1;
 		} else if (statMode == objects) {
 			objectMS = ms;
 			statMode = overlap;
-			DX8Wrapper::stats.m_disableOverhead = false;
-			DX8Wrapper::stats.m_disableTerrain = false;
-			DX8Wrapper::stats.m_disableWater = false;
-			DX8Wrapper::stats.m_disableObjects = false;
-			DX8Wrapper::stats.m_disableConsole = true;
-			DX8Wrapper::stats.m_sleepTime = (int)(terrainMS);
-			DX8Wrapper::stats.m_debugLinesToShow = 1;
+			Debug_Statistics::Extended_Stats.m_disableOverhead = false;
+			Debug_Statistics::Extended_Stats.m_disableTerrain = false;
+			Debug_Statistics::Extended_Stats.m_disableWater = false;
+			Debug_Statistics::Extended_Stats.m_disableObjects = false;
+			Debug_Statistics::Extended_Stats.m_disableConsole = true;
+			Debug_Statistics::Extended_Stats.m_sleepTime = (int)(terrainMS);
+			Debug_Statistics::Extended_Stats.m_debugLinesToShow = 1;
 		} else if (statMode == overlap) {
 			overlapMS = ms;
 			statMode = normal;
-			DX8Wrapper::stats.m_disableOverhead = false;
-			DX8Wrapper::stats.m_disableTerrain = false;
-			DX8Wrapper::stats.m_disableWater = false;
-			DX8Wrapper::stats.m_disableObjects = false;
-			DX8Wrapper::stats.m_disableConsole = true;
-			DX8Wrapper::stats.m_sleepTime = 0;
-			DX8Wrapper::stats.m_debugLinesToShow = 1;
+			Debug_Statistics::Extended_Stats.m_disableOverhead = false;
+			Debug_Statistics::Extended_Stats.m_disableTerrain = false;
+			Debug_Statistics::Extended_Stats.m_disableWater = false;
+			Debug_Statistics::Extended_Stats.m_disableObjects = false;
+			Debug_Statistics::Extended_Stats.m_disableConsole = true;
+			Debug_Statistics::Extended_Stats.m_sleepTime = 0;
+			Debug_Statistics::Extended_Stats.m_debugLinesToShow = 1;
 		} else if (statMode == normal) {
 			overlapMS = (ms + ((int)terrainMS) - overlapMS );
 			statMode = disabled;
 			extendedStats = SHOW_STATS_TIME;
 
 			// Done collecting stats. Re-enable stuff
-			DX8Wrapper::stats.m_disableConsole = false;
-			DX8Wrapper::stats.m_debugLinesToShow = -1;
-		} else if (!DX8Wrapper::stats.m_showingStats) {
+			Debug_Statistics::Extended_Stats.m_disableConsole = false;
+			Debug_Statistics::Extended_Stats.m_debugLinesToShow = -1;
+		} else if (!Debug_Statistics::Extended_Stats.m_showingStats) {
 			// start collecting extended info.
-			DX8Wrapper::stats.m_showingStats = true;
-			DX8Wrapper::stats.m_disableOverhead = false;
-			DX8Wrapper::stats.m_disableTerrain = true;
-			DX8Wrapper::stats.m_disableWater = true;
-			DX8Wrapper::stats.m_disableObjects = true;
-			DX8Wrapper::stats.m_disableConsole = true;
-			DX8Wrapper::stats.m_debugLinesToShow = 1;
+			Debug_Statistics::Extended_Stats.m_showingStats = true;
+			Debug_Statistics::Extended_Stats.m_disableOverhead = false;
+			Debug_Statistics::Extended_Stats.m_disableTerrain = true;
+			Debug_Statistics::Extended_Stats.m_disableWater = true;
+			Debug_Statistics::Extended_Stats.m_disableObjects = true;
+			Debug_Statistics::Extended_Stats.m_disableConsole = true;
+			Debug_Statistics::Extended_Stats.m_debugLinesToShow = 1;
 			statMode = sync;
 			gameOverheadMS = 0.0f;
 			threeDOverheadMS = 0.0f;
@@ -1667,9 +1667,9 @@ void W3DDisplay::drawDebugStats()
 
 	int linesOfStrings = DisplayStringCount;
 #ifdef EXTENDED_STATS
-	if (DX8Wrapper::stats.m_debugLinesToShow > -1)
+	if (Debug_Statistics::Extended_Stats.m_debugLinesToShow > -1)
 	{
-		linesOfStrings = DX8Wrapper::stats.m_debugLinesToShow;
+		linesOfStrings = Debug_Statistics::Extended_Stats.m_debugLinesToShow;
 	}
 
 #endif
@@ -1902,7 +1902,7 @@ AGAIN:
 #ifdef EXTENDED_STATS
 	else
 	{
-		DX8Wrapper::stats.m_showingStats = false;
+		Debug_Statistics::Extended_Stats.m_showingStats = false;
 	}
 #endif
 
@@ -2144,7 +2144,7 @@ AGAIN:
 	} while (freezeTime && !TheTacticalView->isCameraMovementFinished());
 
 #ifdef EXTENDED_STATS
-	if (DX8Wrapper::stats.m_disableOverhead) {
+	if (Debug_Statistics::Extended_Stats.m_disableOverhead) {
 		goto AGAIN;
 	}
 #endif

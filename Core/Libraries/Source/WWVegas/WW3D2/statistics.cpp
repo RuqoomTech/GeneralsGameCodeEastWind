@@ -30,6 +30,17 @@
 #include "osdep.h"
 #endif
 
+#ifdef EXTENDED_STATS
+Debug_Statistics::ExtendedStatistics::ExtendedStatistics()
+	: m_showingStats(false), m_disableTerrain(false), m_disableWater(false),
+	  m_disableObjects(false), m_disableOverhead(false), m_disableConsole(false),
+	  m_debugLinesToShow(-1), m_sleepTime(0)
+{
+}
+
+Debug_Statistics::ExtendedStatistics Debug_Statistics::Extended_Stats;
+#endif
+
 // ----------------------------------------------------------------------------
 //
 // Texture memory tracking system

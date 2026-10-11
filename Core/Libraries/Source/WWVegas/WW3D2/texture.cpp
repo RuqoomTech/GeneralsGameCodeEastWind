@@ -205,13 +205,26 @@ bool TextureClass::Ensure_Renderer_Texture()
     if(!changed) for(std::size_t i=0;i<CpuImage->levels.size();++i)
         changed=changed || CpuImage->levels[i]->Get_Revision()!=CpuImage->uploaded_revisions[i];
     if(!changed && Get_Renderer_Texture().Is_Valid()) return true;
-    std::vector<TextureLoader::RGBA8MipLevel> images(CpuImage->levels.size());
+    std::vector<TextureLoader::RGBA8MipLevel> images;
     std::vector<RenderBackendTextureMipLevel> levels;
-    for(std::size_t i=0;i<images.size();++i) {
-        if(!Surface_To_RGBA(*CpuImage->levels[i],images[i])) return false;
-        levels.push_back({images[i].width,images[i].height,images[i].width*4,images[i].pixels.data()});
+    RenderBackendTextureHandle handle;
+    if (TextureFormat == WW3D_FORMAT_U8V8) {
+        for (const auto &surface : CpuImage->levels) {
+            SurfaceClass::SurfaceDescription desc{}; surface->Get_Description(desc);
+            int pitch=0;
+            const auto *pixels=static_cast<const SurfaceClass *>(surface.Peek())->Peek_CPU_Pixels(&pitch);
+            if (!pixels || pitch <= 0 || desc.Format != WW3D_FORMAT_U8V8) return false;
+            levels.push_back({desc.Width,desc.Height,static_cast<unsigned>(pitch),pixels});
+        }
+        handle=backend->Create_Static_RG8_SNORM_Texture(levels.data(),static_cast<unsigned>(levels.size()));
+    } else {
+        images.resize(CpuImage->levels.size());
+        for(std::size_t i=0;i<images.size();++i) {
+            if(!Surface_To_RGBA(*CpuImage->levels[i],images[i])) return false;
+            levels.push_back({images[i].width,images[i].height,images[i].width*4,images[i].pixels.data()});
+        }
+        handle=backend->Create_Static_RGBA8_Texture(levels.data(),static_cast<unsigned>(levels.size()));
     }
-    const auto handle=backend->Create_Static_RGBA8_Texture(levels.data(),static_cast<unsigned>(levels.size()));
     if(!handle.Is_Valid()) return false;
     if(RendererTexture.Is_Valid() && RendererOwner==backend) backend->Release_Texture(RendererTexture);
     RendererOwner=backend; RendererTexture=handle; RendererMipLevelCount=static_cast<unsigned>(levels.size());
@@ -405,6 +418,12 @@ void TextureBaseClass::Load_Locked_Surface()
 */
 bool TextureBaseClass::Is_Missing_Texture()
 {
+	if (Uses_CPU_Image && Get_Asset_Type() == TEX_REGULAR) {
+		// CPU asset preparation must not upload a throwaway RGBA texture merely
+		// to distinguish a missing source from the loader's fallback image.
+		TextureClass *texture = As_TextureClass();
+		return !texture->Ensure_CPU_Image() || RendererTextureMissing;
+	}
 	if (RendererTexture.Is_Valid()) return RendererTextureMissing;
 	bool flag = false;
 	IDirect3DBaseTexture8 *missing_texture = MissingTexture::_Get_Missing_Texture();

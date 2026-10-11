@@ -43,14 +43,7 @@
 //			  setting up a few custom shaders that are selected based on video
 //			  card features.
 //
-//			  To add a new shader to the system:
-//			  0) Add your shader to the ShaderTypes enum
-//			  1) Create shader using W3DShaderInterface
-//			  2) Repeat step 1 for any alternate shaders
-//			  3) Create list of alternate shaders sorted by order of preference.
-//				 The first shader which passes hardware validation will be selected.
-//			  4) Add list from step 3) to MasterShaderList[].
-//
+// Migrated material shaders are owned by WW3D/IRenderBackend canonical HLSL.
 //-----------------------------------------------------------------------------
 
 #include "WW3D2/dx8wrapper.h"
@@ -75,56 +68,6 @@
 
 namespace
 {
-
-D3DMATRIX Multiply_Legacy_Shader_Matrices(const D3DMATRIX &a, const D3DMATRIX &b)
-{
-	D3DMATRIX result = {};
-	for (int row = 0; row < 4; ++row) {
-		for (int column = 0; column < 4; ++column) {
-			result.m[row][column] =
-				a.m[row][0] * b.m[0][column] +
-				a.m[row][1] * b.m[1][column] +
-				a.m[row][2] * b.m[2][column] +
-				a.m[row][3] * b.m[3][column];
-		}
-	}
-	return result;
-}
-
-void Make_Legacy_Shader_Translation(D3DMATRIX &matrix, float x, float y, float z)
-{
-	matrix = {};
-	matrix.m[0][0] = 1.0f;
-	matrix.m[1][1] = 1.0f;
-	matrix.m[2][2] = 1.0f;
-	matrix.m[3][0] = x;
-	matrix.m[3][1] = y;
-	matrix.m[3][2] = z;
-	matrix.m[3][3] = 1.0f;
-}
-
-void Make_Legacy_Shader_Scaling(D3DMATRIX &matrix, float x, float y, float z)
-{
-	matrix = {};
-	matrix.m[0][0] = x;
-	matrix.m[1][1] = y;
-	matrix.m[2][2] = z;
-	matrix.m[3][3] = 1.0f;
-}
-
-void Invert_Legacy_Shader_Matrix(D3DMATRIX &inverse, float &determinant, const D3DMATRIX &matrix)
-{
-	const Matrix4x4 neutral_matrix = To_Matrix4x4(matrix);
-	Matrix4x4 neutral_inverse;
-	if (Matrix4x4::Inverse(&neutral_inverse, &determinant, &neutral_matrix) != nullptr) {
-		To_D3DMATRIX(inverse, neutral_inverse);
-	}
-}
-
-HRESULT Set_Legacy_Pixel_Shader_Constant(DWORD shader_register, const Vector4 &value)
-{
-	return DX8Wrapper::_Get_D3D_Device8()->SetPixelShaderConstant(shader_register, &value.X, 1);
-}
 
 Bool Build_Screen_Filter_Quad(Int outputWidth, Int outputHeight, RenderBackendTexturedVertex (&vertices)[4])
 {
@@ -168,33 +111,9 @@ RenderBackendMaterialState Screen_Filter_Material()
 // Turn this on to turn off pixel shaders. jba[4/3/2003]
 #define do_not_DISABLE_PIXEL_SHADERS 1
 
-/** Interface definition for custom shaders we define in our app.  These shaders can perform more complex
-	operations than those allowed in the WW3D2 shader system.
-*/
-class W3DShaderInterface
-{
-public:
-	Int getNumPasses() {return m_numPasses;};	///<return number of passes needed for this shader
-	virtual Int set(Int pass) {return TRUE;};		///<setup shader for the specified rendering pass.
-	 ///do any custom resetting necessary to bring W3D in sync.
-	virtual void reset() {
-		ShaderClass::Invalidate();
-		DX8Wrapper::_Get_D3D_Device8()->SetTexture(0, nullptr);
-		DX8Wrapper::_Get_D3D_Device8()->SetTexture(1, nullptr);};
-	virtual Int init() = 0;			///<perform any one time initialization and validation
-	virtual Int shutdown() { return TRUE;};			///<release resources used by shader
-protected:
-	Int m_numPasses;						///<number of passes to complete shader
-};
-
 //this table will contain custom versions of each shader tuned for specific video card and user options.
 static W3DFilterInterface *W3DFilters[FT_MAX];
-static W3DShaderInterface *W3DShaders[W3DShaderManager::ST_MAX];
-static Int W3DShadersPassCount[W3DShaderManager::ST_MAX];	//number of passes for each of the above shaders
-TextureClass *W3DShaderManager::m_Textures[8];
-W3DShaderManager::ShaderTypes W3DShaderManager::m_currentShader;
 FilterTypes W3DShaderManager::m_currentFilter=FT_NULL_FILTER; ///< Last filter that was set.
-Int W3DShaderManager::m_currentShaderPass;
 ChipsetType W3DShaderManager::m_currentChipset;
 GraphicsVenderID W3DShaderManager::m_currentVendor;
 __int64 W3DShaderManager::m_driverVersion;
@@ -263,14 +182,14 @@ Bool W3DShaderManager::startBackendCapture(Bool preserveColor, Bool *newCapture)
 	if (!m_backendCapture)
 	{
 		m_backendCaptureHasScene = false;
-		m_backendCapture = WW3D::Create_Render_Texture(width, height, true);
+		m_backendCapture = WW3D::Create_Render_Texture(width, height, RenderBackendRenderDepth::Output);
 		if (!m_backendCapture) return false;
 		m_backendCaptureWidth = width;
 		m_backendCaptureHeight = height;
 	}
 	if (newCapture) *newCapture = !m_backendCaptureHasScene;
 	// The scene reapplies its camera after selection; output state is saved by the backend.
-	if (!WW3D::Set_Render_Texture(m_backendCapture, true)) return false;
+	if (!WW3D::Set_Render_Texture(m_backendCapture, RenderBackendRenderDepth::Output)) return false;
 	m_backendOutputWriteMask = backend->Get_Pass_Color_Write_Mask();
 	m_backendCaptureOwner = backend;
 	m_backendCapturing = true;
@@ -685,129 +604,15 @@ Bool ScreenMotionBlurFilter::setup(FilterModes mode)
 	return true;
 }
 
-/*===========================================================================================*/
-/*=========      Shroud Shaders	=============================================================*/
-/*===========================================================================================*/
-
-///Shroud layer rendering shader
-class ShroudTextureShader : public W3DShaderInterface
-{
-	virtual Int set(Int pass) override;		///<setup shader for the specified rendering pass.
-	virtual Int init() override;			///<perform any one time initialization and validation
-	virtual void reset() override;		///<do any custom resetting necessary to bring W3D in sync.
-	Int m_stageOfSet;
-} shroudTextureShader;
-
-///List of different shroud shader implementations in order of preference
-W3DShaderInterface *ShroudShaderList[]=
-{
-	&shroudTextureShader,
-	nullptr
-};
-
-//#define SHROUD_STRETCH_FACTOR	(1.0f/MAP_XY_FACTOR)	//1 texel per heightmap cell width
-
-Int ShroudTextureShader::init()
-{
-	W3DShaders[W3DShaderManager::ST_SHROUD_TEXTURE]=&shroudTextureShader;
-	W3DShadersPassCount[W3DShaderManager::ST_SHROUD_TEXTURE]=1;
-
-	return TRUE;
-}
-
-//Setup a texture projection in the given stage that applies our shroud.
-Int ShroudTextureShader::set(Int stage)
-{
-	//force WW3D2 system to set it's states so it won't later overwrite our custom settings.
-	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
-	REF_PTR_RELEASE(vmat);	//no need to keep a reference since it's a preset.
-	DX8Wrapper::Set_Texture(stage, W3DShaderManager::getShaderTexture(0));	//shroud always stored in texture 0
-
-	if (stage == 0)
-	{
-#if defined(RTS_DEBUG)
-	if (TheGlobalData && TheGlobalData->m_fogOfWarOn)
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetAlphaSpriteShader);
-	else
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetMultiplicativeSpriteShader);
-#else
-	DX8Wrapper::Set_Shader(ShaderClass::_PresetMultiplicativeSpriteShader);
-#endif
-	}
-	DX8Wrapper::Apply_Render_State_Changes();
-
-	DX8Wrapper::Set_DX8_Texture_Stage_State(stage,  D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_CAMERASPACEPOSITION);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(stage,  D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT2);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC,D3DCMP_EQUAL);
-
-	//We need to scale so shroud texel stretches over one full terrain cell.  Each texel
-	//is 1/128 the size of full texture. (assuming 128x128 vid-mem texture).
-	W3DShroud *shroud;
-	if ((shroud=TheTerrainRenderObject->getShroud()) != nullptr)
-	{	///@todo: All this code really only need to be done once per camera/view.  Find a way to optimize it out.
-		D3DMATRIX curView;
-		DX8Wrapper::_Get_DX8_Transform(D3DTS_VIEW, curView);
-
-		D3DMATRIX inv;
-		float det;
-		Invert_Legacy_Shader_Matrix(inv, det, curView);
-
-		D3DMATRIX scale,offset;
-
-		//We need to make all world coordinates be relative to the heightmap data origin since that
-		//is where the shroud begins.
-
-		float xoffset = 0;
-		float yoffset = 0;
-		Real width=shroud->getCellWidth();
-		Real height=shroud->getCellHeight();
-
-		if (TheTerrainRenderObject->getMap())
-		{	//subtract origin position from all coordinates.  Origin is shifted by 1 cell width/height to allow for unused border texels.
-			xoffset = -(float)shroud->getDrawOriginX() + width;
-			yoffset = -(float)shroud->getDrawOriginY() + height;
-		}
-
-		Make_Legacy_Shader_Translation(offset, xoffset, yoffset, 0.0f);
-
-		width = 1.0f/(width*shroud->getTextureWidth());
-		height = 1.0f/(height*shroud->getTextureHeight());
-		Make_Legacy_Shader_Scaling(scale, width, height, 1.0f);
-		curView = Multiply_Legacy_Shader_Matrices(Multiply_Legacy_Shader_Matrices(inv, offset), scale);
-		DX8Wrapper::_Set_DX8_Transform((D3DTRANSFORMSTATETYPE )(D3DTS_TEXTURE0+stage), curView);
-	}
-	m_stageOfSet=stage;
-	return TRUE;
-}
-
-void ShroudTextureShader::reset()
-{
-	DX8Wrapper::Set_Texture(m_stageOfSet,nullptr);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZFUNC,D3DCMP_LESSEQUAL);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(m_stageOfSet,  D3DTSS_TEXCOORDINDEX, m_stageOfSet);
-	DX8Wrapper::Set_DX8_Texture_Stage_State(m_stageOfSet,  D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
-}
-
 // Local renderer cloud animation; projection is evaluated by canonical HLSL.
 static float terrainCloudOffsetX = 0;
 static float terrainCloudOffsetY = 0;
-
-/** List of all custom shader lists - each list in this list contains variations of the same
-	shader to allow it to work on different hardware configurations.
-*/
-W3DShaderInterface **MasterShaderList[]=
-{
-	ShroudShaderList,
-	nullptr
-};
 
 // W3DShaderManager::W3DShaderManager =========================================
 /** Constructor - just clears some variables */
 //=============================================================================
 W3DShaderManager::W3DShaderManager()
 {
-	m_currentShader = ST_INVALID;
 	m_currentFilter = FT_NULL_FILTER;
 	m_oldRenderSurface = nullptr;
 	m_renderTexture = nullptr;
@@ -815,18 +620,10 @@ W3DShaderManager::W3DShaderManager()
 	m_oldDepthSurface = nullptr;
 	m_renderingToTexture = false;
 	Int i;
-	for (i=0; i<W3DShaderManager::ST_MAX; i++)
-	{	W3DShaders[i]=nullptr;
-		W3DShadersPassCount[i]=0;
-	}
 	for (i=0; i<FT_MAX; i++)
 	{	W3DFilters[i]=nullptr;
 	}
-	for (i=0; i<8; i++)
-	{
-		m_Textures[i]=nullptr;
-	}
-	m_currentShader=(W3DShaderManager::ShaderTypes)-1;
+
 }
 
 // W3DShaderManager::init =======================================================
@@ -839,8 +636,6 @@ void W3DShaderManager::init()
 	screenMotionBlurFilter.init();
 	screenCrossFadeFilter.init();
 	terrainCloudOffsetX = terrainCloudOffsetY = 0;
-	int i,j;
-
 	D3DSURFACE_DESC desc;
 	// For now, check & see if we are gf3 or higher on the food chain.
 
@@ -891,17 +686,6 @@ void W3DShaderManager::init()
 		}
 	}
 
-	W3DShaderInterface **shaders;
-
-	for (i=0; MasterShaderList[i] != nullptr; i++)
-	{
-		shaders=MasterShaderList[i];
-		for (j=0; shaders[j] != nullptr; j++)
-		{
-			if (shaders[j]->init())
-				break;	//found a working shader
-		}
-	}
 	DEBUG_LOG(("ShaderManager ChipsetID %d", res));
 }
 
@@ -920,16 +704,8 @@ void W3DShaderManager::shutdown()
 	SAFE_RELEASE(m_renderTexture);
 	SAFE_RELEASE(m_oldRenderSurface);
 	SAFE_RELEASE(m_oldDepthSurface);
-	m_currentShader = ST_INVALID;
 	m_currentFilter = FT_NULL_FILTER;
-	//release any assets associated with a shader (vertex/pixel shaders, textures, etc.)
 	Int i=0;
-	for (; i<W3DShaderManager::ST_MAX; i++) {
-		if (W3DShaders[i]) {
-			W3DShaders[i]->shutdown();
-		}
-	}
-
 	for (i=0; i < FT_MAX; i++)
 	{
 		if (W3DFilters[i])
@@ -960,47 +736,6 @@ void W3DShaderManager::updateCloud()
 	terrainCloudOffsetY -= static_cast<Int>(terrainCloudOffsetY);
 }
 
-// W3DShaderManager::getShaderPasses =======================================================
-/** Return number of renderig passes required in perform the desired shader on current
-	hardware.  App will need to re-render the polygons this many times to complete the
-	effect.
- */
-//=============================================================================
-Int W3DShaderManager::getShaderPasses(ShaderTypes shader)
-{
-	return W3DShadersPassCount[shader];
-}
-
-// W3DShaderManager::setShader =======================================================
-/** Must call this method before each rendering pass in order to perform proper D3D
-	setup for each shader.
- */
-//=============================================================================
-Int W3DShaderManager::setShader(ShaderTypes shader, Int pass)
-{
-	if (shader == m_currentShader && pass == m_currentShaderPass)
-		return TRUE;	//shader is already set
-	m_currentShader=shader;
-	m_currentShaderPass = pass;
-	if (W3DShaders[shader])
-		return W3DShaders[shader]->set(pass);
-	return FALSE;
-}
-
-// W3DShaderManager::resetShader =======================================================
-/** Must call this method after all polygons and rendering passes have been submitted.
-	This method allows D3D to reset itself to a default state that doesn't conflict
-	with the WW3D2 Shader system.
- */
-//=============================================================================
-void W3DShaderManager::resetShader(ShaderTypes shader)
-{
-	if (m_currentShader == ST_INVALID)
-		return;	//last shader is already reset.
-	if (W3DShaders[shader])
-		W3DShaders[shader]->reset();
-	m_currentShader = ST_INVALID;
-}
 // W3DShaderManager::filterPreRender =======================================================
 /** Call to view filter shaders before rendering starts.
  */
@@ -1266,70 +1001,6 @@ ChipsetType W3DShaderManager::getChipset()
 	}
 
 	return chip;
-}
-
-//=============================================================================
-// WaterRenderObjClass::LoadAndCreateShader
-//=============================================================================
-/** Loads and creates a D3D pixel or vertex shader.*/
-//=============================================================================
-HRESULT W3DShaderManager::LoadAndCreateD3DShader(const char* strFilePath, const DWORD* pDeclaration, DWORD Usage, Bool ShaderType, DWORD* pHandle)
-{
-	if (getChipset() < DC_GENERIC_PIXEL_SHADER_1_1)
-		return E_FAIL;	//don't allow loading any shaders if hardware can't handle it.
-
-	try
-	{
-		File *file = nullptr;
-		HRESULT hr;
-
-		file = TheFileSystem->openFile(strFilePath, File::READ | File::BINARY);
-		if (file == nullptr)
-		{
-			OutputDebugString("Could not find file \n" );
-			return E_FAIL;
-		}
-
-		FileInfo fileInfo;
-		TheFileSystem->getFileInfo(AsciiString(strFilePath), &fileInfo);
-		DWORD dwFileSize = fileInfo.sizeLow;
-
-		const DWORD* pShader = (DWORD*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dwFileSize);
-		if (!pShader)
-		{
-			OutputDebugString( "Failed to allocate memory to load shader\n " );
-			return E_FAIL;
-		}
-
-		file->read((void *)pShader, dwFileSize);
-
-		file->close();
-		file = nullptr;
-
-		if (ShaderType) // SHADERTYPE_VERTEX
-		{
-			hr = DX8Wrapper::_Get_D3D_Device8()->CreateVertexShader(pDeclaration, pShader, pHandle, Usage);
-		}
-		else // SHADERTYPE_PIXEL
-		{
-			hr = DX8Wrapper::_Get_D3D_Device8()->CreatePixelShader(pShader, pHandle);
-		}
-
-		HeapFree(GetProcessHeap(), 0, (void*)pShader);
-
-		if (FAILED(hr))
-		{
-			OutputDebugString( "Failed to create shader\n ");
-			return E_FAIL;
-		}
-	}
-	catch(...)
-	{
-		OutputDebugString( "Error opening file \n" );
-		return E_FAIL;
-	}
-
-	return S_OK;
 }
 
 //For the MP test, we're enforcing high min-spec requirements that need to be verified.

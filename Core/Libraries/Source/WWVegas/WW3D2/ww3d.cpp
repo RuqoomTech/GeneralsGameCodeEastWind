@@ -646,10 +646,13 @@ WW3DErrorType WW3D::Set_Device_Resolution(int width,int height,int bits,int wind
  *   3/24/98    GTH : Created.                                                                 *
  *   1/25/2001  gth : converted to dx8                                                         *
  *=============================================================================================*/
-TextureClass *WW3D::Create_Render_Texture(unsigned width, unsigned height, bool use_output_depth)
+TextureClass *WW3D::Create_Render_Texture(unsigned width, unsigned height)
+{ return Create_Render_Texture(width,height,RenderBackendRenderDepth::None); }
+
+TextureClass *WW3D::Create_Render_Texture(unsigned width, unsigned height, RenderBackendRenderDepth depth)
 {
 	if (RenderBackend == nullptr) return nullptr;
-	const RenderBackendTextureHandle handle = RenderBackend->Create_Render_Texture(width, height, use_output_depth);
+	const RenderBackendTextureHandle handle = RenderBackend->Create_Render_Texture(width, height, depth);
 	if (!handle.Is_Valid()) return nullptr;
 	try {
 		return new TextureClass(width, height, handle, RenderBackend);
@@ -659,12 +662,15 @@ TextureClass *WW3D::Create_Render_Texture(unsigned width, unsigned height, bool 
 	}
 }
 
-bool WW3D::Set_Render_Texture(TextureClass *texture, bool use_output_depth)
+bool WW3D::Set_Render_Texture(TextureClass *texture)
+{ return Set_Render_Texture(texture,RenderBackendRenderDepth::None); }
+
+bool WW3D::Set_Render_Texture(TextureClass *texture, RenderBackendRenderDepth depth)
 {
 	if (RenderBackend == nullptr) return false;
 	if (texture == nullptr) return RenderBackend->Set_Render_Texture({});
 	const RenderBackendTextureHandle handle = texture->Get_Renderer_Texture();
-	return handle.Is_Valid() && RenderBackend->Set_Render_Texture(handle, use_output_depth);
+	return handle.Is_Valid() && RenderBackend->Set_Render_Texture(handle, depth);
 }
 
 void WW3D::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)

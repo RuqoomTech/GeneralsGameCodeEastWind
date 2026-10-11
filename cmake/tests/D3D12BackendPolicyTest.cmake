@@ -512,9 +512,7 @@ rts_policy_require_absent(
     "To_D3DXMATRIX"
     "unused D3DX8 matrix conversion should remain deleted rather than perpetuating D3DX8")
 
-# Step 05H1S: the active Evolution water source must not depend on D3DX8 math.
-# The archival inline ps.1.1 assembler remains isolated to the non-Evolution
-# reference branch until the real water caller is translated through D3D12.
+# Water callers now use renderer-neutral geometry and canonical HLSL.
 rts_policy_require_absent(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
     "d3dx8math.h"
@@ -522,7 +520,7 @@ rts_policy_require_absent(
 rts_policy_require_absent(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
     "D3DXMATRIX"
-    "Evolution water matrix math must use D3DMATRIX plus WWMath")
+    "Evolution water matrix math must use renderer-neutral WWMath")
 rts_policy_require_absent(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
     "D3DXVECTOR4"
@@ -539,14 +537,34 @@ rts_policy_require_contains(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
     "Update_Static_Indexed_Terrain_Geometry"
     "river vertex changes must update retained GPU geometry through the backend")
-rts_policy_require_contains(
+rts_policy_require_absent(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
     "Build_Water_World_View_Projection_Constants"
-    "water vertex-shader constants must preserve the legacy transposed WVP calculation through WWMath")
+    "migrated sea vertices must transform through canonical HLSL rather than native shader constants")
 rts_policy_require_absent(
     "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
     "D3DXAssembleShader"
     "migrated river shader assembly must stay retired")
+
+foreach(_water_owner IN ITEMS
+    Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp
+    Core/GameEngineDevice/Include/W3DDevice/GameClient/W3DWater.h)
+    rts_policy_require_absent("${_water_owner}" "DX8" "water must retain backend geometry rather than native buffers")
+    rts_policy_require_absent("${_water_owner}" "dx8" "water must keep native backend headers retired")
+    rts_policy_require_absent("${_water_owner}" "LPDIRECT3D" "water resources must use the shared texture owner")
+endforeach()
+rts_policy_require_contains(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "terrain.sea_water" "the actual sea caller must select the canonical signed bump/reflection shader")
+rts_policy_require_contains(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "RenderBackendRenderDepth::Owned" "sea reflection must own its independent depth target")
+rts_policy_require_contains(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
+    "terrain.project_base_to_cloud" "reflected sky scrolling must use the GPU projection route")
+rts_policy_require_absent(
+    "Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp"
+    "ShroudTextureShader" "migrated shroud callers must not restore native shader registration")
 
 message(STATUS "D3D12 backend policy passed: the in-place renderer owns canonical HLSL, persistent geometry, sampled textures, the Step05H real Render2D path, and active Evolution shader/tree/water math no longer depends on D3DX8")
 

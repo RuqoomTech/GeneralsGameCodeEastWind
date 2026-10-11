@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <array>
+#include <limits>
 
 namespace
 {
@@ -1079,6 +1080,353 @@ bool verifyForegroundTerrainAndWireframe(IRenderBackend &backend)
     return ok;
 }
 
+bool verifySeaReflectionDepth(IRenderBackend &backend)
+{
+    const auto reflection=backend.Create_Render_Texture(256,256,RenderBackendRenderDepth::Owned);
+    RenderBackendTextureHandle snapshots[3];
+    for (auto &snapshot:snapshots) snapshot=backend.Create_Render_Texture(256,256);
+    const unsigned short indices[]={0,2,1,0,3,2};
+    RenderBackendTexturedVertex quad[]={
+        {-.8f,-.8f,.3f,1,0,0,1,0,1}, {-.8f,.8f,.3f,1,0,0,1,0,0},
+        {.8f,.8f,.3f,1,0,0,1,1,0}, {.8f,-.8f,.3f,1,0,0,1,1,1}};
+    RenderBackendMaterialState scene;
+    scene.cull=RenderBackendCullMode::None;
+    Matrix4x4 camera(true);
+    camera[0][0]=camera[1][1]=.25f;
+    camera[0][3]=.5f; camera[1][3]=-.5f;
+    backend.Set_Viewport({80,60,480,360,0,1}); backend.Set_View_Projection(camera);
+    backend.Clear(true,true,Vector3(0,0,1),1,.25f,0);
+    backend.Begin_Scene(); backend.End_Scene(false);
+    unsigned width=0,height=0;
+    std::vector<unsigned char> pixels;
+    bool ok=reflection.Is_Valid() && backend.Read_Output_RGBA8(width,height,pixels);
+    for (const auto snapshot:snapshots) ok=snapshot.Is_Valid() && ok;
+    ok=!backend.Create_Render_Texture(256,256,static_cast<RenderBackendRenderDepth>(3)).Is_Valid() &&
+        !backend.Set_Render_Texture(snapshots[0],RenderBackendRenderDepth::Owned) && ok;
+    const auto retainedOutput=pixels;
+    ok=backend.Set_Render_Texture(reflection,RenderBackendRenderDepth::Owned) && ok;
+    int targetWidth=0,targetHeight=0;
+    ok=backend.Get_Render_Target_Size(targetWidth,targetHeight) && targetWidth==256 && targetHeight==256 &&
+        backend.Has_Stencil() && ok;
+    backend.Set_View_Projection(Matrix4x4(true));
+    backend.Clear(true,true,Vector3(0,0,0),1,.6f,0); backend.Begin_Scene();
+    // The original display-format reflection target had no alpha channel.
+    // Keep sampled alpha at one even for reflected draws with zero alpha.
+    const auto outputMask=backend.Get_Pass_Color_Write_Mask();
+    ok=backend.Set_Pass_Color_Write_Mask(7) && ok;
+    for (auto &v:quad) v.a=0;
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},scene) && ok;
+    for (auto &v:quad) { v.z=.5f; v.r=0; v.g=1; }
+    // The farther green surface must fail against reflection's independent Z.
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},scene) &&
+        !backend.Set_Render_Texture({}) && ok;
+    backend.End_Scene(false);
+    ok=backend.Copy_Texture(snapshots[0],reflection) && ok;
+    backend.Begin_Scene();
+    backend.Clear(false,true,Vector3(0,0,0),1,.6f,0);
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},scene) && ok;
+    backend.End_Scene(false);
+    ok=backend.Copy_Texture(snapshots[1],reflection) && ok;
+    backend.Begin_Scene();
+    // Color-only clear preserves the reflection Z; a farther red draw fails.
+    backend.Clear(true,false,Vector3(0,0,1),1);
+    for (auto &v:quad) { v.z=.55f; v.r=1; v.g=0; }
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},scene) && ok;
+    backend.End_Scene(false);
+    ok=backend.Copy_Texture(snapshots[2],reflection) && ok;
+    backend.Begin_Scene();
+    for (auto &v:quad) { v.z=.45f; v.r=0; v.g=1; }
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},scene) && ok;
+    backend.End_Scene(false);
+    ok=backend.Read_Output_RGBA8(width,height,pixels) && pixels==retainedOutput && ok;
+    ok=backend.Set_Pass_Color_Write_Mask(outputMask) && ok;
+    for (auto &v:quad) v.a=1;
+    ok=backend.Set_Render_Texture({}) && ok;
+    Matrix4x4 restored; backend.Get_View_Projection(restored);
+    for (unsigned row=0;row<4;++row) for (unsigned column=0;column<4;++column)
+        ok=restored[row][column]==camera[row][column] && ok;
+    backend.Begin_Scene();
+    for (auto &v:quad) { v.z=.3f; v.r=1; v.g=0; }
+    // Reflection clears did not replace the output's .25 depth.
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},scene) && ok;
+    backend.End_Scene(false);
+    ok=backend.Read_Output_RGBA8(width,height,pixels) && pixels==retainedOutput && ok;
+    backend.Begin_Scene();
+    for (auto &v:quad) { v.z=.2f; v.r=0; v.g=1; }
+    ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},scene) && ok;
+    backend.End_Scene(false);
+    const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    ok=read && ok;
+    if (read) {
+        const auto marker=(330u*640+440u)*4;
+        ok=pixels[marker]==0 && pixels[marker+1]==255 && pixels[marker+2]==0 &&
+            pixels[(10u*640+10u)*4+2]==255 && ok;
+    }
+    backend.Flip_To_Primary();
+    backend.Set_Viewport({0,0,640,480,0,1}); backend.Set_View_Projection(Matrix4x4(true));
+    scene.depth_test=RenderBackendDepthTest::Disabled; scene.depth_write=false;
+    scene.texture_combine=RenderBackendTextureCombine::Replace;
+    scene.sampler.min_filter=scene.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    for (auto &v:quad) { v.r=v.g=v.b=v.a=1; }
+    backend.Clear(true,true,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
+    for (unsigned sample=0;sample<4;++sample) {
+        const float left=sample%2 ? .1f : -.9f;
+        const float bottom=sample<2 ? .1f : -.9f;
+        quad[0].x=quad[1].x=left; quad[2].x=quad[3].x=left+.8f;
+        quad[0].y=quad[3].y=bottom; quad[1].y=quad[2].y=bottom+.8f;
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,
+            sample<3 ? snapshots[sample] : reflection,scene) && ok;
+    }
+    backend.End_Scene(false);
+    const bool sampled=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    ok=sampled && ok;
+    if (sampled) {
+        const unsigned centers[]={120u*640+160u,120u*640+480u,360u*640+160u,360u*640+480u};
+        const unsigned channels[]={0,1,2,1};
+        for (unsigned sample=0;sample<4;++sample) for (unsigned channel=0;channel<4;++channel)
+            ok=pixels[centers[sample]*4+channel]==(channel==3 || channel==channels[sample] ? 255 : 0) && ok;
+    }
+    backend.Flip_To_Primary();
+    // Submit reflection and immediately record its consumer with no readback,
+    // copy, or CPU synchronization between scenes. Both dynamic vertex uploads
+    // must survive until the main scene's fence, across swapchain frame reuse.
+    quad[0].x=quad[1].x=-.8f; quad[2].x=quad[3].x=.8f;
+    quad[0].y=quad[3].y=-.8f; quad[1].y=quad[2].y=.8f;
+    for (unsigned frame=0;frame<4;++frame) {
+        scene.texture_combine=RenderBackendTextureCombine::Modulate;
+        scene.depth_test=RenderBackendDepthTest::Disabled; scene.depth_write=false;
+        for (auto &v:quad) { v.r=frame%2 ? 0.f : 1.f; v.g=frame%2 ? 1.f : 0.f; v.b=0; v.a=0; }
+        ok=backend.Set_Render_Texture(reflection,RenderBackendRenderDepth::Owned) && ok;
+        backend.Set_View_Projection(Matrix4x4(true));
+        backend.Set_Pass_Color_Write_Mask(7);
+        backend.Clear(true,true,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,{},scene) && ok;
+        backend.End_Scene(false);
+        backend.Set_Pass_Color_Write_Mask(outputMask);
+        ok=backend.Set_Render_Texture({}) && ok;
+        backend.Set_View_Projection(Matrix4x4(true));
+        scene.texture_combine=RenderBackendTextureCombine::Replace;
+        for (auto &v:quad) { v.a=1; v.u=v.v=.5f; }
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        ok=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,reflection,scene) && ok;
+        backend.End_Scene(false);
+        const bool captured=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        ok=captured && ok;
+        if (captured) {
+            const auto center=(240u*width+320u)*4;
+            ok=pixels[center]==(frame%2 ? 0 : 255) && pixels[center+1]==(frame%2 ? 255 : 0) &&
+                pixels[center+2]==0 && pixels[center+3]==255 && ok;
+        }
+        backend.Flip_To_Primary();
+    }
+    backend.Release_Texture(reflection);
+    for (const auto snapshot:snapshots) backend.Release_Texture(snapshot);
+    if (!ok) std::cerr << "Independent sea reflection depth, clear or output restoration failed.\n";
+    return ok;
+}
+
+bool verifySkyProjection(IRenderBackend &backend)
+{
+    const unsigned char texels[]={200,100,40,240, 16,240,32,64, 64,16,240,96, 32,64,16,128};
+    const auto texture=backend.Create_Static_RGBA8_Texture(2,2,texels,8);
+    const RenderBackendTerrainVertex vertices[]={
+        {-.8f,-.8f,.4f,.8f,.6f,.4f,.5f,.9f,.9f,0,0,0,0,0,0},
+        {-.8f,.8f,.4f,.8f,.6f,.4f,.5f,.9f,.9f,0,0,0,0,0,0},
+        {.8f,.8f,.4f,.8f,.6f,.4f,.5f,.9f,.9f,0,0,0,0,0,0},
+        {.8f,-.8f,.4f,.8f,.6f,.4f,.5f,.9f,.9f,0,0,0,0,0,0}};
+    const unsigned short indices[]={0,2,1,0,3,2};
+    const auto geometry=backend.Create_Static_Indexed_Terrain_Geometry(vertices,4,indices,6);
+    bool ok=texture.Is_Valid() && backend.Is_Geometry_Valid(geometry);
+    RenderBackendTerrainState sky;
+    sky.project_world_coordinates=true; sky.project_base_to_cloud=true;
+    sky.world_transform[0]=sky.world_transform[5]=.5f;
+    sky.world_transform[3]=.3f; sky.world_transform[7]=-.2f;
+    sky.cloud_noise_projection[0]=.5f;
+    RenderBackendMaterialState material;
+    material.cull=RenderBackendCullMode::None; material.depth_test=RenderBackendDepthTest::Always;
+    material.depth_write=false; material.color_write_mask=7;
+    material.sampler.min_filter=material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    material.sampler.mipmaps=false;
+    backend.Set_Viewport({0,0,640,480,0,1});
+    for (unsigned frame=0;frame<3;++frame) {
+        Matrix4x4 camera(true); camera[0][3]=frame==1 ? .2f : 0.f;
+        backend.Set_View_Projection(camera);
+        sky.cloud_noise_projection[1]=frame==0 ? .1f : frame==1 ? .6f : -.4f;
+        sky.cloud_noise_projection[2]=frame==1 ? .85f : .35f;
+        backend.Reset_Frame_Statistics();
+        backend.Clear(true,true,Vector3(0,0,0),.7f,1,0); backend.Begin_Scene();
+        const bool drew=backend.Draw_Static_Indexed_Terrain_Geometry(geometry,texture,material,sky);
+        backend.End_Scene(false);
+        unsigned width=0,height=0; std::vector<unsigned char> pixels;
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        bool passed=drew && read && backend.Get_Frame_Statistics().static_geometry_uploads==0;
+        if (read) {
+            const unsigned texel=frame==0 ? 0 : frame==1 ? 3 : 1;
+            const float diffuse[]={.8f,.6f,.4f};
+            for (unsigned c=0;c<3;++c)
+                passed=std::abs(int(pixels[(288*width+416)*4+c])-int(std::lround(texels[texel*4+c]*diffuse[c])))<=2 && passed;
+            passed=std::abs(int(pixels[(288*width+416)*4+3])-179)<=1 && passed;
+        }
+        if (!passed) std::cerr << "GPU sky world projection/scroll frame " << frame << " failed.\n";
+        ok=passed && ok; backend.Flip_To_Primary();
+    }
+    backend.Begin_Scene();
+    sky.project_base_to_shroud=true;
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,texture,material,sky) && ok;
+    sky.project_base_to_shroud=false; sky.cloud_noise_projection[1]=std::numeric_limits<float>::infinity();
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,texture,material,sky) && ok;
+    backend.End_Scene(false); backend.Flip_To_Primary();
+    backend.Set_View_Projection(Matrix4x4(true));
+    backend.Release_Static_Geometry(geometry); backend.Release_Texture(texture);
+    return ok;
+}
+
+bool verifySeaWater(IRenderBackend &backend)
+{
+    // Signed components select four different reflection quadrants; alpha is
+    // reflected alpha times diffuse alpha, independently of the bump values.
+    const unsigned char reflectionPixels[]={
+        224,32,64,64, 48,192,96,192, 80,112,208,128, 160,224,48,224};
+    const auto reflection=backend.Create_Static_RGBA8_Texture(2,2,reflectionPixels,8);
+    const unsigned char signedPixels[6][4]={
+        {64,64,0,0},{192,64,0,0},{64,192,0,0},{192,192,0,0},
+        {129,0,127,0},{128,128,0,0}};
+    RenderBackendTextureHandle bumps[6];
+    bool ok=reflection.Is_Valid();
+    for (unsigned i=0;i<6;++i) {
+        const RenderBackendTextureMipLevel level={i==4 ? 2u : 1u,1,i==4 ? 4u : 2u,signedPixels[i]};
+        bumps[i]=backend.Create_Static_RG8_SNORM_Texture(&level,1);
+        ok=bumps[i].Is_Valid() && ok;
+    }
+    RenderBackendTerrainVertex quad[]={
+        {-.98f,-.98f,.4f,.8f,.6f,.4f,.5f,1.5f,-.5f,0,0,0,0,0,0},
+        {-.98f,.98f,.4f,.8f,.6f,.4f,.5f,1.5f,-.5f,0,0,0,0,0,0},
+        {.98f,.98f,.4f,.8f,.6f,.4f,.5f,1.5f,-.5f,0,0,0,0,0,0},
+        {.98f,-.98f,.4f,.8f,.6f,.4f,.5f,1.5f,-.5f,0,0,0,0,0,0}};
+    const unsigned short indices[]={0,2,1,0,3,2};
+    const auto geometry=backend.Create_Static_Indexed_Terrain_Geometry(quad,4,indices,6);
+    ok=backend.Is_Geometry_Valid(geometry) && ok;
+    RenderBackendMaterialState material;
+    material.cull=RenderBackendCullMode::None; material.depth_write=false;
+    material.sampler.min_filter=material.sampler.mag_filter=RenderBackendTextureFilter::Point;
+    material.sampler.address_u=material.sampler.address_v=RenderBackendTextureAddress::Clamp;
+    material.sampler.mipmaps=false;
+    RenderBackendTerrainState terrain;
+    terrain.sea_water=true; terrain.project_world_coordinates=true;
+    terrain.shroud_sampler.min_filter=terrain.shroud_sampler.mag_filter=RenderBackendTextureFilter::Point;
+    terrain.shroud_sampler.mipmaps=false;
+    terrain.shroud_sampler.address_u=terrain.shroud_sampler.address_v=RenderBackendTextureAddress::Wrap;
+    backend.Set_Viewport({0,0,640,480,0,1}); backend.Set_View_Projection(Matrix4x4(true));
+    unsigned width=0,height=0,testCase=0;
+    std::vector<unsigned char> pixels;
+    auto color=[&](unsigned texel) {
+        std::array<float,4> result{};
+        const float diffuse[]={.8f,.6f,.4f,.5f};
+        for (unsigned c=0;c<4;++c) result[c]=reflectionPixels[texel*4+c]/255.f*diffuse[c];
+        return result;
+    };
+    auto finish=[&](bool drew,unsigned x,unsigned y,const std::array<float,4> &expected) {
+        ++testCase; backend.End_Scene(false);
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        bool passed=drew && read;
+        if (read) for (unsigned c=0;c<4;++c)
+            passed=std::abs(int(pixels[(y*width+x)*4+c])-int(std::lround(expected[c]*255)))<=2 && passed;
+        if (!passed) {
+            std::cerr << "Sea-water pixel case " << testCase << " failed (draw=" << drew << ", read=" << read << ")";
+            if (read) for (unsigned c=0;c<4;++c)
+                std::cerr << ' ' << int(pixels[(y*width+x)*4+c]) << '/' << std::lround(expected[c]*255);
+            std::cerr << '\n';
+        }
+        backend.Flip_To_Primary(); ok=passed && ok;
+    };
+    for (unsigned frame=0;frame<4;++frame) {
+        terrain.shroud_texture=bumps[frame];
+        backend.Reset_Frame_Statistics();
+        backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+        const bool drew=backend.Draw_Static_Indexed_Terrain_Geometry(geometry,reflection,material,terrain);
+        ok=backend.Is_Geometry_Valid(geometry) && backend.Get_Frame_Statistics().static_geometry_uploads==0 && ok;
+        const unsigned texel=(frame==1 || frame==3 ? 0u : 1u)+(frame>=2 ? 0u : 2u);
+        finish(drew,320,240,color(texel));
+    }
+    // Addressing is independent: reflection clamps even when signed bumps
+    // move outside its image, while authored bump coordinates wrap.
+    terrain.shroud_texture=bumps[5];
+    backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+    finish(backend.Draw_Static_Indexed_Terrain_Geometry(geometry,reflection,material,terrain),16,16,color(0));
+    terrain.shroud_texture=bumps[0];
+    material.source_blend=RenderBackendBlendFactor::SourceAlpha;
+    material.destination_blend=RenderBackendBlendFactor::InverseSourceAlpha;
+    const std::array<float,4> background={26.f/255,51.f/255,77.f/255,191.f/255};
+    auto blended=color(3);
+    for (unsigned c=0;c<4;++c) blended[c]=blended[c]*color(3)[3]+background[c]*(1-color(3)[3]);
+    backend.Clear(true,true,Vector3(background[0],background[1],background[2]),background[3],1,0);
+    backend.Begin_Scene();
+    finish(backend.Draw_Static_Indexed_Terrain_Geometry(geometry,reflection,material,terrain),320,240,blended);
+    material.source_blend=RenderBackendBlendFactor::One; material.destination_blend=RenderBackendBlendFactor::Zero;
+    // Filter the signed -1/+1 components, not unsigned bytes followed by a
+    // sign conversion. The wrapped midpoint is exactly zero in signed space.
+    terrain.shroud_texture=bumps[4];
+    terrain.shroud_sampler.min_filter=terrain.shroud_sampler.mag_filter=RenderBackendTextureFilter::Linear;
+    backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+    finish(backend.Draw_Static_Indexed_Terrain_Geometry(geometry,reflection,material,terrain),330,240,color(3));
+    backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+    finish(backend.Draw_Static_Indexed_Terrain_Geometry(geometry,reflection,material,terrain),315,240,color(2));
+    terrain.shroud_sampler.min_filter=terrain.shroud_sampler.mag_filter=RenderBackendTextureFilter::Point;
+    const unsigned char zeroPixels[]={0,0};
+    const RenderBackendTextureMipLevel zeroLevel={1,1,2,zeroPixels};
+    const auto zeroBump=backend.Create_Static_RG8_SNORM_Texture(&zeroLevel,1);
+    const RenderBackendTextureMipLevel shortRow={2,1,2,signedPixels[4]};
+    ok=zeroBump.Is_Valid() && !backend.Create_Static_RG8_SNORM_Texture(&zeroLevel,0).Is_Valid() &&
+        !backend.Create_Static_RG8_SNORM_Texture(&shortRow,1).Is_Valid() && ok;
+    terrain.shroud_texture=zeroBump;
+    RenderBackendTerrainVertex triangle[]={
+        {-.4f,-.4f,.2f,.8f,.6f,.4f,.5f,0,0,0,0,0,0,0,0},
+        {.8f,-.4f,.2f,.8f,.6f,.4f,.5f,0,0,0,0,0,0,0,0},
+        {-.4f,.6f,.2f,.8f,.6f,.4f,.5f,0,0,0,0,0,0,0,0}};
+    const unsigned short triangleIndices[]={0,1,2};
+    Matrix4x4 camera(true); camera[3][0]=.6f;
+    backend.Set_View_Projection(camera);
+    // The original VS divides clip XY by W before writing the interpolator.
+    // Perspective interpolation then divides by W again. At this pixel the
+    // original left quadrant differs from fragment-space projection's right.
+    const float px=2*(356.5f/640)-1, py=1-2*(267.5f/480);
+    std::array<float,3> x{},y{},w{};
+    for (unsigned i=0;i<3;++i) { w[i]=1+.6f*triangle[i].x; x[i]=triangle[i].x/w[i]; y[i]=triangle[i].y/w[i]; }
+    const float determinant=(y[1]-y[2])*(x[0]-x[2])+(x[2]-x[1])*(y[0]-y[2]);
+    const float a=((y[1]-y[2])*(px-x[2])+(x[2]-x[1])*(py-y[2]))/determinant;
+    const float b=((y[2]-y[0])*(px-x[2])+(x[0]-x[2])*(py-y[2]))/determinant;
+    const float weights[]={a,b,1-a-b};
+    float u=0,v=0,total=0;
+    for (unsigned i=0;i<3;++i) { const float weight=weights[i]/w[i]; u+=(x[i]*.5f+.5f)*weight; v+=(.5f-y[i]*.5f)*weight; total+=weight; }
+    u/=total; v/=total;
+    const unsigned expectedTexel=(u>=.5f ? 1u : 0u)+(v>=.5f ? 2u : 0u);
+    ok=a>0 && b>0 && a+b<1 && expectedTexel!=((px>=0 ? 1u : 0u)+(py<=0 ? 2u : 0u)) && ok;
+    backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+    finish(backend.Draw_Indexed_Terrain_Triangles(triangle,3,triangleIndices,3,reflection,material,terrain),356,267,color(expectedTexel));
+    backend.Set_View_Projection(Matrix4x4(true));
+    terrain.shroud_texture=reflection;
+    backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+    ok=!backend.Draw_Static_Indexed_Terrain_Geometry(geometry,reflection,material,terrain) && ok;
+    backend.End_Scene(false); backend.Flip_To_Primary();
+    // Force another SRV heap growth while a signed bump texture is live; its
+    // rebuilt descriptor must retain RG8_SNORM rather than the RGBA8 default.
+    std::vector<RenderBackendTextureHandle> growthTextures;
+    const unsigned char white[]={255,255,255,255};
+    for (unsigned i=0;i<270;++i) {
+        growthTextures.push_back(backend.Create_Static_RGBA8_Texture(1,1,white,4));
+        ok=growthTextures.back().Is_Valid() && ok;
+    }
+    terrain.shroud_texture=bumps[3];
+    backend.Clear(true,true,Vector3(0,0,0),0,1,0); backend.Begin_Scene();
+    finish(backend.Draw_Static_Indexed_Terrain_Geometry(geometry,reflection,material,terrain),320,240,color(0));
+    for (const auto texture:growthTextures) backend.Release_Texture(texture);
+    backend.Release_Texture(zeroBump); backend.Release_Texture(reflection);
+    for (const auto bump:bumps) backend.Release_Texture(bump);
+    backend.Release_Static_Geometry(geometry);
+    if (!ok) std::cerr << "Sea signed bump, reflected RGBA or vertex projection failed.\n";
+    return ok;
+}
+
 bool verifyFlatWater(IRenderBackend &backend)
 {
     // The real flat-water shader uses authored tile UVs for both water and
@@ -2017,9 +2365,9 @@ bool verifyMonochromeSceneCapture(IRenderBackend &backend)
             backend.Set_View_Projection(camera);
             backend.Clear(true,true,Vector3(0,0,1),.75f,.5f,0);
             backend.Begin_Scene();
-            if (!target.Is_Valid()) target = backend.Create_Render_Texture(640,480,true);
-            ok = target.Is_Valid() && !backend.Set_Render_Texture(wrongSize,true) &&
-                backend.Set_Render_Texture(target,true) && ok;
+            if (!target.Is_Valid()) target = backend.Create_Render_Texture(640,480,RenderBackendRenderDepth::Output);
+            ok = target.Is_Valid() && !backend.Set_Render_Texture(wrongSize,RenderBackendRenderDepth::Output) &&
+                backend.Set_Render_Texture(target,RenderBackendRenderDepth::Output) && ok;
             backend.Clear(true,false,Vector3(0,0,0),.25f);
             ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,source,scene) && ok;
             // A farther draw must fail against the shared DSV written in capture.
@@ -2069,7 +2417,7 @@ bool verifyMonochromeSceneCapture(IRenderBackend &backend)
     backend.Set_Viewport({0,0,640,480,0,1});
     backend.Clear(true,true,Vector3(0,0,1),.75f,.5f,0);
     backend.Begin_Scene();
-    ok = columnTexture.Is_Valid() && backend.Set_Render_Texture(target,true) && ok;
+    ok = columnTexture.Is_Valid() && backend.Set_Render_Texture(target,RenderBackendRenderDepth::Output) && ok;
     backend.Clear(true,false,Vector3(0,0,0),.25f);
     ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,columnTexture,scene) && ok;
     ok = backend.Set_Render_Texture({}) && ok;
@@ -2233,7 +2581,7 @@ bool verifyMotionBlurSceneCapture(IRenderBackend &backend)
     const unsigned char overlayPixel[]{17,230,110,3};
     const auto source = backend.Create_Static_RGBA8_Texture(640,1,columns.data(),640*4);
     const auto overlay = backend.Create_Static_RGBA8_Texture(1,1,overlayPixel,4);
-    const auto target = backend.Create_Render_Texture(640,480,true);
+    const auto target = backend.Create_Render_Texture(640,480,RenderBackendRenderDepth::Output);
     const unsigned short indices[]{0,2,1,0,3,2};
     RenderBackendTexturedVertex full[] = {
         {-1,-1,.4f,1,1,1,1,0,1}, {-1,1,.4f,1,1,1,1,0,0},
@@ -2269,7 +2617,7 @@ bool verifyMotionBlurSceneCapture(IRenderBackend &backend)
     };
     backend.Clear(true,true,Vector3(0,0,1),.75f,.5f,0);
     backend.Begin_Scene();
-    ok = backend.Set_Render_Texture(target,true) && ok;
+    ok = backend.Set_Render_Texture(target,RenderBackendRenderDepth::Output) && ok;
     backend.Clear(true,false,Vector3(0,0,0),0);
     ok = backend.Draw_Indexed_Material_Triangles(full,4,indices,6,source,scene) && ok;
     ok = backend.Set_Render_Texture({}) && ok;
@@ -2316,7 +2664,7 @@ bool verifyMotionBlurSceneCapture(IRenderBackend &backend)
     // must still fail the shared depth test, proving this update kept the DSV.
     backend.Clear(true,false,Vector3(0,0,1),.75f);
     backend.Begin_Scene();
-    ok = backend.Set_Render_Texture(target,true) && ok;
+    ok = backend.Set_Render_Texture(target,RenderBackendRenderDepth::Output) && ok;
     RenderBackendMaterialState alphaOnly=composite;
     alphaOnly.source_blend=RenderBackendBlendFactor::One;
     alphaOnly.destination_blend=RenderBackendBlendFactor::Zero;
@@ -2696,7 +3044,7 @@ int main()
         return 15;
     }
     if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifyFlatWater(*backend) || !verifyRiverWater(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyProjectedMeshShroud(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyMotionBlurSceneCapture(*backend) || !verifySceneWriteMasks(*backend) || !verifyCrossFadeComposite(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
+        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifySeaReflectionDepth(*backend) || !verifySeaWater(*backend) || !verifySkyProjection(*backend) || !verifyFlatWater(*backend) || !verifyRiverWater(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyProjectedMeshShroud(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyMotionBlurSceneCapture(*backend) || !verifySceneWriteMasks(*backend) || !verifyCrossFadeComposite(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
         delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
         std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
         return 18;

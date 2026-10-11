@@ -46,8 +46,6 @@ typedef UnsignedByte W3DShroudLevel;
 class W3DShroudMaterialPassClass : public MaterialPassClass
 {
 public:
-	virtual void	Install_Materials() const override;
-	virtual void	UnInstall_Materials() const override;
 	// Terrain and mesh overlays share the shroud sampler and world-XY projection.
 	bool Prepare_Terrain_Pass(RenderBackendMaterialState &material,
 		RenderBackendTerrainState &terrain, TextureClass *&texture) const;

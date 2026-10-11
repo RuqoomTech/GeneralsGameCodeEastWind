@@ -58,6 +58,7 @@
 #include "WW3D2/meshrenderer.h"
 #include "WW3D2/sortingrenderer.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/statistics.h"
 #include "WW3D2/light.h"
 #include "WW3D2/matpass.h"
 #include "WW3D2/IRenderBackend.h"
@@ -1152,7 +1153,7 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 		return;
 	}
 #ifdef EXTENDED_STATS
-	if (DX8Wrapper::stats.m_disableObjects) {
+	if (Debug_Statistics::Extended_Stats.m_disableObjects) {
 		return;
 	}
 #endif

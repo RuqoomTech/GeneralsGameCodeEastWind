@@ -129,6 +129,7 @@ enum class RenderBackendDecalBlendMode
 // the asset's fixed-width ShaderClass representation remains above the backend.
 enum class RenderBackendDepthTest { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always, Disabled };
 enum class RenderBackendBlendFactor { Zero, One, SourceColor, InverseSourceColor, SourceAlpha, InverseSourceAlpha, DestinationColor, DestinationAlpha, InverseDestinationAlpha };
+enum class RenderBackendRenderDepth { None, Output, Owned };
 enum class RenderBackendCullMode { None, Clockwise, CounterClockwise };
 enum class RenderBackendTextureCombine { Replace, Modulate, Add, Modulate2X };
 enum class RenderBackendAlphaTest { Disabled, GreaterEqual, LessEqual };
@@ -235,10 +236,12 @@ struct RenderBackendTerrainState
     bool project_world_coordinates = false;
     bool diffuse_after_layers = false;
     bool project_base_to_shroud = false; // Separate bridge shroud pass; texture Replace ignores diffuse.
+    bool project_base_to_cloud = false; // Sky base UVs use the world XY projection and scroll offset.
     bool blend_secondary_by_vertex_alpha = false;
     bool use_constant_color = false; // Terrain clear-line pass retains geometry and overrides lighting.
     bool flat_water = false; // Authored tile/sparkle UVs, projected noise and RGB-only shroud.
     bool river_water = false; // Secondary=edge, cloud=sparkle; tile V stores authored river progress.
+    bool sea_water = false; // Base=reflection, secondary=signed RG bump; authored tile UVs address bump.
     unsigned int flat_water_animation = 0; // 0 authored UVs, 1 flat, 2 feathered flat, 3 water grid.
     float flat_water_uv_scale = 1.0f / 150.0f;
     float flat_water_phase_scale = 0.0f;
@@ -292,11 +295,13 @@ public:
         return true;
     }
     unsigned int Get_Pass_Color_Write_Mask() const { return m_pass_color_write_mask; }
-    // Projected-shadow textures use RGBA8 color-only targets. Selection is
+    // Shadows use color-only targets; sea reflections own matching depth.
+    // Output-depth captures may switch within a scene. Other selection is
     // between scenes; an empty handle restores output viewport/camera state.
     virtual RenderBackendTextureHandle Create_Render_Texture(unsigned int width, unsigned int height,
-        bool use_output_depth = false) = 0;
-    virtual bool Set_Render_Texture(RenderBackendTextureHandle texture, bool use_output_depth = false) = 0;
+        RenderBackendRenderDepth depth = RenderBackendRenderDepth::None) = 0;
+    virtual bool Set_Render_Texture(RenderBackendTextureHandle texture,
+        RenderBackendRenderDepth depth = RenderBackendRenderDepth::None) = 0;
     virtual bool Get_Render_Target_Size(int &width, int &height) const = 0;
     // Whole RGBA8 level-zero copy, between scenes, with matching dimensions.
     virtual bool Copy_Texture(RenderBackendTextureHandle destination, RenderBackendTextureHandle source) = 0;
@@ -436,6 +441,9 @@ public:
 
     virtual RenderBackendTextureHandle Create_Static_RGBA8_Texture(
         const RenderBackendTextureMipLevel *levels, unsigned int level_count) = 0;
+    // Two signed normalized byte components; pitches and pixel views are bytes.
+    virtual RenderBackendTextureHandle Create_Static_RG8_SNORM_Texture(
+        const RenderBackendTextureMipLevel *, unsigned int) { return {}; }
 
     virtual bool Is_Texture_Valid(RenderBackendTextureHandle texture) const = 0;
     // World-space decal batches: texture * diffuse, clamp/no mipmaps, LEQUAL,
