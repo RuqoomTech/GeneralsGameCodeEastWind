@@ -599,3 +599,9 @@ Validation receipts:
 Next inspect actual shader-manager capture/capability and smudge callers. Prove obsolete capture entry points have no callers before retiring them; the smudge effect's native capture accessor is a real caller and must cross the backend seam coherently. Prefer GPU capture, transforms, projection and retained geometry over CPU readback/per-vertex work. Continue using the real serial target as the migration queue.
 
 Normal game link/boot, D3D12 creation in that executable, first visible game/UI frame, complete DX8 removal, measured speedup, sealing and user Windows sign-off remain unproven. SDL3 Step06 and major W3X runtime work remain deferred. Keep the persistent goal active.
+
+
+## 2026-10-11 — Review of 3bf4ef6e..f0021f294 and upstream sync
+
+- Reviewed the 116 commits since the roadmap baseline. Findings and a prioritized improvement list are in `Modernization/REVIEW_2026-10-11.md`. No code was changed by the review.
+- Upstream import (161 commits, staged git merge on `sync/upstream-2026-10-11`) is recorded in `Modernization/History/UPSTREAM_SYNC_2026-10.md`.
