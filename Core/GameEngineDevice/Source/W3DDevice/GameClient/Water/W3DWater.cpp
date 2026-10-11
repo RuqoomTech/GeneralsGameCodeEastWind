@@ -267,6 +267,7 @@ struct WaterRenderObjClass::BackendWaterGeometry
     std::vector<unsigned short> grid_indices;
     RenderBackendGeometryHandle grid_geometry;
     bool grid_has_heights = false;
+    bool grid_dirty = true;
     int grid_x = 0, grid_y = 0;
     float grid_cell_size = 0;
     bool warned = false;
@@ -2169,9 +2170,13 @@ void WaterRenderObjClass::renderWaterMesh()
         cache.failure("invalid water grid dimensions"); return;
     }
     if (cache.grid_x != mx || cache.grid_y != my || cache.grid_cell_size != m_gridCellSize) {
-        backend->Release_Static_Geometry(cache.grid_geometry);
-        cache.grid_geometry = {};
+        if (cache.grid_x != mx || cache.grid_y != my) {
+            // Different row topology requires different index data.
+            backend->Release_Static_Geometry(cache.grid_geometry);
+            cache.grid_geometry = {};
+        }
         cache.grid_has_heights = false;
+        cache.grid_dirty = true;
         cache.grid_vertices.resize(static_cast<std::size_t>(mx)*my);
         cache.grid_indices.clear();
         // The old strip [next-row,current-row,...] alternated these windings.
@@ -2190,8 +2195,7 @@ void WaterRenderObjClass::renderWaterMesh()
     if (m_gridGeometryDirty || !cache.grid_has_heights) {
         for (int y=0; y<my; ++y) for (int x=0; x<mx; ++x)
             cache.grid_vertices[y*mx+x].z = m_meshData[(y+1)*(mx+2)+x+1].height;
-        backend->Release_Static_Geometry(cache.grid_geometry);
-        cache.grid_geometry = {};
+        cache.grid_dirty = true;
         cache.grid_has_heights = true;
         m_gridGeometryDirty = FALSE;
     }
@@ -2206,20 +2210,20 @@ void WaterRenderObjClass::renderWaterMesh()
     terrain.flat_water_phase_scale = PI/(8*MAP_XY_FACTOR);
     for (int row=0; row<3; ++row) for (int column=0; column<4; ++column)
         terrain.world_transform[row*4+column] = Transform[row][column];
-    bool submitted = false;
-    if (m_meshInMotion) {
-        // Changing simulation heights use the existing per-frame upload path;
-        // don't allocate/wait on persistent buffers on every physics update.
-        submitted = backend->Draw_Indexed_Terrain_Triangles(cache.grid_vertices.data(),
+    if (!backend->Is_Geometry_Valid(cache.grid_geometry)) {
+        cache.grid_geometry = backend->Create_Static_Indexed_Terrain_Geometry(cache.grid_vertices.data(),
             static_cast<unsigned>(cache.grid_vertices.size()), cache.grid_indices.data(),
-            static_cast<unsigned>(cache.grid_indices.size()), texture, material, terrain);
-    } else {
-        if (!backend->Is_Geometry_Valid(cache.grid_geometry))
-            cache.grid_geometry = backend->Create_Static_Indexed_Terrain_Geometry(cache.grid_vertices.data(),
-                static_cast<unsigned>(cache.grid_vertices.size()), cache.grid_indices.data(),
-                static_cast<unsigned>(cache.grid_indices.size()));
-        submitted = backend->Draw_Static_Indexed_Terrain_Geometry(cache.grid_geometry,texture,material,terrain);
+            static_cast<unsigned>(cache.grid_indices.size()));
+        if (!backend->Is_Geometry_Valid(cache.grid_geometry)) { cache.failure("water grid GPU geometry unavailable"); return; }
+        cache.grid_dirty = false;
+    } else if (cache.grid_dirty) {
+        // Height changes copy only vertices on the active command list. The
+        // retained index buffer and handle survive motion without fence waits.
+        if (!backend->Update_Static_Indexed_Terrain_Geometry(cache.grid_geometry,cache.grid_vertices.data(),
+            static_cast<unsigned>(cache.grid_vertices.size()))) { cache.failure("water grid GPU height update failed"); return; }
+        cache.grid_dirty = false;
     }
+    const bool submitted = backend->Draw_Static_Indexed_Terrain_Geometry(cache.grid_geometry,texture,material,terrain);
     if (!submitted) cache.failure("D3D12 water grid submission failed");
     else cache.warned = false;
 }
@@ -2489,14 +2493,32 @@ void WaterRenderObjClass::drawRiverWater(PolygonTrigger *pTrig)
         cache.failure("invalid river polygon"); return;
     }
     auto &river = cache.rivers[pTrig->getID()];
-    bool same = river.river_start == riverStart && river.points.size() == static_cast<std::size_t>(count);
-    for (Int i=0; same && i<count; ++i) {
+    bool sameXY = river.river_start == riverStart && river.points.size() == static_cast<std::size_t>(count);
+    bool same = sameXY;
+    for (Int i=0; sameXY && i<count; ++i) {
         const auto &point = *pTrig->getPoint(i), &old = river.points[i];
-        same = point.x == old.x && point.y == old.y && point.z == old.z;
+        sameXY = point.x == old.x && point.y == old.y;
+        same = same && sameXY && point.z == old.z;
     }
-    if (!same) {
-        backend->Release_Static_Geometry(river.geometry);
-        river.geometry = {};
+    if (!same && sameXY) {
+        // Scripted water-height changes leave lengths, UV progress and indices
+        // intact. Update cached Z and the same GPU vertex buffer asynchronously.
+        for (Int i=0; i<count; ++i) river.points[i].z = pTrig->getPoint(i)->z;
+        Int inner = riverStart, outer = inner+1;
+        for (std::size_t i=0; i<river.vertices.size()/2; ++i) {
+            river.vertices[i*2].z = static_cast<Real>(river.points[outer].z);
+            river.vertices[i*2+1].z = static_cast<Real>(river.points[inner].z);
+            if (++outer == count) outer = 0;
+            if (--inner < 0) inner = count-1;
+        }
+        river.dirty = true;
+    } else if (!same) {
+        // RiverStart and XY changes preserve the index pattern when the paired
+        // vertex count is unchanged, so they also use the queued vertex update.
+        if (river.vertices.size() != static_cast<std::size_t>((count/2)*2)) {
+            backend->Release_Static_Geometry(river.geometry);
+            river.geometry = {};
+        }
         river.points.clear(); river.vertices.clear(); river.indices.clear();
         river.colors.clear(); river.river_start = -1;
         Real totalLen=0, endLen=0;

@@ -1,5 +1,30 @@
 # Current Source State
 
+## GPU river and retained water updates - 2026-10-11
+
+The live source parent is user commit `8f7b1dec9` (water), which includes the river/backend translation following local `024a670cf`. Preserve concurrent user commits. The current verified batch fixes retained geometry invalidation, extends the GPU height fixture and records the complete river validation. Commits stay local; no GitHub pushes.
+
+Actual drawRiverWater now uses retained terrain geometry and the canonical river HLSL route through WW3D/IRenderBackend/D3D12. The shader evaluates longitudinal scrolling/wobble, world/camera transforms, separate base/edge UVs, sparkle UVs and world-XY noise projection. It preserves the original four-texture behavior: RGB = vertexRGB * baseRGB + (sparkleRGB * noiseRGB + edgeRGB) * vertexAlpha; alpha = baseAlpha * edgeAlpha. Normal blending is SourceAlpha/InverseSourceAlpha; additive is SourceAlpha/One. LessEqual, disabled depth writes, no cull and the original wireframe debug flag remain draw state. Linear wrapped samplers retain the actual layer ownership.
+
+Existing per-vertex source-cell shroud lookup and packed-byte RGB/alpha quantization remain unchanged. Substituting smooth projected pixel fog would change river edge brightness/opacity. No new CPU animation or transform work is added. Trigger geometry caches retain the original point ordering, riverStart, non-closing length calculation, paired topology and authored UV progress. Scripted Z-only changes update paired cached heights without recomputing lengths or indices. XY/start changes of the same paired vertex count also retain GPU resources; only size changes recreate river geometry.
+
+Update_Static_Indexed_Terrain_Geometry updates same-size vertices in the existing default-heap buffer on the active command list, with ordered vertex-read/copy/read barriers and staging owned by the existing frame-fence lifetime. It preserves handles and index buffers without per-change CPU fence waits or resource creation. Moving grid water now uses this same retained path for height changes; cell-size changes retain topology and resources, while row topology changes recreate indices. Failed updates retain dirty state for retry. Simulation heights, physics, timing, RNG, Xfer and fixed-width representations remain unchanged; runtime cache/dirty state is never serialized or hashed.
+
+Native river setup, river inline assembly/handle, unused cleanup declaration, CPU inverse-view noise transform and unused wobble helper are retired. The unused m_waterPixelShader prototype had only creation/deletion/zeroing and is also removed after whole active-source reference checks; actual sea uses m_dwWaveVertexShader/m_dwWavePixelShader and remains pending. Water.cpp no longer includes or assembles D3DX8. The policy gate now requires the retained route and retirement of the CPU noise helper/assembler. The 64-DWORD root signature is unchanged. GPU sin evaluation can differ slightly from the old lookup; this affects rendering only. No measured frame-time speedup is claimed.
+
+Validation receipts:
+
+- `build/river-water-final-tests-build.txt`: focused graph compiles and links.
+- `build/river-water-final-regressions.txt`: **32/32 non-browser tests pass**, GPU 6.20 seconds, total 58.68 seconds. Browser was excluded.
+- Production GPU fixtures verify nonidentity transforms, authored-progress animation across time-only frames on retained handles, separate base/edge UVs, exact layer RGB/alpha, both blend modes, culling, depth and disabled depth writes. Ordered old/new colors and heights on the same handle verify submission order, persistence into the next frame, zero time-only uploads and exactly one changed-vertex upload. Invalid update handles/types/counts/scopes and missing/conflicting shader resources are rejected.
+- `build/river-water-final-syntax.txt`: actual shared water owner passes MinGW syntax checking. Read-only contract review found no introduced issue after the scripted-height invalidation fix.
+- `build/mingw64-game/river-water-final-game-build.txt`: exact serial z_generals compilation passes, executable link fails. `build/river-water-final-link-summary.json`: **53 unique unresolved symbols / 152 printed references**, versus 53/168 before river migration; none added. First owner remains ShroudTextureShader::set(int), W3DShaderManager.cpp:738, Apply_Render_State_Changes.
+- `build/river-water-patchcheck.txt`: fresh original-baseline reconstruction and byte comparison after all source/document edits; **4535 candidate / 4535 reconstructed files, zero missing, extra or different**; reconstruction passed.
+
+Next migrate real sea/reflection/sky callers as one coherent responsibility. Existing render textures support color-only arbitrary sizes or output-sized shared depth; sea needs an independently depth-tested 256x256 reflection target in that same resource owner. Preserve mirror camera/culling/restoration, signed RG bump sampling before filtering, vertex-predivided reflection UV interpolation, reflection RGBA times vertex RGBA and the separate Equal-depth shroud pass. Descriptor rebuilds must preserve typed SRV formats. Existing MD bump asset loading is explicitly disabled; verify actual assets and ownership instead of silently substituting flat-water rendering. The historical bump gradient conversion has horizontal boundary reads that need defined neighbors when migrated. Retire remaining shared shroud install hooks only after their actual sea callers cross the seam.
+
+Normal game link/boot, in-game D3D12 creation, first visible game/UI frame, complete DX8 removal, measured speedup, sealing and user Windows sign-off remain unproven. SDL3 Step06 and major W3X runtime remain deferred. Keep the full persistent goal active.
+
 ## GPU flat and grid water - 2026-10-11
 
 The verified source parent is local commit `864299da19a949c051d51cce68f048905142647a`. Verified coherent milestones are committed locally; GitHub pushes remain forbidden.

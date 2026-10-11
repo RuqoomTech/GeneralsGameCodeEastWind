@@ -1475,6 +1475,36 @@ bool verifyRiverWater(IRenderBackend &backend)
     camera[0][3]=-.8f; backend.Set_View_Projection(camera);
     backend.Reset_Frame_Statistics(); begin();
     ok=finish(draw(coloredAlpha),updatedColor) && backend.Get_Frame_Statistics().static_geometry_uploads==0 && ok;
+    // Scripted water-height changes must update the same retained vertex
+    // resource in draw order; unchanged indices and colors survive the copy.
+    backend.Reset_Frame_Statistics();
+    camera[0][3]=-1.4f; backend.Set_View_Projection(camera);
+    begin(.6f);
+    bool heightOrdered=draw(coloredAlpha);
+    for (auto &vertex : quad) vertex.z=.8f;
+    heightOrdered=backend.Update_Static_Indexed_Terrain_Geometry(coloredAlpha,quad,4) && heightOrdered;
+    camera[0][3]=-.6f; backend.Set_View_Projection(camera);
+    heightOrdered=draw(coloredAlpha) && heightOrdered;
+    backend.End_Scene(false);
+    const bool heightRead=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+    bool heightOK=heightOrdered && heightRead && backend.Is_Geometry_Valid(coloredAlpha) &&
+        backend.Get_Frame_Statistics().static_geometry_uploads==1;
+    if (heightRead) for (unsigned c=0; c<4; ++c) {
+        heightOK=std::abs(int(pixels[(264*width+192)*4+c])-int(std::lround(updatedColor[c]*255)))<=2 && heightOK;
+        heightOK=std::abs(int(pixels[(264*width+448)*4+c])-int(std::lround(background[c]*255)))<=2 && heightOK;
+    }
+    if (!heightOK) std::cerr << "River height update did not preserve ordered depths on its retained handle.\n";
+    ok=heightOK && ok; backend.Flip_To_Primary();
+    camera[0][3]=-.8f; backend.Set_View_Projection(camera);
+    backend.Reset_Frame_Statistics(); begin(.6f);
+    ok=finish(draw(coloredAlpha),background) && backend.Get_Frame_Statistics().static_geometry_uploads==0 && ok;
+    // Lower the same geometry again and preserve its time-independent UVs.
+    backend.Reset_Frame_Statistics(); begin(.6f);
+    for (auto &vertex : quad) vertex.z=.2f;
+    bool lowered=backend.Update_Static_Indexed_Terrain_Geometry(coloredAlpha,quad,4);
+    lowered=draw(coloredAlpha) && lowered;
+    ok=finish(lowered,updatedColor) && backend.Is_Geometry_Valid(coloredAlpha) &&
+        backend.Get_Frame_Statistics().static_geometry_uploads==1 && ok;
     // Reject conflicting shader modes and missing required river resources.
     backend.Begin_Scene();
     const RenderBackendColorVertex wrongVertices[]={{0,0,.5f,1,0,0,1},{.1f,0,.5f,1,0,0,1},{0,.1f,.5f,1,0,0,1}};
