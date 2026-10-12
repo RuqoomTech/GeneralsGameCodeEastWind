@@ -197,3 +197,27 @@ compiles with no errors, 48 unique unresolved symbols / 120 references, identica
 baseline. Observation: `d3d12_backend_smoke` took about 4 s in the gate run and about 2 minutes
 in two later runs of the same binary, failing identically each time; not investigated.
 
+### Waypoint 5 — `7ceb579a7..a932455f9` (16 commits)
+
+Arrived: stack-buffer-overflow fix in `FirewallHelperClass::getManglerName` (`#3346`); path
+separator helpers; `ThingTemplate` merged and moved to Core (`#3324`); logging for a bad
+primary damage radius on projectile weapons; `INI::loadFileDirectory` no-throw option
+(`#3373`); debug cheat code unified from Zero Hour (`#3377`); `ARRAY_SIZE`, the base algorithm
+templates (`sqr`, `clamp`, `sign`, ...) and the WWLib pragmas moved under `BasePrecomp.h`
+(`#3369`); Borland and Watcom code removed; `GameMode` types moved to their own file (`#3349`);
+filesystem and archive simplifications (`#3376`); Generals retail-compatibility fix for
+`ParticleUplinkCannonUpdate::update` float ordering (`#3365`).
+
+Conflicts (3 files):
+
+| File | Resolution |
+|---|---|
+| `Core/Libraries/Include/Lib/BaseFunctions.h` | Upstream's removal of the algorithm templates taken (they moved to the precompiled base). EastWind's `<string.h>` include, needed by the `memcpy` float helpers further down, kept. |
+| `Generals/.../GameLogic.cpp`, `GeneralsMD/.../GameLogic.cpp` | Both removals applied: EastWind had moved `setFPMode` to `Core/.../FPUControl.cpp`, upstream moved `toString(GameMode)` to the new GameMode file. Neither stays in `GameLogic.cpp`. |
+
+Adapted outside conflict hunks: none. Not applicable: none.
+
+Result: tests build clean; `ctest` 31 of 32 (same sampler failure, back to about 5 s); full
+rebuild of `z_generals` compiles with no errors, 48 unique unresolved symbols / 120 references,
+identical to the baseline.
+
