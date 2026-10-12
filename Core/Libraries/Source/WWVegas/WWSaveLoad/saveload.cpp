@@ -217,7 +217,7 @@ void SaveLoadSystemClass::Register_Pointer(PersistPointerToken old_token, void *
 	PointerRemapper.Register_Pointer(old_token, new_pointer);
 }
 
-#ifdef WWDEBUG
+#ifdef DEBUG_LOGGING
 
 void SaveLoadSystemClass::Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert, const char *file, int line)
 {

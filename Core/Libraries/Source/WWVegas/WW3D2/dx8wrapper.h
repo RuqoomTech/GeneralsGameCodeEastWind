@@ -1210,10 +1210,8 @@ WWINLINE void DX8Wrapper::Set_Shader(const ShaderClass& shader)
 	}
 	render_state.shader=shader;
 	render_state_changed|=SHADER_CHANGED;
-#ifdef MESH_RENDER_SNAPSHOT_ENABLED
-	StringClass str;
-#endif
-	SNAPSHOT_SAY(("DX8Wrapper::Set_Shader(%s)",shader.Get_Description(str).str()));
+
+	SNAPSHOT_SAY(("DX8Wrapper::Set_Shader(%s)",shader.Get_Description().str()));
 }
 
 WWINLINE void DX8Wrapper::Set_Projection_Transform_With_Z_Bias(const Matrix4x4& matrix, float znear, float zfar)

@@ -106,13 +106,13 @@ void PointerRemapClass::Process_Request_Table(DynamicVectorClass<PtrRemapStruct>
 		} else {
 			pair_index = pre_search_index;
 			*request_table[pointer_index].PointerToRemap = nullptr;
-#ifdef WWDEBUG
+#ifdef DEBUG_LOGGING
 			const char *file = request_table[pointer_index].File;
 			int line = request_table[pointer_index].Line;
 			WWDEBUG_SAY(("Warning! Failed to re-map persistence token 0x%08lX  file = %s  line = %d",
 				(unsigned long)token_to_remap, file, line));
-			WWASSERT(0);
 #endif
+			WWASSERT( 0 );
 		}
 	}
 }
@@ -148,7 +148,7 @@ void PointerRemapClass::Register_Pointer(PersistPointerToken old_token, void *ne
 	}
 }
 
-#ifdef WWDEBUG
+#ifdef DEBUG_LOGGING
 void PointerRemapClass::Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert, const char *file, int line)
 {
 	PtrRemapStruct remap;

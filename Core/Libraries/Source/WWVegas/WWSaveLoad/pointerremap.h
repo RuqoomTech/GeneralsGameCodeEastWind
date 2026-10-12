@@ -65,7 +65,7 @@ class PointerRemapClass
 		PersistPointerToken Get_Save_Token(ChunkSaveClass &csave, const void *pointer);
 		void		Register_Pointer(PersistPointerToken old_token, void *new_pointer);
 
-#ifdef WWDEBUG
+#ifdef DEBUG_LOGGING
 		void		Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert, const char *file, int line);
 		void		Request_Ref_Counted_Pointer_Remap(PersistPointerToken old_token, RefCountClass **pointer_to_convert, const char *file, int line);
 #else
@@ -105,7 +105,7 @@ class PointerRemapClass
 
 			PersistPointerToken OldToken;
 			void **PointerToRemap;
-#ifdef WWDEBUG
+#ifdef DEBUG_LOGGING
 			const char *	File;
 			int				Line;
 #endif

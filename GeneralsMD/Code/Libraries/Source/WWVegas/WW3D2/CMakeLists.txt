@@ -240,7 +240,7 @@ target_compile_definitions(z_ww3d2 PRIVATE
 )
 
 set(Z_WW3D2_PCH
-    [["Precompiled/precompiled.h"]] # Must be first
+    [["Precompiled/BasePrecomp.h"]] # Must be first
     [["WWLib/always.h"]]
     [["Utility/STLUtils.h"]]
     [["WWLib/win.h"]]

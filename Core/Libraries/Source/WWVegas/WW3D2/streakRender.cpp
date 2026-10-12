@@ -334,7 +334,7 @@ void StreakRendererClass::RenderStreak
 	// LastUsedSyncTime = WW3D::Get_Sync_Time();
 
 	// Used later
-	TextureMapMode map_mode = Get_Texture_Mapping_Mode();
+	//TextureMapMode map_mode = Get_Texture_Mapping_Mode();
 
 	/*
 	** Process line geometry:
@@ -746,7 +746,7 @@ void StreakRendererClass::RenderStreak
 
 			// Relevant midpoint:
 			Vector3 &midpoint = points[intersectionIndex - 1];
-			float mid_tex_v = tex_v[intersectionIndex - 1];
+//			float mid_tex_v = tex_v[intersectionIndex - 1];
 
 			// Initialize misc. fields
 			intersection[intersectionIndex][TOP_EDGE].PointCount = 1;

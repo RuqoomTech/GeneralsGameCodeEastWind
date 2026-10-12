@@ -301,6 +301,7 @@ bool DDSFileClass::Load()
 
 	// Skip the header and info block and possible unused mip levels
 	unsigned seek_size=file->Seek(SurfaceDesc.Size+4+skipped_offset);
+	(void)seek_size;
 	WWASSERT(seek_size==(SurfaceDesc.Size+4+skipped_offset));
 
 	if (size && size<0x80000000)
@@ -309,6 +310,7 @@ bool DDSFileClass::Load()
 		DDSMemory=MSGW3DNEWARRAY("DDSMemory") unsigned char[size];
 		// Read data
 		unsigned read_size=file->Read(DDSMemory,size);
+		(void)read_size;
 		// Verify we got all the data
 		if (read_size != size) { delete[] DDSMemory; DDSMemory = nullptr; return false; }
 	}

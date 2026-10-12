@@ -103,7 +103,7 @@ class ChunkLoadClass;
 //   Objects that loaded a reference token then submit that token together with the address of their
 //   native pointer field.  After all objects have loaded, the remapper resolves those fields.
 //   NOTE: use the macros for re-mapping your pointers to enable automatic debugging information
-//   when you build with WWDEBUG defined.
+//   when you build with DEBUG_LOGGING defined.
 //
 // - Chunks: The file format will be chunk based since that gives us the flexibility to
 //   add new data and remove obsolete data without necessarily losing the ability
@@ -158,7 +158,7 @@ public:
 	static PersistPointerToken Get_Pointer_Token(ChunkSaveClass &csave, const void *pointer);
 	static void		Register_Pointer(PersistPointerToken old_token, void *new_pointer);
 
-#ifdef WWDEBUG
+#ifdef DEBUG_LOGGING
 	static void		Request_Pointer_Remap(PersistPointerToken old_token, void **pointer_to_convert, const char *file = nullptr, int line = 0);
 	static void		Request_Ref_Counted_Pointer_Remap(PersistPointerToken old_token, RefCountClass **pointer_to_convert, const char *file = nullptr, int line = 0);
 #else
@@ -202,7 +202,7 @@ protected:
 ** Use the following macros to automatically enable pointer-remap DEBUG code.  Remember that
 ** in all cases you submit a pointer to the pointer you want re-mapped.
 */
-#ifdef WWDEBUG
+#ifdef DEBUG_LOGGING
 #define REQUEST_POINTER_REMAP(token,pp)					SaveLoadSystemClass::Request_Pointer_Remap(token,pp,__FILE__,__LINE__)
 #define REQUEST_REF_COUNTED_POINTER_REMAP(token,pp)	SaveLoadSystemClass::Request_Ref_Counted_Pointer_Remap(token,pp,__FILE__,__LINE__)
 #else

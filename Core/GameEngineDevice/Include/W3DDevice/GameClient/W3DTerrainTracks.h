@@ -31,6 +31,7 @@
 #include "WW3D2/IRenderBackend.h"
 #include "Lib/BaseType.h"
 #include <vector>
+#include "WW3D2/vertmaterial.h"
 
 #define MAX_TRACK_EDGE_COUNT	100	//maximum number of edges or divisions in track mark
 #define MAX_TRACK_OPAQUE_EDGE	25	//linear fade of edges will begin at this edge

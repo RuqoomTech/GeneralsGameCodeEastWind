@@ -160,12 +160,8 @@ target_compile_definitions(core_max2w3d PRIVATE W3D_MAX4)
 
 target_link_libraries(core_max2w3d PRIVATE
     Comctl32
-    # This is only linked to have its basetsd.h used instead of the vs6's basetsd.h
-    # The headers typedef INT_PTR to different types, but maxsdk expects it
-    # typedef'ed to int, otherwise throws linker errors.
-    maxsdk
-    winmm
     core_pluglib
+    winmm
 )
 
 set_target_properties(core_max2w3d PROPERTIES LINK_FLAGS "/DEF:max2w3d.def")

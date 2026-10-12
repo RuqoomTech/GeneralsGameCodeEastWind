@@ -62,27 +62,16 @@ if(MINGW)
     endif()
 endif()
 
-# This target is not meant to be linked anywhere.
-# It just makes the files visible in a Visual Studio solution.
 add_subdirectory(Dependencies/Precompiled)
-
-# Makes the C++98 compatibility macros available in every C++ translation unit.
-# Force included rather than precompiled, because a precompiled header entry
-# inherited from an interface library always sorts after the consuming target's
-# own entries, and these macros must be defined before any other header is read.
-# Targets that do have a precompiled header must still list precompiled.h as their
-# first entry, because the Visual Studio generator prepends the precompiled header
-# to the forced include list, so this global one would otherwise be read too late.
-include_directories(Dependencies/Precompiled)
-if (MSVC)
-    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/FIPrecompiled/precompiled.h>)
-else()
-    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include Precompiled/precompiled.h>")
-endif()
-
 # Utility headers are used by both the full runtime and the focused regression
 # graph, so keep this dependency available in either mode.
 add_subdirectory(Dependencies/Utility)
+
+if(RTS_BUILD_TESTS_ONLY)
+    # The focused regression graph does not add Core/, but its sources still need the
+    # force-included base macros and types that core_libraries provides.
+    add_subdirectory(Core/Libraries/Include)
+endif()
 
 if(RTS_BUILD_TESTS)
     enable_testing()
