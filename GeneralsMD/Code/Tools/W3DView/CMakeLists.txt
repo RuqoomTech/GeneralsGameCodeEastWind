@@ -6,7 +6,7 @@ target_link_libraries(z_w3dview PRIVATE
     d3d12
     dxgi
     imm32
-    milesloader
+    deps_miles
     Version
     vfw32
     winmm

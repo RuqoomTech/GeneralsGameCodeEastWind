@@ -233,9 +233,9 @@ if(WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows")
 endif()
 
 target_link_libraries(corei_gameenginedevice_public INTERFACE
-    binkloader
     corei_gameengine_public
-    milesloader
+    deps_bink
+    deps_miles
 )
 
 if(RTS_BUILD_OPTION_FFMPEG)

@@ -8,16 +8,16 @@ else()
 endif()
 
 target_link_libraries(g_generals PRIVATE
-    binkloader
     comctl32
     d3d12
     dxgi
     dxguid
+    deps_bink
+    deps_miles
     g_gameengine
     g_gameenginedevice
     gi_always
     imm32
-    milesloader
     vfw32
     winmm
 )

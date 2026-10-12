@@ -3,7 +3,7 @@ add_library(z_wwcommon INTERFACE)
 
 target_link_libraries(z_wwcommon INTERFACE
     core_wwcommon
-    milesloader
+    deps_miles
     stlport
 )
 

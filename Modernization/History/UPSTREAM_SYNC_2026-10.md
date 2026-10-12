@@ -243,3 +243,60 @@ Adapted outside conflict hunks: none. Not applicable: the `dx8renderer.cpp` form
 Result: tests build clean; `ctest` 31 of 32 (same sampler failure); `z_generals` compiles with no
 errors, 48 unique unresolved symbols / 120 references, identical to the baseline.
 
+### Waypoint 7 — `b687c073b..edbc165c3` (9 commits)
+
+Arrived: Generals crash and manual-control fixes for a scripted Particle Cannon attack on an
+object (`#3355`); a bounds assert in `GarrisonContain::findClosestFreeGarrisonPointIndex`
+(`#3357`); the `deps_` prefix on every target under `Dependencies/` (`#3367`); file path
+tokenization fixes in `ArchiveFile`, `ArchiveFileSystem` and `Win32LocalFileSystem`, and token
+clearing in `AsciiString::nextToken` / `UnicodeString::nextToken` (`#3374`); STL utility
+polish (`#3375`); Tracy development files excluded from the install target (`#3382`); CMake
+comment and whitespace cleanup (`#3386`). The CMake minimum rises from 3.25 to 3.28 (needed for
+`EXCLUDE_FROM_ALL` in `FetchContent_Declare`); the installed CMake is 4.4.3.
+
+Target renames adopted everywhere, including EastWind's own additions (`Core/Tests`, the root
+tests-only graph):
+
+| Old | New |
+|---|---|
+| `core_precompiled` | `deps_precompiled` |
+| `core_utility` | `deps_utility` |
+| `binkloader` | `deps_bink` |
+| `milesloader` | `deps_miles` |
+| `dbghelploader` | `deps_dbghelp` |
+| `usp10loader` | `deps_usp10` |
+| `maxsdk` | `deps_maxsdk` |
+
+Conflicts (16 files, all build files):
+
+| File | Resolution |
+|---|---|
+| `CMakeLists.txt` | EastWind's layout kept (tests-only graph adds `Core/Libraries/Include`; Bink, Miles, DbgHelp and Usp10 stay inside the full-runtime branch). The non-Windows placeholder targets renamed to `deps_dbghelp` / `deps_usp10`. Minimum version 3.28 taken. |
+| `CMakePresets.json` | EastWind's presets kept; `cmakeMinimumRequired` raised to 3.28 to match. |
+| `Core/GameEngine/CMakeLists.txt`, `Core/GameEngineDevice/CMakeLists.txt`, `Core/Libraries/Source/WWVegas/CMakeLists.txt`, `Generals/.../WWVegas/CMakeLists.txt`, `GeneralsMD/.../WWVegas/CMakeLists.txt`, `Generals/Code/Tools/W3DView/CMakeLists.txt` | EastWind's link lists kept (no `d3d8lib`, `d3d8`, `d3dx8`), with the new target names. Upstream also re-sorted these lists, so a plain "ours" resolution silently dropped four entries that had only moved; `deps_dbghelp`, `deps_bink`, `deps_usp10` and `deps_miles` were put back by hand and every file's reference count was checked against the pre-merge tree. |
+| `Core/Tools/WW3D/max2w3d/CMakeLists.txt` | Ours: no `d3d8lib` (upstream only reworded the comment above it). |
+| `cmake/debug_strip.cmake`, `cmake/mingw.cmake`, `cmake/reactos-atl.cmake`, `cmake/widl.cmake`, `cmake/zlib.cmake` | Ours. Upstream's change is comment and whitespace cleanup on the 32-bit MinGW versions of these files, which EastWind rewrote for the x64 lane. |
+| `Core/Libraries/Source/EABrowserEngine/CMakeLists.txt`, `cmake/toolchains/mingw-w64-i686.cmake` (deleted by EastWind) | Stay deleted; upstream's changes are the target rename and a removed comment. |
+
+Adapted outside conflict hunks: `Core/Tests/CMakeLists.txt` (14 link lines to `deps_utility`).
+Brought forward from a later upstream commit: `set(CMAKE_CXX_SCAN_FOR_MODULES OFF)` in
+`cmake/compilers.cmake` (upstream `917613099`, `#3442`, which belongs to waypoint 11). With the
+minimum at 3.28 CMake turns on C++20 module scanning (policy CMP0155). The first gate run
+added a scan step per source, wrote 5.2 GB of `.ddi` files into `build/mingw64-game` and
+filled drive D: (106 GB, 30 MB left), so 208 compile steps failed with "No space left on
+device". The scan files were deleted and the gate re-run with scanning off. D: has about 5 GB
+free after that, which is little headroom for an 8 GB build tree.
+Not applicable: the comment cleanup in the five rewritten `cmake/` files and the two deleted
+files.
+
+Finding: upstream guards its Particle Cannon fix with `#if !RETAIL_COMPATIBLE_CRC`, as it does
+for 373 preprocessor directives in 156 files. `GameDefines.h` still defines
+`RETAIL_COMPATIBLE_CRC` as `(1)` in EastWind, so every upstream fix written this way arrives
+compiled out, although the project has dropped retail compatibility. This is review finding 5
+with a concrete cost attached. Changing the macro changes simulation results and CRCs, so it
+is a decision for the owner, not a merge resolution; nothing was changed here.
+
+Result (second gate run, scanning off): tests build clean; `ctest` 31 of 32 (same sampler
+failure); `z_generals` compiles with no errors, 48 unique unresolved symbols / 120 references,
+identical to the baseline.
+

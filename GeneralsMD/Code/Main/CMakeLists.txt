@@ -8,11 +8,11 @@ else()
 endif()
 
 target_link_libraries(z_generals PRIVATE
-    binkloader
     comctl32
     dxguid
+    deps_bink
+    deps_miles
     imm32
-    milesloader
     vfw32
     winmm
     z_gameengine

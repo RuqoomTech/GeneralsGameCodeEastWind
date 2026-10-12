@@ -5,11 +5,11 @@ target_link_libraries(g_w3dview PRIVATE
     corei_w3dview # this interface gets the source files for the tool
     d3d12
     dxgi
+    deps_miles
     g_wwaudio
     g_wwvegas
     gi_always
     imm32
-    milesloader
     Version
     vfw32
     winmm

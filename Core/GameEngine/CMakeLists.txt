@@ -1216,8 +1216,8 @@ target_include_directories(corei_gameengine_public INTERFACE
 target_link_libraries(corei_gameengine_public INTERFACE
     core_compression
     core_browserdispatch
-    dbghelploader
     #core_wwvegas
+    deps_dbghelp
     gamespy::gamespy
     stlport
 )
