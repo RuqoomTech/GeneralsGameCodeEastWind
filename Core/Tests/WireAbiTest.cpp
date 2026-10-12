@@ -5,7 +5,7 @@
 ** Network/replay capacities and scalar fields are not.
 */
 
-#include "Utility/CppMacros.h"
+#include "Precompiled/CppMacros.h"
 #include "Common/GameType.h"
 #include "GameNetwork/NetworkDefs.h"
 

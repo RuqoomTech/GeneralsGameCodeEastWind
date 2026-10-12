@@ -3,7 +3,7 @@
 ** Adapter between runtime GameMessage objects and fixed-width Evolution commands.
 */
 
-#include "Utility/CppMacros.h"
+#include "Precompiled/CppMacros.h"
 
 #include "Common/EvolutionGameMessageAdapter.h"
 

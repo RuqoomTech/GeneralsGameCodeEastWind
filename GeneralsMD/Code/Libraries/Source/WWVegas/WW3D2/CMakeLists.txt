@@ -240,9 +240,9 @@ target_compile_definitions(z_ww3d2 PRIVATE
 )
 
 set(Z_WW3D2_PCH
-    [["Utility/CppMacros.h"]] # Must be first, to be removed when abandoning VC6
+    [["Precompiled/precompiled.h"]] # Must be first
     [["WWLib/always.h"]]
-    [["WWLib/STLUtils.h"]]
+    [["Utility/STLUtils.h"]]
     [["WWLib/win.h"]]
     [["WWLib/WWCommon.h"]]
     [["WWLib/wwstring.h"]]

@@ -72,12 +72,12 @@ rts_policy_require_text("${_except_source}" "#if defined(_WIN64)" "exception dia
 rts_policy_require_text("${_except_source}" "context->Rip" "Win64 exception diagnostics must use RIP rather than EIP")
 rts_policy_require_text("${_except_source}" "IMAGE_FILE_MACHINE_AMD64" "Win64 stack walking must select the AMD64 machine type")
 rts_policy_require_text("${_except_source}" "STACKFRAME64 stack_frame" "Win64 stack walking must use STACKFRAME64")
-rts_policy_require_text("${_except_source}" "DbgHelpLoader::stackWalk64" "Win64 stack walking must use the consolidated DbgHelpLoader")
-rts_policy_require_text("${_except_source}" "DbgHelpLoader::symFromAddr" "Win64 symbol lookup must use a DWORD64-capable DbgHelp API")
+rts_policy_require_text("${_except_source}" "DbgHelp::StackWalk64" "Win64 stack walking must use the consolidated DbgHelp loader")
+rts_policy_require_text("${_except_source}" "DbgHelp::SymFromAddr" "Win64 symbol lookup must use a DWORD64-capable DbgHelp API")
 
-rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/DbgHelpLoader.cpp" _dbghelp_loader)
+rts_policy_read("Dependencies/DbgHelp/DbgHelpLoader.cpp" _dbghelp_loader)
 foreach(_entry IN ITEMS "SymFromAddr" "SymFunctionTableAccess64" "SymGetModuleBase64" "StackWalk64")
-    rts_policy_require_text("${_dbghelp_loader}" "GetProcAddress(Inst->m_dllModule, \"${_entry}\")" "DbgHelpLoader must resolve native x64 entry point ${_entry}")
+    rts_policy_require_text("${_dbghelp_loader}" "DBGHELP_RESOLVE(${_entry});" "DbgHelpLoader must resolve native x64 entry point ${_entry}")
 endforeach()
 
 # Win32 registry keys are opaque native handles, not deterministic/wire integers.

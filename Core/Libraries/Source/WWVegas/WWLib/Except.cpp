@@ -1222,8 +1222,8 @@ void Load_Image_Helper()
 		return;
 	}
 
-	DbgHelpLoader::symSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
-	SymbolsAvailable = DbgHelpLoader::symInitialize(GetCurrentProcess(), nullptr, TRUE) != FALSE;
+	DbgHelp::SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
+	SymbolsAvailable = DbgHelp::SymInitialize(GetCurrentProcess(), nullptr, TRUE) != FALSE;
 #else
 	/*
 	** If this is the first time through then fix up the imagehelp function pointers since imagehlp.dll
@@ -1320,7 +1320,7 @@ bool Lookup_Symbol(void *code_ptr, char *symbol, std::uintptr_t &displacement)
 
 	DWORD64 native_displacement = 0;
 	const DWORD64 address = static_cast<DWORD64>(reinterpret_cast<std::uintptr_t>(code_ptr));
-	if (DbgHelpLoader::symFromAddr(GetCurrentProcess(), address, &native_displacement, symbol_info)) {
+	if (DbgHelp::SymFromAddr(GetCurrentProcess(), address, &native_displacement, symbol_info)) {
 		strcpy(symbol, symbol_info->Name);
 		displacement = static_cast<std::uintptr_t>(native_displacement);
 		return true;
@@ -1398,15 +1398,15 @@ int Stack_Walk(std::uintptr_t *return_addresses, int num_addresses, CONTEXT *con
 
 	int pointer_index = 0;
 	for (int frame_index = 0; frame_index < num_addresses + 1; ++frame_index) {
-		if (!DbgHelpLoader::stackWalk64(
+		if (!DbgHelp::StackWalk64(
 				IMAGE_FILE_MACHINE_AMD64,
 				GetCurrentProcess(),
 				GetCurrentThread(),
 				&stack_frame,
 				&walk_context,
 				nullptr,
-				DbgHelpLoader::symFunctionTableAccess64,
-				DbgHelpLoader::symGetModuleBase64,
+				DbgHelp::SymFunctionTableAccess64,
+				DbgHelp::SymGetModuleBase64,
 				nullptr)) {
 			break;
 		}

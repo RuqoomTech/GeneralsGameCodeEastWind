@@ -6,7 +6,7 @@
 ** remain explicitly fixed and architecture-independent.
 */
 
-#include "Utility/CppMacros.h"
+#include "Precompiled/CppMacros.h"
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
 

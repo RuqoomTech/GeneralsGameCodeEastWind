@@ -17,13 +17,8 @@
 */
 
 // This file contains macros to help upgrade the code for newer cpp standards.
-// Must be C compliant
 
 #pragma once
-
-#if __cplusplus >= 201103L
-#include <utility>
-#endif
 
 #if __cplusplus >= 201103L
 #define CPP_11(code) code
@@ -32,6 +27,7 @@
 #define CPP_11(code)
 #define FUNCTION_DELETE
 #define static_assert(expr, msg)
+#define alignof(type) __alignof(type)
 #define constexpr
 #define noexcept
 #define nullptr 0
@@ -62,26 +58,4 @@
 #define NOINLINE __attribute__((noinline))
 #else
 #define NOINLINE
-#endif
-
-#ifdef __cplusplus
-namespace stl
-{
-
-// Helper to move-assign from reference: uses std::move in C++11, swap in C++98
-template<typename T>
-inline void move_or_swap(T& dest, T& src)
-{
-#if __cplusplus >= 201103L
-	dest = std::move(src);
-#else
-	// C++03 fallback: mimic move semantics
-	// dest gets src's value, src becomes empty
-	T empty;
-	dest.swap(src);
-	src.swap(empty);
-#endif
-}
-
-} // namespace stl
 #endif

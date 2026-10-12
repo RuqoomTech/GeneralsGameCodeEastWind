@@ -85,7 +85,7 @@ target_include_directories(determinism_test PRIVATE
 )
 target_link_libraries(determinism_test PRIVATE
     core_config
-    core_utility_no_pch
+    core_utility
 )
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(determinism_test PRIVATE
@@ -158,7 +158,7 @@ target_include_directories(architecture_abi_test PRIVATE
 )
 target_link_libraries(architecture_abi_test PRIVATE
     core_config
-    core_utility_no_pch
+    core_utility
 )
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(architecture_abi_test PRIVATE
@@ -180,7 +180,7 @@ target_include_directories(wire_abi_test PRIVATE
 )
 target_link_libraries(wire_abi_test PRIVATE
     core_config
-    core_utility_no_pch
+    core_utility
 )
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(wire_abi_test PRIVATE
@@ -205,7 +205,7 @@ target_include_directories(runtime_native_width_test PRIVATE
 )
 target_link_libraries(runtime_native_width_test PRIVATE
     core_config
-    core_utility_no_pch
+    core_utility
 )
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(runtime_native_width_test PRIVATE
@@ -241,7 +241,7 @@ target_include_directories(coordinate_ops_test PRIVATE
 )
 target_link_libraries(coordinate_ops_test PRIVATE
     core_config
-    core_utility_no_pch
+    core_utility
 )
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(coordinate_ops_test PRIVATE
@@ -272,7 +272,7 @@ target_include_directories(headless_determinism_test PRIVATE
 )
 target_link_libraries(headless_determinism_test PRIVATE
     core_config
-    core_utility_no_pch
+    core_utility
 )
 set_target_properties(headless_determinism_test PROPERTIES
     CXX_STANDARD 17
@@ -352,7 +352,7 @@ if(WIN32)
     )
     target_link_libraries(evolution_game_message_adapter_compile PRIVATE
         core_config
-        core_utility_no_pch
+        core_utility
     )
     set_target_properties(evolution_game_message_adapter_compile PROPERTIES
         CXX_STANDARD 17
@@ -417,7 +417,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     )
     target_link_libraries(evolution_session_test PRIVATE
         core_config
-        core_utility_no_pch
+        core_utility
     )
     set_target_properties(evolution_session_test PROPERTIES
         CXX_STANDARD 17
@@ -457,7 +457,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     )
     target_link_libraries(evolution_full_session_test PRIVATE
         core_config
-        core_utility_no_pch
+        core_utility
     )
     set_target_properties(evolution_full_session_test PROPERTIES
         CXX_STANDARD 17
@@ -532,11 +532,11 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2
         )
-        target_link_libraries(dds_texture_decode_test PRIVATE core_config core_utility_no_pch)
+        target_link_libraries(dds_texture_decode_test PRIVATE core_config core_utility)
         target_compile_definitions(dds_texture_decode_test PRIVATE DISABLE_GAMEMEMORY=1)
         target_compile_options(dds_texture_decode_test PRIVATE
             -ffunction-sections -fdata-sections -fno-exceptions -fno-asynchronous-unwind-tables
-            -fno-unwind-tables -include Utility/CppMacros.h)
+            -fno-unwind-tables -include Precompiled/CppMacros.h)
         target_link_options(dds_texture_decode_test PRIVATE -Wl,--gc-sections)
         set_target_properties(dds_texture_decode_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
         add_test(NAME dds_texture_decode COMMAND dds_texture_decode_test)
@@ -562,10 +562,10 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
                 ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
                 ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2
             )
-            target_link_libraries(${shader_test} PRIVATE core_config core_utility_no_pch)
+            target_link_libraries(${shader_test} PRIVATE core_config core_utility)
             target_compile_options(${shader_test} PRIVATE
                 -ffunction-sections -fdata-sections -fno-exceptions -fno-asynchronous-unwind-tables
-                -fno-unwind-tables -fno-jump-tables -include Utility/CppMacros.h)
+                -fno-unwind-tables -fno-jump-tables -include Precompiled/CppMacros.h)
             target_link_options(${shader_test} PRIVATE -Wl,--gc-sections)
             set_target_properties(${shader_test} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
             add_test(NAME ${shader_test_name} COMMAND ${shader_test})
@@ -585,7 +585,7 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     )
     target_link_libraries(d3d12_backend_smoke_test PRIVATE
         core_config
-        core_utility_no_pch
+        core_utility
         d3d12
         d3dcompiler
         dxgi
@@ -636,10 +636,10 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND MINGW)
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2
     )
-    target_link_libraries(sorting_renderer_test PRIVATE core_config core_utility_no_pch)
+    target_link_libraries(sorting_renderer_test PRIVATE core_config core_utility)
     target_compile_options(sorting_renderer_test PRIVATE
         -ffunction-sections -fdata-sections -fno-exceptions -fno-asynchronous-unwind-tables
-        -fno-unwind-tables -include Utility/CppMacros.h)
+        -fno-unwind-tables -include Precompiled/CppMacros.h)
     target_link_options(sorting_renderer_test PRIVATE -Wl,--gc-sections)
     set_target_properties(sorting_renderer_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
     add_test(NAME sorting_renderer COMMAND sorting_renderer_test)
@@ -669,10 +669,10 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND MINGW)
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2
     )
-    target_link_libraries(particle_geometry_test PRIVATE core_config core_utility_no_pch)
+    target_link_libraries(particle_geometry_test PRIVATE core_config core_utility)
     target_compile_options(particle_geometry_test PRIVATE
         -ffunction-sections -fdata-sections -fno-exceptions -fno-asynchronous-unwind-tables
-        -fno-unwind-tables -fno-jump-tables -include Utility/CppMacros.h)
+        -fno-unwind-tables -fno-jump-tables -include Precompiled/CppMacros.h)
     target_link_options(particle_geometry_test PRIVATE -Wl,--gc-sections)
     set_target_properties(particle_geometry_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
     add_test(NAME particle_geometry COMMAND particle_geometry_test)

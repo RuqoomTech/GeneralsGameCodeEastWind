@@ -214,11 +214,11 @@ rts_policy_require_contains(
     "legacy WWVegas headers must not turn their pre-existing warnings into smoke-target errors")
 rts_policy_require_contains(
     "Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp"
-    "#include \"Utility/CppMacros.h\""
+    "#include \"Precompiled/CppMacros.h\""
     "the production backend must establish the WWVegas compatibility macros before legacy headers")
 rts_policy_require_contains(
     "Core/Tests/D3D12BackendSmokeTest.cpp"
-    "#include \"Utility/CppMacros.h\""
+    "#include \"Precompiled/CppMacros.h\""
     "the smoke translation unit must establish the WWVegas compatibility macros before legacy headers")
 
 rts_policy_require_contains(

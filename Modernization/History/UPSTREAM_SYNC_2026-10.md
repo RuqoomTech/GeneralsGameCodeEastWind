@@ -94,3 +94,56 @@ Not applicable: none. No policy test or CMake script referenced the moved paths.
 
 Result: unchanged from the baseline (31 of 32 tests, 48 unique unresolved symbols).
 
+### Waypoint 3 — `a821f54d7..1747544e0` (21 commits)
+
+Arrived: Visual Studio natvis visualizers; the new `Precompiled/precompiled.h`, force-included
+in every target (`#3327`); null-dereference fixes in the control bar and window transitions;
+`std::swap` compat fix; drawable and terrain decal fade decoupled from render update (`#3303`);
+damage type flag validation on INI parse (`#3344`); `RefCountPtr` raw-pointer construction;
+debug pointer removed from `AsciiString` / `UnicodeString`; save/load fixes for
+`DockUpdate::xfer` (`#3117`) and `TintEnvelope::xfer` (`#3127`); `SystemAllocator.h`,
+`STLUtils.h`, `stringex.h`, `DbgHelpLoader` and `Usp10Loader` moved from WWLib to
+`Dependencies/`, with the dbghelp and Uniscribe entry points turned into free functions
+(`#3342`).
+
+Conflicts (9 files):
+
+| File | Resolution |
+|---|---|
+| `CMakeLists.txt` | Upstream's `Dependencies/Precompiled` subdirectory and global force-include taken. EastWind's test-graph ordering kept (`Dependencies/Utility`, then `Core/Tests`). The VC6 `/FIUtility/CppMacros.h` block is gone; `Dependencies/DbgHelp` and `Dependencies/Usp10` are added in the runtime section only, so the focused test graph does not build them. |
+| `Core/Libraries/Source/WWVegas/CMakeLists.txt` | `core_wwcommon` links upstream's `dbghelploader` and `usp10loader`; EastWind's removal of `d3d8lib` kept. |
+| `GeneralsMD/.../WW3D2/CMakeLists.txt` | EastWind's PCH list structure kept, with upstream's `Precompiled/precompiled.h` as the first header. |
+| `Core/.../WWLib/DbgHelpLoader.{cpp,h}` (moved upstream, modified by EastWind) | Deleted at the old path. EastWind's native-width work re-applied to `Dependencies/DbgHelp/DbgHelpLoader.{cpp,h}` (below). |
+| `Core/.../WWLib/Except.cpp`, `GeneralsMD/.../System/StackDump.cpp` | EastWind's 64-bit stack walk kept; calls renamed from `DbgHelpLoader::symFromAddr` style to upstream's `DbgHelp::SymFromAddr` free functions. |
+| `Core/Tests/CMakeLists.txt`, policy test scripts | Path-only: `Utility/CppMacros.h` became `Precompiled/CppMacros.h`. |
+
+Adapted outside conflict hunks:
+
+- **DbgHelp on x64.** Upstream's new loader exposes only the 32-bit-address API (`StackWalk`,
+  `SymGetSymFromAddr`, `SymGetModuleBase`, ...). On Win64 the Windows headers macro-rename
+  those names to their `64` variants, so they cannot coexist with explicit 64-bit entry points.
+  The seven legacy functions are now compiled only when `_WIN64` is not defined, and
+  `SymFromAddr`, `SymGetLineFromAddr64`, `SymFunctionTableAccess64`, `SymGetModuleBase64` and
+  `StackWalk64` are added to `namespace DbgHelp` for x64. `load()` fails on x64 when a required
+  native entry point is missing, as EastWind's loader did.
+- **`core_utility_no_pch` removed upstream.** `core_utility` no longer carries a precompiled
+  header, so the 14 test targets that linked the no-PCH variant now link `core_utility`. The
+  first gate run caught this: three test objects failed with `Utility/compat.h: No such file`.
+- `Utility/CppMacros.h` includes in `EvolutionGameMessageAdapter.cpp`, `RandomValue.cpp`,
+  `D3D12Backend.cpp`, `FastAllocator.cpp` and five test sources follow the header to
+  `Precompiled/CppMacros.h`.
+- `cmake/tests/X64PlatformPolicyTest.cmake` reads `Dependencies/DbgHelp/DbgHelpLoader.cpp` and
+  asserts the new spellings (`DbgHelp::StackWalk64`, `DbgHelp::SymFromAddr`,
+  `DBGHELP_RESOLVE(...)` for the four native entries). Same assertions, new names; none removed.
+
+Not applicable: none.
+
+Save format note: `#3127` changes `TintEnvelope` version 2 from a 4-byte float to an 8-byte
+double (new `Xfer::xferDouble`), so a save written by a build between upstream's two versions
+of that tweak would misread. EastWind has produced no such saves (the game does not link). The
+`DockUpdate` fix is load-side only. No EastWind determinism or protocol fixture covers either
+path, and none was regenerated.
+
+Result: tests build clean after the `core_utility` fix; `ctest` 31 of 32 (same sampler failure);
+`z_generals` compiles, 48 unique unresolved symbols / 120 references, identical to the baseline.
+
