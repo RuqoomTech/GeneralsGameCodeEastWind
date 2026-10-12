@@ -343,11 +343,11 @@ void Keyboard::initKeyNames()
 
 	const UnsignedInt low = static_cast<UnsignedInt>(reinterpret_cast<uintptr_t>(kLayout) & 0xFFFFu);
 	LanguageID currentLanguage = OurLanguage;
-	if(low == 0x040c
-		 || low == 0x080c
-		 || low == 0x0c0c
-		 || low == 0x100c
-		 || low == 0x140c)
+	if(low == 0x040c ||
+		 low == 0x080c ||
+		 low == 0x0c0c ||
+		 low == 0x100c ||
+		 low == 0x140c)
 		currentLanguage = LANGUAGE_ID_FRENCH;
 
 	switch( currentLanguage )

@@ -327,7 +327,8 @@ Int ScreenCrossFadeFilter::init()
 Bool ScreenCrossFadeFilter::updateFadeLevel()
 {
 	if (m_fadeDirection > 0)
-	{	//turning effect on
+	{
+		//turning effect on
 		m_curFadeFrame++;
 		Int fade = m_curFadeFrame;
 
@@ -345,7 +346,8 @@ Bool ScreenCrossFadeFilter::updateFadeLevel()
 	}
 	else
 	if (m_fadeDirection < 0)
-	{	//turning effect off
+	{
+		//turning effect off
 		Int fade = m_curFadeFrame;
 		if (fade<m_fadeFrames)
 		{
@@ -847,9 +849,11 @@ void W3DShaderManager::startRenderToTexture()
 
 	m_renderingToTexture = true;
 	if (TheGlobalData->m_showSoftWaterEdge)
-	{	//Soft water edges use frame buffer destination alpha so we must clear it to a known value.
+	{
+		//Soft water edges use frame buffer destination alpha so we must clear it to a known value.
 		if (m_currentFilter == FT_VIEW_MOTION_BLUR_FILTER || m_currentFilter == FT_VIEW_CROSSFADE)
-		{	//these filters rely on the previous frame being visible so we must be careful about clearing
+		{
+			//these filters rely on the previous frame being visible so we must be careful about clearing
 			//frame buffer.  Only clear the alpha channel
 			DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_ALPHA);	//only clear alpha
 			ShaderClass shader=ShaderClass::_PresetOpaqueSolidShader;
@@ -1065,7 +1069,8 @@ StaticGameLODLevel W3DShaderManager::getGPUPerformanceIndex()
 	StaticGameLODLevel detailSetting=STATIC_GAME_LOD_LOW;	//assume lowest settings for now.
 
 	if ((chipType=getChipset()) != DC_UNKNOWN)
-	{	//a known video card so we can make some assumptions
+	{
+		//a known video card so we can make some assumptions
 		if (chipType >=	DC_GEFORCE2)
 			detailSetting=STATIC_GAME_LOD_LOW;	//these cards need multiple terrain passes.
 		if (chipType >= DC_GENERIC_PIXEL_SHADER_1_1)	//these cards can do terrain in single pass.

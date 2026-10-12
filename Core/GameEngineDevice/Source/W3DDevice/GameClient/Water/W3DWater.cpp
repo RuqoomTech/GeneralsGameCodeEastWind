@@ -636,7 +636,8 @@ void WaterRenderObjClass::enableWaterGrid(Bool state)
 	m_disableRiver = false;
 
 	if (state && m_meshData == nullptr)
-	{	//water type has changed, must allocate necessary assets for new water.
+	{
+		//water type has changed, must allocate necessary assets for new water.
 		//contains the current deformed water surface z(height) values.  With 1 vertex invisible border
 		//around surface to speed up normal calculations.
 		m_meshDataSize = (m_gridCellsX+1+2)*(m_gridCellsY+1+2);
@@ -1469,7 +1470,8 @@ void WaterRenderObjClass::changeGridHeight(Real wx, Real wy, Real delta)
 
 	//check if center falls within grid bounds
 	if (worldToGridSpace(wx, wy, gx, gy))
-	{	//find extents of influence
+	{
+		//find extents of influence
 		minX = floorf(gx - m_gridChangeMaxRange);
 		if (minX < 0 )
 			minX = 0;	//clamp extent to fall within box
@@ -1551,7 +1553,8 @@ void WaterRenderObjClass::setGridResolution(Real gridCellsX, Real gridCellsY, Re
 	m_gridCellSize=cellSize;
 
 	if (m_gridCellsX != gridCellsX || m_gridCellsY != gridCellsY)
-	{	//resolution has changed
+	{
+		//resolution has changed
 		m_gridCellsX=gridCellsX;
 		m_gridCellsY=gridCellsY;
 
@@ -1742,7 +1745,8 @@ void WaterRenderObjClass::drawRiverWater(PolygonTrigger *pTrig)
 		shadeB=shadeB*255.0f;
 
 		if (shadeR == 0 && shadeG == 0 && shadeB == 0)
-		{	//special case where we disable lighting
+		{
+			//special case where we disable lighting
 			shadeR=255;
 			shadeG=255;
 			shadeB=255;
@@ -1929,7 +1933,8 @@ void WaterRenderObjClass::drawTrapezoidWater(Vector3 points[4], Int triggerID, I
 		shadeB=shadeB*255.0f;
 
 		if (shadeR == 0 && shadeG == 0 && shadeB == 0)
-		{	//special case where we disable lighting
+		{
+			//special case where we disable lighting
 			shadeR=255;
 			shadeG=255;
 			shadeB=255;

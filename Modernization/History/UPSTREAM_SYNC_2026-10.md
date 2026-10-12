@@ -221,3 +221,25 @@ Result: tests build clean; `ctest` 31 of 32 (same sampler failure, back to about
 rebuild of `z_generals` compiles with no errors, 48 unique unresolved symbols / 120 references,
 identical to the baseline.
 
+### Waypoint 6 — `a932455f9..b687c073b` (2 commits)
+
+Arrived: two tree-wide formatting commits, 287 files: trailing comments moved off opening
+brace lines (`#3351`), and leading `&&` / `||` in multi-line conditions moved to the end of
+the previous line (`#3352`). No behaviour change.
+
+Conflicts (20 files, 69 blocks):
+
+| File | Resolution |
+|---|---|
+| `BaseHeightMap.cpp`, `FlatHeightMap.cpp`, `HeightMap.cpp`, `W3DDisplay.cpp`, `W3DShaderManager.cpp`, `Water/W3DWater.cpp`, `Water/W3DWaterTracks.cpp` (Core device); `WW3D2/dynamesh.cpp`; `WWLib/registry.cpp`; `Shadow/W3DProjectedShadow.cpp`, `Shadow/W3DVolumetricShadow.cpp`, `W3DBridgeBuffer.cpp`, `WW3D2/ddsfile.cpp`, `WW3D2/mesh.cpp` (both games) | EastWind's side kept in every block. Each block is code EastWind rewrote for the D3D12 backend or x64, overlapping a line upstream only reformatted. |
+| `WW3D2/dx8renderer.cpp` (deleted by EastWind) | Stays deleted; upstream change is formatting. |
+
+Consequence: the 69 kept blocks still use the old formatting (trailing brace comments, leading
+operators). Everything outside them took upstream's style. A later formatting pass over these
+19 files would close the gap; it is cosmetic.
+
+Adapted outside conflict hunks: none. Not applicable: the `dx8renderer.cpp` formatting.
+
+Result: tests build clean; `ctest` 31 of 32 (same sampler failure); `z_generals` compiles with no
+errors, 48 unique unresolved symbols / 120 references, identical to the baseline.
+

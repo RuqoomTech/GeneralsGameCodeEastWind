@@ -748,7 +748,8 @@ void HeightMapRenderObjClass::doPartialUpdate(const IRegion2D &partialRange, Wor
 	}
 
 	if (!m_extraBlendTilePositions)
-	{	//Need to allocate memory
+	{
+		//Need to allocate memory
 		m_extraBlendTilePositions = NEW Int[DEFAULT_MAX_MAP_EXTRABLEND_TILES];
 		m_extraBlendTilePositionsSize = DEFAULT_MAX_MAP_EXTRABLEND_TILES;
 	}
@@ -763,7 +764,8 @@ void HeightMapRenderObjClass::doPartialUpdate(const IRegion2D &partialRange, Wor
 		Int y = m_extraBlendTilePositions[j] >> 16;
 		if (x >= partialRange.lo.x && x < partialRange.hi.x &&
 			y >= partialRange.lo.y && y < partialRange.hi.y)
-		{	//this tile is inside region being updated so remove it by shifting tile array
+		{
+			//this tile is inside region being updated so remove it by shifting tile array
 			memcpy(m_extraBlendTilePositions+j,m_extraBlendTilePositions+j+1,(m_numExtraBlendTiles-1-j)*sizeof(Int));
 			m_numExtraBlendTiles--;
 			j--;	//need to look at index j again because this tile was removed
@@ -779,7 +781,8 @@ void HeightMapRenderObjClass::doPartialUpdate(const IRegion2D &partialRange, Wor
 			Bool flipState,cliffState;
 			if (htMap->getExtraAlphaUVData(i,j,U,V,alpha,&flipState, &cliffState))
 			{	if (m_numExtraBlendTiles >= m_extraBlendTilePositionsSize)
-				{	//no more room to store extra blend tiles so enlarge the buffer.
+				{
+					//no more room to store extra blend tiles so enlarge the buffer.
 					Int *tempPositions=NEW Int[m_extraBlendTilePositionsSize+512];
 					memcpy(tempPositions, m_extraBlendTilePositions, m_extraBlendTilePositionsSize*sizeof(Int));
 					delete [] m_extraBlendTilePositions;
@@ -1070,7 +1073,8 @@ Int HeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, 
 			Int m_mapDX=pMap->getXExtent();
 			Int m_mapDY=pMap->getYExtent();
 			if (!m_extraBlendTilePositions)
-			{	//Need to allocate memory
+			{
+				//Need to allocate memory
 				m_extraBlendTilePositions = NEW Int[DEFAULT_MAX_MAP_EXTRABLEND_TILES];
 				m_extraBlendTilePositionsSize = DEFAULT_MAX_MAP_EXTRABLEND_TILES;
 			}
@@ -1085,7 +1089,8 @@ Int HeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, 
 					Bool flipState,cliffState;
 					if (pMap->getExtraAlphaUVData(i,j,U,V,alpha,&flipState, &cliffState))
 					{	if (m_numExtraBlendTiles >= m_extraBlendTilePositionsSize)
-						{	//no more room to store extra blend tiles so enlarge the buffer.
+						{
+							//no more room to store extra blend tiles so enlarge the buffer.
 							Int *tempPositions=NEW Int[m_extraBlendTilePositionsSize+512];
 							memcpy(tempPositions, m_extraBlendTilePositions, m_extraBlendTilePositionsSize*sizeof(Int));
 							delete [] m_extraBlendTilePositions;
@@ -1112,7 +1117,8 @@ Int HeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, 
 		needToAllocate = true;
 	}
 	if (data && needToAllocate && m_treeBuffer != nullptr)
-	{	//requested heightmap different from old one.
+	{
+		//requested heightmap different from old one.
 		freeIndexVertexBuffers();
 		//Get number of vertex buffers needed to hold current map
 		//First round dimensions to next multiple of VERTEX_BUFFER_TILE_LENGTH since that's our block size
