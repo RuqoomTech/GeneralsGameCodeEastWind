@@ -1,3 +1,4 @@
+#include "Lib/BaseType.h"
 #include "Common/RandomValue.h"
 #include "Common/crc.h"
 #include "GameLogic/LogicRandomValue.h"

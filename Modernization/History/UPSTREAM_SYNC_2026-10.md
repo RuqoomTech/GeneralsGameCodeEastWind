@@ -147,3 +147,53 @@ path, and none was regenerated.
 Result: tests build clean after the `core_utility` fix; `ctest` 31 of 32 (same sampler failure);
 `z_generals` compiles, 48 unique unresolved symbols / 120 references, identical to the baseline.
 
+### Waypoint 4 — `1747544e0..7ceb579a7` (10 commits)
+
+Arrived: `WeaponSet::xfer` pitch-limit flag fix (`#3145`); pathfinder classes split out of
+`AIPathfind.h` into separate headers (`#3334`); a build-warning sweep (`#3358`: debug guards
+around `WWASSERT` / `WWDEBUG_SAY` / `SNAPSHOT_SAY` / `DEBUG_LOG`, unused variables,
+assignments in conditions, conversion types); `stdint_adapter.h` moved under `precompiled.h`;
+`BaseType.h` split into one header per type plus `BaseFunctions.h`; base macros, pragmas and
+scalar typedefs moved to a new force-included `Precompiled/BasePrecomp.h`, delivered through a
+new `core_libraries` interface target; `BaseType.h` includes removed tree-wide.
+
+Conflicts (23 files):
+
+| File | Resolution |
+|---|---|
+| `CMakeLists.txt` | Upstream's target-scoped force include taken (the waypoint 3 global `add_compile_options` is gone). |
+| `Core/Libraries/Include/Lib/BaseType.h` | Upstream's split taken whole. EastWind's only change, the strict-aliasing-safe `base_type_float_bits` / `base_type_float_from_bits` helpers, re-applied in `Lib/BaseFunctions.h`, where `fast_float_trunc` / `floor` / `ceil` now live. |
+| `GameNetwork/NetworkDefs.h`, `NetCommandMsg.h` | EastWind's kept. Upstream moved `Common/MessageStream.h` into `NetworkDefs.h`; EastWind removed it from there on purpose in Step 04B so wire sizes cannot depend on the `GameMessage` layout (`DeterminismPolicyTest.cmake` asserts this). The explicit `Lib/BaseType.h` includes stay. |
+| `W3DWater.h`, `W3DBibBuffer.h`, `W3DBridgeBuffer.h` (both games) | EastWind's kept: upstream only dropped `Lib/BaseType.h` next to DX8 buffer includes EastWind had already removed. |
+| `W3DTerrainTracks.h` | Both: EastWind's backend includes plus upstream's explicit `WW3D2/vertmaterial.h`. |
+| `WWSaveLoad/pointerremap.{cpp,h}`, `saveload.h` | EastWind's fixed-width persist-token signatures kept; upstream's guard rename `WWDEBUG` to `DEBUG_LOGGING` applied to them, and its move of `WWASSERT(0)` outside the guard taken. |
+| `WW3D2/meshdebugger.{cpp,h}` (upstream `dx8rendererdebugger`) | EastWind's class name kept; upstream's shape taken (`Add_Mesh` always declared, body guarded). |
+| `WW3D2/dx8wrapper.h`, `missingtexture.cpp`, `pointgr.cpp`, `sortingrenderer.cpp`, `streakRender.cpp` | EastWind's migrated code kept. Upstream's hunks here are unused-variable and debug-guard fixes inside DX8 draw paths EastWind already replaced. |
+| `WW3D2/dx8renderer.cpp` (deleted by EastWind) | Stays deleted. Upstream change: one `(void)res` and two `DEBUG_CRASHING` guards. |
+| `Core/Tools/WW3D/max2w3d/CMakeLists.txt` | Upstream's removal of the direct `maxsdk` link and EastWind's removal of `d3d8lib` both applied. Not built on x64. |
+| `GeneralsMD/.../WW3D2/CMakeLists.txt` | EastWind's PCH list kept; first entry is now `Precompiled/BasePrecomp.h`. |
+
+Adapted outside conflict hunks:
+
+- **Focused test graph.** `Int`, `Real` and the base macros are no longer defined by
+  `Lib/BaseType.h`; they come from the force-included `BasePrecomp.h`. The tests-only graph
+  does not add `Core/`, so the root `CMakeLists.txt` now adds `Core/Libraries/Include` when
+  `RTS_BUILD_TESTS_ONLY` is set, and the 14 test targets link `core_libraries`.
+- `Core/Tests/DeterminismPrimitivesTest.cpp` includes `Lib/BaseType.h` directly; it reached the
+  fast-float functions through `RandomValue.h`, which no longer includes it.
+
+- `cmake/tests/RuntimeCompatibilityPolicyTest.cmake` follows the code: the `memcpy` float-bits
+  assertions now read `Lib/BaseFunctions.h` and the `Coord3D operator-()` assertion reads
+  `Lib/Coord3D.h`. Same three assertions. The first gate run failed on this until updated.
+
+Not applicable: the `dx8renderer.cpp` warning fixes (file deleted).
+
+Save format note: `#3145` bumps `WeaponSet::xfer` to version 3 (writes `m_hasPitchLimit` where
+version 2 wrote `m_hasDamageWeapon` twice); older saves still load. No EastWind fixture covers
+it; none was regenerated.
+
+Result: tests build clean; `ctest` 31 of 32 (same sampler failure); full rebuild of `z_generals`
+compiles with no errors, 48 unique unresolved symbols / 120 references, identical to the
+baseline. Observation: `d3d12_backend_smoke` took about 4 s in the gate run and about 2 minutes
+in two later runs of the same binary, failing identically each time; not investigated.
+
