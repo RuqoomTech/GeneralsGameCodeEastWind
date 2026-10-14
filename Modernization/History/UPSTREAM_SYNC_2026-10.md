@@ -363,3 +363,16 @@ from those lists stays: they still arrive transitively and in a working order.
 Result (second gate run): tests build clean; `ctest` 31 of 32 (same sampler failure);
 `z_generals` compiles with no errors and the link reports 48 unique unresolved symbols, the same
 list as the baseline.
+
+### Waypoint 9 — `adac468d7..53fb940c9` (10 commits)
+
+Upstream's #3429 series splits `AIPathfind.cpp` into one file per class: `PathNode`, `Path`,
+`PathfindCellInfo`, the shared constants, `PathfindCell`, `PathfindCellList`, the cell helpers,
+`ZoneBlock` with the global helpers, `PathfindZoneManager` and `PathfindLayer`. Code moves only.
+
+Conflicts: none. `Core/GameEngine/CMakeLists.txt` auto-merged the new source list. EastWind's
+edits to `AIPathfind.cpp` sit outside the moved blocks, so they stay in place, and no policy
+test names the pathfinder files.
+
+Result: tests build clean; `ctest` 31 of 32 (same sampler failure); `z_generals` compiles with
+no errors and the link reports 48 unique unresolved symbols, the same list as the baseline.
