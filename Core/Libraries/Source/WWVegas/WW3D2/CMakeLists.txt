@@ -14,6 +14,7 @@ set(WW3D2_SRC
     assetstatus.cpp
     assetstatus.h
     Backend/RenderBackend.h
+    Backend/Renderer.cpp
     bitmaphandler.cpp
     bitmaphandler.h
     bmp2d.cpp
@@ -145,6 +146,7 @@ set(WW3D2_SRC
     #render2d.h
     render2dsentence.cpp
     render2dsentence.h
+    Renderer.h
     renderobjectrecycler.cpp
     renderobjectrecycler.h
     rendobj.cpp

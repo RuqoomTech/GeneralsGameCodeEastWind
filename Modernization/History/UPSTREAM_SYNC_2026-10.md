@@ -376,3 +376,51 @@ test names the pathfinder files.
 
 Result: tests build clean; `ctest` 31 of 32 (same sampler failure); `z_generals` compiles with
 no errors and the link reports 48 unique unresolved symbols, the same list as the baseline.
+
+### Waypoint 10 — `53fb940c9..fd62135da` (6 commits)
+
+Taken: `917613099` (#3442, C++ modules scanning off; already brought forward in waypoint 7, so
+`cmake/compilers.cmake` merged to the same line), `1b1212f0d` (#3426, uninitialized variables
+in Generals `AIPlayer::getPlayerStructureBounds`), `2119cc9b6` (#3438, do not exit a temporary
+AI state that was reset during its own update), `2f023dec7` (#3443, rebuild static display
+strings only when their hotkey setting changes), `ab568af44` (#3453, the render backend object
+becomes a static `Renderer` class) and `fd62135da` (#3417, `Clear` / `Set_Viewport` /
+`Set_Gamma` callers routed through `Renderer`). The four non-renderer commits merged cleanly.
+
+The Renderer bridge (the decision taken at planning, "bridge both"):
+
+- Git saw upstream's `IRenderBackend.h -> Renderer.h` as a rename and merged EastWind's
+  485-line interface into `Renderer.h`. Undone: `IRenderBackend.h` is restored from EastWind
+  unchanged, and `Renderer.h` is upstream's file, with one added comment paragraph saying where
+  EastWind defines the methods. Upstream's separate `RenderViewport` struct stays as it is.
+- New `Core/Libraries/Source/WWVegas/WW3D2/Backend/Renderer.cpp` defines the eleven
+  `Renderer::` statics. `Init` creates the backend through `Create_Render_Backend` and
+  `Shutdown` deletes it, the same lifetime `WW3D::Init` / `WW3D::Shutdown` gave it before. The
+  other nine forward to that `IRenderBackend` and do nothing while there is no backend, matching
+  the null checks EastWind's callers made. `Set_Viewport` copies `RenderViewport` into
+  `RenderBackendViewport` (same fields).
+- `Backend/RenderBackend.h` gains `Get_Renderer_Backend()`. The auto-merge had also removed
+  `WW3D::Get_Render_Backend()` and `WW3D::RenderBackend` (about 30 EastWind callers use them);
+  both are back, and `WW3D::Init` now sets `RenderBackend` from `Get_Renderer_Backend()` after
+  `Renderer::Init` succeeds and clears it after `Renderer::Shutdown`.
+- `Backend/DX8Backend.cpp` (modified upstream, deleted here) stays deleted. `Backend/DX8Backend.h`
+  and the `dx8renderer.h` include upstream kept in `ww3d.cpp` are not brought back.
+
+Call-site conflicts:
+
+| File | Resolution |
+|---|---|
+| `W3DDisplay.cpp` (`Set_Gamma`), `W3DView.cpp` (`Clear` depth only) | Upstream's `Renderer::` call; EastWind's includes kept beside `Renderer.h`, and EastWind's clearer comment kept on the `W3DView` clear. |
+| `W3DShaderManager.cpp` | Both includes. The auto-merged `Renderer::Clear` replaces `DX8Wrapper::Clear`, which was one of the 48 unresolved symbols. |
+| `W3DScene.cpp` (both games) | Both includes; the auto-merged `Renderer::Clear` calls stay. |
+| `camera.cpp` (both games) | Ours: EastWind validates the normalized bounds and skips an empty viewport before calling the backend. |
+| `Water/W3DWater.cpp` | Ours: the include list and the retired `WATER_TYPE_1_FB_REFLECTION` path, which upstream still renders through D3DX8 math and `Renderer::Clear`. |
+| `ww3d.h`, `ww3d.cpp`, `WW3D2/CMakeLists.txt` | Ours, plus `Renderer.h` and `Backend/Renderer.cpp`, as above. |
+
+Policy tests: no assertion changed. The `D3D12BackendPolicyTest` checks that `DX8Backend.cpp` /
+`.h` stay absent and that `IRenderBackend.h` keeps its contents; both still hold.
+
+Result: tests build clean; `ctest` 31 of 32 (same sampler failure); `z_generals` compiles with
+no errors and the link reports **47** unique unresolved symbols: the baseline list minus
+`DX8Wrapper::Clear`, nothing new. The D3D12 smoke test creates its backend directly, so it does
+not exercise the bridge; only the game link does.

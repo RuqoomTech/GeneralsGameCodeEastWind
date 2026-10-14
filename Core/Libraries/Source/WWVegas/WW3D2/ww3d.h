@@ -115,8 +115,8 @@ public:
 	static WW3DErrorType		Shutdown();
 	static bool					Is_Initted()								{ return IsInitted; }
 
-	// The active rendering backend.
-	// Created in Init and destroyed in Shutdown, so it is never null in between.
+	// The active rendering backend, owned by Renderer (Renderer::Init creates it and
+	// Renderer::Shutdown destroys it), so it is never null between Init and Shutdown.
 	static IRenderBackend *	Get_Render_Backend()						{ return RenderBackend; }
 
 	static int					Get_Render_Device_Count();

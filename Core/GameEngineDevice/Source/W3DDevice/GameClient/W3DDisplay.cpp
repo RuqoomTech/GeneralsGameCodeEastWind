@@ -90,6 +90,7 @@ static void drawFramerateBar();
 #include "WW3D2/ww3d.h"
 #include "WW3D2/IRenderBackend.h"
 #include "WW3D2/statistics.h"
+#include "WW3D2/Renderer.h"
 #include "WW3D2/predlod.h"
 #include "WW3D2/part_emt.h"
 #include "WW3D2/part_ldr.h"
@@ -555,8 +556,7 @@ void W3DDisplay::setGamma(Real gamma, Real bright, Real contrast, Bool calibrate
 	if (m_windowed)
 		return;	//we don't allow gamma to change in window because it would affect desktop.
 
-	if (WW3D::Get_Render_Backend())
-		WW3D::Get_Render_Backend()->Set_Gamma(gamma,bright,contrast,calibrate, false);
+	Renderer::Set_Gamma(gamma,bright,contrast,calibrate, false);
 }
 
 /** Set resolution of display */

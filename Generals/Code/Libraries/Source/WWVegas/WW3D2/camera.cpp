@@ -73,6 +73,7 @@
 
 #include "camera.h"
 #include "ww3d.h"
+#include "Renderer.h"
 #include "WWMath/matrix4.h"
 #include "IRenderBackend.h"
 

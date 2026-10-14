@@ -17,8 +17,8 @@
 */
 
 // TheSuperHackers @refactor bobtista 10/04/2026 WW3D backend creation seam.
-// D3D12 defines Create_Render_Backend. WW3D owns the instance it returns; use
-// WW3D::Get_Render_Backend() to reach the active backend.
+// D3D12 defines Create_Render_Backend. Renderer::Init owns the instance it
+// returns; use WW3D::Get_Render_Backend() to reach the active backend.
 
 #pragma once
 
@@ -26,3 +26,6 @@ class IRenderBackend;
 
 // Construct and initialize the D3D12 backend. Returns null on failure.
 IRenderBackend *Create_Render_Backend(void * window, bool lite);
+
+// The backend created by Renderer::Init. Null before Init and after Shutdown.
+IRenderBackend *Get_Renderer_Backend();
