@@ -1,6 +1,7 @@
 # Upstream sync — October 2026
 
-Status: **IN PROGRESS**
+Status: **DONE for the planned range** (upstream `0e6a06c7c`, merged 2026-10-14). Upstream
+moved on during the sync; see "Upstream after the target" below.
 
 Branch: `sync/upstream-2026-10-11` (local only). Safety tag: `pre-upstream-sync-2026-10-11`.
 
@@ -9,6 +10,58 @@ Branch: `sync/upstream-2026-10-11` (local only). Safety tag: `pre-upstream-sync-
 - EastWind: `f0021f294` (`main`, 2026-10-11).
 - Upstream: `TheSuperHackers/GeneralsGameCode` `main` at `0e6a06c7c` (2026-10-11).
 - Common ancestor: `ab0e4fc04` (2026-09-12). EastWind is 117 commits ahead, upstream 161 ahead.
+
+## Summary
+
+| # | Upstream range | Commits | Branch commit | Tests | Unresolved symbols |
+|---|---|---|---|---|---|
+| — | baseline `f0021f294` | — | — | 31 / 32 | 48 |
+| 1 | `ab0e4fc04..efe3d03e6` | 46 | `73ebcd0ff` | 31 / 32 | 48 |
+| 2 | `..a821f54d7` | 2 | `5d67a0f6e` | 31 / 32 | 48 |
+| 3 | `..1747544e0` | 21 | `c94b346ee` | 31 / 32 | 48 |
+| 4 | `..7ceb579a7` | 10 | `a9f60207a`, `d7f878d56` | 31 / 32 | 48 |
+| 5 | `..a932455f9` | 16 | `dc67d149b` | 31 / 32 | 48 |
+| 6 | `..b687c073b` | 2 | `91059570d` | 31 / 32 | 48 |
+| 7 | `..edbc165c3` | 9 | `74ba2e0fc` | 31 / 32 | 48 |
+| 8 | `..adac468d7` | 22 | `57ba19aca` | 31 / 32 | 48 |
+| 9 | `..53fb940c9` | 10 | `b757e2d36` | 31 / 32 | 48 |
+| 10 | `..fd62135da` | 6 | `f14a231dd` | 31 / 32 | **47** |
+| 11 | `..0e6a06c7c` | 17 | `3baa06edd` | 31 / 32 | 47 |
+
+The one failing test is `d3d12_backend_smoke`, failing the same way at every step (see the
+baseline). Unresolved symbols are counted at the final `z_generals` link. Waypoint 10's static
+`Renderer` bridge resolved `DX8Wrapper::Clear`, and no step added a symbol to the baseline
+list. No determinism or protocol fixture changed, and none was regenerated.
+
+What needs the owner's attention:
+
+- **`RETAIL_COMPATIBLE_CRC` is still `(1)`** in `GameDefines.h`. Upstream guards many of its
+  fixes with `#if !RETAIL_COMPATIBLE_CRC` (401 `#if`/`#elif` lines naming it, in 158 files, at the end of the sync), so those
+  fixes are merged as text but compiled out here. Retail compatibility is otherwise retired in
+  EastWind (review finding 5); setting the macro to `0` would enable them, and would change
+  CRC behaviour. Left for the owner.
+- **GPU verification is partial on this machine.** The smoke test stops at the sampler group,
+  so renderer merges (shroud, glyph cache, Renderer bridge) are compile- and link-verified
+  only. The bridge is not exercised by any test; the D3D12 smoke test creates its backend
+  directly.
+- **GNU ld needs archive order that upstream (MSVC) does not.** Upstream's link-list pruning
+  removed `z_gameengine` from the executable once (waypoint 8). Every later upstream CMake
+  change to link lists should be compared entry by entry, not resolved wholesale.
+- **Unbuilt targets**: base Generals, the tools (GUIEdit, WorldBuilder, W3DView) and
+  upstream's GoogleTest/benchmark targets took upstream CMake changes without being built by
+  any gate.
+- **Disk**: D: had about 5 GB free throughout. The C++ module-scanning incident in waypoint 7
+  filled it once.
+
+## Upstream after the target
+
+During the sync, `upstream/main` was fetched forward to `79e87d082` (2026-10-14), **31 commits**
+past `0e6a06c7c`. They are not part of this sync. They include more renderer-independent
+fixes (save/load, AI, locomotor, network sockets, handle leaks) and refactors that touch files
+EastWind changed: `Debug.cpp` decoupled from GameEngine (#3456), `Win32BIGFile`/`StdBIGFile`
+merged into `ArchiveFile` (#3505), MiniDumper moved to its own library (#3506), and
+`dx8wrapper.h` / min-max consolidation (#3516, #3518). A follow-up sync should use the same
+staged method.
 
 ## Method
 

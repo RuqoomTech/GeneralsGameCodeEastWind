@@ -605,3 +605,5 @@ Normal game link/boot, D3D12 creation in that executable, first visible game/UI 
 
 - Reviewed the 116 commits since the roadmap baseline. Findings and a prioritized improvement list are in `Modernization/REVIEW_2026-10-11.md`. No code was changed by the review.
 - Upstream import (161 commits, staged git merge on `sync/upstream-2026-10-11`) is recorded in `Modernization/History/UPSTREAM_SYNC_2026-10.md`.
+- 2026-10-14: all 11 waypoints merged, up to upstream `0e6a06c7c`. Tests 31/32 on this machine, unchanged from before the sync (the D3D12 smoke test stops at its sampler checks on the AMD RX 640). The `z_generals` link has 47 unresolved symbols, down from 48. Two decisions were added to `DECISIONS.md`: upstream syncs are git merges, and the static `Renderer` forwards into `IRenderBackend`.
+- `PROJECT_STATE.md` no longer repeats its sea-reflection section; the first copy was kept, and the dropped copy differed only in three wording changes.

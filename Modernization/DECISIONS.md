@@ -119,3 +119,31 @@ After the Step 05B shell was Windows-verified, the project owner rejected a perm
 - x64 selects D3D12; DX8 backend/implementation code is excluded from the x64 renderer graph and retained only as temporary 32-bit historical/reference material while call sites are migrated.
 - Do not solve migration by building a giant D3D8-on-D3D12 emulation layer. Move real callers to renderer-neutral resource/draw concepts where the fixed-function API is the wrong abstraction.
 - W3X parser/import work remains renderer-neutral and resumes after the D3D12 indexed-mesh path is ready to consume both W3D and W3X data.
+
+## 2026-10-14 — Upstream syncs are git merges
+
+Upstream refreshes are now `git merge --no-ff` of upstream commits on a local sync branch, in
+waypoints small enough to build and test one at a time. This replaces hashing and comparing
+zip snapshots (the 2026-09-12 entry above and Step 04D3); the other rules in that entry still
+apply. The merge keeps upstream ancestry, so the next sync only sees new commits.
+
+- Every waypoint must build `mingw64-tests`, pass `ctest`, and leave the `z_generals`
+  unresolved-symbol list no larger than before, before it is committed.
+- Upstream link-list changes are compared entry by entry: GNU ld needs archive order that
+  MSVC does not.
+- Policy tests follow moved code to its new path; their assertions are not weakened.
+- Determinism and protocol fixtures are never regenerated during a sync without the owner's
+  approval.
+- The first sync and its conflicts are recorded in `History/UPSTREAM_SYNC_2026-10.md`.
+
+## 2026-10-14 — Upstream's static Renderer forwards into IRenderBackend
+
+Upstream added a static `Renderer` class (`WW3D2/Renderer.h`) and moved callers onto it, with
+its methods defined by the linked DX8 backend. EastWind keeps both seams:
+
+- `Backend/Renderer.cpp` defines the `Renderer` statics as null-safe forwards into the
+  `IRenderBackend` instance. `Renderer::Init` creates that instance and `Renderer::Shutdown`
+  deletes it; `WW3D::Get_Render_Backend()` returns the same pointer.
+- `IRenderBackend.h` stays the full renderer-neutral interface. `Renderer` grows only as
+  upstream moves callers onto it.
+- Upstream's `DX8Backend.cpp` and the DX8-only callers it serves stay deleted.
