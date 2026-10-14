@@ -1,14 +1,16 @@
 # Upstream sync — October 2026
 
-Status: **DONE for the planned range** (upstream `0e6a06c7c`, merged 2026-10-14). Upstream
-moved on during the sync; see "Upstream after the target" below.
+Status: **DONE to upstream `79e87d082`** (merged 2026-10-15). The planned range ended at
+`0e6a06c7c` (waypoints 1-11, 2026-10-14); upstream moved on during the sync, and the 31 commits
+after it were merged on the owner's request as waypoint 12 and a combined waypoint 13-15.
 
 Branch: `sync/upstream-2026-10-11` (local only). Safety tag: `pre-upstream-sync-2026-10-11`.
 
 ## Inputs
 
 - EastWind: `f0021f294` (`main`, 2026-10-11).
-- Upstream: `TheSuperHackers/GeneralsGameCode` `main` at `0e6a06c7c` (2026-10-11).
+- Upstream: `TheSuperHackers/GeneralsGameCode` `main` at `0e6a06c7c` (2026-10-11), extended to
+  `79e87d082` (2026-10-14) during the sync.
 - Common ancestor: `ab0e4fc04` (2026-09-12). EastWind is 117 commits ahead, upstream 161 ahead.
 
 ## Summary
@@ -27,11 +29,15 @@ Branch: `sync/upstream-2026-10-11` (local only). Safety tag: `pre-upstream-sync-
 | 9 | `..53fb940c9` | 10 | `b757e2d36` | 31 / 32 | 48 |
 | 10 | `..fd62135da` | 6 | `f14a231dd` | 31 / 32 | **47** |
 | 11 | `..0e6a06c7c` | 17 | `3baa06edd` | 31 / 32 | 47 |
+| 12 | `..4f71d3791` | 9 | `6cdbc6c8b` | not gated alone | — |
+| 13-15 | `..79e87d082` | 22 | `d03d1ed96` | 31 / 32 | 47 |
 
 The one failing test is `d3d12_backend_smoke`, failing the same way at every step (see the
 baseline). Unresolved symbols are counted at the final `z_generals` link. Waypoint 10's static
 `Renderer` bridge resolved `DX8Wrapper::Clear`, and no step added a symbol to the baseline
-list. No determinism or protocol fixture changed, and none was regenerated.
+list. No determinism or protocol fixture changed, and none was regenerated. Waypoints 12 and
+13-15 were merged back to back and gated once, at the end, on the owner's request to save
+time; the gate result therefore covers both commits together.
 
 What needs the owner's attention:
 
@@ -50,18 +56,23 @@ What needs the owner's attention:
 - **Unbuilt targets**: base Generals, the tools (GUIEdit, WorldBuilder, W3DView) and
   upstream's GoogleTest/benchmark targets took upstream CMake changes without being built by
   any gate.
+- **New DX8 caller from upstream.** Terrain-conforming particles (#3245, waypoint 12) add
+  `W3DTerrainParticles.cpp`, written against `DX8Wrapper`. It adds no new unresolved symbol,
+  but 15 of the link's references (116 to 131); it needs a D3D12 port like the other callers.
+- **Header names that collide under GCC.** Upstream's debug library now exports
+  `debug/debug.h` through an `Include` directory, which shadows libstdc++'s own
+  `<debug/debug.h>` in any target that has that directory on its path. Today that is only
+  `core_debug` and `core_profile_legacy`; MSVC has no such header, so upstream will not notice
+  if it spreads further.
 - **Disk**: D: had about 5 GB free throughout. The C++ module-scanning incident in waypoint 7
   filled it once.
 
 ## Upstream after the target
 
-During the sync, `upstream/main` was fetched forward to `79e87d082` (2026-10-14), **31 commits**
-past `0e6a06c7c`. They are not part of this sync. They include more renderer-independent
-fixes (save/load, AI, locomotor, network sockets, handle leaks) and refactors that touch files
-EastWind changed: `Debug.cpp` decoupled from GameEngine (#3456), `Win32BIGFile`/`StdBIGFile`
-merged into `ArchiveFile` (#3505), MiniDumper moved to its own library (#3506), and
-`dx8wrapper.h` / min-max consolidation (#3516, #3518). A follow-up sync should use the same
-staged method.
+During the sync, `upstream/main` was fetched forward to `79e87d082` (2026-10-14), 31 commits past
+the planned target. They were merged as waypoint 12 and a combined waypoint 13-15 (below), so
+`sync/upstream-2026-10-11` contains all of upstream as of that fetch. A later sync should start
+from `79e87d082` and use the same staged method.
 
 ## Method
 
@@ -508,3 +519,64 @@ restored from EastWind's side and only `8b0430b9e` was re-applied, as described 
 Result (third gate run): tests build clean; `ctest` 31 of 32 (same sampler failure);
 `z_generals` compiles with no errors and the link reports 47 unique unresolved symbols, the
 same list as after waypoint 10.
+
+### Waypoint 12 — `0e6a06c7c..4f71d3791` (9 commits)
+
+Taken as upstream wrote them: #3325 (interlocked functions and atomic adapter for VC6), #3468
+(obsolete `RECOIL_FROM_BEING_DAMAGED` code removed), #3148 (`AssaultTransportAIUpdate::xfer()`
+serializes all member flags), #3003 (2D diagonal locomotor speed; guarded by the new
+`PRESERVE_RETAIL_PHYSICS_FORWARD_SPEED_*` macros, all `(1)`, so behaviour is unchanged here),
+#3467 (GameMemory CMake simplified), #3488 (sockets that fail to bind are closed) and #3479
+(`FlatHeightMap::ReleaseResources()` releases its tiles on device reset; EastWind keeps
+`releaseTiles()`).
+
+Conflicts and adaptations:
+
+| File | Resolution |
+|---|---|
+| `GameDefines.h` | Upstream's three `PRESERVE_RETAIL_PHYSICS_FORWARD_SPEED_*` macros added; its duplicate of an existing retail-compatibility comment dropped. `ENABLE_TERRAIN_CONFORMING_PARTICLES (1)` merged cleanly. |
+| `statistics.h` | EastWind's renderer-neutral names (`RENDER_RECORD_*`), plus upstream's terrain-particle batch counter under the same naming: `RENDER_RECORD_TERRAIN_PARTICLE_BATCH`. |
+| `W3DTerrainParticles.cpp` (new, #3245) | Taken, with its statistics macro renamed to match. It draws through `DX8Wrapper` and is a new caller to port (see the owner items). |
+| `W3DScreenshot.cpp`, `ww3d.cpp` | EastWind's files. #3477 fixes a leaked D3D8 surface copy; EastWind reads the frame through `IRenderBackend::Read_Output_RGBA8`, so the fix does not apply. |
+| `GameMemoryNull.h` → `.inl` (#3467) | Taken. `cmake/tests/RuntimePointerPolicyTest.cmake` follows the rename; its assertions are unchanged and still pass. |
+
+Result: committed without a gate of its own (see waypoint 13-15).
+
+### Waypoint 13-15 — `4f71d3791..79e87d082` (22 commits, upstream tip)
+
+The owner asked for the remaining commits to be merged in one step and tested once at the end,
+so the three planned waypoints were merged as one.
+
+Taken as upstream wrote them: #3482 (legacy cliff state buffer freed when loading blend tile
+data), #3497 (handles closed in `GameWindowManager`, `ImageCollection`, `MainMenuUtils`), #3500
+(portable `memcchr` without SSE2), #3481 (`checkForCrateToPickup()`; behind
+`RETAIL_COMPATIBLE_CRC`, so compiled out here), #3436 (INI out-of-range numbers parse as the
+legacy `strto*` path did; live here because EastWind builds the C++17 `from_chars` path), #3504
+and #3518 (IABS and min/max consolidated), #3505 (`Win32BIGFile`/`StdBIGFile` merged into
+`ArchiveFile`, the file systems into `BIGFileSystem`) and #3506 (MiniDumper decoupled from
+GameEngine into its own library). EastWind had not changed the ArchiveFile, BIG file or
+MiniDumper sources since the fork, so those restructurings lost nothing.
+
+Conflicts and adaptations:
+
+| File | Resolution |
+|---|---|
+| Header moves (#3456, #3512) | Upstream deleted `Core/Libraries/Include`. `Lib/*` now lives in `Core/Libraries/Source/Lib/Include/Lib`, `rts/profile.h` became `Lib/Profile.h` (EastWind's PerformanceTelemetry declarations came along) and `rts/debug.h` became `Lib/Debug.h`. EastWind's own `rts/asset_3d_format.h` and `rts/w3x_document.h` moved to `Core/Libraries/Source/rts/Include/rts`, next to `w3x_document.cpp`; their include spelling is unchanged. Five EastWind files that included `rts/profile.h` now include `Lib/Profile.h`. |
+| Root `CMakeLists.txt` (tests-only graph) | That graph never added `Core/`, and upstream's `core_libraries` is now a static library that builds `Debug.cpp` and `Trig.cpp` and links the profile and debug libraries. The tests graph gets a header-only `core_libraries` interface target instead: the `Lib/Include` directory and the forced `Precompiled/BasePrecomp.h`. |
+| `Core/Tests/CMakeLists.txt` | Each `Core/Libraries/Include` path replaced by `Source/Lib/Include` and `Source/rts/Include`. |
+| `profile/CMakeLists.txt`, `Lib/CMakeLists.txt` | `performance_telemetry.cpp` stays in `profile/` but builds in `core_libraries`, where its API (`Lib/Profile.h`) lives. In `core_profile_legacy` it failed under GCC: that target has `core_debug`'s `Include` directory on its path, so `<chrono>`'s `#include <debug/debug.h>` found the game's debug header instead of libstdc++'s. `profile/CMakeLists.txt` is now identical to upstream. |
+| `Common/Debug.h`, `Debug.cpp` | Upstream's slimmed header plus EastWind's `DebugSetWindowedMode`. `Debug.cpp` keeps EastWind's `s_debugWindowedMode`; upstream's new `extern bool DX8Wrapper_IsWindowed` was not taken, since nothing in EastWind defines it. |
+| `wwdebug.h` | Upstream's `Lib/Debug.h` include, plus EastWind's `<cstdint>`. |
+| `dx8wrapper.h` (#3516) | Upstream consolidates `F2DW` here as a pointer cast; EastWind's version copies through `memcpy` (strict aliasing, as in waypoint 4). Upstream's `DX8_ErrorCode` / `Log_DX8_ErrorCode` were not taken: EastWind checks results with `WW_CHECK_RESULT` and nothing calls them. |
+| `W3DWater.cpp` (#3489) | Ours. Upstream skips rivers whose indices overflow the 16-bit dynamic index buffer; EastWind's river path already rejects `count > 65535` and keeps its D3D12 geometry. |
+| Policy tests | `D3D12BackendPolicyTest`, `RuntimeCompatibilityPolicyTest` and `X64PlatformPolicyTest` point at the moved files (`Lib/Include`, `profile/Include/profile/`, `debug/Include/debug/`). No assertion was changed. |
+
+Mistakes caught by the gate: the first run failed `x64_platform_policy` on the three moved
+profile and debug headers, and stopped the game build at `performance_telemetry.cpp` (first
+`Lib/Profile.h` not found, then the libstdc++ header collision above). Each was fixed as
+described.
+
+Result (third gate run, covering waypoints 12 and 13-15): tests build clean; `ctest` 31 of 32
+(same sampler failure); `z_generals` compiles with no errors and the link reports 47 unique
+unresolved symbols, identical to waypoint 11. References rose from 116 to 131, all from
+`W3DTerrainParticles.cpp`. `git rev-list --count HEAD..upstream/main` is 0.

@@ -1,9 +1,10 @@
 # Project state
 
-## Upstream sync to 0e6a06c7c - 2026-10-14
+## Upstream sync to 79e87d082 - 2026-10-15
 
-Upstream TheSuperHackers/GeneralsGameCode is merged up to `0e6a06c7c` (161 commits, 11
-waypoints) on the local branch `sync/upstream-2026-10-11`. `main` is unchanged. Each conflict
+Upstream TheSuperHackers/GeneralsGameCode is merged up to `79e87d082` (192 commits: 11 planned
+waypoints to `0e6a06c7c`, then waypoint 12 and a combined 13-15) on the local branch
+`sync/upstream-2026-10-11`. `main` is unchanged. Each conflict
 and the reason for each resolution is in `Modernization/History/UPSTREAM_SYNC_2026-10.md`.
 The review that came before it is `Modernization/REVIEW_2026-10-11.md`.
 
@@ -16,7 +17,9 @@ Measured on this machine (AMD RX 640, GCC 16.2.0) at the start and end of the sy
   Upstream's static `Renderer` class, bridged onto the D3D12 backend, removed
   `DX8Wrapper::Clear`. None were added.
 
-Upstream has since moved to `79e87d082` (31 more commits); those are not merged yet.
+The last 31 commits added one new DX8 caller, upstream's terrain-conforming particles
+(`W3DTerrainParticles.cpp`). It adds no new unresolved symbol, but it needs a D3D12 port like
+the other callers. `git rev-list --count HEAD..upstream/main` was 0 at the end of the sync.
 
 ## GPU sea reflection and sky - 2026-10-11
 
