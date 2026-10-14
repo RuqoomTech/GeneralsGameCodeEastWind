@@ -13,6 +13,8 @@ option(RTS_BUILD_TESTS "Build modernization characterization/regression tests." 
 option(RTS_BUILD_TESTS_ONLY "Configure only the lightweight modernization test graph." OFF)
 option(RTS_BUILD_EVOLUTION_X64 "Configure the Evolution x64 modernization graph." OFF)
 option(RTS_BUILD_HEADLESS_CORE "Build the deterministic/headless x64 core lane." OFF)
+cmake_dependent_option(RTS_BUILD_OPTION_TESTS "Build the unit tests." OFF "NOT IS_VS6_BUILD" OFF)
+cmake_dependent_option(RTS_BUILD_OPTION_BENCHMARKS "Build the benchmarks." OFF "NOT IS_VS6_BUILD" OFF)
 
 if(RTS_BUILD_TESTS_ONLY)
     set(RTS_BUILD_TESTS ON CACHE BOOL "Build modernization characterization/regression tests." FORCE)
@@ -40,6 +42,8 @@ add_feature_info(TestsOnly RTS_BUILD_TESTS_ONLY "Configure only the lightweight 
 add_feature_info(EvolutionX64 RTS_BUILD_EVOLUTION_X64 "Configure the Evolution x64 modernization graph")
 add_feature_info(HeadlessCore RTS_BUILD_HEADLESS_CORE "Build the deterministic/headless x64 core lane")
 add_feature_info(FFmpegSupport RTS_BUILD_OPTION_FFMPEG "Building with FFmpeg support")
+add_feature_info(Tests RTS_BUILD_OPTION_TESTS "Building the unit tests")
+add_feature_info(Benchmarks RTS_BUILD_OPTION_BENCHMARKS "Building the benchmarks")
 
 if(RTS_BUILD_EVOLUTION_X64)
     target_compile_definitions(core_config INTERFACE RTS_EVOLUTION_X64=1)
@@ -73,9 +77,10 @@ if(RTS_BUILD_GENERALS)
     add_feature_info(GeneralsDocs RTS_BUILD_GENERALS_DOCS "Build Generals Documentation")
 endif()
 
+
 if(NOT IS_VS6_BUILD)
     # Because we set CMAKE_CXX_STANDARD_REQUIRED and CMAKE_CXX_EXTENSIONS in the compilers.cmake this should be enforced.
-    target_compile_features(core_config INTERFACE cxx_std_20)
+    target_compile_features(deps_config INTERFACE cxx_std_20)
 
     # Keep C++-only diagnostics off C translation units and off vendored targets.
     if(NOT MSVC)
@@ -86,18 +91,19 @@ if(NOT IS_VS6_BUILD)
 endif()
 
 if(IS_VS6_BUILD AND RTS_BUILD_OPTION_VC6_FULL_DEBUG)
-    target_compile_options(core_config INTERFACE ${RTS_FLAGS} /Zi)
+    target_compile_options(deps_config INTERFACE ${RTS_FLAGS} /Zi)
 else()
-    target_compile_options(core_config INTERFACE ${RTS_FLAGS})
+    target_compile_options(deps_config INTERFACE ${RTS_FLAGS})
 endif()
+
+if(UNIX)
+    target_compile_definitions(deps_config INTERFACE _UNIX)
+endif()
+
 
 # This disables a lot of warnings steering developers to use windows only functions/function names.
 if(MSVC)
     target_compile_definitions(core_config INTERFACE _CRT_NONSTDC_NO_WARNINGS _CRT_SECURE_NO_WARNINGS $<$<CONFIG:DEBUG>:_DEBUG_CRT>)
-endif()
-
-if(UNIX)
-    target_compile_definitions(core_config INTERFACE _UNIX)
 endif()
 
 if(RTS_BUILD_OPTION_DEBUG)

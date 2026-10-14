@@ -62,10 +62,11 @@ if(MINGW)
     endif()
 endif()
 
-add_subdirectory(Dependencies/Precompiled)
-# Utility headers are used by both the full runtime and the focused regression
-# graph, so keep this dependency available in either mode.
-add_subdirectory(Dependencies/Utility)
+# The precompiled and utility headers are used by both the full runtime and the
+# focused regression graph. Dependencies/CMakeLists.txt stops after those two in
+# the focused graph and adds the runtime loaders (Bink, Miles, DbgHelp, Usp10)
+# only for the full runtime.
+add_subdirectory(Dependencies)
 
 if(RTS_BUILD_TESTS_ONLY)
     # The focused regression graph does not add Core/, but its sources still need the
@@ -83,11 +84,6 @@ if(NOT RTS_BUILD_TESTS_ONLY)
     # Debug symbol stripping is only relevant to installable MinGW binaries.
     include(cmake/debug_strip.cmake)
 
-    # Runtime Bink/Miles shims are source-built and degrade cleanly when the legacy
-    # 32-bit DLLs are unavailable (notably in the x64 Evolution runtime).
-    add_subdirectory(Dependencies/Bink)
-    add_subdirectory(Dependencies/Miles)
-
     if(NOT (WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR NOT RTS_BUILD_EVOLUTION_X64)
         message(FATAL_ERROR "The game renderer requires Windows x64 and Direct3D 12. Use the focused headless test graph on other hosts.")
     endif()
@@ -103,18 +99,14 @@ if(NOT RTS_BUILD_TESTS_ONLY)
     include(cmake/lzhl.cmake)
     include(cmake/stb.cmake)
 
-    if(IS_VS6_BUILD)
-        # The original max sdk does not compile against a modern compiler.
-        # If there is a desire to make this work, then a fixed max sdk needs to be created.
-        add_subdirectory(Dependencies/MaxSDK)
+    if(RTS_BUILD_OPTION_TESTS)
+        # Must come before the subdirectories that add tests.
+        enable_testing()
+        include(cmake/googletest.cmake)
     endif()
 
-    if(WIN32)
-        add_subdirectory(Dependencies/DbgHelp)
-        add_subdirectory(Dependencies/Usp10)
-    else()
-        add_library(deps_dbghelp INTERFACE)
-        add_library(deps_usp10 INTERFACE)
+    if(RTS_BUILD_OPTION_BENCHMARKS)
+        include(cmake/googlebenchmark.cmake)
     endif()
 
     add_subdirectory(resources)
@@ -126,6 +118,14 @@ if(NOT RTS_BUILD_TESTS_ONLY)
 
     if(RTS_BUILD_GENERALS)
         add_subdirectory(Generals)
+    endif()
+
+    if(RTS_BUILD_OPTION_TESTS)
+        add_subdirectory(Tests)
+    endif()
+
+    if(RTS_BUILD_OPTION_BENCHMARKS)
+        add_subdirectory(Benchmarks)
     endif()
 endif()
 

@@ -300,3 +300,66 @@ Result (second gate run, scanning off): tests build clean; `ctest` 31 of 32 (sam
 failure); `z_generals` compiles with no errors, 48 unique unresolved symbols / 120 references,
 identical to the baseline.
 
+### Waypoint 8 — `edbc165c3..adac468d7` (22 commits)
+
+Arrived: missing null terminators and wrong terminator types in `FieldParse` arrays (`#3361`,
+`#3388`); uninitialized variable in `AIPlayer::onUnitProduced` (`#3379`); dock approach bone
+count restored after load (`#3151`); terrain deformation scan bounds (`#3258`); Generals retail
+fixes for `AIAttackState::onEnter` and save games (`#3398`, `#3406`); WorldBuilder
+`WHeightMapEdit` unified (`#3368`); drawable physics transforms interpolated between logic
+frames (`#2055`); long arrays reflowed one element per line (`#3407`); supply attack timing
+and unrecorded damage/healing timestamps (`#3380`); `isInRegion` made consistent (`#3428`);
+BIG file timestamps taken from cached info (`#3415`); `WIN32_LEAN_AND_MEAN` and `NOMINMAX`
+moved into `precompiled.h` (`#3393`); link libraries a target already inherits removed
+(`#3432`); `canAnyForceAttack` checks every selected unit (`#3433`); and `#3405` in four parts:
+`deps_config` / `depsi_always` targets with the dependency setup moved into
+`Dependencies/CMakeLists.txt`, `DebugSetCrashHandler`, Google Test unit tests, Google Benchmark
+benchmarks, plus the CI jobs that run them.
+
+Conflicts (12 files, all build files and one document):
+
+| File | Resolution |
+|---|---|
+| `CMakeLists.txt` | EastWind's two-mode layout kept, but the dependency list now comes from upstream's `Dependencies/CMakeLists.txt` through one `add_subdirectory(Dependencies)`. Upstream's Google Test / Benchmark includes and its `Tests` / `Benchmarks` subdirectories are wired inside the full-runtime branch only (they link the whole game). An auto-merged second copy of those two blocks outside the branch was removed. |
+| `cmake/config-build.cmake` | Both option sets kept: EastWind's `RTS_BUILD_TESTS`, `RTS_BUILD_TESTS_ONLY`, `RTS_BUILD_EVOLUTION_X64`, `RTS_BUILD_HEADLESS_CORE`, and upstream's `RTS_BUILD_OPTION_TESTS`, `RTS_BUILD_OPTION_BENCHMARKS`. `cxx_std_20` moves to `deps_config` as upstream has it; EastWind's `-Wsuggest-override` and `RTS_PERF_TELEMETRY` stay on `core_config`. The Tracy placeholder stays in this file (upstream moved it to the root file) so the focused graph still gets it. |
+| `CMakePresets.json` | EastWind's presets kept. Upstream's seven `win32*` test presets not added (see below). |
+| `Generals/.../WWVegas/CMakeLists.txt`, `GeneralsMD/.../WWVegas/CMakeLists.txt` | Upstream: `deps_miles` and `stlport` dropped, both inherited from `core_wwcommon`. |
+| `Generals/Code/Main/CMakeLists.txt`, `GeneralsMD/Code/Main/CMakeLists.txt` | Upstream's pruning applied to what EastWind links: `deps_bink`, `deps_miles` and the game engine library dropped (inherited through the device library). `dxguid`, and for Generals `d3d12` / `dxgi`, kept in place of upstream's removed DX8 entries. |
+| `Generals/Code/Tools/GUIEdit/CMakeLists.txt`, `Generals/Code/Tools/WorldBuilder/CMakeLists.txt` | Upstream's pruning taken. |
+| `Generals/Code/Tools/W3DView/CMakeLists.txt`, `GeneralsMD/Code/Tools/W3DView/CMakeLists.txt` | Ours: `d3d12` / `dxgi`, no `d3d8lib`. |
+| `TESTING.md` | EastWind's document kept; upstream's "Unit Tests" and "Benchmarks" sections appended under a new heading that states their status in this fork. Upstream's replay-check sentence dropped with the section it belonged to, which EastWind had already replaced. |
+
+Adapted outside conflict hunks:
+
+- `Dependencies/CMakeLists.txt` (new from upstream): an early `return()` under
+  `RTS_BUILD_TESTS_ONLY` after the two header targets, so the focused graph still configures
+  without Bink, Miles, DbgHelp and Usp10.
+- `cmake/tests/RuntimeCompatibilityPolicyTest.cmake`: the two assertions that the root file
+  adds the source-built Bink and Miles loaders now check `add_subdirectory(Dependencies)` in
+  the root file and `add_subdirectory(Bink)` / `add_subdirectory(Miles)` in
+  `Dependencies/CMakeLists.txt`. Same requirement, new location; the two "must not include
+  `cmake/bink.cmake` / `cmake/miles.cmake`" assertions are unchanged.
+
+Not applicable: upstream's `win32*` test presets and the CI workflow changes. Their configure
+presets stop at EastWind's Windows x64 / D3D12 `FATAL_ERROR`, so the test presets could never
+run. `.github/workflows` took upstream's edits by auto-merge, but those jobs do not run for
+this fork (review finding 4).
+
+Not verified here: upstream's Google tests. `z_googletest` links `z_gameenginedevice`, the
+whole Zero Hour runtime, so it cannot link while `z_generals` has unresolved symbols. The
+options exist and default to off. The four tool link lists (GUIEdit, WorldBuilder, W3DView x2)
+are also not exercised by any gate.
+
+Link-order fix (found by the gate): upstream dropped `z_gameengine` / `g_gameengine` from the
+executables' link lists because they arrive transitively through the device library. MSVC does
+not care about archive order; GNU ld does. With the game engine archive placed after the device
+archive, the first gate run reported 53 unique unresolved symbols, 5 of them new:
+`MOTDSystem`, `OSDisplaySetBusyState`, `ReloadAllTextures` (engine-to-device callbacks) and
+`__imp_accept` / `__imp_listen` (winsock, now resolved too late). `z_gameengine` and
+`g_gameengine` are listed again ahead of the device library in `GeneralsMD/Code/Main` and
+`Generals/Code/Main`, with a comment saying why. Upstream's removal of `deps_bink` / `deps_miles`
+from those lists stays: they still arrive transitively and in a working order.
+
+Result (second gate run): tests build clean; `ctest` 31 of 32 (same sampler failure);
+`z_generals` compiles with no errors and the link reports 48 unique unresolved symbols, the same
+list as the baseline.

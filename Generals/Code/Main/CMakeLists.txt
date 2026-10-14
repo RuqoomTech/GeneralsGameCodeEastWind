@@ -12,8 +12,8 @@ target_link_libraries(g_generals PRIVATE
     d3d12
     dxgi
     dxguid
-    deps_bink
-    deps_miles
+    # GNU ld resolves static archives in order: the game engine calls back into the device
+    # library (MOTDSystem, OSDisplaySetBusyState, ReloadAllTextures), so it must come first.
     g_gameengine
     g_gameenginedevice
     gi_always

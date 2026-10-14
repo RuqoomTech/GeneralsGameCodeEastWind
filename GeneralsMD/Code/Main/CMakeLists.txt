@@ -10,11 +10,11 @@ endif()
 target_link_libraries(z_generals PRIVATE
     comctl32
     dxguid
-    deps_bink
-    deps_miles
     imm32
     vfw32
     winmm
+    # GNU ld resolves static archives in order: the game engine calls back into the device
+    # library (MOTDSystem, OSDisplaySetBusyState, ReloadAllTextures), so it must come first.
     z_gameengine
     z_gameenginedevice
     zi_always

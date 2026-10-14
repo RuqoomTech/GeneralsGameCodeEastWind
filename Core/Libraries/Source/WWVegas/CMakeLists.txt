@@ -1,11 +1,6 @@
 # Interface libraries to set common defines and includes, avoid duplication later
 add_library(core_wwcommon INTERFACE)
 
-target_compile_definitions(core_wwcommon INTERFACE
-    #NOMINMAX
-    WIN32_LEAN_AND_MEAN
-)
-
 target_link_libraries(core_wwcommon INTERFACE
     deps_dbghelp
     deps_miles

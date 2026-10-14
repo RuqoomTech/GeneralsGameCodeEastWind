@@ -3,8 +3,6 @@ add_library(g_wwcommon INTERFACE)
 
 target_link_libraries(g_wwcommon INTERFACE
     core_wwcommon
-    deps_miles
-    stlport
 )
 
 target_include_directories(g_wwcommon INTERFACE

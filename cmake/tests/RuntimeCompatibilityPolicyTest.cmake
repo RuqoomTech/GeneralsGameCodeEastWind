@@ -64,8 +64,9 @@ rts_policy_require_contains("Core/GameEngine/Source/Common/System/GameMemory.cpp
 
 # The local runtime loaders replace hard import-stub link dependencies. Their
 # x64 behavior is intentionally neutral when the retail 32-bit DLL cannot load.
-rts_policy_require_contains("CMakeLists.txt" "add_subdirectory(Dependencies/Bink)")
-rts_policy_require_contains("CMakeLists.txt" "add_subdirectory(Dependencies/Miles)")
+rts_policy_require_contains("CMakeLists.txt" "add_subdirectory(Dependencies)")
+rts_policy_require_contains("Dependencies/CMakeLists.txt" "add_subdirectory(Bink)")
+rts_policy_require_contains("Dependencies/CMakeLists.txt" "add_subdirectory(Miles)")
 rts_policy_require_absent("CMakeLists.txt" "include(cmake/bink.cmake)")
 rts_policy_require_absent("CMakeLists.txt" "include(cmake/miles.cmake)")
 rts_policy_require_contains("Core/GameEngineDevice/Source/VideoDevice/Bink/BinkVideoPlayer.cpp" "BinkLoader::load()")

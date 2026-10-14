@@ -321,3 +321,40 @@ cmake --build --preset mingw64-game --target z_generals -- -j1
 ```
 
 Windows sign-off requires that real build to advance past both `W3DDisplay.cpp` and `W3DWebBrowser.cpp`.
+
+## Upstream unit tests and benchmarks
+
+The two sections below come from upstream (TheSuperHackers `#3405`) and describe its Google Test and Google Benchmark targets. They are separate from the focused graph above and are off by default. In this fork the `win32` presets do not configure; pass `-DRTS_BUILD_OPTION_TESTS=ON` to `mingw64-game` instead. `z_googletest` links the whole Zero Hour runtime, so it cannot link until `z_generals` does, and it has not been built on the x64 lane yet.
+
+### Unit Tests
+
+Unit tests use [Google Test](https://github.com/TheSuperHackers/google-test). They need a C++17 compiler, so they are not available with VC6. Enable them with `RTS_BUILD_OPTION_TESTS` and run them with CTest:
+```
+cmake --preset win32 -DRTS_BUILD_OPTION_TESTS=ON
+cmake --build --preset win32
+ctest --preset win32
+```
+Visual Studio also lists the tests in its Test Explorer. A test executable can be run directly as well, for example with `--gtest_filter=AsciiString.*` or with `--gtest_break_on_failure` to stop in the debugger.
+
+Each game has one test executable, g_googletest for Generals and z_googletest for Zero Hour. It compiles the tests of all layers:
+
+| Sources | Tests |
+|---|---|
+| Tests/Google/Dependencies | Dependencies code. It must not use Core. |
+| Tests/Google/Core | Core game engine and libraries. |
+
+Use C++ define RTS_GENERALS when adding game specific tests to Core.
+
+A test file is named after the file it tests and follows its naming style, for example stringex_test.cpp for stringex.h and AsciiStringTest.cpp for AsciiString.h.
+
+A failed `DEBUG_ASSERTCRASH` fails the running test in builds with debug crashing, which are the debug presets and builds with `RTS_DEBUG_CRASHING=ON`. Release builds compile these asserts out, so a test must not rely on them alone. CI runs the tests in release, profile and debug builds.
+
+A `RELEASE_CRASH` reports its reason as a failure of the running test and then exits the test executable. Expected release crashes can be tested with `EXPECT_EXIT(..., ::testing::ExitedWithCode(1), "")`.
+
+The test executables use the regular user data folder of the game, so a `RELEASE_CRASH` also writes its ReleaseCrashInfo.txt there.
+
+### Benchmarks
+
+Benchmarks use [Google Benchmark](https://github.com/TheSuperHackers/google-benchmark). Enable them with `RTS_BUILD_OPTION_BENCHMARKS`. They are organized like the unit tests under Benchmarks/Google, with the executables g_googlebenchmark and z_googlebenchmark. CI builds them, but does not run them.
+
+Run benchmarks from a Release build. Select benchmarks with `--benchmark_filter=<regex>`, and use `--benchmark_out=<file>.json` to compare the results before and after a change.
