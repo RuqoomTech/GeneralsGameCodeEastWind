@@ -206,7 +206,7 @@ rts_policy_require_contains(
     "the production backend must retain a Windows smoke build")
 rts_policy_require_contains(
     "Core/Tests/CMakeLists.txt"
-    "Core/Libraries/Include"
+    "Core/Libraries/Source/Lib/Include"
     "the Windows smoke target must inherit the public RTS include root used by WW3D headers")
 rts_policy_require_contains(
     "Core/Tests/CMakeLists.txt"

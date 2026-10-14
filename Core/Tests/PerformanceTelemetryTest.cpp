@@ -2,7 +2,7 @@
 ** Performance telemetry characterization test.
 */
 
-#include "rts/profile.h"
+#include "Lib/Profile.h"
 
 #include <cstdio>
 #include <cstring>

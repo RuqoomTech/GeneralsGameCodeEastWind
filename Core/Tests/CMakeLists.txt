@@ -30,7 +30,8 @@ endif()
 function(rts_add_w3x_test target_name source_file)
     add_executable(${target_name} ${source_file} ${ARGN})
     target_include_directories(${target_name} PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
     )
     set_target_properties(${target_name} PROPERTIES
         CXX_STANDARD 98
@@ -80,7 +81,8 @@ target_compile_definitions(determinism_test PRIVATE
 )
 target_include_directories(determinism_test PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
 )
 target_link_libraries(determinism_test PRIVATE
@@ -108,7 +110,8 @@ add_executable(performance_telemetry_test
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/profile/performance_telemetry.cpp
 )
 target_include_directories(performance_telemetry_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
 )
 set_target_properties(performance_telemetry_test PROPERTIES
     CXX_STANDARD 20
@@ -154,7 +157,8 @@ add_executable(architecture_abi_test
 )
 target_include_directories(architecture_abi_test PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
 )
 target_link_libraries(architecture_abi_test PRIVATE
     core_config
@@ -176,7 +180,8 @@ add_executable(wire_abi_test
 )
 target_include_directories(wire_abi_test PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
 )
 target_link_libraries(wire_abi_test PRIVATE
     core_config
@@ -200,7 +205,8 @@ add_executable(runtime_native_width_test
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/FastAllocator.cpp
 )
 target_include_directories(runtime_native_width_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
 )
 target_link_libraries(runtime_native_width_test PRIVATE
@@ -237,7 +243,8 @@ add_executable(coordinate_ops_test
     ${CMAKE_CURRENT_SOURCE_DIR}/CoordinateOpsTest.cpp
 )
 target_include_directories(coordinate_ops_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
 )
 target_link_libraries(coordinate_ops_test PRIVATE
     core_config
@@ -266,7 +273,8 @@ target_compile_definitions(headless_determinism_test PRIVATE
 )
 target_include_directories(headless_determinism_test PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
     ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Include
 )
@@ -347,7 +355,8 @@ if(WIN32)
     )
     target_include_directories(evolution_game_message_adapter_compile PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
-        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
     )
     target_link_libraries(evolution_game_message_adapter_compile PRIVATE
@@ -413,7 +422,8 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     )
     target_include_directories(evolution_session_test PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
-        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
     )
     target_link_libraries(evolution_session_test PRIVATE
         core_config
@@ -453,7 +463,8 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     )
     target_include_directories(evolution_full_session_test PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
-        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
     )
     target_link_libraries(evolution_full_session_test PRIVATE
         core_config
@@ -527,7 +538,8 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/mutex.cpp
         )
         target_include_directories(dds_texture_decode_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+            ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+            ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
             ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
             ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2
@@ -557,7 +569,8 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
                 ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/texturefilter.cpp
             )
             target_include_directories(${shader_test} PRIVATE
-                ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+                ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+                ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
                 ${CMAKE_SOURCE_DIR}/${shader_game}/Code/Libraries/Source/WWVegas
                 ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
                 ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2
@@ -578,7 +591,8 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/Backend/D3D12Backend.cpp
     )
     target_include_directories(d3d12_backend_smoke_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
     )
     target_include_directories(d3d12_backend_smoke_test SYSTEM PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
@@ -630,7 +644,8 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND MINGW)
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWMath/matrix3d.cpp
     )
     target_include_directories(sorting_renderer_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
         ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas
         ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas
@@ -663,7 +678,8 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND MINGW)
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWLib/slnode.cpp
     )
     target_include_directories(particle_geometry_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Libraries/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
         ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas
         ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas

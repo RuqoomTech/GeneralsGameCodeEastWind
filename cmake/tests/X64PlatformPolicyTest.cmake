@@ -94,7 +94,7 @@ rts_policy_forbid_text("${_registry_source}" "sizeof(HKEY) == sizeof(int)" "Regi
 # The legacy function-level profiler used the tracer object's address as a
 # pseudo thread ID.  That was accidentally pointer-sized on Win32 and truncates
 # on Win64.  Keep diagnostic thread identity explicit and pointer-independent.
-rts_policy_read("Core/Libraries/Source/profile/profile_funclevel.h" _profile_funclevel_header)
+rts_policy_read("Core/Libraries/Source/profile/Include/profile/profile_funclevel.h" _profile_funclevel_header)
 rts_policy_require_text("${_profile_funclevel_header}" "unsigned GetId() const;" "profile thread ID must be resolved without an inline pointer cast")
 rts_policy_forbid_text("${_profile_funclevel_header}" "return unsigned(m_threadID);" "profile thread ID regressed to pointer truncation")
 
@@ -127,7 +127,7 @@ rts_policy_read("Core/Libraries/Source/WWVegas/WWLib/verchk.h" _verchk_header)
 rts_policy_require_text("${_verchk_header}" "Compare_EXE_Version (HINSTANCE app_instance" "executable-version checks must carry the module handle as native HINSTANCE")
 rts_policy_forbid_text("${_verchk_header}" "Compare_EXE_Version (int app_instance" "executable-version checks regressed to 32-bit module-handle storage")
 
-rts_policy_read("Core/Libraries/Source/debug/debug_debug.h" _debug_header)
+rts_policy_read("Core/Libraries/Source/debug/Include/debug/debug_debug.h" _debug_header)
 rts_policy_require_text("${_debug_header}" "static std::uintptr_t curStackFrame;" "debug stack-frame identity must be native-width")
 rts_policy_require_text("${_debug_header}" "std::uintptr_t frameAddr;" "debug frame hash keys must be native-width")
 rts_policy_forbid_text("${_debug_header}" "static unsigned curStackFrame;" "debug stack-frame identity regressed to 32-bit")
@@ -140,7 +140,7 @@ rts_policy_forbid_text("${_debug_source}" "_ultoa((unsigned long)ptr" "debug poi
 
 
 # The debug exception/stack-walk path must be native-width on Win64.
-rts_policy_read("Core/Libraries/Source/debug/debug_stack.h" _debug_stack_header)
+rts_policy_read("Core/Libraries/Source/debug/Include/debug/debug_stack.h" _debug_stack_header)
 rts_policy_require_text("${_debug_stack_header}" "std::uintptr_t m_addr[MAX_ADDR];" "debug stack signatures must store native-width addresses")
 rts_policy_require_text("${_debug_stack_header}" "std::uintptr_t GetAddress(int n) const;" "debug stack accessors must expose native-width addresses")
 rts_policy_require_text("${_debug_stack_header}" "static int Capture(Signature &sig" "debug stack capture API must avoid the Win32 StackWalk macro name")

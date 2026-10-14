@@ -32,7 +32,7 @@
 #include <cstdint>
 
 /**
-  \class Debug debug.h <rts/debug.h>
+  \class Debug
 
   \brief Debug module main class (singleton).
 */
@@ -65,7 +65,7 @@ public:
   typedef bool (*HResultTranslator)(Debug &debug, long hresult, void *user);
 
   /**
-    \class MemDump debug.h <rts/debug.h>
+    \class MemDump
 
     \brief Helper class for performing a raw memory dump.
 
@@ -143,7 +143,7 @@ DLOG( "This is 16 bytes of memory:\n" << Debug::MemDump::Raw(&somePointer,16) );
   };
 
   /**
-    \class HResult debug.h <rts/debug.h>
+    \class HResult
 
     \brief Helper class for writing HRESULTs to the debug stream.
 

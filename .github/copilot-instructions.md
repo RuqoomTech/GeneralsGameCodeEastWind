@@ -103,7 +103,6 @@ Core/
 ├── GameEngine/Include/Common/     # Shared interfaces
 ├── GameEngine/Include/GameLogic/  # Game simulation
 ├── GameEngine/Include/GameClient/ # Rendering/UI
-├── Libraries/Include/rts/         # RTS-specific utilities
 └── Libraries/Source/WWVegas/      # Graphics framework
 ```
 

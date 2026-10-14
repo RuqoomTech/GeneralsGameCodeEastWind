@@ -46,9 +46,9 @@ endforeach()
 
 # Keep EastWind's strict-aliasing-safe deterministic float path while importing
 # only the coordinate operators needed by the upstream neutron fix.
-rts_policy_require_contains("Core/Libraries/Include/Lib/BaseFunctions.h" "memcpy(&bits, &value, sizeof(bits));")
-rts_policy_require_contains("Core/Libraries/Include/Lib/Coord3D.h" "Coord3D operator-() const")
-rts_policy_require_absent("Core/Libraries/Include/Lib/BaseFunctions.h" "unsigned x = *(unsigned *)&f;")
+rts_policy_require_contains("Core/Libraries/Source/Lib/Include/Lib/BaseFunctions.h" "memcpy(&bits, &value, sizeof(bits));")
+rts_policy_require_contains("Core/Libraries/Source/Lib/Include/Lib/Coord3D.h" "Coord3D operator-() const")
+rts_policy_require_absent("Core/Libraries/Source/Lib/Include/Lib/BaseFunctions.h" "unsigned x = *(unsigned *)&f;")
 
 # Memory integration is adapted, never replaced by upstream's 32-bit allocator.
 rts_policy_require_contains("Core/GameEngine/Source/Common/System/GameMemory.cpp"

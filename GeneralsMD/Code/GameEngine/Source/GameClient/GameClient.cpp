@@ -79,7 +79,7 @@
 #include "GameClient/Snow.h"
 #include "GameClient/TerrainVisual.h"
 #include "GameClient/View.h"
-#include <rts/profile.h>
+#include <Lib/Profile.h>
 #include "GameClient/VideoPlayer.h"
 #include "GameClient/WindowXlat.h"
 #include "GameLogic/GameLogic.h"

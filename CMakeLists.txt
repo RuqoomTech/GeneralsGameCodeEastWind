@@ -70,8 +70,17 @@ add_subdirectory(Dependencies)
 
 if(RTS_BUILD_TESTS_ONLY)
     # The focused regression graph does not add Core/, but its sources still need the
-    # force-included base macros and types that core_libraries provides.
-    add_subdirectory(Core/Libraries/Include)
+    # force-included base macros and types. Upstream's core_libraries is now a static
+    # library that also builds Debug.cpp and Trig.cpp and links the profile and debug
+    # libraries, which this graph does not build, so it gets the header-only part here.
+    add_library(core_libraries INTERFACE)
+    target_include_directories(core_libraries INTERFACE
+        ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+    )
+    target_link_libraries(core_libraries INTERFACE deps_precompiled)
+    target_compile_options(core_libraries INTERFACE
+        "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include Precompiled/BasePrecomp.h>"
+    )
 endif()
 
 if(RTS_BUILD_TESTS)

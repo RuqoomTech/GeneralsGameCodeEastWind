@@ -15,6 +15,7 @@ set(GAMEENGINE_SRC
 #    Include/Common/BattleHonors.h
     Include/Common/BezFwdIterator.h
     Include/Common/BezierSegment.h
+    Include/Common/BIGFileSystem.h
 #    Include/Common/BitFlags.h
 #    Include/Common/BitFlagsIO.h
 #    Include/Common/BorderColors.h
@@ -73,7 +74,6 @@ set(GAMEENGINE_SRC
     Include/Common/MapObject.h
     Include/Common/MapReaderWriterInfo.h
     Include/Common/MessageStream.h
-    Include/Common/MiniDumper.h
     Include/Common/MiniLog.h
     Include/Common/MiscAudio.h
 #    Include/Common/MissionStats.h
@@ -661,6 +661,7 @@ set(GAMEENGINE_SRC
     Source/Common/System/ArchiveFile.cpp
     Source/Common/System/ArchiveFileSystem.cpp
     Source/Common/System/AsciiString.cpp
+    Source/Common/System/BIGFileSystem.cpp
 #    Source/Common/System/BuildAssistant.cpp
 #    Source/Common/System/CriticalSection.cpp
 #    Source/Common/System/DataChunk.cpp
@@ -685,7 +686,6 @@ set(GAMEENGINE_SRC
 #    Source/Common/System/List.cpp
     Source/Common/System/LocalFile.cpp
     Source/Common/System/LocalFileSystem.cpp
-    Source/Common/System/MiniDumper.cpp
     Source/Common/System/ObjectStatusTypes.cpp
 #    Source/Common/System/QuotedPrintable.cpp
     Source/Common/System/Radar.cpp
@@ -697,7 +697,6 @@ set(GAMEENGINE_SRC
 #    Source/Common/System/StackDump.cpp
     Source/Common/System/StreamingArchiveFile.cpp
     Source/Common/System/SubsystemInterface.cpp
-#    Source/Common/System/Trig.cpp
     Source/Common/System/UnicodeString.cpp
 #    Source/Common/System/Upgrade.cpp
     Source/Common/System/Xfer.cpp
@@ -1196,7 +1195,6 @@ target_include_directories(corei_gameengine_private INTERFACE
 
 target_link_libraries(corei_gameengine_private INTERFACE
     corei_always
-    core_profile_legacy
 )
 
 target_compile_definitions(corei_gameengine_private INTERFACE
@@ -1214,6 +1212,7 @@ target_include_directories(corei_gameengine_public INTERFACE
 target_link_libraries(corei_gameengine_public INTERFACE
     core_compression
     core_browserdispatch
+    core_minidumper
     #core_wwvegas
     deps_dbghelp
     gamespy::gamespy

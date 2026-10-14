@@ -40,7 +40,7 @@
 #include <Utility/intrin_compat.h>
 #endif
 
-#include "../../../../../Core/GameEngine/Include/Common/Debug.h"
+#include "Lib/Debug.h"
 #include <cstdint>
 
 // The macro MESSAGE allows user to put:

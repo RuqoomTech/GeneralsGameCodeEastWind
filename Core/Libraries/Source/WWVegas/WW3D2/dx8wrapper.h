@@ -43,6 +43,7 @@
 
 #include "WWLib/always.h"
 #include "WWDebug/wwdebug.h"
+#include <string.h>
 #include "dllist.h"
 #include "d3d8.h"
 #include "WWMath/matrix4.h"
@@ -231,6 +232,10 @@ struct DX8FrameStatistics
 extern bool _DX8SingleThreaded;
 
 void DX8_Assert();
+// Converts a FLOAT to a DWORD for use in SetRenderState() calls.
+// EastWind: copied rather than cast through a pointer, which breaks strict aliasing.
+inline DWORD F2DW(FLOAT f) { DWORD d; memcpy(&d, &f, sizeof(d)); return d; }
+
 #ifdef WWDEBUG
 #define DX8CALL_HRES(x,res) DX8_Assert(); res = DX8Wrapper::_Get_D3D_Device8()->x; WW_CHECK_RESULT(res); DX8Wrapper::Increment_DX8_CallCount();
 #define DX8CALL(x) DX8_Assert(); WW_CHECK_RESULT(DX8Wrapper::_Get_D3D_Device8()->x); DX8Wrapper::Increment_DX8_CallCount();

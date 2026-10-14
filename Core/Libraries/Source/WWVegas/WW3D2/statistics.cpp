@@ -17,7 +17,7 @@
 */
 
 #include "statistics.h"
-#include "rts/profile.h"
+#include "Lib/Profile.h"
 #include "WWLib/wwstring.h"
 #include "WWLib/simplevec.h"
 #include "ww3d.h"
