@@ -69,6 +69,7 @@ namespace Debug_Statistics
 	void Record_Skin_Polys_And_Vertices(int pcount,int vcount);
 	void Record_Rendered_Polys_And_Vertices(int pcount,int vcount,const ShaderClass& shader);
 	void Record_Sorting_Polys_And_Vertices(int pcount,int vcount);
+	void Record_Terrain_Particle_Batch(int triangle_count);
 	int Get_Rendered_Polygons();
 	int Get_Rendered_Vertices();
 	int Get_Skin_Renders();
@@ -76,6 +77,8 @@ namespace Debug_Statistics
 	int Get_Skin_Vertices();
 	int Get_Sorting_Polygons();
 	int Get_Sorting_Vertices();
+	int Get_Terrain_Particle_Triangles();
+	int Get_Terrain_Particle_Batches();
 	int Get_Draw_Calls();
 
 	void Begin_Statistics();
@@ -96,3 +99,4 @@ namespace Debug_Statistics
 #define RENDER_RECORD_RENDER(polys,verts,shader) Debug_Statistics::Record_Rendered_Polys_And_Vertices(polys,verts,shader)
 #define RENDER_RECORD_SORTING_RENDER(polys,verts) Debug_Statistics::Record_Sorting_Polys_And_Vertices(polys,verts)
 #define RENDER_RECORD_SKIN_RENDER(polys,verts) Debug_Statistics::Record_Skin_Polys_And_Vertices(polys,verts)
+#define RENDER_RECORD_TERRAIN_PARTICLE_BATCH(triangles) Debug_Statistics::Record_Terrain_Particle_Batch(triangles)

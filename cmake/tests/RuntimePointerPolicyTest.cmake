@@ -44,7 +44,7 @@ rts_policy_read("Core/GameEngine/Include/Common/GameMemory.h" _game_memory_heade
 rts_policy_require_text("${_game_memory_header}" "operator delete\t\t(void *p) noexcept;" "GameMemory global operator delete must match the standard noexcept contract")
 rts_policy_require_text("${_game_memory_header}" "operator delete[]\t(void *p) noexcept;" "GameMemory global operator delete[] must match the standard noexcept contract")
 
-rts_policy_read("Core/GameEngine/Include/Common/GameMemoryNull.h" _game_memory_null_header)
+rts_policy_read("Core/GameEngine/Include/Common/GameMemoryNull.inl" _game_memory_null_header)
 rts_policy_require_text("${_game_memory_null_header}" "operator delete(void *p) noexcept;" "GameMemoryNull global operator delete must match the standard noexcept contract")
 rts_policy_require_text("${_game_memory_null_header}" "operator delete[](void *p) noexcept;" "GameMemoryNull global operator delete[] must match the standard noexcept contract")
 
