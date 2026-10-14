@@ -424,3 +424,34 @@ Result: tests build clean; `ctest` 31 of 32 (same sampler failure); `z_generals`
 no errors and the link reports **47** unique unresolved symbols: the baseline list minus
 `DX8Wrapper::Clear`, nothing new. The D3D12 smoke test creates its backend directly, so it does
 not exercise the bridge; only the game link does.
+
+### Waypoint 11 — `fd62135da..0e6a06c7c` (17 commits, upstream tip)
+
+Taken as upstream wrote them (clean merges): #3308 (stranded TunnelTracker occupants,
+`destroyAllObjectsImmediate` lookup), #3414 (ControlBar / ReplayControl windows deleted on
+resolution change and shutdown), #3430 (`memcchr`), #3462 (LANAPI `GameInfo` leaks), #3449's
+tree-buffer refill (EastWind's `allocateTreeBuffers` already set `m_anythingChanged`, so the
+conflict resolved to ours with the same effect), #3282 (Helix experience from attached-gun
+kills), #3471 (`Region` `contains()` / `containsWithin()` rename), #3476 (`fullviewport.dat`
+handle closed), the #3288 glyph-cache series (`render2dsentence`, `assetmgr`, glyph caches
+discarded on map load and resolution change, stale memory-pool entry removed) and #3475
+(`dx8wrapper.cpp`; merged as text, but that file is not in EastWind's build).
+
+Conflicts and adaptations:
+
+| File | Resolution |
+|---|---|
+| `W3DShroud.h` / `.cpp` (both games) | EastWind's files, plus upstream's row-fill fix `8b0430b9e` (#3440) re-applied on its own: `fillShroudData` advanced the wrong pointer, so only the first row of `m_finalFogData` was filled. Upstream's `08ce89694` (#3440, a manual copy in place of `CopyRects` with a 16-bit array) is not applicable. It works around the NVIDIA D3D8 driver exhausting address space on device reset; EastWind's shroud already copies through the CPU-side `SurfaceClass::Copy`, which clamps to both surfaces. |
+| `W3DDisplay.cpp` | Both: EastWind's `DebugSetWindowedMode` call and upstream's glyph-cache discard on resolution change. |
+| `W3DTreeBuffer.cpp` | Ours (EastWind's CPU geometry buffers; the refill flag was already set). |
+| `render2dsentence.cpp` (no conflict hunk) | Upstream's new glyph-texture sizing asked the D3D8 device for `MaxTextureWidth/Height`. Removed with a comment: Direct3D 12 guarantees 16384 px, above the 2048 px cap upstream applies, so the clamp never applies. Upstream's new buffer sizing only asserts `char_len <= length`, and the assert compiles out of release builds, so `char_len` is kept in the `max` (EastWind's earlier oversized-glyph fix). |
+| `cmake/tests/RuntimeCompatibilityPolicyTest.cmake` | The assertion pinned the old `max( (int)CHAR_BUFFER_LEN, char_len )` line that #3288 replaced. It now pins the new line, which still includes `char_len`: same guarantee, not weakened. |
+
+Mistake caught by the gate: the first resolution of `W3DShroud.cpp` took "ours" only for the
+conflict blocks, which left upstream's non-conflicting hunks of `08ce89694` in place and broke
+the compile (`Byte *` vs `UnsignedShort *`, missing `srcRect` / `dstPoint`). The files were
+restored from EastWind's side and only `8b0430b9e` was re-applied, as described above.
+
+Result (third gate run): tests build clean; `ctest` 31 of 32 (same sampler failure);
+`z_generals` compiles with no errors and the link reports 47 unique unresolved symbols, the
+same list as after waypoint 10.

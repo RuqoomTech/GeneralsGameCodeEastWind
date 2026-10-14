@@ -85,9 +85,10 @@ foreach(_cmake IN LISTS _cmake_lists)
 endforeach()
 
 # Legacy renderer safety import: dynamic glyph buffers may exceed the historic
-# fixed page length for a single oversized glyph.
+# fixed page length (since upstream #3288, the font's glyph block size) for a
+# single oversized glyph.
 rts_policy_require_contains("Core/Libraries/Source/WWVegas/WW3D2/render2dsentence.h" "int\t\t\t\tLength;")
 rts_policy_require_contains("Core/Libraries/Source/WWVegas/WW3D2/render2dsentence.cpp"
-    "const int length = max( (int)CHAR_BUFFER_LEN, char_len );")
+    "const int length = max( max( GlyphBlockBytes >> shift, GlyphCellBytes ), char_len );")
 
 message(STATUS "Runtime compatibility policy passed")
