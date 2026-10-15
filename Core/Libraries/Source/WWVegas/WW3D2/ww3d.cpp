@@ -262,6 +262,17 @@ void WW3D::Set_NPatches_Level(unsigned level)
  * HISTORY:                                                                                    *
  *   3/24/98    GTH : Created.                                                                 *
  *=============================================================================================*/
+// Render2D converts pixel coordinates with the screen size, so keep it equal to the back buffer.
+static void Sync_Render2D_Screen_Resolution(IRenderBackend *backend)
+{
+	int width = 0, height = 0, bits = 0;
+	bool windowed = true;
+	if (backend != nullptr && backend->Get_Output_Description(width, height, bits, windowed)
+		&& width > 0 && height > 0) {
+		Render2DClass::Set_Screen_Resolution(RectClass(0, 0, (float)width, (float)height));
+	}
+}
+
 WW3DErrorType WW3D::Init(void *hwnd, char *defaultpal, bool lite)
 {
 	assert(IsInitted == false);
@@ -276,9 +287,11 @@ WW3DErrorType WW3D::Init(void *hwnd, char *defaultpal, bool lite)
 		return(WW3D_ERROR_INITIALIZATION_FAILED);
 	}
 	RenderBackend = Get_Renderer_Backend();
+	Sync_Render2D_Screen_Resolution(RenderBackend);
 	if (!lite) {
 		// These CPU asset owners formerly depended on native device startup.
 		VertexMaterialClass::Init();
+		PointGroupClass::_Init(); // Needs VertexMaterialClass.
 		BoxRenderObjClass::Init();
 		ShatterSystem::Init();
 		TextureLoader::Init();
@@ -371,6 +384,7 @@ WW3DErrorType WW3D::Shutdown()
 	}
 	if (!Lite) {
 		BoxRenderObjClass::Shutdown();
+		PointGroupClass::_Shutdown();
 		VertexMaterialClass::Shutdown();
 	}
 
@@ -461,8 +475,11 @@ WW3DErrorType WW3D::Set_Render_Device(int dev, int width, int height, int bits, 
 	const unsigned int target_height = static_cast<unsigned int>(height > 0 ? height : current_height);
 	const int target_bits = bits > 0 ? bits : current_bits;
 	const bool target_windowed = windowed >= 0 ? windowed != 0 : current_windowed;
-	return target_bits == 32 && RenderBackend->Configure_Output(target_width, target_height, target_windowed)
-		? WW3D_ERROR_OK : WW3D_ERROR_INITIALIZATION_FAILED;
+	if (target_bits != 32 || !RenderBackend->Configure_Output(target_width, target_height, target_windowed)) {
+		return WW3D_ERROR_INITIALIZATION_FAILED;
+	}
+	Sync_Render2D_Screen_Resolution(RenderBackend);
+	return WW3D_ERROR_OK;
 }
 
 

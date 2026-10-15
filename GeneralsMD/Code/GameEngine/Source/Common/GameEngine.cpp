@@ -28,6 +28,8 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#include <exception>
+
 #include "Common/ActionManager.h"
 #include "Common/AudioAffect.h"
 #include "Common/BuildAssistant.h"
@@ -761,6 +763,13 @@ void GameEngine::init()
 		else
 			RELEASE_CRASH(("Uncaught Exception during initialization."));
 
+	}
+	catch (const std::exception& e)
+	{
+		// The D3D12 backend reports device and resource failures as std::runtime_error.
+		AsciiString message;
+		message.format("Uncaught exception during initialization: %s", e.what());
+		RELEASE_CRASH((message.str()));
 	}
 	catch (...)
 	{
