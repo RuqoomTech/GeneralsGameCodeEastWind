@@ -468,7 +468,7 @@ void W3DParticleSystemManager::flushParticleBatch(RenderInfoClass& rinfo, Unsign
 			m_terrainParticles->setShader( shader );
 			m_terrainParticles->setArrays( m_posBuffer, m_RGBABuffer, m_sizeBuffer, m_angleBuffer, pointCount );
 			m_terrainParticles->setBoundingBox( m_currentBoundingBox );
-			m_terrainParticles->render();
+			m_terrainParticles->render(rinfo.Camera);
 		}
 		else // draw regular point group
 		{

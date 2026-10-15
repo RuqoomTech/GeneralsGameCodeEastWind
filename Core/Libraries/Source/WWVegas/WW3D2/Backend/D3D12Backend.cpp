@@ -53,8 +53,8 @@ bool validMaterialSampler(const RenderBackendSamplerState &sampler)
     return static_cast<unsigned int>(sampler.min_filter) <= 1 &&
         static_cast<unsigned int>(sampler.mag_filter) <= 1 &&
         static_cast<unsigned int>(sampler.mip_filter) <= 1 &&
-        static_cast<unsigned int>(sampler.address_u) <= 1 &&
-        static_cast<unsigned int>(sampler.address_v) <= 1 &&
+        static_cast<unsigned int>(sampler.address_u) <= 2 &&
+        static_cast<unsigned int>(sampler.address_v) <= 2 &&
         sampler.max_anisotropy >= 1 && sampler.max_anisotropy <= 16 && sampler.min_mip_level <= 15;
 }
 
@@ -2374,8 +2374,8 @@ unsigned int D3D12Backend::materialSampler(const RenderBackendSamplerState &stat
         (static_cast<unsigned int>(state.mag_filter) << 1) |
         (static_cast<unsigned int>(state.mip_filter) << 2) |
         (static_cast<unsigned int>(state.address_u) << 3) |
-        (static_cast<unsigned int>(state.address_v) << 4) |
-        (static_cast<unsigned int>(state.mipmaps) << 5) | ((state.max_anisotropy-1) << 6) | (state.min_mip_level << 10);
+        (static_cast<unsigned int>(state.address_v) << 5) |
+        (static_cast<unsigned int>(state.mipmaps) << 7) | ((state.max_anisotropy-1) << 8) | (state.min_mip_level << 12);
     for (unsigned int slot = 0; slot < m_material_sampler_keys.size(); ++slot)
         if (m_material_sampler_keys[slot] == key) return slot;
     if (m_material_sampler_keys.size() >= MaterialSamplerCount)
@@ -2386,10 +2386,15 @@ unsigned int D3D12Backend::materialSampler(const RenderBackendSamplerState &stat
         sampler.Filter = state.max_anisotropy > 1 ? D3D12_FILTER_ANISOTROPIC :
             static_cast<D3D12_FILTER>((static_cast<unsigned int>(state.min_filter) << 4) |
                 (static_cast<unsigned int>(state.mag_filter) << 2) | static_cast<unsigned int>(state.mip_filter));
-        sampler.AddressU = state.address_u == RenderBackendTextureAddress::Wrap ?
-            D3D12_TEXTURE_ADDRESS_MODE_WRAP : D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        sampler.AddressV = state.address_v == RenderBackendTextureAddress::Wrap ?
-            D3D12_TEXTURE_ADDRESS_MODE_WRAP : D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        auto address = [](RenderBackendTextureAddress mode) {
+            switch (mode) {
+            case RenderBackendTextureAddress::Clamp: return D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+            case RenderBackendTextureAddress::Border: return D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+            default: return D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+            }
+        };
+        sampler.AddressU = address(state.address_u);
+        sampler.AddressV = address(state.address_v);
         sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
         sampler.MaxAnisotropy = state.max_anisotropy;
         sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;

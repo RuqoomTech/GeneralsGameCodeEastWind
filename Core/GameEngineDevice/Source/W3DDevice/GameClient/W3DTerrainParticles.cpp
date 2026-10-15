@@ -22,12 +22,10 @@
 
 #include "Lib/BaseType.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
-#include "WW3D2/dx8indexbuffer.h"
-#include "WW3D2/dx8vertexbuffer.h"
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/camera.h"
 #include "WW3D2/statistics.h"
 #include "WW3D2/texture.h"
-#include "WW3D2/vertmaterial.h"
+#include "WW3D2/ww3d.h"
 #include "WWMath/vector3.h"
 #include "WWMath/vector4.h"
 #include "WWMath/wwmath.h"
@@ -56,11 +54,19 @@ UnsignedByte getUVOutcode(const Real u, const Real v)
 	return outcode;
 }
 
+Vector4 clampColor(const Vector4& color)
+{
+	return Vector4(WWMath::Clamp(color.X, 0.0f, 1.0f),
+	               WWMath::Clamp(color.Y, 0.0f, 1.0f),
+	               WWMath::Clamp(color.Z, 0.0f, 1.0f),
+	               WWMath::Clamp(color.W, 0.0f, 1.0f));
+}
+
 struct W3DTerrainParticles::ParticleContext
 {
 	Vector3 loc;
 	IRegion2D bounds;
-	UnsignedInt diffuse;
+	Vector4 diffuse;
 	Real size;
 	Real cosine;
 	Real sine;
@@ -87,10 +93,10 @@ W3DTerrainParticles::W3DTerrainParticles()
   , m_defaultPointAlpha(1.0f)
   , m_defaultPointOrientation(0)
 {
-	m_defaultDiffuse = DX8Wrapper::Convert_Color_Clamp(Vector4(m_defaultPointColor.X, m_defaultPointColor.Y, m_defaultPointColor.Z, m_defaultPointAlpha));
+	m_defaultDiffuse = clampColor(Vector4(m_defaultPointColor.X, m_defaultPointColor.Y, m_defaultPointColor.Z, m_defaultPointAlpha));
 }
 
-void W3DTerrainParticles::render()
+void W3DTerrainParticles::render(CameraClass& camera)
 {
 	if (m_pointCount <= 0 || !m_pointLoc || !TheTerrainRenderObject)
 		return;
@@ -99,7 +105,14 @@ void W3DTerrainParticles::render()
 	if (!map)
 		return;
 
-	updateSettings();
+	IRenderBackend* backend = WW3D::Get_Render_Backend();
+	if (!backend || !updateSettings())
+		return;
+
+	// Vertices are in world space.
+	Matrix4x4 savedProjection;
+	backend->Get_View_Projection(savedProjection);
+	camera.Apply();
 
 	for (Int p = 0; p < m_pointCount; p++)
 	{
@@ -118,7 +131,7 @@ void W3DTerrainParticles::render()
 		if (bounds.width() < 2 || bounds.height() < 2)
 			continue;
 		
-		const UnsignedInt diffuse = m_pointDiffuse ? DX8Wrapper::Convert_Color_Clamp(m_pointDiffuse->Get_Array()[p]) : m_defaultDiffuse;
+		const Vector4 diffuse = m_pointDiffuse ? clampColor(m_pointDiffuse->Get_Array()[p]) : m_defaultDiffuse;
 
 		ParticleContext particle;
 		particle.loc = loc;
@@ -133,7 +146,7 @@ void W3DTerrainParticles::render()
 	}
 
 	flushBatch();
-	restoreSettings();
+	backend->Set_View_Projection(savedProjection);
 }
 
 void W3DTerrainParticles::drawRegion(const WorldHeightMap& map, const ParticleContext& particle, const IRegion2D& bounds)
@@ -208,8 +221,11 @@ UnsignedShort W3DTerrainParticles::addVertex(const WorldHeightMap& map, const Pa
 
 	// Write the vertex data.
 	index = m_numVertices++;
-	VertexFormatXYZNDUV2& vertex = m_vertexData[index];
-	vertex.diffuse = particle.diffuse;
+	RenderBackendTexturedVertex& vertex = m_vertexData[index];
+	vertex.r = particle.diffuse.X;
+	vertex.g = particle.diffuse.Y;
+	vertex.b = particle.diffuse.Z;
+	vertex.a = particle.diffuse.W;
 	vertex.x = x * MAP_XY_FACTOR;
 	vertex.y = y * MAP_XY_FACTOR;
 	vertex.z = map.getQuickHeight(x + map.getBorderSizeInline(), y + map.getBorderSizeInline()) * MAP_HEIGHT_SCALE + TerrainParticles::Z_OFFSET;
@@ -217,9 +233,9 @@ UnsignedShort W3DTerrainParticles::addVertex(const WorldHeightMap& map, const Pa
 	const Real deltaY = vertex.y - particle.loc.Y;
 	const Real localX = particle.cosine * deltaX - particle.sine * deltaY;
 	const Real localY = particle.sine * deltaX + particle.cosine * deltaY;
-	vertex.u1 = 0.5f - localX / (2.0f * particle.size);
-	vertex.v1 = 0.5f - localY / (2.0f * particle.size);
-	m_outcodes[index] = getUVOutcode(vertex.u1, vertex.v1);
+	vertex.u = 0.5f - localX / (2.0f * particle.size);
+	vertex.v = 0.5f - localY / (2.0f * particle.size);
+	m_outcodes[index] = getUVOutcode(vertex.u, vertex.v);
 	return index;
 }
 
@@ -239,29 +255,14 @@ void W3DTerrainParticles::flushBatch()
 {
 	if (m_numIndices > 0 && m_numVertices > 0)
 	{
-		DynamicVBAccessClass vertexAccess(BUFFER_TYPE_DYNAMIC_DX8, dynamic_fvf_type, m_numVertices);
-		{
-			DynamicVBAccessClass::WriteLockClass vertexLock(&vertexAccess);
-			memcpy(vertexLock.Get_Formatted_Vertex_Array(),
-			       m_vertexData.data(),
-			       m_numVertices * sizeof(VertexFormatXYZNDUV2));
-		}
-
-		DynamicIBAccessClass indexAccess(BUFFER_TYPE_DYNAMIC_DX8, m_numIndices);
-		{
-			DynamicIBAccessClass::WriteLockClass indexLock(&indexAccess);
-			memcpy(indexLock.Get_Index_Array(),
-			       m_indexData.data(),
-			       m_numIndices * sizeof(UnsignedShort));
-		}
-
-		DX8Wrapper::Set_Index_Buffer(indexAccess, 0);
-		DX8Wrapper::Set_Vertex_Buffer(vertexAccess);
+		IRenderBackend* backend = WW3D::Get_Render_Backend();
 		RENDER_RECORD_TERRAIN_PARTICLE_BATCH(m_numIndices / 3);
-		DX8Wrapper::Draw_Triangles(0,
-		                           m_numIndices / 3,
-		                           0,
-		                           m_numVertices);
+		if (backend)
+		{
+			backend->Draw_Indexed_Material_Triangles(m_vertexData.data(), m_numVertices,
+			                                         m_indexData.data(), m_numIndices,
+			                                         m_textureHandle, m_material);
+		}
 	}
 
 	m_numVertices = 0;
@@ -297,7 +298,7 @@ Bool W3DTerrainParticles::isDefaultWhiteOpaque() const
 	       m_defaultPointAlpha > value255;
 }
 
-void W3DTerrainParticles::updateSettings()
+Bool W3DTerrainParticles::updateSettings()
 {
 	if (m_pointDiffuse || !isDefaultWhiteOpaque())
 	{
@@ -318,30 +319,20 @@ void W3DTerrainParticles::updateSettings()
 	}
 	m_shader.Set_Cull_Mode(ShaderClass::CULL_MODE_ENABLE);
 
-	DX8Wrapper::Set_World_Identity();
-	RefCountPtr<VertexMaterialClass> material;
-	material.Assign_No_Add_Ref(VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE));
-	DX8Wrapper::Set_Material(material.Peek());
-	DX8Wrapper::Set_Shader(m_shader);
-	DX8Wrapper::Set_Texture(0, m_texture.Peek());
+	m_textureHandle = {};
+	if (!m_shader.Get_Render_Backend_State(m_material))
+		return false;
 
-	// To prevent visual glitches on overdraw, we clamp the texture to a transparent black pixel.
 	if (m_texture)
 	{
-		DX8Wrapper::Apply_Render_State_Changes();
-		DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_ADDRESSU, D3DTADDRESS_BORDER);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_ADDRESSV, D3DTADDRESS_BORDER);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(0, D3DTSS_BORDERCOLOR, 0x00000000);
+		if (!m_texture->Ensure_Renderer_Texture() || !m_texture->Get_Filter().Get_Render_Sampler(m_material.sampler))
+			return false;
+		m_textureHandle = m_texture->Get_Renderer_Texture();
+		// To prevent visual glitches on overdraw, we clamp the texture to a transparent black border.
+		m_material.sampler.address_u = RenderBackendTextureAddress::Border;
+		m_material.sampler.address_v = RenderBackendTextureAddress::Border;
 	}
-}
-
-void W3DTerrainParticles::restoreSettings() const
-{
-	// Restore the texture state.
-	if (m_texture)
-	{
-		m_texture->Get_Filter().Apply(0);
-	}
+	return true;
 }
 
 void W3DTerrainParticles::setTexture(TextureClass* texture)

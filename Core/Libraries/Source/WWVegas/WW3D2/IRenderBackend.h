@@ -136,7 +136,8 @@ enum class RenderBackendCullMode { None, Clockwise, CounterClockwise };
 enum class RenderBackendTextureCombine { Replace, Modulate, Add, Modulate2X };
 enum class RenderBackendAlphaTest { Disabled, GreaterEqual, LessEqual };
 enum class RenderBackendTextureFilter { Point, Linear };
-enum class RenderBackendTextureAddress { Wrap, Clamp };
+// Border samples transparent black outside [0,1], so a decal fades out instead of smearing its edge texels.
+enum class RenderBackendTextureAddress { Wrap, Clamp, Border };
 
 struct RenderBackendSamplerState
 {

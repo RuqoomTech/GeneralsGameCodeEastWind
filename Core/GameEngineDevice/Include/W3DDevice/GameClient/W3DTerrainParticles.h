@@ -23,7 +23,7 @@
 
 #include "Common/MapObject.h"
 #include "Lib/BaseType.h"
-#include "WW3D2/dx8fvf.h"
+#include "WW3D2/IRenderBackend.h"
 #include "WW3D2/shader.h"
 #include "WWLib/sharebuf.h"
 #include "WWMath/vector3.h"
@@ -42,6 +42,7 @@ namespace TerrainParticles
 }
 
 class AABoxClass;
+class CameraClass;
 class TextureClass;
 class WorldHeightMap;
 
@@ -62,7 +63,7 @@ public:
 	               ShareBufferClass<UnsignedByte>* orientations = nullptr,
 	               Int activePointCount = -1);
 	void setBoundingBox(const AABoxClass& worldBoundingBox);
-	void render();
+	void render(CameraClass& camera);
 
 private:
 
@@ -76,10 +77,9 @@ private:
 	void flushBatch();
 	IRegion2D calcTerrainBounds(const WorldHeightMap& map, const Vector3& loc, Real projectedRadius) const;
 	Bool isDefaultWhiteOpaque() const;
-	void updateSettings();
-	void restoreSettings() const;
+	Bool updateSettings();
 
-	std::array<VertexFormatXYZNDUV2, TerrainParticles::MAX_VERTICES> m_vertexData;    ///< Vertices of the current batch.
+	std::array<RenderBackendTexturedVertex, TerrainParticles::MAX_VERTICES> m_vertexData;    ///< Vertices of the current batch.
 	std::array<UnsignedShort, TerrainParticles::MAX_INDICES> m_indexData;    ///< Indices defining the triangles of the current batch.
 	std::array<UnsignedByte, TerrainParticles::MAX_VERTICES> m_outcodes;    ///< UV outcodes indexed by batch vertex.
 	std::vector<UnsignedShort> m_vertexLookup;    ///< Map grid location to index in m_vertexData.
@@ -88,6 +88,8 @@ private:
 
 	RefCountPtr<TextureClass> m_texture;
 	ShaderClass m_shader;
+	RenderBackendMaterialState m_material;    ///< Backend state of the current batch, built by updateSettings.
+	RenderBackendTextureHandle m_textureHandle;    ///< Backend texture of the current batch (empty when untextured).
 
 	RefCountPtr<ShareBufferClass<Vector3>/**/> m_pointLoc;    ///< World-space point locations.
 	RefCountPtr<ShareBufferClass<Vector4>/**/> m_pointDiffuse;    ///< RGBA values (nullptr if not used).
@@ -100,5 +102,5 @@ private:
 	Vector3 m_defaultPointColor;    ///< Point color (color array overrides if present).
 	Real m_defaultPointAlpha;    ///< Point alpha (alpha array overrides if present).
 	UnsignedByte m_defaultPointOrientation;    ///< Point orientation (orientation array overrides if present).
-	UnsignedInt m_defaultDiffuse;    ///< Diffuse built from m_defaultPointColor and m_defaultPointAlpha.
+	Vector4 m_defaultDiffuse;    ///< Clamped RGBA built from m_defaultPointColor and m_defaultPointAlpha.
 };

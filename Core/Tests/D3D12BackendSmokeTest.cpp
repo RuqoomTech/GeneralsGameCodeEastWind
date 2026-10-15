@@ -401,6 +401,19 @@ bool verifySamplers(IRenderBackend &backend)
         material.sampler.address_v=static_cast<RenderBackendTextureAddress>(v);
         ok=verify(texture,u==v ? 255 : 0,u ? 255 : 0,v ? 255 : 0) && ok;
     }
+    // Border samples transparent black outside [0,1]; a blue clear proves the draw replaced it.
+    {
+        material.sampler.address_u=material.sampler.address_v=RenderBackendTextureAddress::Border;
+        backend.Clear(true,true,Vector3(0,0,1),1,1,0); backend.Begin_Scene();
+        const bool drew=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material);
+        backend.End_Scene(false);
+        unsigned width=0,height=0; std::vector<unsigned char> pixels;
+        const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
+        const unsigned center=(240*640+320)*4;
+        const bool border=drew && read && pixels[center]<=2 && pixels[center+1]<=2 && pixels[center+2]<=2;
+        if (!border) std::cerr << "Material sampler border address failed\n";
+        backend.Flip_To_Primary(); ok=border && ok;
+    }
     material.sampler={};
     for (unsigned i=0;i<4;++i) {quad[i].u=i>=2 ? 1024.f : 0.f; quad[i].v=.5f;}
     ok=verify(mips,0,0,255) && ok;
@@ -433,7 +446,7 @@ bool verifySamplers(IRenderBackend &backend)
     material.sampler.max_anisotropy=17;
     ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material) && ok;
     material.sampler.max_anisotropy=1;
-    material.sampler.address_u=static_cast<RenderBackendTextureAddress>(2);
+    material.sampler.address_u=static_cast<RenderBackendTextureAddress>(3);
     ok=!backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,texture,material) && ok;
     backend.End_Scene(false); backend.Flip_To_Primary();
     backend.Release_Texture(texture); backend.Release_Texture(mips);
@@ -2082,7 +2095,7 @@ bool verifyTerrain(IRenderBackend &backend)
         *layers[layer]=textures[layer+1];samplers[layer]->max_anisotropy=17;
         ok=reject(textures[0]) && ok;samplers[layer]->max_anisotropy=1;
         samplers[layer]->min_mip_level=16;ok=reject(textures[0]) && ok;samplers[layer]->min_mip_level=0;
-        samplers[layer]->address_v=static_cast<RenderBackendTextureAddress>(2);
+        samplers[layer]->address_v=static_cast<RenderBackendTextureAddress>(3);
         ok=reject(textures[0]) && ok;samplers[layer]->address_v=RenderBackendTextureAddress::Wrap;
     }
     backend.End_Scene(false);backend.Flip_To_Primary();
