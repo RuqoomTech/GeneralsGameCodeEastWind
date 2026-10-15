@@ -153,8 +153,6 @@ TextureBaseClass::~TextureBaseClass()
 		// WW3D may already have shut down. A new backend rejects the old generation.
 		if (RendererOwner == WW3D::Get_Render_Backend())
 			RendererOwner->Release_Texture(RendererTexture);
-	} else if (!Uses_CPU_Image) {
-		DX8TextureManagerClass::Remove(this);
 	}
 }
 
@@ -187,7 +185,15 @@ bool TextureClass::Ensure_CPU_Image() {
     std::vector<TextureLoader::RGBA8MipLevel> images;
     RendererTextureMissing=!TextureLoader::Load_RGBA8_Mip_Chain(Get_Full_Path(),MipLevelCount,IsReducible,IsCompressionAllowed,HSVShift,images);
     if(RendererTextureMissing) {
-        images.resize(1); MissingTexture::Create_RGBA8_Image(images[0].width,images[0].height,images[0].pixels);
+        unsigned width=0, height=0;
+        std::vector<std::vector<unsigned char>> levels;
+        MissingTexture::Create_RGBA8_Mip_Chain(width,height,levels);
+        if(MipLevelCount!=MIP_LEVELS_ALL && levels.size()>MipLevelCount) levels.resize(MipLevelCount);
+        images.resize(levels.size());
+        for(std::size_t i=0;i<levels.size();++i) {
+            images[i].width=std::max(1u,width>>i); images[i].height=std::max(1u,height>>i);
+            images[i].pixels.swap(levels[i]);
+        }
     }
     CpuImage=new CpuImageState;
     for(const auto &image:images) CpuImage->levels.push_back(Surface_From_RGBA(image));
@@ -425,18 +431,8 @@ bool TextureBaseClass::Is_Missing_Texture()
 		return !texture->Ensure_CPU_Image() || RendererTextureMissing;
 	}
 	if (RendererTexture.Is_Valid()) return RendererTextureMissing;
-	bool flag = false;
-	IDirect3DBaseTexture8 *missing_texture = MissingTexture::_Get_Missing_Texture();
-
-	if (D3DTexture == missing_texture)
-		flag = true;
-
-	if (missing_texture)
-	{
-		missing_texture->Release();
-	}
-
-	return flag;
+	// Depth, cube and volume textures have no GPU resource on the D3D12 renderer.
+	return true;
 }
 
 
@@ -515,8 +511,8 @@ unsigned TextureBaseClass::Get_Reduction() const
 */
 void TextureBaseClass::Apply_Null(unsigned int stage)
 {
-	// This function sets the render states for a "null" texture
-	DX8Wrapper::Set_DX8_Texture(stage, nullptr);
+	// Draws bind textures through the render backend; there is no device stage to clear.
+	(void)stage;
 }
 
 // ----------------------------------------------------------------------------
@@ -981,16 +977,7 @@ void TextureClass::Apply(unsigned int stage)
 
 	RENDER_RECORD_TEXTURE(this);
 
-	// Set texture itself
-	if (WW3D::Is_Texturing_Enabled())
-	{
-		DX8Wrapper::Set_DX8_Texture(stage, Peek_D3D_Base_Texture());
-	}
-	else
-	{
-		DX8Wrapper::Set_DX8_Texture(stage, nullptr);
-	}
-
+	// Draws bind the texture through Get_Renderer_Texture; there is no device stage to set.
 	Filter.Apply(stage);
 }
 
@@ -1249,40 +1236,9 @@ ZTextureClass::ZTextureClass
 :	TextureBaseClass(width,height, mip_level_count, pool),
 	DepthStencilTextureFormat(zformat)
 {
-	D3DPOOL d3dpool=(D3DPOOL)0;
-	switch (pool)
-	{
-	case POOL_DEFAULT: d3dpool=D3DPOOL_DEFAULT; break;
-	case POOL_MANAGED: d3dpool=D3DPOOL_MANAGED; break;
-	case POOL_SYSTEMMEM: d3dpool=D3DPOOL_SYSTEMMEM;	break;
-	default:	WWASSERT(0);
-	}
-
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_ZTexture
-		(
-			width,
-			height,
-			zformat,
-			mip_level_count,
-			d3dpool
-		)
-	);
-
-	if (pool==POOL_DEFAULT)
-	{
-		Set_Dirty();
-		DX8ZTextureTrackerClass *track=new DX8ZTextureTrackerClass
-		(
-			width,
-			height,
-			zformat,
-			mip_level_count,
-			this
-		);
-		DX8TextureManagerClass::Add(track);
-	}
+	// The D3D12 renderer has no depth, cube or volume texture contract yet, so this
+	// texture has no GPU resource.
+	(void)pool;
 	Initialized=true;
 	IsProcedural=true;
 	IsReducible=false;
@@ -1297,7 +1253,7 @@ ZTextureClass::ZTextureClass
 */
 void ZTextureClass::Apply(unsigned int stage)
 {
-	DX8Wrapper::Set_DX8_Texture(stage, Peek_D3D_Base_Texture());
+	(void)stage;
 }
 
 //**********************************************************************************************
@@ -1403,42 +1359,9 @@ CubeTextureClass::CubeTextureClass
 	default : break;
 	}
 
-	D3DPOOL d3dpool=(D3DPOOL)0;
-	switch(pool)
-	{
-	case POOL_DEFAULT		: d3dpool=D3DPOOL_DEFAULT; break;
-	case POOL_MANAGED		: d3dpool=D3DPOOL_MANAGED; break;
-	case POOL_SYSTEMMEM	: d3dpool=D3DPOOL_SYSTEMMEM; break;
-	default: WWASSERT(0);
-	}
-
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Cube_Texture
-		(
-			width,
-			height,
-			format,
-			mip_level_count,
-			d3dpool,
-			rendertarget
-		)
-	);
-
-	if (pool==POOL_DEFAULT)
-	{
-		Set_Dirty();
-		DX8TextureTrackerClass *track=new DX8TextureTrackerClass
-		(
-			width,
-			height,
-			format,
-			mip_level_count,
-			this,
-			rendertarget
-		);
-		DX8TextureManagerClass::Add(track);
-	}
+	// The D3D12 renderer has no depth, cube or volume texture contract yet, so this
+	// texture has no GPU resource.
+	(void)pool;
 	LastAccessed=WW3D::Get_Sync_Time();
 }
 
@@ -1474,18 +1397,7 @@ CubeTextureClass::CubeTextureClass
 		// If requesting bumpmap format that isn't available we'll just return the surface in whatever color
 		// format the texture file is in. (This is illegal case, the format support should always be queried
 		// before creating a bump texture!)
-		if (!DX8Wrapper::Is_Initted() || !DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(TextureFormat))
-		{
-			TextureFormat=WW3D_FORMAT_UNKNOWN;
-		}
-		// If bump format is valid, make sure compression is not allowed so that we don't even attempt to load
-		// from a compressed file (quality isn't good enough for bump map). Also disable mipmapping.
-		else
-		{
-			IsCompressionAllowed=false;
-			MipLevelCount=MIP_LEVELS_1;
-			Filter.Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
-		}
+		TextureFormat=WW3D_FORMAT_UNKNOWN;
 		break;
 	default:	break;
 	}
@@ -1569,14 +1481,6 @@ CubeTextureClass::CubeTextureClass
 	default: break;
 	}
 
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Cube_Texture
-		(
-			surface->Peek_D3D_Surface(),
-			mip_level_count
-		)
-	);
 	LastAccessed=WW3D::Get_Sync_Time();
 }
 
@@ -1687,42 +1591,9 @@ VolumeTextureClass::VolumeTextureClass
 	default : break;
 	}
 
-	D3DPOOL d3dpool=(D3DPOOL)0;
-	switch(pool)
-	{
-	case POOL_DEFAULT		: d3dpool=D3DPOOL_DEFAULT; break;
-	case POOL_MANAGED		: d3dpool=D3DPOOL_MANAGED; break;
-	case POOL_SYSTEMMEM	: d3dpool=D3DPOOL_SYSTEMMEM; break;
-	default: WWASSERT(0);
-	}
-
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Volume_Texture
-		(
-			width,
-			height,
-			depth,
-			format,
-			mip_level_count,
-			d3dpool
-		)
-	);
-
-	if (pool==POOL_DEFAULT)
-	{
-		Set_Dirty();
-		DX8TextureTrackerClass *track=new DX8TextureTrackerClass
-		(
-			width,
-			height,
-			format,
-			mip_level_count,
-			this,
-			rendertarget
-		);
-		DX8TextureManagerClass::Add(track);
-	}
+	// The D3D12 renderer has no depth, cube or volume texture contract yet, so this
+	// texture has no GPU resource.
+	(void)pool;
 	LastAccessed=WW3D::Get_Sync_Time();
 }
 
@@ -1759,18 +1630,7 @@ VolumeTextureClass::VolumeTextureClass
 		// If requesting bumpmap format that isn't available we'll just return the surface in whatever color
 		// format the texture file is in. (This is illegal case, the format support should always be queried
 		// before creating a bump texture!)
-		if (!DX8Wrapper::Is_Initted() || !DX8Wrapper::Get_Current_Caps()->Support_Texture_Format(TextureFormat))
-		{
-			TextureFormat=WW3D_FORMAT_UNKNOWN;
-		}
-		// If bump format is valid, make sure compression is not allowed so that we don't even attempt to load
-		// from a compressed file (quality isn't good enough for bump map). Also disable mipmapping.
-		else
-		{
-			IsCompressionAllowed=false;
-			MipLevelCount=MIP_LEVELS_1;
-			Filter.Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
-		}
+		TextureFormat=WW3D_FORMAT_UNKNOWN;
 		break;
 	default:	break;
 	}
@@ -1854,14 +1714,6 @@ CubeTextureClass::CubeTextureClass
 	default: break;
 	}
 
-	Poke_Texture
-	(
-		DX8Wrapper::_Create_DX8_Cube_Texture
-		(
-			surface->Peek_D3D_Surface(),
-			mip_level_count
-		)
-	);
 	LastAccessed=WW3D::Get_Sync_Time();
 }
 

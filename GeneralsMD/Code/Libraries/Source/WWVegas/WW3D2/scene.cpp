@@ -65,11 +65,11 @@
 #include "WWMath/plane.h"
 #include "camera.h"
 #include "ww3d.h"
-#include "Renderer.h"
 #include "rinfo.h"
 #include "WWLib/chunkio.h"
 #include "meshrenderer.h"
-#include "dx8wrapper.h"
+#include "lightenvironment.h"
+#include "light.h"
 #include "sortingrenderer.h"
 #include "coltest.h"
 
@@ -216,34 +216,9 @@ void SceneClass::Render(RenderInfoClass & rinfo)
 	// Any stuff that needs to get done before anything else
 	Pre_Render_Processing(rinfo);
 
-	DX8Wrapper::Set_Fog(FogEnabled, FogColor, FogStart, FogEnd);
-
-	if (Get_Extra_Pass_Polygon_Mode()==EXTRA_PASS_DISABLE) {
-		Customized_Render(rinfo);
-	}
-	else {
-		bool old_enable=WW3D::Is_Texturing_Enabled();
-
-		DX8Wrapper::Set_DX8_Render_State (D3DRS_ZBIAS, 0);
-		Customized_Render(rinfo);
-		switch (Get_Extra_Pass_Polygon_Mode()) {
-		case EXTRA_PASS_LINE:
-			WW3D::Enable_Texturing(false);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_WIREFRAME);
-			DX8Wrapper::Set_DX8_Render_State (D3DRS_ZBIAS, 7);
-			Customized_Render(rinfo);
-			break;
-		case EXTRA_PASS_CLEAR_LINE:
-			Renderer::Clear(true, false, Vector3(0.0f,0.0f,0.0f));	// Clear color but not z
-			WW3D::Enable_Texturing(false);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_WIREFRAME);
-			DX8Wrapper::Set_DX8_Render_State (D3DRS_ZBIAS, 7);
-			Customized_Render(rinfo);
-			break;
-		}
-
-		WW3D::Enable_Texturing(old_enable);
-	}
+	// The D3D12 renderer has no scene fog or global wireframe override yet, so
+	// the debug wireframe extra passes are not drawn.
+	Customized_Render(rinfo);
 
 	// Any stuff that needs to get done after anything else
 	Post_Render_Processing(rinfo);
@@ -556,11 +531,7 @@ void SimpleSceneClass::Customized_Render(RenderInfoClass & rinfo)
 	// apply only the first four lights in the scene
 	// derived classes should use light environment
 	WWASSERT(rinfo.light_environment==nullptr);
-	// Turn off lights in case we have none
-	DX8Wrapper::Set_Light(0,nullptr);
-	DX8Wrapper::Set_Light(1,nullptr);
-	DX8Wrapper::Set_Light(2,nullptr);
-	DX8Wrapper::Set_Light(3,nullptr);
+	// Meshes are lit from the render info's light environment, which is empty here.
 
 // (gth) WWShade only works with light environments.  We need to upgrade LightEnvironment to
 // support real point lights, etc.  It will likely just evolve into "the n most important" lights
