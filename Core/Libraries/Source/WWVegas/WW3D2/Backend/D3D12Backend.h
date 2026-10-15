@@ -226,6 +226,15 @@ private:
     void presentPendingFrame();
     void waitForFrame(std::uint32_t frame_index);
     void releaseFrameUploads(std::uint32_t frame_index) noexcept;
+    struct UploadAllocation
+    {
+        ID3D12Resource *resource;
+        std::size_t offset;
+        void *cpu;
+        std::uint64_t gpu;
+    };
+    UploadAllocation allocateUpload(std::size_t byte_count);
+    void releaseUploadRings() noexcept;
     void releaseStaticGeometry(StaticGeometryResource &geometry) noexcept;
     void releaseTexture(TextureResource &texture) noexcept;
     void waitForGpu();
@@ -305,6 +314,22 @@ private:
     std::uint64_t m_next_fence_value = 1;
     std::uint64_t m_frame_fence_values[FrameCount]{};
     std::vector<ID3D12Resource *> m_frame_uploads[FrameCount];
+    // Persistently mapped upload chunks, bump-allocated per frame and rewound
+    // when the frame's fence completes.
+    struct UploadChunk
+    {
+        ID3D12Resource *resource = nullptr;
+        unsigned char *cpu = nullptr;
+        std::uint64_t gpu = 0;
+        std::size_t size = 0;
+    };
+    struct UploadRing
+    {
+        std::vector<UploadChunk> chunks;
+        std::size_t chunk = 0;
+        std::size_t offset = 0;
+    };
+    UploadRing m_upload_rings[FrameCount];
     std::vector<ID3D12DescriptorHeap *> m_frame_retired_texture_heaps[FrameCount];
     std::vector<StaticGeometryResource> m_static_geometry;
     std::vector<TextureResource> m_textures;

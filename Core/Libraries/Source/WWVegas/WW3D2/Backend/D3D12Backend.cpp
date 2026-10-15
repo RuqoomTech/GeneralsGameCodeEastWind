@@ -1662,41 +1662,22 @@ bool D3D12Backend::drawDynamicGeometry(
     for (unsigned int index = 0; index < index_count; ++index)
         if (indices[index] >= vertex_count) return false;
 
-    ID3D12Resource *vertex_upload = nullptr;
-    ID3D12Resource *index_upload = nullptr;
     try
     {
-        auto &frame_uploads = m_frame_uploads[m_frame_index];
-        frame_uploads.reserve(frame_uploads.size() + 2);
-
-        vertex_upload = createUploadBuffer(m_device, vertex_bytes);
-        index_upload = createUploadBuffer(m_device, index_bytes);
-
-        void *mapped = nullptr;
-        D3D12_RANGE no_read{0, 0};
-        checkHresult("ID3D12Resource::Map(dynamic vertex)", vertex_upload->Map(0, &no_read, &mapped));
-        std::memcpy(mapped, vertices, vertex_bytes);
-        vertex_upload->Unmap(0, nullptr);
-
-        mapped = nullptr;
-        checkHresult("ID3D12Resource::Map(dynamic index)", index_upload->Map(0, &no_read, &mapped));
-        std::memcpy(mapped, indices, index_bytes);
-        index_upload->Unmap(0, nullptr);
+        const UploadAllocation vertex_upload = allocateUpload(vertex_bytes);
+        const UploadAllocation index_upload = allocateUpload(index_bytes);
+        std::memcpy(vertex_upload.cpu, vertices, vertex_bytes);
+        std::memcpy(index_upload.cpu, indices, index_bytes);
 
         D3D12_VERTEX_BUFFER_VIEW vertex_view{};
-        vertex_view.BufferLocation = vertex_upload->GetGPUVirtualAddress();
+        vertex_view.BufferLocation = vertex_upload.gpu;
         vertex_view.SizeInBytes = static_cast<UINT>(vertex_bytes);
         vertex_view.StrideInBytes = vertex_stride;
 
         D3D12_INDEX_BUFFER_VIEW index_view{};
-        index_view.BufferLocation = index_upload->GetGPUVirtualAddress();
+        index_view.BufferLocation = index_upload.gpu;
         index_view.SizeInBytes = static_cast<UINT>(index_bytes);
         index_view.Format = DXGI_FORMAT_R16_UINT;
-
-        frame_uploads.push_back(vertex_upload);
-        frame_uploads.push_back(index_upload);
-        vertex_upload = nullptr;
-        index_upload = nullptr;
 
         bindDrawState(pipeline, screen_space, texture_handle, material, secondary_texture, terrain);
         issueGeometryDraw(vertex_view, index_view, index_count, vertex_count, material);
@@ -1704,8 +1685,6 @@ bool D3D12Backend::drawDynamicGeometry(
     }
     catch (...)
     {
-        releaseCom(index_upload);
-        releaseCom(vertex_upload);
         return false;
     }
 }
@@ -2664,22 +2643,11 @@ bool D3D12Backend::Update_Static_Indexed_Terrain_Geometry(RenderBackendGeometryH
     if (!geometry.textured || geometry.vertex_stride != sizeof(RenderBackendTerrainVertex) ||
         vertex_bytes > std::numeric_limits<UINT>::max() || vertex_bytes != geometry.vertex_bytes) return false;
 
-    ID3D12Resource *upload = nullptr;
     try
     {
-        auto &frame_uploads = m_frame_uploads[m_frame_index];
-        frame_uploads.reserve(frame_uploads.size() + 1);
-        upload = createUploadBuffer(m_device, vertex_bytes);
-        D3D12_RANGE no_read{0, 0};
-        void *mapped = nullptr;
-        checkHresult("ID3D12Resource::Map(retained terrain update)", upload->Map(0, &no_read, &mapped));
-        std::memcpy(mapped, vertices, vertex_bytes);
-        upload->Unmap(0, nullptr);
-        // Transfer ownership before recording references. No operation below
-        // can throw; the existing frame fence retires this upload allocation.
-        frame_uploads.push_back(upload);
-        ID3D12Resource *staging = upload;
-        upload = nullptr;
+        // The frame fence retires this ring allocation; nothing below can throw.
+        const UploadAllocation staging = allocateUpload(vertex_bytes);
+        std::memcpy(staging.cpu, vertices, vertex_bytes);
         D3D12_RESOURCE_BARRIER barrier{};
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         barrier.Transition.pResource = geometry.vertex_buffer;
@@ -2687,7 +2655,7 @@ bool D3D12Backend::Update_Static_Indexed_Terrain_Geometry(RenderBackendGeometryH
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
         m_command_list->ResourceBarrier(1, &barrier);
-        m_command_list->CopyBufferRegion(geometry.vertex_buffer, 0, staging, 0, vertex_bytes);
+        m_command_list->CopyBufferRegion(geometry.vertex_buffer, 0, staging.resource, staging.offset, vertex_bytes);
         std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
         m_command_list->ResourceBarrier(1, &barrier);
         ++m_frame_statistics.static_geometry_uploads;
@@ -2695,7 +2663,6 @@ bool D3D12Backend::Update_Static_Indexed_Terrain_Geometry(RenderBackendGeometryH
     }
     catch (...)
     {
-        releaseCom(upload);
         return false;
     }
 }
@@ -2894,6 +2861,59 @@ void D3D12Backend::waitForFrame(std::uint32_t frame_index)
     releaseFrameUploads(frame_index);
 }
 
+D3D12Backend::UploadAllocation D3D12Backend::allocateUpload(std::size_t byte_count)
+{
+    constexpr std::size_t Alignment = 16;
+    constexpr std::size_t ChunkSize = std::size_t(8) << 20;
+    UploadRing &ring = m_upload_rings[m_frame_index];
+    const std::size_t size = (byte_count + Alignment - 1) & ~(Alignment - 1);
+    for (; ring.chunk < ring.chunks.size(); ++ring.chunk, ring.offset = 0)
+    {
+        const UploadChunk &chunk = ring.chunks[ring.chunk];
+        if (size <= chunk.size - ring.offset)
+        {
+            const UploadAllocation allocation{chunk.resource, ring.offset, chunk.cpu + ring.offset, chunk.gpu + ring.offset};
+            ring.offset += size;
+            return allocation;
+        }
+    }
+
+    UploadChunk chunk;
+    chunk.size = size > ChunkSize ? size : ChunkSize;
+    chunk.resource = createUploadBuffer(m_device, chunk.size);
+    try
+    {
+        void *mapped = nullptr;
+        D3D12_RANGE no_read{0, 0};
+        checkHresult("ID3D12Resource::Map(upload ring)", chunk.resource->Map(0, &no_read, &mapped));
+        chunk.cpu = static_cast<unsigned char *>(mapped);
+        chunk.gpu = chunk.resource->GetGPUVirtualAddress();
+        ring.chunks.push_back(chunk);
+    }
+    catch (...)
+    {
+        releaseCom(chunk.resource);
+        throw;
+    }
+    ring.chunk = ring.chunks.size() - 1;
+    ring.offset = size;
+    return UploadAllocation{chunk.resource, 0, chunk.cpu, chunk.gpu};
+}
+
+void D3D12Backend::releaseUploadRings() noexcept
+{
+    for (UploadRing &ring : m_upload_rings)
+    {
+        for (UploadChunk &chunk : ring.chunks)
+        {
+            releaseCom(chunk.resource);
+        }
+        ring.chunks.clear();
+        ring.chunk = 0;
+        ring.offset = 0;
+    }
+}
+
 void D3D12Backend::releaseFrameUploads(std::uint32_t frame_index) noexcept
 {
     for (ID3D12Resource *resource : m_frame_uploads[frame_index])
@@ -2904,6 +2924,8 @@ void D3D12Backend::releaseFrameUploads(std::uint32_t frame_index) noexcept
         }
     }
     m_frame_uploads[frame_index].clear();
+    m_upload_rings[frame_index].chunk = 0;
+    m_upload_rings[frame_index].offset = 0;
     for (auto *heap : m_frame_retired_texture_heaps[frame_index]) heap->Release();
     m_frame_retired_texture_heaps[frame_index].clear();
     for (auto &texture : m_textures)
@@ -2968,6 +2990,7 @@ void D3D12Backend::releaseObjects() noexcept
     {
         releaseFrameUploads(index);
     }
+    releaseUploadRings();
     for (StaticGeometryResource &geometry : m_static_geometry)
     {
         releaseStaticGeometry(geometry);
