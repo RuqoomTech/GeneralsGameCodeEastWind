@@ -263,10 +263,18 @@ rts_policy_require_contains(
     "GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/render2d.cpp"
     "Draw_2D_Indexed_Triangles"
     "the first real W3DDisplay/Render2D screen-space primitive caller must cross IRenderBackend")
+rts_policy_require_absent(
+    "GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/render2d.cpp"
+    "dx8wrapper.h"
+    "Render2D must not retain an alternative DX8 path or its buffer/wrapper headers")
+rts_policy_require_absent(
+    "GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/render2d.cpp"
+    "DX8Wrapper::"
+    "Render2D must not retain an alternative DX8 path or its buffer/wrapper headers")
 rts_policy_require_contains(
     "GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/render2d.cpp"
-    "#if !defined(RTS_EVOLUTION_X64)"
-    "the x64 Render2D slice must not compile its migrated untextured path through DX8 buffer/wrapper headers")
+    "Draw_Indexed_Material_Triangles"
+    "textured Render2D (UI images and font glyphs) must cross IRenderBackend")
 rts_policy_require_contains(
     "Core/Libraries/Source/WWVegas/WW3D2/IRenderBackend.h"
     "RenderBackend2DBlendMode"

@@ -830,12 +830,6 @@ void W3DDisplay::init()
 	if (!TheGlobalData->m_headless)
 	{
 
-#if !defined(RTS_EVOLUTION_X64)
-		if (TheGlobalData->m_incrementalAGPBuf)
-		{
-			SortingRendererClass::SetMinVertexBufferSize(1);
-		}
-#endif
 		if (WW3D::Init( ApplicationHWnd ) != WW3D_ERROR_OK)
 			throw ERROR_INVALID_D3D;
 
@@ -853,12 +847,8 @@ void W3DDisplay::init()
 
 		WW3DErrorType renderDeviceError;
 		Int attempt = 0;
-		const Int maxAttempts =
-#if defined(RTS_EVOLUTION_X64)
-			1;
-#else
-			3;
-#endif
+		// The D3D12 device takes any resolution and has no 16-bit mode to fall back to.
+		const Int maxAttempts = 1;
 		do
 		{
 			switch (attempt)
@@ -871,45 +861,11 @@ void W3DDisplay::init()
 				setBitDepth( DEFAULT_DISPLAY_BIT_DEPTH );
 				break;
 			}
-#if !defined(RTS_EVOLUTION_X64)
-			case 1:
-			{
-				// Getting the device at the default bit depth (32) didn't work, so try
-				// getting a 16 bit display.  (Voodoo 1-3 only supported 16 bit.) jba.
-				setBitDepth( MIN_DISPLAY_BIT_DEPTH );
-				break;
-			}
-			case 2:
-			{
-				// TheSuperHackers @bugfix xezon 11/06/2025 Now tries a safe default resolution
-				// if the custom resolution did not succeed. This is unlikely to happen but is possible
-				// if the user writes an unsupported resolution in the Option Preferences or if the
-				// graphics adapter does not support the minimum display resolution to begin with.
-				Int xres = DEFAULT_DISPLAY_WIDTH;
-				Int yres = DEFAULT_DISPLAY_HEIGHT;
-				Int bitDepth = DEFAULT_DISPLAY_BIT_DEPTH;
-				Int displayModeCount = getDisplayModeCount();
-				Int displayModeIndex = 0;
-				for (; displayModeIndex < displayModeCount; ++displayModeIndex)
-				{
-					getDisplayModeDescription(displayModeIndex, &xres, &yres, &bitDepth);
-					if (xres * yres >= DEFAULT_DISPLAY_WIDTH * DEFAULT_DISPLAY_HEIGHT)
-						break; // Is good enough. Use it.
-				}
-				TheWritableGlobalData->m_xResolution = xres;
-				TheWritableGlobalData->m_yResolution = yres;
-				setWidth( xres );
-				setHeight( yres );
-				setBitDepth( bitDepth );
-				break;
-			}
-#endif
 			}
 
 			// TheSuperHackers @feature Mauller 13/03/2026 Add native MSAA support, must be set before creating render device
 			WW3D::Set_MSAA_Mode((WW3D::MultiSampleModeEnum)TheWritableGlobalData->m_antiAliasLevel);
 
-#if defined(RTS_EVOLUTION_X64)
 			// The current Win32 platform owns the HWND until Step 06 moves it to SDL3.
 			// Resize its client area before DXGI resizes the swapchain buffers.
 			const UnsignedInt max_client_extent = static_cast<UnsignedInt>(std::numeric_limits<LONG>::max() / 2);
@@ -930,7 +886,6 @@ void W3DDisplay::init()
 				renderDeviceError = WW3D_ERROR_INITIALIZATION_FAILED;
 				break;
 			}
-#endif
 			renderDeviceError = WW3D::Set_Render_Device(
 				0,
 				getWidth(),

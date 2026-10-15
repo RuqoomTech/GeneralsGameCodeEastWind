@@ -49,15 +49,6 @@
 #include "WWMath/matrix4.h"
 #include "WWMath/matrix3d.h"
 #include "IRenderBackend.h"
-#if !defined(RTS_EVOLUTION_X64)
-#include "dx8wrapper.h"
-#include "dx8indexbuffer.h"
-#include "dx8vertexbuffer.h"
-#include "sortingrenderer.h"
-#include "vertmaterial.h"
-#include "dx8fvf.h"
-#include "dx8caps.h"
-#endif
 #include "WWDebug/wwprofile.h"
 #include "WWDebug/wwmemlog.h"
 #include "assetmgr.h"
@@ -602,23 +593,83 @@ void	Render2DClass::Add_Outline( const RectClass & rect, float width, const Rect
 	Add_Line (Vector2 (rect.Right, rect.Bottom),	Vector2 (rect.Left + 1, rect.Bottom),	width, color);
 }
 
+static void Set_Full_Screen_Backend_Viewport(IRenderBackend *backend)
+{
+	int width, height, bits;
+	bool windowed;
+	WW3D::Get_Device_Resolution(width, height, bits, windowed);
+	RenderBackendViewport viewport;
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.width = static_cast<unsigned int>(width);
+	viewport.height = static_cast<unsigned int>(height);
+	viewport.min_z = 0.0f;
+	viewport.max_z = 1.0f;
+	backend->Set_Viewport(viewport);
+}
+
 void Render2DClass::Render()
 {
 	if ( !Indices.Count() || IsHidden) {
 		return;
 	}
 
-#if defined(RTS_EVOLUTION_X64)
-	// Step 05H first real game caller: untextured W3DDisplay lines/rectangles
-	// now cross the renderer-neutral seam directly. Textured Render2D remains
-	// a separate migration responsibility because it must carry TextureClass
-	// lifetime/data into the backend rather than recreate DX8 texture semantics.
-	if (!IsGrayScale && Shader.Get_Texturing() == ShaderClass::TEXTURING_DISABLE) {
-		IRenderBackend *backend = WW3D::Get_Render_Backend();
-		if (backend == nullptr) {
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (backend == nullptr) {
+		return;
+	}
+
+	// Textured UI images and font glyphs: the texture's CPU surfaces upload through
+	// Ensure_Renderer_Texture, and the vertices are already in clip space.
+	if (IsGrayScale || Shader.Get_Texturing() != ShaderClass::TEXTURING_DISABLE) {
+		RenderBackendTextureHandle texture;
+		RenderBackendMaterialState material;
+		// Grayscale images are drawn opaque, as the original renderer did.
+		const ShaderClass &shader = IsGrayScale ? ShaderClass::_PresetOpaqueShader : Shader;
+		if (!shader.Get_Render_Backend_State(material)) {
 			return;
 		}
+		if (Texture != nullptr) {
+			if (!Texture->Ensure_Renderer_Texture() || !Texture->Get_Filter().Get_Render_Sampler(material.sampler)) {
+				return;
+			}
+			texture = Texture->Get_Renderer_Texture();
+		}
+		material.screen_space = true;
+		if (IsGrayScale) {
+			material.monochrome = true;
+			material.monochrome_fade = 1.0f;
+		}
 
+		DynamicVectorClass<RenderBackendTexturedVertex> backend_vertices(Vertices.Count());
+		for (int i = 0; i < Vertices.Count(); ++i) {
+			const unsigned long color = Colors[i];
+			RenderBackendTexturedVertex vertex;
+			vertex.x = Vertices[i].X;
+			vertex.y = Vertices[i].Y;
+			vertex.z = ZValue;
+			vertex.r = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
+			vertex.g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
+			vertex.b = static_cast<float>(color & 0xFF) / 255.0f;
+			vertex.a = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
+			vertex.u = UVCoordinates[i].X;
+			vertex.v = UVCoordinates[i].Y;
+			backend_vertices.Add(vertex);
+		}
+
+		Set_Full_Screen_Backend_Viewport(backend);
+		backend->Draw_Indexed_Material_Triangles(
+			&backend_vertices[0],
+			static_cast<unsigned int>(backend_vertices.Count()),
+			&Indices[0],
+			static_cast<unsigned int>(Indices.Count()),
+			texture,
+			material);
+		return;
+	}
+
+	// Untextured W3DDisplay lines and rectangles.
+	{
 		RenderBackend2DBlendMode blend_mode = RenderBackend2DBlendMode::Opaque;
 		const ShaderClass::SrcBlendFuncType src_blend = Shader.Get_Src_Blend_Func();
 		const ShaderClass::DstBlendFuncType dst_blend = Shader.Get_Dst_Blend_Func();
@@ -645,19 +696,7 @@ void Render2DClass::Render()
 			backend_vertices.Add(vertex);
 		}
 
-		int width, height, bits;
-		bool windowed;
-		WW3D::Get_Device_Resolution(width, height, bits, windowed);
-		(void)bits;
-		(void)windowed;
-		RenderBackendViewport viewport;
-		viewport.x = 0;
-		viewport.y = 0;
-		viewport.width = static_cast<unsigned int>(width);
-		viewport.height = static_cast<unsigned int>(height);
-		viewport.min_z = 0.0f;
-		viewport.max_z = 1.0f;
-		backend->Set_Viewport(viewport);
+		Set_Full_Screen_Backend_Viewport(backend);
 		backend->Draw_2D_Indexed_Triangles(
 			&backend_vertices[0],
 			static_cast<unsigned int>(backend_vertices.Count()),
@@ -665,107 +704,6 @@ void Render2DClass::Render()
 			static_cast<unsigned int>(Indices.Count()),
 			blend_mode);
 	}
-	return;
-#else
-	// save the view and projection matrices since we're nuking them
-	Matrix4x4 view,proj;
-	Matrix4x4 identity(true);
-
-	DX8Wrapper::Get_Transform(D3DTS_VIEW,view);
-	DX8Wrapper::Get_Transform(D3DTS_PROJECTION,proj);
-
-	//
-	//	Configure the viewport for entire screen
-	//
-	int width, height, bits;
-	bool windowed;
-	WW3D::Get_Device_Resolution( width, height, bits, windowed );
-	RenderViewport vp;
-	vp.x			= 0;
-	vp.y			= 0;
-	vp.width		= width;
-	vp.height	= height;
-	vp.min_z		= 0;
-	vp.max_z		= 1;
-	Renderer::Set_Viewport(vp);
-	DX8Wrapper::Set_Texture(0,Texture);
-
-	VertexMaterialClass *vm=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vm);
-	REF_PTR_RELEASE(vm);
-
-	DX8Wrapper::Set_World_Identity();
-	DX8Wrapper::Set_View_Identity();
-	DX8Wrapper::Set_Transform(D3DTS_PROJECTION,identity);
-
-	DynamicVBAccessClass vb(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,Vertices.Count());
-	{
-		DynamicVBAccessClass::WriteLockClass Lock(&vb);
-		const FVFInfoClass &fi=vb.FVF_Info();
-		unsigned char *va=(unsigned char*)Lock.Get_Formatted_Vertex_Array();
-		int i;
-
-		for (i=0; i<Vertices.Count(); i++)
-		{
-			Vector3 temp(Vertices[i].X,Vertices[i].Y,ZValue);
-			*(Vector3*)(va+fi.Get_Location_Offset())=temp;
-			*(unsigned int*)(va+fi.Get_Diffuse_Offset())=Colors[i];
-			*(Vector2*)(va+fi.Get_Tex_Offset(0))=UVCoordinates[i];
-			va+=fi.Get_FVF_Size();
-		}
-	}
-
-	DynamicIBAccessClass ib(BUFFER_TYPE_DYNAMIC_DX8,Indices.Count());
-	{
-		DynamicIBAccessClass::WriteLockClass Lock(&ib);
-		unsigned short *mem=Lock.Get_Index_Array();
-		for (int i=0; i<Indices.Count(); i++)
-			mem[i]=Indices[i];
-	}
-
-	DX8Wrapper::Set_Vertex_Buffer(vb);
-	DX8Wrapper::Set_Index_Buffer(ib,0);
-
-	if (IsGrayScale)
-	{
-		//special case added to draw grayscale non-alpha blended images.
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
-		DX8Wrapper::Apply_Render_State_Changes();	//force update of all regular W3D states.
-		if (DX8Wrapper::Get_Current_Caps()->Support_Dot3())
-		{
-			//Override W3D states with customizations for grayscale
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR, 0x80A5CA8E);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG0, D3DTA_TFACTOR | D3DTA_ALPHAREPLICATE);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG2, D3DTA_TFACTOR | D3DTA_ALPHAREPLICATE);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLOROP, D3DTOP_MULTIPLYADD);
-
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLORARG1, D3DTA_CURRENT);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLORARG2, D3DTA_TFACTOR);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLOROP, D3DTOP_DOTPRODUCT3);
-		}
-		else
-		{
-			//doesn't have DOT3 blend mode so fake it another way.
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR, 0x60606060);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG2, D3DTA_TFACTOR);
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLOROP, D3DTOP_MODULATE);
-
-			// TheSuperHackers @bugfix Stubbjax 08/01/2026 Fix possible greyscale rendering issues on hardware without DOT3 support.
-			DX8Wrapper::Set_DX8_Texture_Stage_State( 1, D3DTSS_COLOROP, D3DTOP_DISABLE);
-		}
-	}
-	else
-		DX8Wrapper::Set_Shader(Shader);
-	DX8Wrapper::Draw_Triangles(0,Indices.Count()/3,0,Vertices.Count());
-
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,view);
-	DX8Wrapper::Set_Transform(D3DTS_PROJECTION,proj);
-	if (IsGrayScale)
-		ShaderClass::Invalidate();	//force both stages to be reset.
-#endif
-
 }
 
 

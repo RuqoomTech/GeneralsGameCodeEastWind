@@ -491,17 +491,6 @@ void W3DMouse::draw()
 		if (m_pDev)
 		{	m_pDev->ShowCursor(TRUE);	//Enable DX8 cursor
 
-			if (TheDisplay && !TheDisplay->getWindowed())
-			{
-				//if we're full-screen, need to manually move cursor image
-				POINT ptCursor;
-
-				GetCursorPos( &ptCursor );
-				ScreenToClient( ApplicationHWnd, &ptCursor );
-#if !defined(RTS_EVOLUTION_X64)
-				m_pDev->SetCursorPosition( ptCursor.x, ptCursor.y, D3DCURSOR_IMMEDIATE_UPDATE);
-#endif
-			}
 			//Check if animated cursor and new frame
 			if (m_currentFrames > 1)
 			{
@@ -598,10 +587,8 @@ void W3DMouse::draw()
 
 void W3DMouse::setRedrawMode(RedrawMode mode)
 {
-#if defined(RTS_EVOLUTION_X64)
-	// The D3D8 hardware cursor has no role in the Evolution D3D12 window.
+	// The D3D8 hardware cursor has no role in the D3D12 window.
 	if (mode == RM_DX8) mode = RM_WINDOWS;
-#endif
 	MouseCursor cursor = getMouseCursor();
 
 	//Turn off the previous cursor mode
