@@ -5,6 +5,8 @@
 #include <iostream>
 #include <limits>
 
+#include <gtest/gtest.h>
+
 bool WW3D::IsSortingEnabled = true;
 
 // Texture loading is outside this untextured queue test. Fail if a fixture
@@ -13,10 +15,9 @@ bool TextureClass::Ensure_Renderer_Texture() { return false; }
 RenderBackendTextureHandle TextureBaseClass::Get_Renderer_Texture() const { return {}; }
 
 namespace {
-int failures = 0;
 void Check(bool condition, const char *name)
 {
-    if (!condition) { std::cerr << name << '\n'; ++failures; }
+    EXPECT_TRUE(condition) << name;
 }
 bool Equal(const Matrix4x4 &a, const Matrix4x4 &b)
 {
@@ -201,13 +202,34 @@ void Test_Pass_Mask_Snapshot()
 
 IRenderBackend *WW3D::RenderBackend=&backend;
 
-int main()
+// The cases share the production queue and run in declaration order, as before.
+class SortingRendererQueue : public ::testing::Test
+{
+protected:
+    static void TearDownTestSuite() { SortingRendererClass::Deinit(); }
+};
+
+TEST_F(SortingRendererQueue, GlobalOrderAndCopy)
 {
     Test_Global_Order_And_Copy();
+}
+
+TEST_F(SortingRendererQueue, EqualZNodeOrder)
+{
     Test_Equal_Z_Node_Order();
+}
+
+TEST_F(SortingRendererQueue, SnapshotAndRestore)
+{
     Test_Snapshot_And_Restore();
+}
+
+TEST_F(SortingRendererQueue, RejectionAndDeinit)
+{
     Test_Rejection_And_Deinit();
+}
+
+TEST_F(SortingRendererQueue, PassMaskSnapshot)
+{
     Test_Pass_Mask_Snapshot();
-    SortingRendererClass::Deinit();
-    return failures ? 1 : 0;
 }

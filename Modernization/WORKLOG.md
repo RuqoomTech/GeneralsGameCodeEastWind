@@ -608,3 +608,15 @@ Normal game link/boot, D3D12 creation in that executable, first visible game/UI 
 - 2026-10-14: all 11 waypoints merged, up to upstream `0e6a06c7c`. Tests 31/32 on this machine, unchanged from before the sync (the D3D12 smoke test stops at its sampler checks on the AMD RX 640). The `z_generals` link has 47 unresolved symbols, down from 48. Two decisions were added to `DECISIONS.md`: upstream syncs are git merges, and the static `Renderer` forwards into `IRenderBackend`.
 - `PROJECT_STATE.md` no longer repeats its sea-reflection section; the first copy was kept, and the dropped copy differed only in three wording changes.
 - 2026-10-15: the 31 upstream commits after `0e6a06c7c` merged as waypoint 12 and a combined waypoint 13-15, gated once at the end on the owner's request. The branch now contains upstream up to `79e87d082`. Same results: tests 31/32, 47 unresolved symbols. New items: upstream's terrain particles are a new DX8 caller to port, and upstream's `debug/debug.h` include directory shadows libstdc++'s header of the same name under GCC.
+
+## 2026-10-15 — Smoke test on the RX 640, Google Test, first-frame goal
+
+- `d3d12_backend_smoke` now passes on the AMD RX 640: 30 Google Test cases, one per
+  verification group. The sampler failure was the trilinear check expecting an exact log2
+  LOD; the GPU's approximation gives 207,48,0 where 191,64,0 was expected. D3D12 leaves that
+  approximation to the hardware, so the check now accepts a blend weight between the two and
+  still rejects point mip filtering (255,0,0).
+- All focused C++ tests in `Core/Tests` are Google Test programs (decision of the same date).
+  `ctest --preset mingw64-tests`: **32/32**. No fixture was regenerated; the `--emit` output
+  of the headless and full-session tests matches the checked-in fixtures byte for byte.
+- New standing goal, recorded at the top of `PROJECT_STATE.md`: first frame.

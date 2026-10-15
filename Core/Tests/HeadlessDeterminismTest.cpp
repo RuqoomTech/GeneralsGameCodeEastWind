@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 namespace {
 
 struct SimulationState
@@ -153,7 +155,7 @@ bool VerifyFixture(const char *path, const std::vector<Checkpoint> &actual)
 {
     std::ifstream in(path);
     if (!in) {
-        fprintf(stderr, "Cannot open headless determinism timeline fixture: %s\n", path);
+        ADD_FAILURE() << "Cannot open headless determinism timeline fixture: " << path;
         return false;
     }
 
@@ -163,7 +165,7 @@ bool VerifyFixture(const char *path, const std::vector<Checkpoint> &actual)
         header.pop_back();
     }
     if (header != "headless-determinism-v1 seed=0x12345678 end=12000") {
-        fprintf(stderr, "Unexpected headless determinism fixture header: %s\n", header.c_str());
+        ADD_FAILURE() << "Unexpected headless determinism fixture header: " << header;
         return false;
     }
 
@@ -176,15 +178,15 @@ bool VerifyFixture(const char *path, const std::vector<Checkpoint> &actual)
         if (!ParseUnsigned(frameToken, &cp.frame)
             || !ParseUnsigned(crcToken, &cp.logicalCRC)
             || !ParseUnsigned(rngToken, &cp.rngCRC)) {
-            fprintf(stderr, "Invalid headless determinism fixture row near frame token '%s'.\n", frameToken.c_str());
+            ADD_FAILURE() << "Invalid headless determinism fixture row near frame token '" << frameToken << "'.";
             return false;
         }
         expected.push_back(cp);
     }
 
     if (expected.size() != actual.size()) {
-        fprintf(stderr, "Headless determinism timeline count mismatch: expected %lu, got %lu.\n",
-            static_cast<unsigned long>(expected.size()), static_cast<unsigned long>(actual.size()));
+        ADD_FAILURE() << "Headless determinism timeline count mismatch: expected " << expected.size()
+            << ", got " << actual.size() << ".";
         return false;
     }
 
@@ -192,45 +194,50 @@ bool VerifyFixture(const char *path, const std::vector<Checkpoint> &actual)
         if (expected[i].frame != actual[i].frame
             || expected[i].logicalCRC != actual[i].logicalCRC
             || expected[i].rngCRC != actual[i].rngCRC) {
-            fprintf(stderr,
-                "Headless determinism timeline mismatch at frame %u: expected crc=0x%08x rng=0x%08x, got crc=0x%08x rng=0x%08x.\n",
-                static_cast<unsigned int>(expected[i].frame),
-                static_cast<unsigned int>(expected[i].logicalCRC),
-                static_cast<unsigned int>(expected[i].rngCRC),
-                static_cast<unsigned int>(actual[i].logicalCRC),
-                static_cast<unsigned int>(actual[i].rngCRC));
+            ADD_FAILURE() << "Headless determinism timeline mismatch at frame " << expected[i].frame << std::hex
+                << ": expected crc=0x" << expected[i].logicalCRC << " rng=0x" << expected[i].rngCRC
+                << ", got crc=0x" << actual[i].logicalCRC << " rng=0x" << actual[i].rngCRC << ".";
             return false;
         }
     }
     return true;
 }
 
+const char *g_fixturePath = nullptr;
+
 } // namespace
 
+// Prove the production FP reset repairs a deliberately perturbed host rounding mode.
+TEST(HeadlessDeterminism, SetFPModeRestoresRounding)
+{
+    ASSERT_EQ(fesetround(FE_DOWNWARD), 0) << "Unable to perturb floating-point rounding mode for determinism guard.";
+    setFPMode();
+    EXPECT_EQ(fegetround(), FE_TONEAREST) << "setFPMode() did not restore FE_TONEAREST.";
+}
+
+TEST(HeadlessDeterminism, TimelineMatchesFixture)
+{
+    // Start from a perturbed rounding mode, as the original single-program guard did.
+    ASSERT_EQ(fesetround(FE_DOWNWARD), 0);
+    setFPMode();
+    EXPECT_TRUE(VerifyFixture(g_fixturePath, RunTimeline()));
+}
+
+// The fixture path is a program argument, so this test keeps its own main():
+// --verify <fixture> runs the tests, --emit prints the timeline and runs nothing.
 int main(int argc, char **argv)
 {
-    // Prove the production FP reset repairs a deliberately perturbed host rounding mode.
-    if (fesetround(FE_DOWNWARD) != 0) {
-        fprintf(stderr, "Unable to perturb floating-point rounding mode for determinism guard.\n");
-        return 1;
-    }
-    setFPMode();
-    if (fegetround() != FE_TONEAREST) {
-        fprintf(stderr, "setFPMode() did not restore FE_TONEAREST.\n");
-        return 1;
-    }
-
-    const std::vector<Checkpoint> timeline = RunTimeline();
+    testing::InitGoogleTest(&argc, argv);
 
     if (argc == 2 && strcmp(argv[1], "--emit") == 0) {
-        EmitTimeline(stdout, timeline);
+        fesetround(FE_DOWNWARD);
+        setFPMode();
+        EmitTimeline(stdout, RunTimeline());
         return 0;
     }
     if (argc == 3 && strcmp(argv[1], "--verify") == 0) {
-        if (!VerifyFixture(argv[2], timeline))
-            return 1;
-        puts("Headless deterministic timeline matched the checked-in fixture.");
-        return 0;
+        g_fixturePath = argv[2];
+        return RUN_ALL_TESTS();
     }
 
     fprintf(stderr, "Usage: %s --emit | --verify <fixture>\n", argv[0]);

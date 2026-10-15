@@ -13,6 +13,8 @@
 #include <fstream>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 static_assert(sizeof(LegacyDDSURFACEDESC2) == 124);
 static_assert(offsetof(LegacyDDSURFACEDESC2, PixelFormat) == 72);
 static_assert(offsetof(LegacyDDSURFACEDESC2, Caps) == 104);
@@ -217,15 +219,29 @@ static bool Test_CPU_Surface()
     return ok;
 }
 
-int main()
+TEST(DDSTextureDecode, CpuSurface)
+{
+    EXPECT_TRUE(Test_CPU_Surface());
+}
+
+TEST(DDSTextureDecode, CpuFormatPolicy)
+{
+    EXPECT_TRUE(Test_CPU_Format_Policy());
+}
+
+TEST(DDSTextureDecode, AuthoredDdsMips)
+{
+    EXPECT_TRUE(Test_Authored_DDS_Mips());
+}
+
+TEST(DDSTextureDecode, BlockDecodeAndMipGeneration)
 {
     std::array<unsigned char, 16> block{};
     std::array<unsigned char, 64> pixels{};
     // Red/blue endpoints with each of the four color codes in every row.
     block[1] = 0xf8; block[2] = 0x1f;
     for (unsigned i = 4; i < 8; ++i) block[i] = 0xe4;
-    bool ok = Test_CPU_Surface() && Test_CPU_Format_Policy() && Test_Authored_DDS_Mips();
-    ok = BitmapHandlerClass::Decode_DXT_Block_RGBA8(WW3D_FORMAT_DXT1, block.data(), pixels.data()) && ok;
+    bool ok = BitmapHandlerClass::Decode_DXT_Block_RGBA8(WW3D_FORMAT_DXT1, block.data(), pixels.data());
     const unsigned expected[4][4] = {{255,0,0,255},{0,0,255,255},{170,0,85,255},{85,0,170,255}};
     for (unsigned i = 0; i < 16; ++i)
         for (unsigned channel = 0; channel < 4; ++channel)
@@ -300,7 +316,5 @@ int main()
     BitmapHandlerClass::Create_Mipmap(last_mip.data(), 4, WW3D_FORMAT_A8R8G8B8,
         wide_mip.data(), 12, WW3D_FORMAT_A8R8G8B8, 2, 1);
     ok = last_mip[0] == 28 && last_mip[1] == 16 && last_mip[2] == 4 && last_mip[3] == 252 && ok;
-    if (!ok) { std::cerr << "DDS fixed-width header or BC1/2/3 decoding failed.\n"; return 1; }
-    std::cout << "DDS header, DXT1-5 RGBA decoding, and CPU mip generation passed.\n";
-    return 0;
+    EXPECT_TRUE(ok) << "DDS fixed-width header or BC1/2/3 decoding failed.";
 }

@@ -1,5 +1,29 @@
 # Project state
 
+## Standing goal: first frame (set 2026-10-15)
+
+The main job until the owner changes it: `z_generals` links with **0 unresolved symbols**,
+creates its D3D12 device, and draws the **main menu with visible UI and text**. Work that
+shortens that path comes before new renderer fidelity.
+
+Progress is measured by the unique unresolved symbols in the `z_generals` link: **47** on
+2026-10-15. The path, in order:
+
+1. Textured `Render2D` through the backend, so UI images and font glyphs draw
+   (`GeneralsMD/.../WW3D2/render2d.cpp` returns after untextured geometry today).
+2. Procedural and file textures created through the backend (`texture.cpp`,
+   `textureloader.cpp`, `missingtexture.cpp`).
+3. The remaining DX8-only callers (dazzle, `W3DSmudge`, `W3DSnow`, `W3DStatusCircle`,
+   `W3DTerrainParticles`, scene passes and `W3DShaderManager` render-to-texture) become
+   logged skips until each gets a real port, so the link closes.
+4. Boot to the main menu, then fix what the first run shows.
+
+## Smoke test and Google Test - 2026-10-15
+
+On branch `work/first-frame`. `d3d12_backend_smoke` passes on the AMD RX 640 (30 cases), and
+the focused C++ tests are Google Test programs: `ctest --preset mingw64-tests` is **32/32** on
+this machine. Details are in `Modernization/WORKLOG.md` and `Modernization/DECISIONS.md`.
+
 ## Upstream sync to 79e87d082 - 2026-10-15
 
 Upstream TheSuperHackers/GeneralsGameCode is merged up to `79e87d082` (192 commits: 11 planned

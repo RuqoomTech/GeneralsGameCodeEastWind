@@ -1,37 +1,26 @@
 #include "rts/w3x_document.h"
 
-#include <stdio.h>
 #include <string.h>
+
+#include <gtest/gtest.h>
 
 namespace {
 
-int g_failures = 0;
-
 void Expect_Result(const char *case_name, rts::W3XDocumentProbeResult expected, rts::W3XDocumentProbeResult actual)
 {
-    if (expected != actual) {
-        fprintf(stderr, "%s: expected %s, got %s\n", case_name,
-            rts::Get_W3X_Document_Probe_Result_Name(expected),
-            rts::Get_W3X_Document_Probe_Result_Name(actual));
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << case_name << ": expected "
+        << rts::Get_W3X_Document_Probe_Result_Name(expected) << ", got "
+        << rts::Get_W3X_Document_Probe_Result_Name(actual);
 }
 
 void Expect_String(const char *case_name, const char *expected, const char *actual)
 {
-    if (strcmp(expected, actual) != 0) {
-        fprintf(stderr, "%s: expected '%s', got '%s'\n", case_name, expected, actual);
-        ++g_failures;
-    }
+    EXPECT_STREQ(expected, actual) << case_name;
 }
 
 void Expect_Bool(const char *case_name, bool expected, bool actual)
 {
-    if (expected != actual) {
-        fprintf(stderr, "%s: expected %s, got %s\n", case_name,
-            expected ? "true" : "false", actual ? "true" : "false");
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << case_name;
 }
 
 void Probe_And_Expect_Sage(const char *case_name, const char *xml, bool has_declaration)
@@ -53,7 +42,7 @@ void Probe_And_Expect_Sage(const char *case_name, const char *xml, bool has_decl
 
 } // namespace
 
-int main()
+TEST(W3XDocumentProbe, SageEnvelopes)
 {
     const char canonical[] =
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
@@ -65,7 +54,10 @@ int main()
     const char no_declaration[] =
         "<AssetDeclaration xmlns='uri:ea.com:eala:asset'><W3DHierarchy/></AssetDeclaration>";
     Probe_And_Expect_Sage("no XML declaration", no_declaration, false);
+}
 
+TEST(W3XDocumentProbe, DocumentShapes)
+{
     const unsigned char bom_and_comment[] = {
         0xEF, 0xBB, 0xBF,
         '<','?','x','m','l',' ','v','e','r','s','i','o','n','=','\'','1','.','0','\'','?','>',
@@ -117,7 +109,11 @@ int main()
         Expect_Bool("processing instruction no XML declaration", false, info.has_xml_declaration);
         Expect_Bool("processing instruction SAGE", true, info.is_sage_asset_declaration);
     }
+}
 
+TEST(W3XDocumentProbe, RejectedInput)
+{
+    rts::W3XDocumentInfo info;
     const char binary[] = { 'W', '3', 'X', 0, 1, 2, 3 };
     Expect_Result("binary data", rts::W3X_DOCUMENT_PROBE_NOT_XML,
         rts::Probe_W3X_Document(binary, sizeof(binary), info));
@@ -143,12 +139,4 @@ int main()
     const char doctype[] = "<!DOCTYPE AssetDeclaration><AssetDeclaration/>";
     Expect_Result("DOCTYPE explicitly unsupported", rts::W3X_DOCUMENT_PROBE_UNSUPPORTED_DOCTYPE,
         rts::Probe_W3X_Document(doctype, strlen(doctype), info));
-
-    if (g_failures != 0) {
-        fprintf(stderr, "%d W3X document-probe test(s) failed.\n", g_failures);
-        return 1;
-    }
-
-    puts("W3X document-probe tests passed.");
-    return 0;
 }

@@ -7,13 +7,15 @@
 #include <cstdio>
 #include <cstring>
 
+#include <gtest/gtest.h>
+
 namespace
 {
-int Fail(const char *message)
+struct RemoveOnExit
 {
-	std::fprintf(stderr, "Performance telemetry test failed: %s\n", message);
-	return 1;
-}
+	const char *path;
+	~RemoveOnExit() { std::remove(path); }
+};
 
 int Count_Commas(const char *text)
 {
@@ -27,17 +29,16 @@ int Count_Commas(const char *text)
 }
 }
 
-int main()
+TEST(PerformanceTelemetry, CaptureCsv)
 {
 	const char *path = "performance-telemetry-test.csv";
 	std::remove(path);
+	const RemoveOnExit cleanup{path};
 
-	if (PerformanceTelemetry::Start_Capture("") || PerformanceTelemetry::Is_Capturing()) {
-		return Fail("empty capture paths must stay disabled");
-	}
-	if (!PerformanceTelemetry::Start_Capture(path) || !PerformanceTelemetry::Is_Capturing()) {
-		return Fail("explicit capture could not be started");
-	}
+	ASSERT_FALSE(PerformanceTelemetry::Start_Capture("") || PerformanceTelemetry::Is_Capturing())
+		<< "empty capture paths must stay disabled";
+	ASSERT_TRUE(PerformanceTelemetry::Start_Capture(path) && PerformanceTelemetry::Is_Capturing())
+		<< "explicit capture could not be started";
 
 	PerformanceTelemetry::RenderFrameCounters counters;
 	counters.drawCalls = 11;
@@ -69,24 +70,16 @@ int main()
 	PerformanceTelemetry::End_Update_Frame();
 	PerformanceTelemetry::Stop_Capture();
 
-	if (PerformanceTelemetry::Is_Capturing()) {
-		std::remove(path);
-		return Fail("capture remained active after Stop_Capture");
-	}
+	ASSERT_FALSE(PerformanceTelemetry::Is_Capturing()) << "capture remained active after Stop_Capture";
 
 	FILE *file = std::fopen(path, "r");
-	if (file == 0) {
-		return Fail("capture file was not created");
-	}
+	ASSERT_NE(file, nullptr) << "capture file was not created";
 
 	char header[2048];
 	char row[2048];
-	if (std::fgets(header, sizeof(header), file) == 0 || std::fgets(row, sizeof(row), file) == 0) {
-		std::fclose(file);
-		std::remove(path);
-		return Fail("capture did not contain header and sample row");
-	}
+	const bool read = std::fgets(header, sizeof(header), file) != 0 && std::fgets(row, sizeof(row), file) != 0;
 	std::fclose(file);
+	ASSERT_TRUE(read) << "capture did not contain header and sample row";
 
 	const char *expectedHeader =
 		"schema_version,capture_index,render_frame,logic_frame,sync_time_ms,rendered,logic_updated,"
@@ -97,27 +90,14 @@ int main()
 		"texture_bytes,texture_count,texture_changes,lightmap_texture_bytes,"
 		"lightmap_texture_count,procedural_texture_bytes,procedural_texture_count,"
 		"memory_allocations,memory_frees\n";
-	if (std::strcmp(header, expectedHeader) != 0) {
-		std::remove(path);
-		return Fail("CSV schema changed unexpectedly");
-	}
-	if (Count_Commas(row) != 34) {
-		std::remove(path);
-		return Fail("sample column count is not stable");
-	}
-	if (std::strncmp(row, "3,1,42,77,1400,1,1,", std::strlen("3,1,42,77,1400,1,1,")) != 0) {
-		std::remove(path);
-		return Fail("sample identity/update-state fields are incorrect");
-	}
+	EXPECT_STREQ(expectedHeader, header) << "CSV schema changed unexpectedly";
+	EXPECT_EQ(Count_Commas(row), 34) << "sample column count is not stable";
+	EXPECT_EQ(std::strncmp(row, "3,1,42,77,1400,1,1,", std::strlen("3,1,42,77,1400,1,1,")), 0)
+		<< "sample identity/update-state fields are incorrect: " << row;
 	const char *expectedCounters = ",10,6,3,11,37,61,37,61,7,11,13,17,19,23,29,31,43,47,53,59,61,67\n";
 	const size_t rowLength = std::strlen(row);
 	const size_t countersLength = std::strlen(expectedCounters);
-	if (rowLength < countersLength || std::strcmp(row + rowLength - countersLength, expectedCounters) != 0) {
-		std::remove(path);
-		return Fail("visibility/render counters were not serialized as expected");
-	}
-
-	std::remove(path);
-	std::puts("Performance telemetry capture test passed.");
-	return 0;
+	ASSERT_GE(rowLength, countersLength) << "visibility/render counters were not serialized as expected: " << row;
+	EXPECT_STREQ(expectedCounters, row + rowLength - countersLength)
+		<< "visibility/render counters were not serialized as expected";
 }

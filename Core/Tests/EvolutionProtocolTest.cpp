@@ -8,18 +8,26 @@
 #include <iostream>
 #include <map>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 namespace
 {
 
 using Bytes = std::vector<std::uint8_t>;
 
+// A failed check ends the current test; Google Test reports the message.
+struct CheckFailure : std::runtime_error
+{
+    using std::runtime_error::runtime_error;
+};
+
 [[noreturn]] void Fail(const std::string &message)
 {
-    std::cerr << message << '\n';
-    std::exit(1);
+    throw CheckFailure(message);
 }
 
 void Expect(bool condition, const char *message)
@@ -361,23 +369,53 @@ void CheckReplayFraming(const std::map<std::string, Bytes> &fixtures)
 
 } // namespace
 
+static_assert(sizeof(std::int32_t) == 4, "Evolution protocol requires int32_t");
+static_assert(sizeof(std::uint32_t) == 4, "Evolution protocol requires uint32_t");
+static_assert(sizeof(float) == 4, "Evolution protocol requires float32");
+static_assert(evolution::NETWORK_HEADER_BYTES_V1 == 20U, "Evolution network v1 header size changed");
+static_assert(evolution::REPLAY_HEADER_BYTES_V1 == 16U, "Evolution replay v1 header size changed");
+static_assert(evolution::REPLAY_COMMAND_RECORD_HEADER_BYTES_V1 == 12U, "Evolution replay command header size changed");
+
+namespace
+{
+const char *g_fixturePath = nullptr;
+
+const std::map<std::string, Bytes> &Fixtures()
+{
+    static const std::map<std::string, Bytes> fixtures = LoadFixtures(g_fixturePath);
+    return fixtures;
+}
+} // namespace
+
+TEST(EvolutionProtocol, CommandRoundTrip)
+{
+    CheckCommandRoundTrip(Fixtures());
+}
+
+TEST(EvolutionProtocol, CommandRejection)
+{
+    CheckCommandRejection(Fixture(Fixtures(), "command"));
+}
+
+TEST(EvolutionProtocol, NetworkFraming)
+{
+    CheckNetworkFraming(Fixtures());
+}
+
+TEST(EvolutionProtocol, ReplayFraming)
+{
+    CheckReplayFraming(Fixtures());
+}
+
+// The fixture file is a program argument, so this test keeps its own main().
 int main(int argc, char **argv)
 {
-    if (argc != 2) Fail("Usage: evolution_protocol_test <fixture-file>");
-    const auto fixtures = LoadFixtures(argv[1]);
-
-    static_assert(sizeof(std::int32_t) == 4, "Evolution protocol requires int32_t");
-    static_assert(sizeof(std::uint32_t) == 4, "Evolution protocol requires uint32_t");
-    static_assert(sizeof(float) == 4, "Evolution protocol requires float32");
-    static_assert(evolution::NETWORK_HEADER_BYTES_V1 == 20U, "Evolution network v1 header size changed");
-    static_assert(evolution::REPLAY_HEADER_BYTES_V1 == 16U, "Evolution replay v1 header size changed");
-    static_assert(evolution::REPLAY_COMMAND_RECORD_HEADER_BYTES_V1 == 12U, "Evolution replay command header size changed");
-
-    CheckCommandRoundTrip(fixtures);
-    CheckCommandRejection(Fixture(fixtures, "command"));
-    CheckNetworkFraming(fixtures);
-    CheckReplayFraming(fixtures);
-
-    std::cout << "Evolution protocol v1 guard passed: command codec, network framing, replay framing, golden bytes, and malformed-input rejection.\n";
-    return 0;
+    testing::InitGoogleTest(&argc, argv);
+    if (argc != 2)
+    {
+        std::cerr << "Usage: evolution_protocol_test <fixture-file>\n";
+        return 1;
+    }
+    g_fixturePath = argv[1];
+    return RUN_ALL_TESTS();
 }

@@ -1,6 +1,9 @@
 # Fetch Google Test for the unit test executables.
 # It is always built from source, so that it uses the same compiler, architecture and runtime library as the game.
 
+# EastWind: the focused modernization tests use it too, so it may be included twice.
+include_guard(GLOBAL)
+
 set(BUILD_GMOCK OFF)
 
 FetchContent_Declare(

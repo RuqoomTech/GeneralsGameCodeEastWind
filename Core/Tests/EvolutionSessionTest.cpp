@@ -8,17 +8,25 @@
 #include <iostream>
 #include <map>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 namespace
 {
 constexpr std::int32_t LOGIC_CRC_MESSAGE_TYPE = 1095;
 
-void Fail(const std::string &message)
+// A failed check ends the current test; Google Test reports the message.
+struct CheckFailure : std::runtime_error
 {
-    std::cerr << "FAIL: " << message << '\n';
-    std::exit(1);
+    using std::runtime_error::runtime_error;
+};
+
+[[noreturn]] void Fail(const std::string &message)
+{
+    throw CheckFailure(message);
 }
 
 void Expect(bool condition, const std::string &message)
@@ -340,18 +348,35 @@ void testNonGameplayPacketRejectedByRoutedBoundary()
 }
 } // namespace
 
-int main()
+static_assert(sizeof(void *) == 8, "Evolution session validation is x64-only");
+static_assert(sizeof(std::uint32_t) == 4, "Evolution session validation requires fixed-width uint32_t");
+
+TEST(EvolutionSession, PacketMetadata)
 {
-    static_assert(sizeof(void *) == 8, "Evolution session validation is x64-only");
-    static_assert(sizeof(std::uint32_t) == 4, "Evolution session validation requires fixed-width uint32_t");
-
     testPacketMetadata();
-    testRetryAckAndDuplicate();
-    testDelayedOrderingFrameSyncAndCrc();
-    testMalformedRuntimeBoundary();
-    testIntentionalEvN1EmissionFailure();
-    testNonGameplayPacketRejectedByRoutedBoundary();
+}
 
-    std::cout << "Evolution session validation passed: two-peer routed EVN1 flow, retry/ACK, duplicates, delayed ordering, frame sync, CRC checkpoints, malformed rejection, and fallback boundary are stable.\n";
-    return 0;
+TEST(EvolutionSession, RetryAckAndDuplicate)
+{
+    testRetryAckAndDuplicate();
+}
+
+TEST(EvolutionSession, DelayedOrderingFrameSyncAndCrc)
+{
+    testDelayedOrderingFrameSyncAndCrc();
+}
+
+TEST(EvolutionSession, MalformedRuntimeBoundary)
+{
+    testMalformedRuntimeBoundary();
+}
+
+TEST(EvolutionSession, IntentionalEvN1EmissionFailure)
+{
+    testIntentionalEvN1EmissionFailure();
+}
+
+TEST(EvolutionSession, NonGameplayPacketRejectedByRoutedBoundary)
+{
+    testNonGameplayPacketRejectedByRoutedBoundary();
 }

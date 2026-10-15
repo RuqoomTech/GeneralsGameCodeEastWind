@@ -13,6 +13,9 @@
 #include <cmath>
 #include <array>
 #include <limits>
+#include <vector>
+
+#include <gtest/gtest.h>
 
 namespace
 {
@@ -367,17 +370,25 @@ bool verifySamplers(IRenderBackend &backend)
     RenderBackendMaterialState material; material.depth_write=false;
     backend.Set_Viewport({0,0,640,480,0,1}); backend.Set_View_Projection(Matrix4x4(true));
     bool ok=texture.Is_Valid() && mips.Is_Valid();
-    auto verify=[&](RenderBackendTextureHandle handle,int r,int g,int b) {
+    auto verify_range=[&](RenderBackendTextureHandle handle,const int (&low)[3],const int (&high)[3]) {
         backend.Clear(true,true,Vector3(0,0,0),1,1,0); backend.Begin_Scene();
         const bool drew=backend.Draw_Indexed_Material_Triangles(quad,4,indices,6,handle,material);
         backend.End_Scene(false);
         unsigned width=0,height=0; std::vector<unsigned char> pixels;
         const bool read=backend.Read_Output_RGBA8(width,height,pixels) && width==640 && height==480;
         const unsigned center=(240*640+320)*4;
-        const bool match=read && std::abs(int(pixels[center])-r)<=2 &&
-            std::abs(int(pixels[center+1])-g)<=2 && std::abs(int(pixels[center+2])-b)<=2 && pixels[center+3]==255;
-        if (!drew || !match) std::cerr << "Material sampler pixel failed expected " << r << ',' << g << ',' << b << '\n';
+        bool match=read && pixels[center+3]==255;
+        for (unsigned c=0;c<3 && match;++c) match=int(pixels[center+c])>=low[c] && int(pixels[center+c])<=high[c];
+        if (!drew || !match) {
+            std::cerr << "Material sampler pixel failed expected " << low[0] << ".." << high[0] << ',' <<
+                low[1] << ".." << high[1] << ',' << low[2] << ".." << high[2];
+            if (read) std::cerr << " got " << int(pixels[center]) << ',' << int(pixels[center+1]) << ',' << int(pixels[center+2]);
+            std::cerr << '\n';
+        }
         backend.Flip_To_Primary(); return drew && match;
+    };
+    auto verify=[&](RenderBackendTextureHandle handle,int r,int g,int b) {
+        return verify_range(handle,{r-2,g-2,b-2},{r+2,g+2,b+2});
     };
     material.sampler.mag_filter=RenderBackendTextureFilter::Point;
     ok=verify(texture,255,0,0) && ok;
@@ -401,7 +412,11 @@ bool verifySamplers(IRenderBackend &backend)
     material.sampler.mip_filter=RenderBackendTextureFilter::Point;
     ok=verify(mips,255,0,0) && ok;
     material.sampler.mip_filter=RenderBackendTextureFilter::Linear;
-    ok=verify(mips,191,64,0) && ok;
+    // The footprint is 2^0.25 texels per pixel. An exact log2 gives LOD 0.25, a 75/25
+    // red/green blend (191,64,0). D3D12 leaves the LOD approximation to the hardware: a
+    // linear-mantissa log2 gives 2^0.25-1 = 0.19 (207,48,0 on an AMD RX 640). Accept a
+    // blend weight between the two; point mip filtering gives 255,0,0 and fails this.
+    ok=verify_range(mips,{189,46,0},{209,66,2}) && ok;
     for (auto &vertex:quad) vertex.u=.5f;
     material.sampler.min_mip_level=1;
     ok=verify(mips,0,255,0) && ok;
@@ -2713,130 +2728,147 @@ bool verifyMotionBlurSceneCapture(IRenderBackend &backend)
     if (!ok) std::cerr << "Motion-blur capture: retained RGB/depth, selected alpha, blending, or tactical pixel bounds failed.\n";
     return ok;
 }
+// Geometry and resources shared by the contract tests below. Each test creates them on
+// its own backend, so a failing group cannot leave state behind for the next one.
+const RenderBackendColorVertex triangle_vertices[] = {
+    {-0.65f, -0.55f, 0.50f, 1.00f, 0.15f, 0.10f, 1.00f},
+    {0.00f, 0.65f, 0.50f, 0.10f, 1.00f, 0.20f, 1.00f},
+    {0.65f, -0.55f, 0.50f, 0.10f, 0.25f, 1.00f, 1.00f},
+};
+const unsigned short triangle_indices[] = {0, 1, 2};
+const RenderBackendTexturedVertex textured_vertices[] = {
+    {-0.75f, -0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f},
+    {-0.75f,  0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
+    { 0.75f,  0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
+    { 0.75f, -0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+};
+const unsigned short textured_indices[] = {0, 1, 2, 0, 2, 3};
+const unsigned char checker_rgba[] = {
+    255,  64,  64, 255,    64, 255,  64, 255,
+     64,  64, 255, 255,   255, 255,  64, 255,
+};
+const RenderBackendColorVertex top_left_vertices[] = {
+    {-1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+    { 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+    {-1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+};
+
+// A non-symmetric transform catches row/column transposition.
+Matrix4x4 offsetViewProjection(float x_offset)
+{
+    Matrix4x4 view_projection(true);
+    view_projection[0][0] = 0.25f;
+    view_projection[1][1] = 0.25f;
+    view_projection[0][3] = x_offset;
+    view_projection[1][3] = -0.5f;
+    return view_projection;
+}
+
+struct SharedResources
+{
+    RenderBackendGeometryHandle static_triangle;
+    RenderBackendGeometryHandle textured_quad;
+    RenderBackendTextureHandle checker_texture;
+
+    bool Create(IRenderBackend &backend)
+    {
+        static_triangle = backend.Create_Static_Indexed_Color_Geometry(triangle_vertices, 3, triangle_indices, 3);
+        textured_quad = backend.Create_Static_Indexed_Textured_Geometry(textured_vertices, 4, textured_indices, 6);
+        checker_texture = backend.Create_Static_RGBA8_Texture(2, 2, checker_rgba, 8);
+        return static_triangle.Is_Valid() && textured_quad.Is_Valid() && checker_texture.Is_Valid();
+    }
+
+    void Release(IRenderBackend &backend)
+    {
+        backend.Release_Texture(checker_texture);
+        backend.Release_Static_Geometry(textured_quad);
+        backend.Release_Static_Geometry(static_triangle);
+    }
+};
 } // namespace
 
-int main()
+// Every test gets its own backend on one hidden window, so a group that fails leaves
+// nothing behind and every later group still runs.
+class D3D12BackendSmoke : public ::testing::Test
 {
-    HINSTANCE instance = GetModuleHandleW(nullptr);
-    HWND window = createHiddenWindow(instance);
-    if (window == nullptr)
+protected:
+    static void SetUpTestSuite()
     {
-        std::cerr << "D3D12 backend smoke failed: could not create Win32 window.\n";
-        return 1;
+        instance = GetModuleHandleW(nullptr);
+        window = createHiddenWindow(instance);
     }
 
-    IRenderBackend *backend = Create_Render_Backend(window, false);
-    if (backend == nullptr)
+    static void TearDownTestSuite()
     {
-        DestroyWindow(window);
+        if (window != nullptr)
+        {
+            DestroyWindow(window);
+            window = nullptr;
+        }
         UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: backend initialization failed.\n";
-        return 2;
     }
 
+    void SetUp() override
+    {
+        ASSERT_NE(window, nullptr) << "could not create Win32 window";
+        backend = Create_Render_Backend(window, false);
+        ASSERT_NE(backend, nullptr) << "backend initialization failed";
+        ASSERT_TRUE(backend->Configure_Output(640, 480, true)) << "output configuration failed";
+        backend->Set_Viewport(full_viewport);
+    }
+
+    void TearDown() override
+    {
+        delete backend;
+        backend = nullptr;
+    }
+
+    static HINSTANCE instance;
+    static HWND window;
+    static constexpr RenderBackendViewport full_viewport{0, 0, 640, 480, 0.0f, 1.0f};
+    IRenderBackend *backend = nullptr;
+};
+
+HINSTANCE D3D12BackendSmoke::instance = nullptr;
+HWND D3D12BackendSmoke::window = nullptr;
+
+TEST_F(D3D12BackendSmoke, OutputContract)
+{
     int output_width = 0, output_height = 0, output_bits = 0;
     bool output_windowed = false;
-    if (!backend->Configure_Output(640, 480, true) ||
-        !backend->Is_Device_Ready() ||
-        !backend->Has_Stencil() ||
-        !backend->Get_Output_Description(
-            output_width, output_height, output_bits, output_windowed) ||
-        output_width != 640 || output_height != 480 || output_bits != 32 || !output_windowed)
-    {
-        delete backend;
-        DestroyWindow(window);
-        UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: output resize/description contract failed.\n";
-        return 10;
-    }
+    EXPECT_TRUE(backend->Configure_Output(640, 480, true) &&
+        backend->Is_Device_Ready() &&
+        backend->Has_Stencil() &&
+        backend->Get_Output_Description(output_width, output_height, output_bits, output_windowed) &&
+        output_width == 640 && output_height == 480 && output_bits == 32 && output_windowed)
+        << "output resize/description contract failed";
 
-    RenderBackendViewport viewport{0, 0, 640, 480, 0.0f, 1.0f};
-    if (backend->Get_Swap_Interval() != 1 ||
-        !backend->Set_Swap_Interval(0) || backend->Get_Swap_Interval() != 0 ||
-        !backend->Set_Swap_Interval(4) || backend->Get_Swap_Interval() != 4 ||
-        backend->Set_Swap_Interval(5) || backend->Get_Swap_Interval() != 4 ||
-        !backend->Set_Swap_Interval(0))
-    {
-        delete backend;
-        DestroyWindow(window);
-        UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: presentation interval contract failed.\n";
-        return 11;
-    }
-    backend->Set_Viewport(viewport);
+    EXPECT_TRUE(backend->Get_Swap_Interval() == 1 &&
+        backend->Set_Swap_Interval(0) && backend->Get_Swap_Interval() == 0 &&
+        backend->Set_Swap_Interval(4) && backend->Get_Swap_Interval() == 4 &&
+        !backend->Set_Swap_Interval(5) && backend->Get_Swap_Interval() == 4 &&
+        backend->Set_Swap_Interval(0))
+        << "presentation interval contract failed";
 
     unsigned int captured_width = 99, captured_height = 99;
     std::vector<unsigned char> captured_pixels{99};
-    if (backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) ||
+    EXPECT_FALSE(backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) ||
         captured_width != 0 || captured_height != 0 || !captured_pixels.empty())
-    {
-        delete backend;
-        DestroyWindow(window);
-        UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: capture before submission was accepted.\n";
-        return 12;
-    }
+        << "capture before submission was accepted";
+}
 
-    const RenderBackendColorVertex triangle_vertices[] = {
-        {-0.65f, -0.55f, 0.50f, 1.00f, 0.15f, 0.10f, 1.00f},
-        {0.00f, 0.65f, 0.50f, 0.10f, 1.00f, 0.20f, 1.00f},
-        {0.65f, -0.55f, 0.50f, 0.10f, 0.25f, 1.00f, 1.00f},
-    };
-    const unsigned short triangle_indices[] = {0, 1, 2};
-    const RenderBackendGeometryHandle static_triangle =
-        backend->Create_Static_Indexed_Color_Geometry(triangle_vertices, 3, triangle_indices, 3);
-    if (!static_triangle.Is_Valid())
-    {
-        delete backend;
-        DestroyWindow(window);
-        UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: persistent geometry creation failed.\n";
-        return 3;
-    }
-
-    const RenderBackendTexturedVertex textured_vertices[] = {
-        {-0.75f, -0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f},
-        {-0.75f,  0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
-        { 0.75f,  0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
-        { 0.75f, -0.70f, 0.40f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-    };
-    const unsigned short textured_indices[] = {0, 1, 2, 0, 2, 3};
-    const unsigned char checker_rgba[] = {
-        255,  64,  64, 255,    64, 255,  64, 255,
-         64,  64, 255, 255,   255, 255,  64, 255,
-    };
-    const RenderBackendGeometryHandle textured_quad =
-        backend->Create_Static_Indexed_Textured_Geometry(textured_vertices, 4, textured_indices, 6);
-    const RenderBackendTextureHandle checker_texture =
-        backend->Create_Static_RGBA8_Texture(2, 2, checker_rgba, 8);
-    if (!textured_quad.Is_Valid() || !checker_texture.Is_Valid())
-    {
-        backend->Release_Texture(checker_texture);
-        backend->Release_Static_Geometry(textured_quad);
-        backend->Release_Static_Geometry(static_triangle);
-        delete backend;
-        DestroyWindow(window);
-        UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: persistent textured resources could not be created.\n";
-        return 4;
-    }
+TEST_F(D3D12BackendSmoke, DeferredPresentAndCapture)
+{
+    SharedResources resources;
+    ASSERT_TRUE(resources.Create(*backend)) << "persistent geometry or texture creation failed";
 
     // Exercise WW3D's deferred-present contract first: End_Scene(false) may
     // be followed by another scene before Flip_To_Primary(). This is used by
     // existing multi-pass/off-screen callers and must not dead-end the frame.
     backend->Clear(true, true, Vector3(0.04f, 0.08f, 0.12f), 1.0f, 1.0f, 0);
     backend->Begin_Scene();
-    if (!backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, checker_texture))
-    {
-        backend->Release_Texture(checker_texture);
-        backend->Release_Static_Geometry(textured_quad);
-        backend->Release_Static_Geometry(static_triangle);
-        delete backend;
-        DestroyWindow(window);
-        UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: textured indexed geometry/2D submission failed.\n";
-        return 5;
-    }
+    EXPECT_TRUE(backend->Draw_Static_Indexed_Textured_Geometry(resources.textured_quad, resources.checker_texture))
+        << "textured indexed geometry/2D submission failed";
     backend->End_Scene(false);
 
     backend->Clear(true, true, Vector3(0.06f, 0.08f, 0.12f), 1.0f, 1.0f, 0);
@@ -2844,19 +2876,21 @@ int main()
     backend->End_Scene(false);
     backend->Flip_To_Primary();
 
-    if (!backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) ||
-        captured_width != 640 || captured_height != 480 ||
-        captured_pixels.size() != 640u * 480u * 4u ||
-        captured_pixels[0] != 15 || captured_pixels[1] != 20 ||
-        captured_pixels[2] != 31 || captured_pixels[3] != 255)
-    {
-        delete backend;
-        DestroyWindow(window);
-        UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: latest presented output capture is incorrect.\n";
-        return 13;
-    }
+    unsigned int captured_width = 0, captured_height = 0;
+    std::vector<unsigned char> captured_pixels;
+    EXPECT_TRUE(backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) &&
+        captured_width == 640 && captured_height == 480 &&
+        captured_pixels.size() == 640u * 480u * 4u &&
+        captured_pixels[0] == 15 && captured_pixels[1] == 20 &&
+        captured_pixels[2] == 31 && captured_pixels[3] == 255)
+        << "latest presented output capture is incorrect";
+    resources.Release(*backend);
+}
 
+TEST_F(D3D12BackendSmoke, IndexedSubmissionAcrossFrames)
+{
+    SharedResources resources;
+    ASSERT_TRUE(resources.Create(*backend)) << "persistent geometry or texture creation failed";
     for (int frame = 0; frame < 6; ++frame)
     {
         backend->Reset_Frame_Statistics();
@@ -2866,55 +2900,44 @@ int main()
         backend->Begin_Scene();
         const bool color_draw_ok = frame == 0
             ? backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3)
-            : backend->Draw_Static_Indexed_Color_Geometry(static_triangle);
-        const bool textured_draw_ok = backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, checker_texture);
+            : backend->Draw_Static_Indexed_Color_Geometry(resources.static_triangle);
+        const bool textured_draw_ok =
+            backend->Draw_Static_Indexed_Textured_Geometry(resources.textured_quad, resources.checker_texture);
         const bool screen_draw_ok = backend->Draw_2D_Indexed_Triangles(
             triangle_vertices, 3, triangle_indices, 3, RenderBackend2DBlendMode::Alpha);
         const RenderBackendFrameStatistics counters = backend->Get_Frame_Statistics();
-        if (!color_draw_ok || !textured_draw_ok || !screen_draw_ok ||
-            counters.draw_calls != 3 || counters.triangles != 4 || counters.vertices != 10)
-        {
-            backend->Release_Texture(checker_texture);
-            backend->Release_Static_Geometry(textured_quad);
-            backend->Release_Static_Geometry(static_triangle);
-            delete backend;
-            DestroyWindow(window);
-            UnregisterClassW(WindowClassName, instance);
-            std::cerr << "D3D12 backend smoke failed: indexed geometry submission failed.\n";
-            return 6;
-        }
+        EXPECT_TRUE(color_draw_ok && textured_draw_ok && screen_draw_ok &&
+            counters.draw_calls == 3 && counters.triangles == 4 && counters.vertices == 10)
+            << "indexed geometry submission failed in frame " << frame;
         backend->End_Scene(true);
     }
+    resources.Release(*backend);
+}
 
-    // A non-symmetric transform catches row/column transposition. Change it
-    // within a scene and interleave UI to catch stale or shared root constants.
-    Matrix4x4 view_projection(true);
-    view_projection[0][0] = 0.25f;
-    view_projection[1][1] = 0.25f;
-    view_projection[0][3] = 0.55f;
-    view_projection[1][3] = -0.5f;
-    const RenderBackendColorVertex top_left_vertices[] = {
-        {-1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
-        { 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
-        {-1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
-    };
-    bool camera_ok = true;
+TEST_F(D3D12BackendSmoke, CameraTransformAndScreenSpaceIsolation)
+{
+    SharedResources resources;
+    ASSERT_TRUE(resources.Create(*backend)) << "persistent geometry or texture creation failed";
+
+    // Change the transform within a scene and interleave UI to catch stale or shared
+    // root constants.
+    unsigned int captured_width = 0, captured_height = 0;
+    std::vector<unsigned char> captured_pixels;
     for (unsigned int path = 0; path < 3; ++path)
     {
-        view_projection[0][3] = 0.55f;
-        backend->Set_View_Projection(view_projection);
+        bool camera_ok = true;
+        backend->Set_View_Projection(offsetViewProjection(0.55f));
         backend->Clear(true, true, Vector3(0.0f, 0.0f, 0.0f), 1.0f, 1.0f, 0);
         backend->Begin_Scene();
         auto draw_world = [&]() {
             if (path == 0) return backend->Draw_Indexed_Triangles(triangle_vertices, 3, triangle_indices, 3);
-            if (path == 1) return backend->Draw_Static_Indexed_Color_Geometry(static_triangle);
-            return backend->Draw_Static_Indexed_Textured_Geometry(textured_quad, checker_texture);
+            if (path == 1) return backend->Draw_Static_Indexed_Color_Geometry(resources.static_triangle);
+            return backend->Draw_Static_Indexed_Textured_Geometry(resources.textured_quad, resources.checker_texture);
         };
         camera_ok = draw_world() && camera_ok;
         camera_ok = backend->Draw_2D_Indexed_Triangles(
             top_left_vertices, 3, triangle_indices, 3, RenderBackend2DBlendMode::Opaque) && camera_ok;
-        view_projection[0][3] = -0.55f;
-        backend->Set_View_Projection(view_projection);
+        backend->Set_View_Projection(offsetViewProjection(-0.55f));
         camera_ok = draw_world() && camera_ok;
         backend->End_Scene(false);
         camera_ok = backend->Read_Output_RGBA8(captured_width, captured_height, captured_pixels) && camera_ok;
@@ -2930,8 +2953,24 @@ int main()
                 captured_pixels[ui_pixel] == 255 && captured_pixels[ui_pixel + 1] == 0 &&
                 captured_pixels[ui_pixel + 2] == 0;
         }
+        EXPECT_TRUE(camera_ok) << "camera transform or screen-space isolation is incorrect on path " << path;
         backend->Flip_To_Primary();
     }
+    resources.Release(*backend);
+}
+
+TEST_F(D3D12BackendSmoke, RenderTextureLifecycle)
+{
+    SharedResources resources;
+    ASSERT_TRUE(resources.Create(*backend)) << "persistent geometry or texture creation failed";
+    const RenderBackendGeometryHandle static_triangle = resources.static_triangle;
+    const RenderBackendGeometryHandle textured_quad = resources.textured_quad;
+    const RenderBackendTextureHandle checker_texture = resources.checker_texture;
+    // The camera the earlier groups left selected when this sequence ran in one program.
+    const Matrix4x4 view_projection = offsetViewProjection(-0.55f);
+    unsigned int captured_width = 0, captured_height = 0;
+    std::vector<unsigned char> captured_pixels;
+
     // Projected shadows render into one texture, copy to another, and sample
     // that copy later. Exercise actual GPU pixels and restore the output state.
     const auto render_texture = backend->Create_Render_Texture(61, 37);
@@ -2991,7 +3030,7 @@ int main()
             captured_pixels == retained_output && target_ok;
         backend->Flip_To_Primary();
 
-        backend->Set_Viewport(viewport);
+        backend->Set_Viewport(full_viewport);
         backend->Set_View_Projection(identity);
         backend->Clear(true, true, Vector3(0.0f, 0.0f, 0.0f), 1.0f, 1.0f, 0);
         backend->Begin_Scene();
@@ -3016,7 +3055,7 @@ int main()
     target_ok = backend->Set_Render_Texture(render_texture) && target_ok;
     backend->Release_Texture(render_texture); // Release of a selected target restores output.
     const auto replacement_texture = backend->Create_Render_Texture(61, 37);
-    output_width = output_height = 0;
+    int output_width = 0, output_height = 0;
     target_ok = backend->Get_Render_Target_Size(output_width, output_height) &&
         output_width == 640 && output_height == 480 && replacement_texture.Is_Valid() &&
         replacement_texture.slot == render_texture.slot && replacement_texture.generation != render_texture.generation &&
@@ -3024,33 +3063,16 @@ int main()
     backend->Release_Texture(replacement_texture);
     backend->Release_Texture(wrong_size);
     backend->Release_Texture(shadow_texture);
-    backend->Release_Texture(checker_texture);
-    backend->Release_Static_Geometry(textured_quad);
-    backend->Release_Static_Geometry(static_triangle);
-    if (!target_ok)
-    {
-        delete backend;
-        DestroyWindow(window);
-        UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: render texture lifecycle, pixels, or output restoration is incorrect.\n";
-        return 16;
-    }
-    if (!camera_ok)
-    {
-        delete backend;
-        DestroyWindow(window);
-        UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 backend smoke failed: camera transform or screen-space isolation is incorrect.\n";
-        return 15;
-    }
-    if (!verifyDeferredTextureRelease(*backend) || !verifySceneTextureLoading(*backend) || !verifyProjectedTextureAndMips(*backend) ||
-        !verifyMaterials(*backend) || !verifySamplers(*backend) || !verifyTerrain(*backend) || !verifySeaReflectionDepth(*backend) || !verifySeaWater(*backend) || !verifySkyProjection(*backend) || !verifyFlatWater(*backend) || !verifyRiverWater(*backend) || !verifyPersistentTerrainAndMaterials(*backend) || !verifyBridgePasses(*backend) || !verifyProjectedMeshShroud(*backend) || !verifyForegroundTerrainAndWireframe(*backend) || !verifyTreeShroud(*backend) || !verifyWaterTracks(*backend) || !verifyMonochromeSceneCapture(*backend) || !verifyMotionBlurSceneCapture(*backend) || !verifySceneWriteMasks(*backend) || !verifyCrossFadeComposite(*backend) || !verifyStencil(*backend) || !verifyDecals(*backend)) {
-        delete backend; DestroyWindow(window); UnregisterClassW(WindowClassName, instance);
-        std::cerr << "D3D12 decal blending, clamp sampling, culling, depth, or validation failed.\n";
-        return 18;
-    }
+    resources.Release(*backend);
+    EXPECT_TRUE(target_ok) << "render texture lifecycle, pixels, or output restoration is incorrect";
+}
+
+TEST_F(D3D12BackendSmoke, ResizedDeferredCapture)
+{
     // A width not divisible by the GPU row alignment catches padding leaks;
     // an asymmetric draw catches vertical inversion and RGBA channel swaps.
+    unsigned int captured_width = 0, captured_height = 0;
+    std::vector<unsigned char> captured_pixels;
     const unsigned char retained_pixel[] = {0,255,0,255};
     const auto retained_texture = backend->Create_Static_RGBA8_Texture(1,1,retained_pixel,4);
     const auto retained_target = backend->Create_Render_Texture(13,7);
@@ -3092,34 +3114,48 @@ int main()
     backend->Flip_To_Primary();
     backend->Release_Texture(retained_texture);
     backend->Release_Texture(retained_target);
-    delete backend;
+    EXPECT_TRUE(capture_ok) << "resized/deferred output capture is incorrect";
+}
+
+TEST_F(D3D12BackendSmoke, StaleTextureHandleAcrossDeviceRecreation)
+{
     // Texture owners may outlive WW3D shutdown. A replacement device must not
     // reinterpret an old slot/generation as its newly allocated render target.
+    const RenderBackendTextureHandle old_texture = backend->Create_Static_RGBA8_Texture(2, 2, checker_rgba, 8);
+    ASSERT_TRUE(old_texture.Is_Valid());
+    delete backend;
     backend = Create_Render_Backend(window, false);
-    bool device_generation_ok = backend != nullptr;
-    if (backend != nullptr)
-    {
-        const auto new_target = backend->Create_Render_Texture(61, 37);
-        device_generation_ok = new_target.Is_Valid() && new_target.slot == checker_texture.slot &&
-            new_target.generation != checker_texture.generation && !backend->Set_Render_Texture(checker_texture);
-        backend->Release_Texture(checker_texture);
-        device_generation_ok = backend->Set_Render_Texture(new_target) && device_generation_ok;
-        backend->Release_Texture(new_target);
-        delete backend;
-    }
-    DestroyWindow(window);
-    UnregisterClassW(WindowClassName, instance);
-
-    if (!capture_ok)
-    {
-        std::cerr << "D3D12 backend smoke failed: resized/deferred output capture is incorrect.\n";
-        return 14;
-    }
-    if (!device_generation_ok)
-    {
-        std::cerr << "D3D12 backend smoke failed: stale texture handle crossed device recreation.\n";
-        return 17;
-    }
-    std::cout << "D3D12 backend smoke passed: camera transforms, render textures/copies, device generations, textured geometry, isolated 2D blending, presentation intervals, and resized/deferred RGBA8 readback.\n";
-    return 0;
+    ASSERT_NE(backend, nullptr) << "backend recreation failed";
+    const auto new_target = backend->Create_Render_Texture(61, 37);
+    bool device_generation_ok = new_target.Is_Valid() && new_target.slot == old_texture.slot &&
+        new_target.generation != old_texture.generation && !backend->Set_Render_Texture(old_texture);
+    backend->Release_Texture(old_texture);
+    device_generation_ok = backend->Set_Render_Texture(new_target) && device_generation_ok;
+    backend->Release_Texture(new_target);
+    EXPECT_TRUE(device_generation_ok) << "stale texture handle crossed device recreation";
 }
+
+// The feature groups, in the order the single-program smoke ran them.
+TEST_F(D3D12BackendSmoke, DeferredTextureRelease) { EXPECT_TRUE(verifyDeferredTextureRelease(*backend)); }
+TEST_F(D3D12BackendSmoke, SceneTextureLoading) { EXPECT_TRUE(verifySceneTextureLoading(*backend)); }
+TEST_F(D3D12BackendSmoke, ProjectedTextureAndMips) { EXPECT_TRUE(verifyProjectedTextureAndMips(*backend)); }
+TEST_F(D3D12BackendSmoke, Materials) { EXPECT_TRUE(verifyMaterials(*backend)); }
+TEST_F(D3D12BackendSmoke, Samplers) { EXPECT_TRUE(verifySamplers(*backend)); }
+TEST_F(D3D12BackendSmoke, Terrain) { EXPECT_TRUE(verifyTerrain(*backend)); }
+TEST_F(D3D12BackendSmoke, SeaReflectionDepth) { EXPECT_TRUE(verifySeaReflectionDepth(*backend)); }
+TEST_F(D3D12BackendSmoke, SeaWater) { EXPECT_TRUE(verifySeaWater(*backend)); }
+TEST_F(D3D12BackendSmoke, SkyProjection) { EXPECT_TRUE(verifySkyProjection(*backend)); }
+TEST_F(D3D12BackendSmoke, FlatWater) { EXPECT_TRUE(verifyFlatWater(*backend)); }
+TEST_F(D3D12BackendSmoke, RiverWater) { EXPECT_TRUE(verifyRiverWater(*backend)); }
+TEST_F(D3D12BackendSmoke, PersistentTerrainAndMaterials) { EXPECT_TRUE(verifyPersistentTerrainAndMaterials(*backend)); }
+TEST_F(D3D12BackendSmoke, BridgePasses) { EXPECT_TRUE(verifyBridgePasses(*backend)); }
+TEST_F(D3D12BackendSmoke, ProjectedMeshShroud) { EXPECT_TRUE(verifyProjectedMeshShroud(*backend)); }
+TEST_F(D3D12BackendSmoke, ForegroundTerrainAndWireframe) { EXPECT_TRUE(verifyForegroundTerrainAndWireframe(*backend)); }
+TEST_F(D3D12BackendSmoke, TreeShroud) { EXPECT_TRUE(verifyTreeShroud(*backend)); }
+TEST_F(D3D12BackendSmoke, WaterTracks) { EXPECT_TRUE(verifyWaterTracks(*backend)); }
+TEST_F(D3D12BackendSmoke, MonochromeSceneCapture) { EXPECT_TRUE(verifyMonochromeSceneCapture(*backend)); }
+TEST_F(D3D12BackendSmoke, MotionBlurSceneCapture) { EXPECT_TRUE(verifyMotionBlurSceneCapture(*backend)); }
+TEST_F(D3D12BackendSmoke, SceneWriteMasks) { EXPECT_TRUE(verifySceneWriteMasks(*backend)); }
+TEST_F(D3D12BackendSmoke, CrossFadeComposite) { EXPECT_TRUE(verifyCrossFadeComposite(*backend)); }
+TEST_F(D3D12BackendSmoke, Stencil) { EXPECT_TRUE(verifyStencil(*backend)); }
+TEST_F(D3D12BackendSmoke, Decals) { EXPECT_TRUE(verifyDecals(*backend)); }

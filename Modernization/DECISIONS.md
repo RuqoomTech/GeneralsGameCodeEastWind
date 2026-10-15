@@ -147,3 +147,19 @@ its methods defined by the linked DX8 backend. EastWind keeps both seams:
 - `IRenderBackend.h` stays the full renderer-neutral interface. `Renderer` grows only as
   upstream moves callers onto it.
 - Upstream's `DX8Backend.cpp` and the DX8-only callers it serves stay deleted.
+
+## 2026-10-15 — Focused C++ tests are Google Test programs
+
+Upstream added Google Test (`cmake/googletest.cmake`). EastWind's focused C++ tests in
+`Core/Tests` now use it too, instead of each test's own `main` and failure counter.
+
+- `rts_use_googletest(<target>)` links `GTest::gtest_main`. A test that takes a fixture path
+  on its command line passes `OWN_MAIN`, keeps its `main`, and keeps its `--emit` mode.
+- CTest names, fixtures and the assertions themselves are unchanged. Policy-pinned strings in
+  the test sources stay.
+- The Evolution tests' `Fail` throws, so the first failed check ends that test case and Google
+  Test prints the message. The `-fno-exceptions` renderer tests use `EXPECT_*` directly.
+- The W3X tests build as C++17. `w3x_cxx98_compile` keeps the W3X headers and
+  `w3x_document.cpp` compiling as strict C++98.
+- `d3d12_backend_smoke` runs each verification group as its own case on a fresh backend, so
+  one failing group no longer hides the groups after it.

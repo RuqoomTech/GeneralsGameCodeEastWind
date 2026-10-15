@@ -27,20 +27,33 @@ if(MINGW)
     add_link_options(-static-libgcc -static-libstdc++)
 endif()
 
+# The C++ tests are Google Test programs (cmake/googletest.cmake). A test that takes a
+# fixture path on its command line keeps its own main() and passes OWN_MAIN.
+function(rts_use_googletest target_name)
+    cmake_parse_arguments(PARSE_ARGV 1 ARG "OWN_MAIN" "" "")
+    if(ARG_OWN_MAIN)
+        target_link_libraries(${target_name} PRIVATE GTest::gtest)
+    else()
+        target_link_libraries(${target_name} PRIVATE GTest::gtest_main)
+    endif()
+endfunction()
+
 function(rts_add_w3x_test target_name source_file)
     add_executable(${target_name} ${source_file} ${ARGN})
     target_include_directories(${target_name} PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
         ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
     )
+    # Google Test needs C++17; w3x_cxx98_compile below keeps the library itself C++98.
     set_target_properties(${target_name} PROPERTIES
-        CXX_STANDARD 98
+        CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
     )
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${target_name} PRIVATE -Wall -Wextra -pedantic)
     endif()
+    rts_use_googletest(${target_name})
     add_test(NAME ${target_name} COMMAND ${target_name})
 endfunction()
 function(rts_add_source_policy_test test_name script_name)
@@ -68,6 +81,23 @@ rts_add_w3x_test(
     ${CMAKE_CURRENT_SOURCE_DIR}/W3XChildDiscoveryTest.cpp
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/w3x_document.cpp
 )
+# The W3X asset code itself stays compilable as strict C++98.
+add_library(w3x_cxx98_compile OBJECT
+    ${CMAKE_CURRENT_SOURCE_DIR}/W3XCxx98Compile.cpp
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/w3x_document.cpp
+)
+target_include_directories(w3x_cxx98_compile PRIVATE
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/Lib/Include
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/rts/Include
+)
+set_target_properties(w3x_cxx98_compile PROPERTIES
+    CXX_STANDARD 98
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(w3x_cxx98_compile PRIVATE -Wall -Wextra -pedantic)
+endif()
 
 # Deterministic primitives guard for the supported x64 modernization graph.
 set(_rts_determinism_sources
@@ -95,6 +125,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
 endif()
 
+rts_use_googletest(determinism_test)
 add_test(NAME determinism_primitives COMMAND determinism_test)
 add_custom_target(check_determinism
     COMMAND $<TARGET_FILE:determinism_test>
@@ -121,6 +152,7 @@ set_target_properties(performance_telemetry_test PROPERTIES
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(performance_telemetry_test PRIVATE -Wall -Wextra -Werror -pedantic)
 endif()
+rts_use_googletest(performance_telemetry_test)
 add_test(NAME performance_telemetry COMMAND performance_telemetry_test)
 
 # Build-system regression: exercise the shared runtime install policy
@@ -169,6 +201,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
     )
 endif()
+rts_use_googletest(architecture_abi_test)
 add_test(NAME architecture_abi COMMAND architecture_abi_test)
 
 
@@ -192,6 +225,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
     )
 endif()
+rts_use_googletest(wire_abi_test)
 add_test(NAME wire_abi COMMAND wire_abi_test)
 
 
@@ -231,6 +265,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND UNIX)
         -Wno-unused-but-set-variable
     )
 endif()
+rts_use_googletest(runtime_native_width_test)
 add_test(NAME runtime_native_width COMMAND runtime_native_width_test)
 
 rts_add_source_policy_test(windows_bootstrap_policy WindowsBootstrapPolicyTest.cmake)
@@ -255,6 +290,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
     )
 endif()
+rts_use_googletest(coordinate_ops_test)
 add_test(NAME coordinate_ops COMMAND coordinate_ops_test)
 
 rts_add_source_policy_test(runtime_compatibility_policy RuntimeCompatibilityPolicyTest.cmake)
@@ -296,6 +332,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 elseif(MSVC)
     target_compile_options(headless_determinism_test PRIVATE /fp:strict)
 endif()
+rts_use_googletest(headless_determinism_test OWN_MAIN)
 add_test(
     NAME headless_determinism
     COMMAND headless_determinism_test
@@ -331,6 +368,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
     )
 endif()
+rts_use_googletest(evolution_protocol_test OWN_MAIN)
 add_test(
     NAME evolution_protocol_v1
     COMMAND evolution_protocol_test
@@ -398,6 +436,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wall -Wextra -Werror -Wno-unknown-pragmas -pedantic
     )
 endif()
+rts_use_googletest(evolution_runtime_bridge_test)
 add_test(
     NAME evolution_runtime_bridge
     COMMAND evolution_runtime_bridge_test
@@ -443,6 +482,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     elseif(MSVC)
         target_compile_options(evolution_session_test PRIVATE /fp:strict)
     endif()
+    rts_use_googletest(evolution_session_test)
     add_test(NAME evolution_session COMMAND evolution_session_test)
     add_custom_target(check_evolution_session
         COMMAND $<TARGET_FILE:evolution_session_test>
@@ -484,6 +524,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     elseif(MSVC)
         target_compile_options(evolution_full_session_test PRIVATE /fp:strict)
     endif()
+    rts_use_googletest(evolution_full_session_test OWN_MAIN)
     add_test(
         NAME evolution_full_session
         COMMAND evolution_full_session_test
@@ -551,6 +592,7 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             -fno-unwind-tables -include Precompiled/CppMacros.h)
         target_link_options(dds_texture_decode_test PRIVATE -Wl,--gc-sections)
         set_target_properties(dds_texture_decode_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
+        rts_use_googletest(dds_texture_decode_test)
         add_test(NAME dds_texture_decode COMMAND dds_texture_decode_test)
 
         # Exercise each game's production asset-state translation without
@@ -581,6 +623,7 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
                 -fno-unwind-tables -fno-jump-tables -include Precompiled/CppMacros.h)
             target_link_options(${shader_test} PRIVATE -Wl,--gc-sections)
             set_target_properties(${shader_test} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
+            rts_use_googletest(${shader_test})
             add_test(NAME ${shader_test_name} COMMAND ${shader_test})
         endforeach()
     endif()
@@ -606,6 +649,7 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
         dxguid
         user32
     )
+    rts_use_googletest(d3d12_backend_smoke_test)
     set_target_properties(d3d12_backend_smoke_test PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
@@ -657,6 +701,7 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND MINGW)
         -fno-unwind-tables -include Precompiled/CppMacros.h)
     target_link_options(sorting_renderer_test PRIVATE -Wl,--gc-sections)
     set_target_properties(sorting_renderer_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
+    rts_use_googletest(sorting_renderer_test)
     add_test(NAME sorting_renderer COMMAND sorting_renderer_test)
 
     # Run the production CPU particle expansion without renderer/window state.
@@ -691,5 +736,6 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND MINGW)
         -fno-unwind-tables -fno-jump-tables -include Precompiled/CppMacros.h)
     target_link_options(particle_geometry_test PRIVATE -Wl,--gc-sections)
     set_target_properties(particle_geometry_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
+    rts_use_googletest(particle_geometry_test)
     add_test(NAME particle_geometry COMMAND particle_geometry_test)
 endif()

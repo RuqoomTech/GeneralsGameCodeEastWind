@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <iostream>
 
+#include <gtest/gtest.h>
+
 static_assert(sizeof(unsigned int) == sizeof(std::uint32_t));
 static_assert(sizeof(ShaderClass) == sizeof(std::uint32_t));
 static_assert(SHIFT_DEPTHCOMPARE == 0 && SHIFT_DEPTHMASK == 3 && SHIFT_COLORMASK == 4);
@@ -15,14 +17,9 @@ static_assert(SHIFT_NPATCHENABLE == 17 && SHIFT_ALPHATEST == 18 && SHIFT_CULLMOD
 static_assert(SHIFT_POSTDETAILCOLORFUNC == 20 && SHIFT_POSTDETAILALPHAFUNC == 24);
 
 namespace {
-int failures = 0;
-
 void Check(bool condition, const char *description)
 {
-    if (!condition) {
-        std::cerr << description << '\n';
-        ++failures;
-    }
+    EXPECT_TRUE(condition) << description;
 }
 
 bool Equal(const RenderBackendMaterialState &a, const RenderBackendMaterialState &b)
@@ -231,7 +228,7 @@ void Test_Fixed_Asset_Value()
 }
 } // namespace
 
-int main()
+TEST(ShaderMaterialState, TextureFilterSampler)
 {
     TextureFilterClass filter(MIP_LEVELS_ALL);
     RenderBackendSamplerState sampler;
@@ -246,11 +243,29 @@ int main()
     filter.Set_Min_Mip_Level(~0u);
     Check(filter.Get_Render_Sampler(sampler) && sampler.min_mip_level==15,
         "Texture filter admitted an unsupported sampler mip level");
+}
+
+TEST(ShaderMaterialState, DepthAndBlending)
+{
     Test_Depth_And_Blending();
+}
+
+TEST(ShaderMaterialState, AlphaAndWrites)
+{
     Test_Alpha_And_Writes();
+}
+
+TEST(ShaderMaterialState, CullingAndPrimaryTexture)
+{
     Test_Culling_And_Primary_Texture();
+}
+
+TEST(ShaderMaterialState, UnsupportedEffects)
+{
     Test_Unsupported_Effects();
+}
+
+TEST(ShaderMaterialState, FixedAssetValue)
+{
     Test_Fixed_Asset_Value();
-    std::cout << "W3D shader material contract: " << (failures ? "FAIL" : "PASS") << '\n';
-    return failures ? 1 : 0;
 }

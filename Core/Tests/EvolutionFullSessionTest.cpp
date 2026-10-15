@@ -12,9 +12,12 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 namespace
 {
@@ -23,10 +26,15 @@ constexpr std::int32_t LOGIC_CRC_MESSAGE_TYPE = 1095;
 constexpr std::uint32_t GAMEPLAY_FRAMES_PER_BLOCK = 16;
 constexpr std::uint32_t SESSION_BLOCKS = 4;
 
+// A failed check ends the current test; Google Test reports the message.
+struct CheckFailure : std::runtime_error
+{
+    using std::runtime_error::runtime_error;
+};
+
 [[noreturn]] void Fail(const std::string &message)
 {
-    std::cerr << "FAIL: " << message << '\n';
-    std::exit(1);
+    throw CheckFailure(message);
 }
 
 void Expect(bool condition, const std::string &message)
@@ -529,23 +537,54 @@ void checkVersionAndCorruptionRejection(const std::map<std::string, Bytes> &fixt
 }
 } // namespace
 
+static_assert(sizeof(void *) == 8, "Full-session validation is Evolution x64-only");
+static_assert(sizeof(float) == 4, "Full-session validation requires IEEE float32 width");
+
+namespace
+{
+const char *g_fixturePath = nullptr;
+
+const std::map<std::string, Bytes> &loadedFixtures()
+{
+    static const std::map<std::string, Bytes> fixtures = loadFixtures(g_fixturePath);
+    return fixtures;
+}
+} // namespace
+
+TEST(EvolutionFullSession, GoldenFullSession)
+{
+    checkGoldenFullSession(loadedFixtures(), false);
+}
+
+TEST(EvolutionFullSession, VersionAndCorruptionRejection)
+{
+    checkVersionAndCorruptionRejection(loadedFixtures());
+}
+
+// The fixture file is a program argument, so this test keeps its own main():
+// <fixture-file> runs the tests, --emit-fixture prints a fresh fixture and runs nothing.
 int main(int argc, char **argv)
 {
-    static_assert(sizeof(void *) == 8, "Full-session validation is Evolution x64-only");
-    static_assert(sizeof(float) == 4, "Full-session validation requires IEEE float32 width");
-
+    testing::InitGoogleTest(&argc, argv);
     if (argc == 2 && std::string(argv[1]) == "--emit-fixture")
     {
-        const std::map<std::string, Bytes> empty;
-        checkGoldenFullSession(empty, true);
+        try
+        {
+            const std::map<std::string, Bytes> empty;
+            checkGoldenFullSession(empty, true);
+        }
+        catch (const CheckFailure &failure)
+        {
+            std::cerr << "FAIL: " << failure.what() << '\n';
+            return 1;
+        }
         return 0;
     }
-    if (argc != 2) Fail("Usage: evolution_full_session_test <fixture-file>");
-
-    const auto fixtures = loadFixtures(argv[1]);
-    checkGoldenFullSession(fixtures, false);
-    checkVersionAndCorruptionRejection(fixtures);
-
-    std::cout << "Evolution full-session golden passed: EVN1 delivery and EVR1 replay preserve one deterministic command/CRC timeline; version, corruption, truncation, and compatibility boundaries are stable.\n";
-    return 0;
+    if (argc != 2)
+    {
+        std::cerr << "Usage: evolution_full_session_test <fixture-file>\n";
+        return 1;
+    }
+    g_fixturePath = argv[1];
+    return RUN_ALL_TESTS();
 }

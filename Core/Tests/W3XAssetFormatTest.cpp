@@ -1,33 +1,25 @@
 #include "rts/asset_3d_format.h"
 
-#include <stdio.h>
 #include <string.h>
+
+#include <gtest/gtest.h>
 
 namespace {
 
-int g_failures = 0;
-
 void Expect_Format(const char *case_name, rts::Asset3DFormat expected, rts::Asset3DFormat actual)
 {
-    if (expected != actual) {
-        fprintf(stderr, "%s: expected %s, got %s\n", case_name,
-            rts::Get_3D_Asset_Format_Name(expected), rts::Get_3D_Asset_Format_Name(actual));
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << case_name << ": expected " << rts::Get_3D_Asset_Format_Name(expected)
+        << ", got " << rts::Get_3D_Asset_Format_Name(actual);
 }
 
 void Expect_Bool(const char *case_name, bool expected, bool actual)
 {
-    if (expected != actual) {
-        fprintf(stderr, "%s: expected %s, got %s\n", case_name,
-            expected ? "true" : "false", actual ? "true" : "false");
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << case_name;
 }
 
 } // namespace
 
-int main()
+TEST(W3XAssetFormat, DetectFromPath)
 {
     Expect_Format("lowercase W3D", rts::ASSET_3D_FORMAT_W3D,
         rts::Detect_3D_Asset_Format_From_Path("art/tank.w3d"));
@@ -45,7 +37,10 @@ int main()
         rts::Detect_3D_Asset_Format_From_Path("art/tank"));
     Expect_Format("null path", rts::ASSET_3D_FORMAT_UNKNOWN,
         rts::Detect_3D_Asset_Format_From_Path(0));
+}
 
+TEST(W3XAssetFormat, DetectFromContent)
+{
     const char xml[] = "<?xml version=\"1.0\"?><AssetDeclaration/>";
     const char xml_with_space[] = " \r\n\t<AssetDeclaration/>";
     const unsigned char xml_with_bom[] = { 0xEF, 0xBB, 0xBF, ' ', '<', 'A', '/', '>' };
@@ -64,12 +59,4 @@ int main()
         rts::Detect_3D_Asset_Format("map.w3x", binary, sizeof(binary)));
     Expect_Format("W3D does not require XML", rts::ASSET_3D_FORMAT_W3D,
         rts::Detect_3D_Asset_Format("art/tank.w3d", binary, sizeof(binary)));
-
-    if (g_failures != 0) {
-        fprintf(stderr, "%d W3X asset-format test(s) failed.\n", g_failures);
-        return 1;
-    }
-
-    puts("W3X asset-format recognition tests passed.");
-    return 0;
 }

@@ -9,30 +9,23 @@
 #include "Precompiled/CppMacros.h"
 #include "Lib/BaseType.h"
 
-#include <cstdio>
+#include <gtest/gtest.h>
 
 namespace
 {
-int g_failures = 0;
-
+// Exact comparison on purpose: negation must not change any bit of the value.
 void expect_real(const char *name, Real expected, Real actual)
 {
-    if (expected != actual) {
-        std::fprintf(stderr, "%s: expected %.1f, got %.1f\n", name, expected, actual);
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << name;
 }
 
 void expect_int(const char *name, Int expected, Int actual)
 {
-    if (expected != actual) {
-        std::fprintf(stderr, "%s: expected %d, got %d\n", name, expected, actual);
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << name;
 }
 }
 
-int main()
+TEST(CoordinateOps, RealCoordinates)
 {
     Coord3D c3 = { 1.5f, -2.0f, 3.25f };
     const Coord3D nc3 = -c3;
@@ -46,7 +39,10 @@ int main()
     const Coord2D nc2 = -c2;
     expect_real("Coord2D -x", 4.0f, nc2.x);
     expect_real("Coord2D -y", -5.0f, nc2.y);
+}
 
+TEST(CoordinateOps, IntegerCoordinates)
+{
     ICoord3D i3 = { 7, -8, 9 };
     const ICoord3D ni3 = -i3;
     expect_int("ICoord3D -x", -7, ni3.x);
@@ -57,12 +53,4 @@ int main()
     const ICoord2D ni2 = -i2;
     expect_int("ICoord2D -x", 10, ni2.x);
     expect_int("ICoord2D -y", -11, ni2.y);
-
-    if (g_failures != 0) {
-        std::fprintf(stderr, "%d coordinate guard(s) failed.\n", g_failures);
-        return 1;
-    }
-
-    std::printf("Coordinate operator guard passed.\n");
-    return 0;
 }

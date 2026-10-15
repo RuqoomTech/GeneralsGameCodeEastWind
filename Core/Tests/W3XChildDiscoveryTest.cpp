@@ -1,51 +1,37 @@
 #include "rts/w3x_document.h"
 
-#include <stdio.h>
 #include <string.h>
 
-namespace {
+#include <gtest/gtest.h>
 
-int g_failures = 0;
+namespace {
 
 void Expect_Result(const char *case_name,
     rts::W3XTopLevelChildDiscoveryResult expected,
     rts::W3XTopLevelChildDiscoveryResult actual)
 {
-    if (expected != actual) {
-        fprintf(stderr, "%s: expected %s, got %s\n", case_name,
-            rts::Get_W3X_Top_Level_Discovery_Result_Name(expected),
-            rts::Get_W3X_Top_Level_Discovery_Result_Name(actual));
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << case_name << ": expected "
+        << rts::Get_W3X_Top_Level_Discovery_Result_Name(expected) << ", got "
+        << rts::Get_W3X_Top_Level_Discovery_Result_Name(actual);
 }
 
 void Expect_Count(const char *case_name, size_t expected, size_t actual)
 {
-    if (expected != actual) {
-        fprintf(stderr, "%s: expected %lu, got %lu\n", case_name,
-            static_cast<unsigned long>(expected), static_cast<unsigned long>(actual));
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << case_name;
 }
 
 void Expect_Kind(const char *case_name,
     rts::W3XTopLevelChildKind expected,
     rts::W3XTopLevelChildKind actual)
 {
-    if (expected != actual) {
-        fprintf(stderr, "%s: expected %s, got %s\n", case_name,
-            rts::Get_W3X_Top_Level_Child_Kind_Name(expected),
-            rts::Get_W3X_Top_Level_Child_Kind_Name(actual));
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << case_name << ": expected "
+        << rts::Get_W3X_Top_Level_Child_Kind_Name(expected) << ", got "
+        << rts::Get_W3X_Top_Level_Child_Kind_Name(actual);
 }
 
 void Expect_String(const char *case_name, const char *expected, const char *actual)
 {
-    if (strcmp(expected, actual) != 0) {
-        fprintf(stderr, "%s: expected '%s', got '%s'\n", case_name, expected, actual);
-        ++g_failures;
-    }
+    EXPECT_STREQ(expected, actual) << case_name;
 }
 
 void Discover_And_Expect_Count(const char *case_name, const char *xml, size_t expected_count)
@@ -59,23 +45,23 @@ void Discover_And_Expect_Count(const char *case_name, const char *xml, size_t ex
     }
 }
 
+const char canonical[] =
+    "<?xml version=\"1.0\"?>\n"
+    "<AssetDeclaration xmlns=\"uri:ea.com:eala:asset\">\n"
+    "  <!-- direct children only -->\n"
+    "  <W3DMesh id=\"Mesh\"><Vertices><V/></Vertices></W3DMesh>\n"
+    "  <?tool keep-going?>\n"
+    "  <W3DHierarchy id=\"Hierarchy\"/>\n"
+    "  <W3DContainer id=\"Container\"><W3DMesh id=\"NestedMustNotCount\"/></W3DContainer>\n"
+    "  <W3DAnimation id=\"Animation\"/>\n"
+    "  <W3DCollisionBox id=\"Collision\"/>\n"
+    "  <FutureAsset id=\"UnknownButPreserved\"/>\n"
+    "</AssetDeclaration>";
+
 } // namespace
 
-int main()
+TEST(W3XChildDiscovery, CanonicalDocument)
 {
-    const char canonical[] =
-        "<?xml version=\"1.0\"?>\n"
-        "<AssetDeclaration xmlns=\"uri:ea.com:eala:asset\">\n"
-        "  <!-- direct children only -->\n"
-        "  <W3DMesh id=\"Mesh\"><Vertices><V/></Vertices></W3DMesh>\n"
-        "  <?tool keep-going?>\n"
-        "  <W3DHierarchy id=\"Hierarchy\"/>\n"
-        "  <W3DContainer id=\"Container\"><W3DMesh id=\"NestedMustNotCount\"/></W3DContainer>\n"
-        "  <W3DAnimation id=\"Animation\"/>\n"
-        "  <W3DCollisionBox id=\"Collision\"/>\n"
-        "  <FutureAsset id=\"UnknownButPreserved\"/>\n"
-        "</AssetDeclaration>";
-
     rts::W3XTopLevelChildInfo children[6];
     size_t child_count = 0;
     rts::W3XTopLevelChildDiscoveryResult result =
@@ -93,7 +79,12 @@ int main()
         Expect_String("unknown local name", "FutureAsset", children[5].local_name);
         Expect_String("unknown namespace", rts::W3X_SAGE_ASSET_NAMESPACE, children[5].namespace_uri);
     }
+}
 
+TEST(W3XChildDiscovery, NamespaceBindings)
+{
+    size_t child_count = 0;
+    rts::W3XTopLevelChildDiscoveryResult result;
     const char prefixed[] =
         "<ea:AssetDeclaration xmlns:ea=\"uri:ea.com:eala:asset\" "
         "xmlns:model=\"uri:ea.com:eala:asset\">"
@@ -133,7 +124,12 @@ int main()
         Expect_String("wrong namespace preserved", "urn:not-ea", override_children[0].namespace_uri);
         Expect_Kind("inherited default namespace", rts::W3X_TOP_LEVEL_CHILD_W3D_ANIMATION, override_children[1].kind);
     }
+}
 
+TEST(W3XChildDiscovery, MalformedAndForeignDocuments)
+{
+    size_t child_count = 0;
+    rts::W3XTopLevelChildDiscoveryResult result;
     const char misc_content[] =
         "<AssetDeclaration xmlns=\"uri:ea.com:eala:asset\">"
         "text<![CDATA[not an element <W3DMesh/>]]><!--c--><?pi x?>"
@@ -214,7 +210,12 @@ int main()
         malformed_probe, strlen(malformed_probe), 0, 0, child_count);
     Expect_Result("malformed A1 envelope",
         rts::W3X_TOP_LEVEL_DISCOVERY_MALFORMED, result);
+}
 
+TEST(W3XChildDiscovery, OutputBuffer)
+{
+    size_t child_count = 0;
+    rts::W3XTopLevelChildDiscoveryResult result;
     rts::W3XTopLevelChildInfo too_small[2];
     child_count = 0;
     result = rts::Discover_W3X_Top_Level_Children(
@@ -228,12 +229,4 @@ int main()
     result = rts::Discover_W3X_Top_Level_Children(canonical, strlen(canonical), 0, 1, child_count);
     Expect_Result("null output with nonzero capacity", rts::W3X_TOP_LEVEL_DISCOVERY_INVALID_ARGUMENT, result);
     Expect_Count("invalid argument resets count", 0, child_count);
-
-    if (g_failures != 0) {
-        fprintf(stderr, "%d W3X child-discovery test(s) failed.\n", g_failures);
-        return 1;
-    }
-
-    puts("W3X top-level child-discovery tests passed.");
-    return 0;
 }

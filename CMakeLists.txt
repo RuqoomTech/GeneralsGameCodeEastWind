@@ -85,6 +85,8 @@ endif()
 
 if(RTS_BUILD_TESTS)
     enable_testing()
+    # The focused modernization tests are Google Test executables.
+    include(cmake/googletest.cmake)
     add_subdirectory(Core/Tests)
 endif()
 

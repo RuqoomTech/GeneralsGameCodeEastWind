@@ -7,6 +7,8 @@
 #include <iostream>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 // This test supplies a fixed output size to the production screen-size expansion.
 // It does not create a renderer device or substitute native buffer implementations.
 void WW3D::Get_Render_Target_Resolution(int &w, int &h, int &bits, bool &windowed)
@@ -19,10 +21,9 @@ extern VectorClass<Vector4> VertexDiffuse;
 extern VectorClass<Vector2> VertexUV;
 
 namespace {
-int failures = 0;
 void Check(bool condition, const char *description)
 {
-    if (!condition) { std::cerr << description << '\n'; ++failures; }
+    EXPECT_TRUE(condition) << description;
 }
 bool Near(float a, float b) { return std::fabs(a - b) < 0.003f; }
 bool Near(const Vector3 &a, const Vector3 &b)
@@ -116,17 +117,40 @@ void Test_Large_Expansion_And_Reinitialize()
 }
 }
 
-int main()
+// The cases share the production point-group buffers and run in declaration order.
+class ParticleGeometry : public ::testing::Test
 {
-    WWMath::Init();
-    PointGroupClass::_Init();
+protected:
+    static void SetUpTestSuite()
+    {
+        WWMath::Init();
+        PointGroupClass::_Init();
+    }
+    static void TearDownTestSuite()
+    {
+        PointGroupClass::_Shutdown();
+        WWMath::Shutdown();
+    }
+};
+
+TEST_F(ParticleGeometry, TrianglesAndAtlas)
+{
     Test_Triangles_And_Atlas();
+}
+
+TEST_F(ParticleGeometry, QuadGroundAndScreensize)
+{
     Test_Quad_Ground_And_Screensize();
+}
+
+TEST_F(ParticleGeometry, LargeExpansionAndReinitialize)
+{
     Test_Large_Expansion_And_Reinitialize();
+}
+
+TEST_F(ParticleGeometry, TrianglesAfterReinitialize)
+{
     PointGroupClass::_Shutdown();
     PointGroupClass::_Init();
     Test_Triangles_And_Atlas();
-    PointGroupClass::_Shutdown();
-    WWMath::Shutdown();
-    return failures ? 1 : 0;
 }

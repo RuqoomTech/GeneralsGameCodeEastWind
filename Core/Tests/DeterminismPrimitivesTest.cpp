@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <gtest/gtest.h>
+
 #if defined(RTS_ENGINE_DETERMINISM_TEST) && defined(RTS_STANDALONE_DETERMINISM_TEST)
 // The focused Windows determinism binary never stores non-empty Xfer identifiers.
 // Provide only the empty-string cleanup seam needed by Xfer's embedded AsciiString
@@ -28,24 +30,15 @@ void AsciiString::releaseBuffer()
 
 namespace {
 
-int g_failures = 0;
-
 void Expect_Unsigned(const char *case_name, UnsignedInt expected, UnsignedInt actual)
 {
-    if (expected != actual) {
-        fprintf(stderr, "%s: expected 0x%08x, got 0x%08x\n",
-            case_name, static_cast<unsigned int>(expected), static_cast<unsigned int>(actual));
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << case_name << ": expected 0x" << std::hex
+        << static_cast<unsigned int>(expected) << ", got 0x" << static_cast<unsigned int>(actual);
 }
 
 void Expect_Int(const char *case_name, Int expected, Int actual)
 {
-    if (expected != actual) {
-        fprintf(stderr, "%s: expected %d, got %d\n",
-            case_name, static_cast<int>(expected), static_cast<int>(actual));
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << case_name;
 }
 
 UnsignedInt Real_Bits(Real value)
@@ -144,23 +137,14 @@ public:
 
 void Expect_Size(const char *case_name, size_t expected, size_t actual)
 {
-    if (expected != actual) {
-        fprintf(stderr, "%s: expected %lu byte(s), got %lu byte(s)\n",
-            case_name, static_cast<unsigned long>(expected), static_cast<unsigned long>(actual));
-        ++g_failures;
-    }
+    EXPECT_EQ(expected, actual) << case_name << " (bytes)";
 }
 
 void Expect_Bytes(const char *case_name, const std::vector<UnsignedByte> &actual,
     const UnsignedByte *expected, size_t expected_size)
 {
-    if (actual.size() != expected_size ||
-        (expected_size != 0 && memcmp(&actual[0], expected, expected_size) != 0)) {
-        fprintf(stderr, "%s: serialized bytes differ (expected %lu byte(s), got %lu byte(s))\n",
-            case_name, static_cast<unsigned long>(expected_size),
-            static_cast<unsigned long>(actual.size()));
-        ++g_failures;
-    }
+    EXPECT_EQ(std::vector<UnsignedByte>(expected, expected + expected_size), actual)
+        << case_name << ": serialized bytes differ";
 }
 
 void Check_Xfer_Primitive_Characterization()
@@ -497,27 +481,39 @@ void Check_Game_Logic_RNG_Characterization()
 
 } // namespace
 
-int main()
+TEST(DeterminismPrimitives, FastFloat)
 {
     Check_Fast_Float_Characterization();
-    Check_CRC_Characterization();
-    Check_Game_Logic_RNG_Characterization();
-#if defined(RTS_ENGINE_DETERMINISM_TEST)
-    Check_Xfer_Primitive_Characterization();
-    Check_Xfer_Snapshot_Characterization();
-    Check_Xfer_CRC_Characterization();
-    Check_ABI_And_Replay_Characterization();
-#endif
-
-    if (g_failures != 0) {
-        fprintf(stderr, "%d determinism primitive test(s) failed.\n", g_failures);
-        return 1;
-    }
-
-#if defined(RTS_ENGINE_DETERMINISM_TEST)
-    puts("Determinism guard passed: float helpers, CRC/RNG, Xfer/XferCRC, snapshot, ABI, and replay checkpoints.");
-#else
-    puts("Determinism float-helper, CRC, and game-logic RNG characterization tests passed.");
-#endif
-    return 0;
 }
+
+TEST(DeterminismPrimitives, Crc)
+{
+    Check_CRC_Characterization();
+}
+
+TEST(DeterminismPrimitives, GameLogicRng)
+{
+    Check_Game_Logic_RNG_Characterization();
+}
+
+#if defined(RTS_ENGINE_DETERMINISM_TEST)
+TEST(DeterminismPrimitives, XferPrimitives)
+{
+    Check_Xfer_Primitive_Characterization();
+}
+
+TEST(DeterminismPrimitives, XferSnapshot)
+{
+    Check_Xfer_Snapshot_Characterization();
+}
+
+TEST(DeterminismPrimitives, XferCrc)
+{
+    Check_Xfer_CRC_Characterization();
+}
+
+TEST(DeterminismPrimitives, AbiAndReplay)
+{
+    Check_ABI_And_Replay_Characterization();
+}
+#endif
