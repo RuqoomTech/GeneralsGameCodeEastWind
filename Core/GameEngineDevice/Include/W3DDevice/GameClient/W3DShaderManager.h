@@ -71,12 +71,6 @@ public:
 	static Bool filterSetup(FilterTypes filter, FilterModes mode);
 
 	// Support routines for filter methods.
-	static Bool canRenderToTexture() { return (m_oldRenderSurface && m_newRenderSurface);}
-	static void startRenderToTexture(); ///< Sets render target to texture.
-	static IDirect3DTexture8 * endRenderToTexture(); ///< Ends render to texture, & returns texture.
-	static IDirect3DTexture8 * getRenderTexture();	///< returns last used render target texture
-	static Bool isRenderingToTexture() {return m_renderingToTexture; }
-	static void drawViewport(Int color);	///<draws 2 triangles covering the current tactical viewport
 	static Bool startBackendCapture(Bool preserveColor, Bool *newCapture = nullptr);
 	static Bool restoreBackendOutput();
 	static TextureClass *endBackendCapture();
@@ -89,12 +83,6 @@ protected:
 	static __int64 m_driverVersion;			///<driver version of last chipset.
 
 	static FilterTypes m_currentFilter; ///< Last filter that was set.
-	// Info for a render to texture surface for special effects.
-	static Bool m_renderingToTexture;
-	static IDirect3DSurface8 *m_oldRenderSurface;	///<previous render target
-	static IDirect3DTexture8 *m_renderTexture;		///<texture into which rendering will be redirected.
-	static IDirect3DSurface8 *m_newRenderSurface;	///<new render target inside m_renderTexture
-	static IDirect3DSurface8 *m_oldDepthSurface;	///<previous depth buffer surface
 	static TextureClass *m_backendCapture;
 	static IRenderBackend *m_backendCaptureOwner;
 	static Int m_backendCaptureWidth, m_backendCaptureHeight;

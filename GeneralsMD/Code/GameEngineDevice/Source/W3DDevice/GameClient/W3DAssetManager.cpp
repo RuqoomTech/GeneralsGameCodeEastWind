@@ -54,7 +54,6 @@
 #include "WW3D2/meshmdl.h"
 #include "WW3D2/part_emt.h"
 #include "WW3D2/vertmaterial.h"
-#include "WW3D2/dx8wrapper.h"
 #include "WW3D2/texture.h"
 #include "WW3D2/surfaceclass.h"
 #include "WW3D2/textureloader.h"
@@ -1510,14 +1509,9 @@ void W3DAssetManager::Recolor_Vertex_Material(VertexMaterialClass *vmat, const V
 
 void W3DAssetManager::Recolor_Vertices(unsigned int *color, int count, const Vector3 &hsv_shift)
 {
-	int i;
-	Vector4 rgba;
-
-	for (i=0; i<count; i++)
+	for (int i=0; i<count; i++)
 	{
-		rgba=DX8Wrapper::Convert_Color(color[i]);
-		Recolor(reinterpret_cast<Vector3&>(rgba),hsv_shift);
-		color[i]=DX8Wrapper::Convert_Color_Clamp(rgba);
+		Recolor(color[i],hsv_shift);
 	}
 }
 

@@ -1210,9 +1210,6 @@ WWINLINE void DX8Wrapper::Set_Material(const VertexMaterialClass* material)
 
 WWINLINE void DX8Wrapper::Set_Shader(const ShaderClass& shader)
 {
-	if (!ShaderClass::ShaderDirty && ((unsigned&)shader==(unsigned&)render_state.shader)) {
-		return;
-	}
 	render_state.shader=shader;
 	render_state_changed|=SHADER_CHANGED;
 

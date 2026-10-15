@@ -96,7 +96,6 @@ public:
 	virtual TextureMapperClass*	Clone() const override { 	WWASSERT(0);	return nullptr; }
 
 	virtual bool Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera) override;
-	virtual void			Apply(int uv_array_index) override;
 	virtual void			Calculate_Texture_Matrix(Matrix4x4 &tex_matrix) override;
 
 protected:
@@ -131,7 +130,6 @@ public:
 	virtual TextureMapperClass *Clone() const override { return NEW_REF( CompositeMatrixMapperClass, (*this)); }
 
 	virtual bool Get_Render_Mapping(TextureMapperRenderMapping &mapping, CameraClass &camera) override;
-	virtual void Apply(int uv_array_index) override;
 	virtual void Calculate_Texture_Matrix(Matrix4x4 &tex_matrix) override;
 
 protected:

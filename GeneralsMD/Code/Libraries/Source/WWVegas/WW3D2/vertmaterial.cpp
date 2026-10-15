@@ -47,7 +47,7 @@
 #include "w3derr.h"
 #include "WWLib/INI.h"
 #include "WWLib/XSTRAW.h"
-#include "dx8wrapper.h"
+#include <d3d8types.h> // D3DMATERIAL8 is the stored material layout; no device calls.
 
 
 static unsigned int unique=1;
@@ -980,58 +980,6 @@ WW3DErrorType VertexMaterialClass::Save_W3D(ChunkSaveClass & csave)
 	WWASSERT(0);
 	return WW3D_ERROR_OK;
 }
-
-void VertexMaterialClass::Apply() const
-{
-	int i;
-
-	DX8Wrapper::Set_DX8_Material(Material);
-
-	if (WW3D::Is_Coloring_Enabled())
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING,FALSE);
-	else
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING,UseLighting);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_AMBIENTMATERIALSOURCE,AmbientColorSource);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_DIFFUSEMATERIALSOURCE,DiffuseColorSource);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_EMISSIVEMATERIALSOURCE,EmissiveColorSource);
-
-	// set to default values if no mappers
-	for (i=0; i<MeshBuilderClass::MAX_STAGES; i++) {
-		if (Mapper[i]) {
-			Mapper[i]->Apply(UVSource[i]);
-		} else {
-			DX8Wrapper::Set_DX8_Texture_Stage_State(i,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | UVSource[i]);
-			DX8Wrapper::Set_DX8_Texture_Stage_State(i,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_DISABLE);
-		}
-	}
-}
-
-void VertexMaterialClass::Apply_Null()
-{
-	int i;
-	static D3DMATERIAL8 default_settings =
-	{
-		{ 1.0f, 1.0f, 1.0f, 1.0f },	// diffuse
-		{ 1.0f, 1.0f, 1.0f, 1.0f },	// ambient
-		{ 0.0f, 0.0f, 0.0f, 0.0f },	// specular
-		{ 0.0f, 0.0f, 0.0f, 0.0f },	// emissive
-		1.0f									// power
-	};
-
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_LIGHTING,FALSE);
-	DX8Wrapper::Set_DX8_Material(&default_settings);
-
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_AMBIENTMATERIALSOURCE,D3DMCS_MATERIAL);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_DIFFUSEMATERIALSOURCE,D3DMCS_MATERIAL);
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_EMISSIVEMATERIALSOURCE,D3DMCS_MATERIAL);
-
-	// set to default values if no mappers
-	for (i=0; i<MeshBuilderClass::MAX_STAGES; i++) {
-		DX8Wrapper::Set_DX8_Texture_Stage_State(i,D3DTSS_TEXCOORDINDEX,D3DTSS_TCI_PASSTHRU | i);
-		DX8Wrapper::Set_DX8_Texture_Stage_State(i,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_DISABLE);
-	}
-}
-
 
 /***********************************************************************************************
  * Init -- init code                                                                           *

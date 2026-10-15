@@ -64,7 +64,6 @@ class VertexMaterialClass : public RefCountClass
 {
 	W3DMPO_CODE(VertexMaterialClass)
 
-	friend class DX8Wrapper;
 
 public:
 	/*
@@ -256,14 +255,6 @@ private:
 	bool									UseLighting;
 
 private:
-	/*
-	** Apply the render states to D3D
-	*/
-	void					Apply() const;
-	/*
-	** Apply the render states corresponding to a nullptr vertex material to D3D
-	*/
-	static void			Apply_Null();
 	unsigned long		Compute_CRC() const;
 
 	static VertexMaterialClass *Presets[PRESET_COUNT];

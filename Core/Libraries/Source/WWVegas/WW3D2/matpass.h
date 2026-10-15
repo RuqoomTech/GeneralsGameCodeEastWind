@@ -69,14 +69,11 @@ public:
 	MaterialPassClass();
 	virtual ~MaterialPassClass() override;
 
-	/// MW: Had to make this virtual so app can perform direct/custom D3D setup.
-	virtual void	Install_Materials() const;
 	// Custom passes must expose their complete draw behavior at this seam before
 	// the neutral mesh renderer can use them.
 	virtual bool Prepare_Render_Material(RenderBackendMaterialState &state) const;
 	virtual bool Prepare_Projected_Mesh_Pass(RenderBackendMaterialState &,
 		RenderBackendTerrainState &, TextureClass *&) const { return false; }
-	virtual void	UnInstall_Materials() const { };	///< reset/cleanup D3D states
 
 	void							Set_Texture(TextureClass * Texture,int stage = 0);
 	void							Set_Shader(ShaderClass shader);

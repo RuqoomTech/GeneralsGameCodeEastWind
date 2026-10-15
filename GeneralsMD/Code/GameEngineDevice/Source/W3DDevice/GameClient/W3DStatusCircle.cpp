@@ -33,7 +33,7 @@
 #include <WW3D2/coltest.h>
 #include <WW3D2/rinfo.h>
 #include <WW3D2/camera.h>
-#include "WW3D2/dx8wrapper.h"
+#include "WW3D2/ww3d.h"
 #include "WW3D2/shader.h"
 #include "Common/GlobalData.h"
 #include "Common/MapObject.h"
@@ -65,9 +65,22 @@
 
 
 
-static ShaderClass detailOpaqueShader(SC_ALPHA);
 Bool W3DStatusCircle::m_needUpdate;
 Int W3DStatusCircle::m_diffuse=255; // blue.
+
+namespace
+{
+
+// Packed b | g<<8 | r<<16 | a<<24, as the team color is stored.
+void Set_Vertex_Color(RenderBackendTexturedVertex &v, Int diffuse)
+{
+	v.b = ((diffuse) & 0xff) / 255.0f;
+	v.g = ((diffuse >> 8) & 0xff) / 255.0f;
+	v.r = ((diffuse >> 16) & 0xff) / 255.0f;
+	v.a = ((diffuse >> 24) & 0xff) / 255.0f;
+}
+
+} // namespace
 
 W3DStatusCircle::~W3DStatusCircle()
 {
@@ -76,10 +89,8 @@ W3DStatusCircle::~W3DStatusCircle()
 
 W3DStatusCircle::W3DStatusCircle()
 {
-	m_indexBuffer=nullptr;
-	m_vertexMaterialClass=nullptr;
-	m_vertexBufferCircle=nullptr;
-	m_vertexBufferScreen=nullptr;
+	m_numTriangles=0;
+	m_initialized=false;
 }
 
 
@@ -131,15 +142,10 @@ RenderObjClass * W3DStatusCircle::Clone() const
 
 Int W3DStatusCircle::freeMapResources()
 {
-
-	REF_PTR_RELEASE(m_indexBuffer);
-	REF_PTR_RELEASE(m_vertexBufferScreen);
-	REF_PTR_RELEASE(m_vertexBufferCircle);
-	REF_PTR_RELEASE(m_vertexMaterialClass);
+	m_initialized = false;
 	return 0;
 }
 
-#define NUM_TRI 20
 //Allocate a heightmap of x by y vertices.
 //data must be an array matching this size.
 Int W3DStatusCircle::initData()
@@ -147,14 +153,12 @@ Int W3DStatusCircle::initData()
 	Int i;
 
 	m_needUpdate = true;
-	freeMapResources();	//free old data and ib/vb
+	freeMapResources();	//free old data
 
-	m_numTriangles = NUM_TRI;
-	m_indexBuffer=NEW_REF(DX8IndexBufferClass,(m_numTriangles*3));
+	m_numTriangles = NUM_CIRCLE_TRIANGLES;
 
-	// Fill up the IB
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_indexBuffer);
-	UnsignedShort *ib=lockIdxBuffer.Get_Index_Array();
+	// Fill up the indices
+	UnsignedShort *ib=m_indices;
 
 	for (i=0; i<3*m_numTriangles; i+=3)
 	{
@@ -165,15 +169,9 @@ Int W3DStatusCircle::initData()
 		ib+=3;	//skip the 3 indices we just filled
 	}
 
-	m_vertexBufferCircle=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,m_numTriangles*3,DX8VertexBufferClass::USAGE_DEFAULT));
-	m_vertexBufferScreen=NEW_REF(DX8VertexBufferClass,(DX8_FVF_XYZDUV1,2*3,DX8VertexBufferClass::USAGE_DEFAULT));
-
-	//go with a preset material for now.
-	m_vertexMaterialClass=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-
 	m_shaderClass = ShaderClass(SC_ALPHA);// _PresetOpaque2DShader;//; //_PresetOpaqueShader;
 
-
+	m_initialized = true;
 	return 0;
 }
 
@@ -183,13 +181,10 @@ Int W3DStatusCircle::initData()
 Int W3DStatusCircle::updateCircleVB()
 {
 	Int i, k;
-	Real shade;
-	DX8VertexBufferClass	*pVB = m_vertexBufferCircle;
-	if (m_vertexBufferCircle )
+	if (m_initialized)
 	{
 		m_needUpdate = false;
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
-		VertexFormatXYZDUV1 *vb = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
+		RenderBackendTexturedVertex *vb = m_circleVertices;
 
 		const Real theZ = 0.0f;
 		const Real theRadius = 0.02f;
@@ -200,9 +195,8 @@ Int W3DStatusCircle::updateCircleVB()
 		float deltaAngle = 2*PI/limit;
 		for (i=0; i<limit; i++)
 		{
-
-			shade=0.7f*255.0f;
 			for (k=0; k<3; k++) {
+				*vb = {};
 				vb->z=  theZ;
 				if (k==0) {
 					vb->x=	0;
@@ -222,9 +216,7 @@ Int W3DStatusCircle::updateCircleVB()
 					vb->x=	vec.X;
 					vb->y=	vec.Y;
 				}
-				vb->diffuse = diffuse;
-				vb->u1=0;
-				vb->v1=0;
+				Set_Vertex_Color(*vb, diffuse);
 				vb++;
 			}
 			curAngle += deltaAngle;
@@ -235,64 +227,22 @@ Int W3DStatusCircle::updateCircleVB()
 	return -1;
 }
 
-/** updateCircleVB puts a circle with a team color vertex buffer. */
+/** updateScreenVB puts a 2 triangle quad covering the screen with a fade color. */
 
 Int W3DStatusCircle::updateScreenVB(Int diffuse)
 {
-	DX8VertexBufferClass	*pVB = m_vertexBufferScreen;
-	if (m_vertexBufferScreen )
+	if (m_initialized)
 	{
-		m_needUpdate = false;
-		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
-		VertexFormatXYZDUV1 *vb = (VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-
-		vb->x =	-1;
-		vb->y =	-1;
-		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
-		vb++;
-
-		vb->x =	1;
-		vb->y =	1;
-		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
-		vb++;
-
-		vb->x =	-1;
-		vb->y =	1;
-		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
-		vb++;
-
-		vb->x =	-1;
-		vb->y =	-1;
-		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
-		vb++;
-
-		vb->x =	1;
-		vb->y =	-1;
-		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
-		vb++;
-
-		vb->x =	1;
-		vb->y =	1;
-		vb->z = 0;
-		vb->diffuse = diffuse;
-		vb->u1=0;
-		vb->v1=0;
-		vb++;
+		static const Real corners[6][2] = {{-1,-1},{1,1},{-1,1},{-1,-1},{1,-1},{1,1}};
+		for (Int i=0; i<6; i++)
+		{
+			RenderBackendTexturedVertex &v = m_screenVertices[i];
+			v = {};
+			v.x = corners[i][0];
+			v.y = corners[i][1];
+			v.z = 0;
+			Set_Vertex_Color(v, diffuse);
+		}
 		return 0; //success.
 	}
 	return -1;
@@ -303,34 +253,36 @@ void W3DStatusCircle::Render(RenderInfoClass & rinfo)
 	if (!TheGameLogic->isInGame() || TheGameLogic->getGameMode() == GAME_SHELL)
 		return;
 
-	if (m_indexBuffer == nullptr) {
+	if (!m_initialized) {
 		initData();
 	}
-	if (m_indexBuffer == nullptr) {
+	IRenderBackend *backend = WW3D::Get_Render_Backend();
+	if (!m_initialized || !backend) {
 		return;
 	}
-	Bool setIndex = false;
-	Matrix3D tm(true);
+
+	// The 2D scene's camera maps z=0 positions onto -1..1 of the screen. Both shapes are
+	// untextured and always face that camera, so no culling is needed.
 	if( TheGlobalData->m_showTeamDot )
 	{
 		if (m_needUpdate) {
 			updateCircleVB();
 		}
-		//Apply the shader and material
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
-		DX8Wrapper::Set_Shader(m_shaderClass);
-		DX8Wrapper::Set_Texture(0, nullptr);
-		DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
-		DX8Wrapper::Set_Vertex_Buffer(m_vertexBufferCircle);
-		setIndex = true;
-
-		Vector3 vec(0.95f, 0.67f, 0);
-		Matrix3x3 rot(true);
-
-		tm.Set_Translation(vec);
-
-		DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
-		DX8Wrapper::Draw_Triangles(	0,NUM_TRI, 0,	(m_numTriangles*3));
+		RenderBackendMaterialState material;
+		if (m_shaderClass.Get_Render_Backend_State(material))
+		{
+			material.cull = RenderBackendCullMode::None;
+			RenderBackendTexturedVertex vertices[NUM_CIRCLE_TRIANGLES*3];
+			const Vector3 vec(0.95f, 0.67f, 0);
+			for (Int i=0; i<m_numTriangles*3; i++)
+			{
+				vertices[i] = m_circleVertices[i];
+				vertices[i].x += vec.X;
+				vertices[i].y += vec.Y;
+				vertices[i].z += vec.Z;
+			}
+			backend->Draw_Indexed_Material_Triangles(vertices, m_numTriangles*3, m_indices, m_numTriangles*3, {}, material);
+		}
 	}
 
 
@@ -339,44 +291,36 @@ void W3DStatusCircle::Render(RenderInfoClass & rinfo)
 		return;
 	}
 
-	if (!setIndex) {
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
-		DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
-		DX8Wrapper::Set_Texture(0, nullptr);
-	}
-
-	tm.Make_Identity();
 	Real intensity = TheScriptEngine->getFadeValue();
 	Int clr = 255*intensity;
 	Int diffuse = (0xff<<24)|(clr<<16)|(clr<<8)|clr;	 // b g<<8 r<<16 a<<24.
 	updateScreenVB(diffuse);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
-	DX8Wrapper::Set_Shader(ShaderClass(SC_ADD));
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexBufferScreen);
-	DX8Wrapper::Apply_Render_State_Changes();
+	RenderBackendMaterialState material;
+	if (!ShaderClass(SC_ADD).Get_Render_Backend_State(material)) {
+		return;
+	}
+	material.cull = RenderBackendCullMode::None;
 	switch (fade) {
 		default:
 		case ScriptEngine::FADE_ADD:
-			DX8Wrapper::Draw_Triangles(	0,2, 0,	(2*3));
+			backend->Draw_Indexed_Material_Triangles(m_screenVertices, 6, m_indices, 6, {}, material);
 			break;
 		case ScriptEngine::FADE_SUBTRACT:
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_BLENDOP, D3DBLENDOP_REVSUBTRACT );
-			DX8Wrapper::Draw_Triangles(	0,2, 0,	(2*3));
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_BLENDOP, D3DBLENDOP_ADD );
+			material.blend_operation = RenderBackendBlendOperation::ReverseSubtract;
+			backend->Draw_Indexed_Material_Triangles(m_screenVertices, 6, m_indices, 6, {}, material);
 			break;
 		case ScriptEngine::FADE_SATURATE:
 			// 4x multiply
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_SRCBLEND,D3DBLEND_DESTCOLOR);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_DESTBLEND,D3DBLEND_SRCCOLOR);
-			DX8Wrapper::Draw_Triangles(	0,2, 0,	(2*3));
-			DX8Wrapper::Draw_Triangles(	0,2, 0,	(2*3));
+			material.source_blend = RenderBackendBlendFactor::DestinationColor;
+			material.destination_blend = RenderBackendBlendFactor::SourceColor;
+			backend->Draw_Indexed_Material_Triangles(m_screenVertices, 6, m_indices, 6, {}, material);
+			backend->Draw_Indexed_Material_Triangles(m_screenVertices, 6, m_indices, 6, {}, material);
 			break;
 		case ScriptEngine::FADE_MULTIPLY:
 			// Straight multiply
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_SRCBLEND,D3DBLEND_ZERO);
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_DESTBLEND,D3DBLEND_SRCCOLOR);
-			DX8Wrapper::Draw_Triangles(	0,2, 0,	(2*3));
+			material.source_blend = RenderBackendBlendFactor::Zero;
+			material.destination_blend = RenderBackendBlendFactor::SourceColor;
+			backend->Draw_Indexed_Material_Triangles(m_screenVertices, 6, m_indices, 6, {}, material);
 			break;
 	}
-	ShaderClass::Invalidate();
 }

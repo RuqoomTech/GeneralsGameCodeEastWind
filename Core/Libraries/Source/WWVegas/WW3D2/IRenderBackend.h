@@ -129,6 +129,8 @@ enum class RenderBackendDecalBlendMode
 // the asset's fixed-width ShaderClass representation remains above the backend.
 enum class RenderBackendDepthTest { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always, Disabled };
 enum class RenderBackendBlendFactor { Zero, One, SourceColor, InverseSourceColor, SourceAlpha, InverseSourceAlpha, DestinationColor, DestinationAlpha, InverseDestinationAlpha };
+// ReverseSubtract writes destination minus source (D3DBLENDOP_REVSUBTRACT).
+enum class RenderBackendBlendOperation { Add, ReverseSubtract };
 enum class RenderBackendRenderDepth { None, Output, Owned };
 enum class RenderBackendCullMode { None, Clockwise, CounterClockwise };
 enum class RenderBackendTextureCombine { Replace, Modulate, Add, Modulate2X };
@@ -173,6 +175,7 @@ struct RenderBackendMaterialState
     RenderBackendDepthTest depth_test = RenderBackendDepthTest::LessEqual;
     RenderBackendBlendFactor source_blend = RenderBackendBlendFactor::One;
     RenderBackendBlendFactor destination_blend = RenderBackendBlendFactor::Zero;
+    RenderBackendBlendOperation blend_operation = RenderBackendBlendOperation::Add;
     RenderBackendCullMode cull = RenderBackendCullMode::Clockwise;
     RenderBackendTextureCombine texture_combine = RenderBackendTextureCombine::Modulate;
     RenderBackendAlphaTest alpha_test = RenderBackendAlphaTest::Disabled;
@@ -305,6 +308,13 @@ public:
     virtual bool Get_Render_Target_Size(int &width, int &height) const = 0;
     // Whole RGBA8 level-zero copy, between scenes, with matching dimensions.
     virtual bool Copy_Texture(RenderBackendTextureHandle destination, RenderBackendTextureHandle source) = 0;
+    // In-scene RGBA8 snapshot of the bound color target into a same-size render texture.
+    // It is recorded in draw order, so later draws in the scene sample what came before.
+    virtual bool Copy_Active_Target(RenderBackendTextureHandle destination)
+    {
+        (void)destination;
+        return false;
+    }
     virtual void Invalidate_Cached_Render_States() = 0;
 
     // Device availability is renderer-owned. Frame callers use this before

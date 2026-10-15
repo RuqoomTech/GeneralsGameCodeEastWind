@@ -37,7 +37,6 @@
  * Functions:                                                                                  *
  *   MaterialPassClass::MaterialPassClass -- Constructor                                       *
  *   MaterialPassClass::~MaterialPassClass -- Destructor                                       *
- *   MaterialPassClass::Install_Materials -- Plug our material settings into D3D               *
  *   MaterialPassClass::Set_Texture -- Set texture to use                                      *
  *   MaterialPassClass::Set_Shader -- Set the shader to use                                    *
  *   MaterialPassClass::Set_Material -- set vertex material to use                             *
@@ -52,7 +51,7 @@
 
 bool MaterialPassClass::Prepare_Render_Material(RenderBackendMaterialState &state) const
 {
-	// A derived Install_Materials may contain shader constants, extra textures,
+	// A derived pass may contain shader constants, extra textures,
 	// stencil state, or geometry behavior. Never bypass that behavior silently.
 	if (typeid(*this) != typeid(MaterialPassClass)) return false;
 	for (int stage = 1; stage < MAX_TEX_STAGES; ++stage) {
@@ -64,7 +63,6 @@ bool MaterialPassClass::Prepare_Render_Material(RenderBackendMaterialState &stat
 #include "shader.h"
 #include "texture.h"
 #include "statistics.h"
-#include "dx8wrapper.h"
 
 
 bool MaterialPassClass::EnablePerPolygonCulling = true;
@@ -112,30 +110,6 @@ MaterialPassClass::~MaterialPassClass()
 		REF_PTR_RELEASE(Texture[i]);
 	}
 	REF_PTR_RELEASE(Material);
-}
-
-
-/***********************************************************************************************
- * MaterialPassClass::Install_Materials -- Plug our material settings into D3D                 *
- *                                                                                             *
- * INPUT:                                                                                      *
- *                                                                                             *
- * OUTPUT:                                                                                     *
- *                                                                                             *
- * WARNINGS:                                                                                   *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   12/9/99    gth : Created.                                                                 *
- *   2/26/2001  gth : Changed to Install_Materials                                             *
- *=============================================================================================*/
-void MaterialPassClass::Install_Materials() const
-{
-	DX8Wrapper::Set_Material(Peek_Material());
-	DX8Wrapper::Set_Shader(Peek_Shader());
-	for (int i=0;i<DX8Wrapper::Get_Current_Caps()->Get_Max_Textures_Per_Pass();++i)
-	{
-		DX8Wrapper::Set_Texture(i,Peek_Texture(i));
-	}
 }
 
 

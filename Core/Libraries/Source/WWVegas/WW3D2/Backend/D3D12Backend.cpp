@@ -74,6 +74,7 @@ bool validMaterialState(const RenderBackendMaterialState &material)
         static_cast<unsigned int>(material.depth_test) <= 8 &&
         static_cast<unsigned int>(material.source_blend) <= static_cast<unsigned int>(RenderBackendBlendFactor::InverseDestinationAlpha) &&
         static_cast<unsigned int>(material.destination_blend) <= static_cast<unsigned int>(RenderBackendBlendFactor::InverseDestinationAlpha) &&
+        static_cast<unsigned int>(material.blend_operation) <= static_cast<unsigned int>(RenderBackendBlendOperation::ReverseSubtract) &&
         static_cast<unsigned int>(material.cull) <= 2 &&
         static_cast<unsigned int>(material.texture_combine) <= 3 &&
         static_cast<unsigned int>(material.alpha_test) <= 2 &&
@@ -1303,6 +1304,38 @@ bool D3D12Backend::Copy_Texture(RenderBackendTextureHandle destination, RenderBa
     }
 }
 
+bool D3D12Backend::Copy_Active_Target(RenderBackendTextureHandle destination)
+{
+    TextureResource *dest = findTexture(destination);
+    if (!m_scene_open || dest == nullptr || dest->rtv_heap == nullptr ||
+        (destination.slot == m_selected_texture.slot && destination.generation == m_selected_texture.generation))
+        return false;
+    ID3D12Resource *source = activeColorTarget();
+    const D3D12_RESOURCE_DESC source_desc = source->GetDesc();
+    const D3D12_RESOURCE_DESC dest_desc = dest->texture->GetDesc();
+    if (source_desc.Width != dest_desc.Width || source_desc.Height != dest_desc.Height ||
+        source_desc.Format != dest_desc.Format) return false;
+    // The scene command list stays open: draws already recorded write the source
+    // first, and the target returns to RENDER_TARGET for the draws that follow.
+    D3D12_RESOURCE_BARRIER barriers[2]{};
+    for (auto &barrier : barriers)
+    {
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    }
+    barriers[0].Transition.pResource = source;
+    barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    barriers[1].Transition.pResource = dest->texture;
+    barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+    m_command_list->ResourceBarrier(2, barriers);
+    m_command_list->CopyResource(dest->texture, source);
+    for (auto &barrier : barriers) std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+    m_command_list->ResourceBarrier(2, barriers);
+    return true;
+}
+
 void D3D12Backend::Invalidate_Cached_Render_States()
 {
     // D3D12 state is explicit and command-list local. There is no DX8-style
@@ -2379,6 +2412,7 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
     const unsigned int depth = static_cast<unsigned int>(material.depth_test);
     const unsigned int source = static_cast<unsigned int>(material.source_blend);
     const unsigned int destination = static_cast<unsigned int>(material.destination_blend);
+    const unsigned int operation = static_cast<unsigned int>(material.blend_operation);
     const unsigned int cull = static_cast<unsigned int>(material.cull);
     const bool color_only = !activeTargetHasDepth();
     auto face_key = [](const RenderBackendStencilFace &face) {
@@ -2389,7 +2423,7 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
     };
     // Blend enums can exceed the old three-bit lanes. Keep their complete
     // discriminator separate from the packed raster/depth/stencil key.
-    const unsigned int blend_key = source | (destination << 8);
+    const unsigned int blend_key = source | (destination << 8) | (operation << 16);
     const std::uint64_t key = depth | (cull << 10) |
         (static_cast<unsigned int>(material.depth_write) << 12) |
         (static_cast<unsigned int>(material.color_write) << 13) |
@@ -2436,12 +2470,12 @@ ID3D12PipelineState *D3D12Backend::materialPipeline(const RenderBackendMaterialS
         {"TEXCOORD", 3, DXGI_FORMAT_R32G32_FLOAT, 0, 52, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
     if (terrain) pipeline.InputLayout = {terrain_elements, 6};
     auto &blend = pipeline.BlendState.RenderTarget[0];
-    blend.BlendEnable = source != 1 || destination != 0;
+    blend.BlendEnable = source != 1 || destination != 0 || operation != 0;
     blend.SrcBlend = factors[source];
     blend.DestBlend = factors[destination];
     blend.SrcBlendAlpha = alpha_factors[source];
     blend.DestBlendAlpha = alpha_factors[destination];
-    blend.BlendOp = blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    blend.BlendOp = blend.BlendOpAlpha = operation != 0 ? D3D12_BLEND_OP_REV_SUBTRACT : D3D12_BLEND_OP_ADD;
     blend.LogicOp = D3D12_LOGIC_OP_NOOP;
     blend.RenderTargetWriteMask = material.color_write ? static_cast<UINT8>(write_mask) : 0;
     pipeline.SampleMask = std::numeric_limits<UINT>::max();

@@ -111,7 +111,6 @@
 #include "WWLib/bound.h"
 #include "rddesc.h"
 #include "WWMath/Vector3i.h"
-#include "dx8wrapper.h"
 #include "WWLib/TARGA.h"
 #include "sortingrenderer.h"
 #include "WWLib/thread.h"
@@ -920,18 +919,7 @@ WW3DErrorType WW3D::Render(SceneClass * scene,CameraClass * cam,bool clear,bool 
 		Renderer::Clear(clear, clearz, color);
 	}
 
-	// set the rendering mode
-	switch(scene->Get_Polygon_Mode()) {
-		case SceneClass::POINT:
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_POINT);
-			break;
-		case SceneClass::LINE:
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_WIREFRAME);
-			break;
-		case SceneClass::FILL:
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_SOLID);
-			break;
-	}
+	// The D3D12 renderer has no point or wireframe fill mode; scenes always draw solid.
 
 	// Set the global ambient light value here.  If the scene is using the LightEnvironment system
 	// this setting will get overridden.
@@ -981,9 +969,6 @@ WW3DErrorType WW3D::Render(
 
 	// Apply the camera and viewport (including depth range)
 	rinfo.Camera.Apply();
-
-	// set the rendering mode
-	DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_SOLID);
 
 	// Install the lighting environment if one is supplied
 	if (rinfo.light_environment != nullptr) {

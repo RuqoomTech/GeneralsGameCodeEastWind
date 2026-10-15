@@ -59,6 +59,7 @@ public:
         RenderBackendRenderDepth depth = RenderBackendRenderDepth::None) override;
     bool Get_Render_Target_Size(int &width, int &height) const override;
     bool Copy_Texture(RenderBackendTextureHandle destination, RenderBackendTextureHandle source) override;
+    bool Copy_Active_Target(RenderBackendTextureHandle destination) override;
     void Invalidate_Cached_Render_States() override;
     bool Is_Device_Ready() const override;
     bool Has_Stencil() const override;

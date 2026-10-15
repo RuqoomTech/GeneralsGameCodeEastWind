@@ -46,8 +46,8 @@
 // Migrated material shaders are owned by WW3D/IRenderBackend canonical HLSL.
 //-----------------------------------------------------------------------------
 
-#include "WW3D2/dx8wrapper.h"
 #include "WW3D2/ww3d.h"
+#include "WWLib/cpudetect.h"
 #include "WW3D2/Renderer.h"
 #include "WW3D2/assetmgr.h"
 #include "Lib/BaseType.h"
@@ -65,7 +65,6 @@
 #include "GameLogic/GameLogic.h"
 #include "Common/GlobalData.h"
 #include "Common/GameLOD.h"
-#include "WW3D2/dx8caps.h"
 
 namespace
 {
@@ -126,11 +125,6 @@ Int W3DShaderManager::m_backendCaptureHeight = 0;
 Bool W3DShaderManager::m_backendCapturing = false;
 Bool W3DShaderManager::m_backendCaptureHasScene = false;
 unsigned int W3DShaderManager::m_backendOutputWriteMask = 15;
-Bool W3DShaderManager::m_renderingToTexture = false;
-IDirect3DSurface8 *W3DShaderManager::m_oldRenderSurface=nullptr;	///<previous render target
-IDirect3DTexture8 *W3DShaderManager::m_renderTexture=nullptr;		///<texture into which rendering will be redirected.
-IDirect3DSurface8 *W3DShaderManager::m_newRenderSurface=nullptr;	///<new render target inside m_renderTexture
-IDirect3DSurface8 *W3DShaderManager::m_oldDepthSurface=nullptr;	///<previous depth buffer surface
 /*===========================================================================================*/
 /*=========      Screen Shaders	=============================================================*/
 /*===========================================================================================*/
@@ -617,11 +611,6 @@ static float terrainCloudOffsetY = 0;
 W3DShaderManager::W3DShaderManager()
 {
 	m_currentFilter = FT_NULL_FILTER;
-	m_oldRenderSurface = nullptr;
-	m_renderTexture = nullptr;
-	m_newRenderSurface = nullptr;
-	m_oldDepthSurface = nullptr;
-	m_renderingToTexture = false;
 	Int i;
 	for (i=0; i<FT_MAX; i++)
 	{	W3DFilters[i]=nullptr;
@@ -639,55 +628,11 @@ void W3DShaderManager::init()
 	screenMotionBlurFilter.init();
 	screenCrossFadeFilter.init();
 	terrainCloudOffsetX = terrainCloudOffsetY = 0;
-	D3DSURFACE_DESC desc;
-	// For now, check & see if we are gf3 or higher on the food chain.
 
-	ChipsetType res=DC_UNKNOWN;
-	if ((res=W3DShaderManager::getChipset()) != 0)
-	{
-		m_currentChipset = res;	//cache the current chipset.
-
-		//Some of our effects require an offscreen render target, so try creating it here.
-		HRESULT hr=DX8Wrapper::_Get_D3D_Device8()->GetRenderTarget(&m_oldRenderSurface);
-
-		if (hr != S_OK || !m_oldRenderSurface)
-			return;
-
-		m_oldRenderSurface->GetDesc(&desc);
-		
-		// TheSuperHackers @bugfix Redirecting rendering to a non-multisampled texture
-		// while using a multisampled depth buffer is an API violation in DX8.
-		if (desc.MultiSampleType == D3DMULTISAMPLE_NONE)
-		{
-			hr=DX8Wrapper::_Get_D3D_Device8()->CreateTexture(desc.Width,desc.Height,1,D3DUSAGE_RENDERTARGET,desc.Format,D3DPOOL_DEFAULT,&m_renderTexture);
-		}
-		else
-		{
-			// Force failure path to avoid MSAA mismatch
-			hr = E_FAIL;
-		}
-
-		if (hr != S_OK)
-		{
-			SAFE_RELEASE(m_oldRenderSurface);
-			m_renderTexture = nullptr;
-		} else {
-			hr = m_renderTexture->GetSurfaceLevel(0, &m_newRenderSurface);
-			if (hr != S_OK)
-			{
-				SAFE_RELEASE(m_renderTexture);
-				m_newRenderSurface = nullptr;
-			}	else {
-				hr = DX8Wrapper::_Get_D3D_Device8()->GetDepthStencilSurface(&m_oldDepthSurface);
-				if (hr != S_OK)
-				{
-					SAFE_RELEASE(m_newRenderSurface);
-					SAFE_RELEASE(m_renderTexture);
-					m_oldDepthSurface = nullptr;
-				}
-			}
-		}
-	}
+	// Screen effects capture into backend render textures (startBackendCapture), so no
+	// legacy off-screen render target is created here.
+	ChipsetType res=W3DShaderManager::getChipset();
+	m_currentChipset = res;	//cache the current chipset.
 
 	DEBUG_LOG(("ShaderManager ChipsetID %d", res));
 }
@@ -703,10 +648,6 @@ void W3DShaderManager::shutdown()
 		m_backendCaptureWidth = m_backendCaptureHeight = 0;
 		m_backendCaptureHasScene = false;
 	}
-	SAFE_RELEASE(m_newRenderSurface);
-	SAFE_RELEASE(m_renderTexture);
-	SAFE_RELEASE(m_oldRenderSurface);
-	SAFE_RELEASE(m_oldDepthSurface);
 	m_currentFilter = FT_NULL_FILTER;
 	Int i=0;
 	for (i=0; i < FT_MAX; i++)
@@ -782,132 +723,6 @@ Bool W3DShaderManager::filterSetup(FilterTypes filter, FilterModes mode)
 	return FALSE;
 }
 
-/*Draws 2 triangles covering the viewport given the current render states*/
-void W3DShaderManager::drawViewport(Int color)
-{
-	LPDIRECT3DDEVICE8 pDev=DX8Wrapper::_Get_D3D_Device8();
-
-	struct _TRANS_LIT_TEX_VERTEX {
-		Vector4 p;
-		DWORD color;   // diffuse color
-		float	u;
-		float	v;
-	} v[4];
-
-	Int xpos, ypos, width, height;
-
-	TheTacticalView->getOrigin(&xpos,&ypos);
-	width=TheTacticalView->getWidth();
-	height=TheTacticalView->getHeight();
-
-	//bottom right
-	v[0].p = Vector4( xpos+width-0.5f, ypos+height-0.5f, 0.0f, 1.0f );
-	v[0].u = (Real)(xpos+width)/(Real)TheDisplay->getWidth();	v[0].v = (Real)(ypos+height)/(Real)TheDisplay->getHeight();
-	//top right
-	v[1].p = Vector4( xpos+width-0.5f, ypos-0.5f, 0.0f, 1.0f );
-	v[1].u = (Real)(xpos+width)/(Real)TheDisplay->getWidth();	v[1].v = (Real)(ypos)/(Real)TheDisplay->getHeight();
-	//bottom left
-	v[2].p = Vector4(  xpos-0.5f, ypos+height-0.5f, 0.0f, 1.0f );
-	v[2].u = (Real)(xpos)/(Real)TheDisplay->getWidth();	v[2].v = (Real)(ypos+height)/(Real)TheDisplay->getHeight();
-	//top left
-	v[3].p = Vector4(  xpos-0.5f,  ypos-0.5f, 0.0f, 1.0f );
-	v[3].u = (Real)(xpos)/(Real)TheDisplay->getWidth();	v[3].v = (Real)(ypos)/(Real)TheDisplay->getHeight();
-	v[0].color = color;
-	v[1].color = color;
-	v[2].color = color;
-	v[3].color = color;
-
-	//draw polygons like this is very inefficient but for only 2 triangles, it's
-	//not worth bothering with index/vertex buffers.
-	pDev->SetVertexShader(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1);
-
-	pDev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, v, sizeof(_TRANS_LIT_TEX_VERTEX));
-}
-
-// W3DShaderManager::startRenderToTexture =======================================================
-/** Starts rendering to a texture.
- */
-//=============================================================================
-void W3DShaderManager::startRenderToTexture()
-{
-	DEBUG_ASSERTCRASH(!m_renderingToTexture, ("Already rendering to texture - cannot nest calls."));
-
-	if (m_renderingToTexture || m_newRenderSurface==nullptr || m_oldDepthSurface==nullptr) return;
-	HRESULT hr = DX8Wrapper::_Get_D3D_Device8()->SetRenderTarget(m_newRenderSurface,m_oldDepthSurface);
-
-	// TheSuperHackers @bugfix If SetRenderTarget fails (e.g. due to MSAA forced by driver
-	// profile causing a depth buffer mismatch that D3DSURFACE_DESC doesn't report), permanently
-	// disable RTT to prevent repeated failures and accidental backbuffer clears.
-	if (hr != S_OK)
-	{
-		// Permanently disable RTT
-		SAFE_RELEASE(m_newRenderSurface);
-		SAFE_RELEASE(m_renderTexture);
-		SAFE_RELEASE(m_oldRenderSurface);
-		SAFE_RELEASE(m_oldDepthSurface);
-		return;
-	}
-
-	m_renderingToTexture = true;
-	if (TheGlobalData->m_showSoftWaterEdge)
-	{
-		//Soft water edges use frame buffer destination alpha so we must clear it to a known value.
-		if (m_currentFilter == FT_VIEW_MOTION_BLUR_FILTER || m_currentFilter == FT_VIEW_CROSSFADE)
-		{
-			//these filters rely on the previous frame being visible so we must be careful about clearing
-			//frame buffer.  Only clear the alpha channel
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_ALPHA);	//only clear alpha
-			ShaderClass shader=ShaderClass::_PresetOpaqueSolidShader;
-			shader.Set_Depth_Compare(ShaderClass::PASS_ALWAYS);
-			shader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_DISABLE);
-			DX8Wrapper::Set_Shader(shader);
-
-			VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-			DX8Wrapper::Set_Material(vmat);
-			REF_PTR_RELEASE(vmat);	//no need to keep a reference since it's a preset.
-
-			drawViewport(0x00ffffff | (((Int)(TheWaterTransparency->m_minWaterOpacity*255.0f)) <<24));
-			DX8Wrapper::Set_DX8_Render_State(D3DRS_COLORWRITEENABLE,D3DCOLORWRITEENABLE_RED|D3DCOLORWRITEENABLE_GREEN|D3DCOLORWRITEENABLE_BLUE);	//disable writes to alpha
-		}
-		else	//normal clear that overwrites everything.
-			Renderer::Clear(true, false, Vector3( 0.0f, 0.0f, 0.0f ), TheWaterTransparency->m_minWaterOpacity);
-	}
-}
-
-// W3DShaderManager::startRenderToTexture =======================================================
-/** Ends rendering to a texture.
- */
-//=============================================================================
-IDirect3DTexture8 *W3DShaderManager::endRenderToTexture()
-{
-	DEBUG_ASSERTCRASH(m_renderingToTexture, ("Not rendering to texture."));
-	if (!m_renderingToTexture) return nullptr;
-	HRESULT hr = DX8Wrapper::_Get_D3D_Device8()->SetRenderTarget(m_oldRenderSurface,m_oldDepthSurface);	//restore original render target
-	DEBUG_ASSERTCRASH(hr==S_OK, ("Set target failed unexpectedly."));
-	if (hr == S_OK)
-	{
-		//assume render target texture will be in stage 0.  Most hardware has "conditional" support for
-		//non-power-of-2 textures so we must force some required states:
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP);
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_ADDRESSW, D3DTADDRESS_CLAMP);
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR);
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR);
-		DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
-
-		m_renderingToTexture = false;
-	}
-	return m_renderTexture;
-}
-
-/**Returns texture containing the image that was last rendered using any of the effects requiring render target
-textures.  Used mostly for cross-fading effects that need an unmodified version of the view before the effect
-was applied.  NOTE: This texture does not survive device reset.. so quit effect on reset!*/
-IDirect3DTexture8 *W3DShaderManager::getRenderTexture()
-{
-	return m_renderTexture;
-}
-
 enum GraphicsVenderID CPP_11(: Int)
 {
 	DC_NVIDIA_VENDOR_ID	= 0x10DE,
@@ -926,86 +741,9 @@ ChipsetType W3DShaderManager::getChipset()
 	if (TheGlobalData && TheGlobalData->m_chipSetType != DC_UNKNOWN)
 		return (ChipsetType)TheGlobalData->m_chipSetType;
 
-	ChipsetType chip=DC_UNKNOWN;
-	IDirect3D8* d3d8Interface=DX8Wrapper::_Get_D3D8();
-
-	if (d3d8Interface && DX8Wrapper::_Get_D3D_Device8())
-	{
-
-		D3DADAPTER_IDENTIFIER8 did;
-		::ZeroMemory(&did, sizeof(D3DADAPTER_IDENTIFIER8));
-	/*	HRESULT res = */ d3d8Interface->GetAdapterIdentifier(0,D3DENUM_NO_WHQL_LEVEL,&did);
-		*((LARGE_INTEGER*)&m_driverVersion) = did.DriverVersion;
-
-		if(did.VendorId == DC_NVIDIA_VENDOR_ID)
-		{
-			m_currentVendor = DC_NVIDIA_VENDOR_ID;
-
-			if (did.DeviceId == 0x20)
-				return DC_TNT;
-
-			if (did.DeviceId >= 0x28 && did.DeviceId < 0x100)
-				return DC_TNT2;
-
-			if ( (did.DeviceId >= 0x100 && did.DeviceId <= 0x103) ||	//GeForce
-				 (did.DeviceId >= 0x110 && did.DeviceId <= 0x113) ||	//GeForce2 MX
-						 (did.DeviceId >= 0x150 && did.DeviceId <= 0x153) )	//GeForce2
-           		return DC_GEFORCE2;
-
-			if (did.DeviceId >= 0x200 && did.DeviceId < 0x250)
-				return DC_GEFORCE3;
-
-			if (did.DeviceId >= 0x250)
-				return DC_GEFORCE4;
-		}
-		else
-		if(did.VendorId == DC_3DFX_VENDOR_ID)
-		{
-			m_currentVendor = DC_3DFX_VENDOR_ID;
-
-			if (did.DeviceId == 0x0002)
-				return DC_VOODOO2;
-			if (did.DeviceId == 0x0005)
-				return DC_VOODOO3;
-			if (did.DeviceId == 0x0008)	///@todo: Just guessing on this one - find actual Voodoo4 deviceID.
-				return DC_VOODOO4;
-			if (did.DeviceId == 0x0009)
-				return DC_VOODOO5;
-		}
-		else
-		if(did.VendorId == DC_ATI_VENDOR_ID)
-		{
-			m_currentVendor = DC_ATI_VENDOR_ID;
-
-			if (did.DeviceId == 0x5144)
-				return DC_RADEON;
-			if (did.DeviceId == 0x514C)
-				return DC_RADEON_8500;
-			if (did.DeviceId == 0x4e44)
-				return DC_RADEON_9700;
-		}
-
-		//None of the vendor specific ID's matched so use generic means to classify the card
-		Int maxTextures=DX8Wrapper::Get_Current_Caps()->Get_Max_Simultaneous_Textures();
-		Real pixelShaderVersion;
-
-		char buf[256];
-
-		//Convert version to Real
-		sprintf(buf,"%d.%d",DX8Wrapper::Get_Current_Caps()->Get_Pixel_Shader_Major_Version(),DX8Wrapper::Get_Current_Caps()->Get_Pixel_Shader_Minor_Version());
-		sscanf(buf,"%f",&pixelShaderVersion);
-
-		if (maxTextures >= 4)
-		{	if (pixelShaderVersion >= 1.1f)
-				chip=DC_GENERIC_PIXEL_SHADER_1_1;
-			if (pixelShaderVersion >= 1.4f)
-				chip=DC_GENERIC_PIXEL_SHADER_1_4;
-			if (maxTextures >= 8 && pixelShaderVersion >= 2.0f)
-				chip=DC_GENERIC_PIXEL_SHADER_2_0;
-		}
-	}
-
-	return chip;
+	// The Direct3D 12 renderer requires feature level 11, which exceeds every chipset class
+	// the game distinguishes, so report the most capable generic class.
+	return DC_GENERIC_PIXEL_SHADER_2_0;
 }
 
 //For the MP test, we're enforcing high min-spec requirements that need to be verified.
