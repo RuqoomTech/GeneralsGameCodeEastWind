@@ -1701,18 +1701,20 @@ bool HeightMapRenderObjClass::drawTerrainGeometry(CameraClass &camera,
     struct Restore { IRenderBackend *backend; const Matrix4x4 &saved;
         ~Restore() { backend->Set_View_Projection(saved); } } restore={backend,saved};
     camera.Apply();
+    std::vector<RenderBackendTerrainVertex> vertices;
+    std::vector<unsigned short> indices;
     for (Int y=0; y<m_numVBTilesY; ++y) for (Int x=0; x<m_numVBTilesX; ++x) {
         auto &tile = m_geometry->tiles[y*m_numVBTilesX+x];
-        if (tile.dirty) { m_geometry->release(tile); tile.dirty = false; }
         auto &handle = tile.geometry;
-        if (!backend->Is_Geometry_Valid(handle)) {
+        bool valid = backend->Is_Geometry_Valid(handle);
+        if (!valid || tile.dirty) {
+            tile.dirty = false;
             const Int columns = std::min(VERTEX_BUFFER_TILE_LENGTH,m_x-1-x*VERTEX_BUFFER_TILE_LENGTH);
             const Int rows = std::min(VERTEX_BUFFER_TILE_LENGTH,m_y-1-y*VERTEX_BUFFER_TILE_LENGTH);
             if (columns<=0 || rows<=0) continue;
-            std::vector<RenderBackendTerrainVertex> vertices(HEIGHTMAP_VERTEX_NUM);
+            vertices.assign(HEIGHTMAP_VERTEX_NUM,RenderBackendTerrainVertex());
             const TerrainLightingVertex *source = getVertexBufferTile(x,y);
-            std::vector<unsigned short> indices;
-            indices.reserve(columns*rows*6);
+            indices.clear();
             for (Int row=0; row<rows; ++row) for (Int column=0; column<columns; ++column) {
                 const unsigned short first = (row*VERTEX_BUFFER_TILE_LENGTH+column)*4;
                 for (unsigned n=0; n<4; ++n) {
@@ -1728,8 +1730,16 @@ bool HeightMapRenderObjClass::drawTerrainGeometry(CameraClass &camera,
                 indices.insert(indices.end(),{first,static_cast<unsigned short>(first+2),static_cast<unsigned short>(first+3),
                     first,static_cast<unsigned short>(first+1),static_cast<unsigned short>(first+2)});
             }
-            handle = backend->Create_Static_Indexed_Terrain_Geometry(vertices.data(),vertices.size(),indices.data(),indices.size());
-            if (!handle.Is_Valid()) { std::fprintf(stderr,"Foreground terrain geometry upload failed.\n"); return false; }
+            // Lights and scrolling rewrite tile vertices every frame, but a tile's index
+            // layout never changes, so refresh the existing buffer in place.
+            if (valid && !backend->Update_Static_Indexed_Terrain_Geometry(handle,vertices.data(),vertices.size())) {
+                m_geometry->release(tile);
+                valid = false;
+            }
+            if (!valid) {
+                handle = backend->Create_Static_Indexed_Terrain_Geometry(vertices.data(),vertices.size(),indices.data(),indices.size());
+                if (!handle.Is_Valid()) { std::fprintf(stderr,"Foreground terrain geometry upload failed.\n"); return false; }
+            }
         }
         if (!backend->Draw_Static_Indexed_Terrain_Geometry(handle,base,material,terrain)) {
             std::fprintf(stderr,"Foreground terrain draw failed.\n"); return false;

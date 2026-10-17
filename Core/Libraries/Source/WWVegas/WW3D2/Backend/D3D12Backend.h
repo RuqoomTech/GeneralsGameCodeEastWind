@@ -233,7 +233,8 @@ private:
         void *cpu;
         std::uint64_t gpu;
     };
-    UploadAllocation allocateUpload(std::size_t byte_count);
+    // alignment must be a power of two.
+    UploadAllocation allocateUpload(std::size_t byte_count, std::size_t alignment = 16);
     void releaseUploadRings() noexcept;
     void releaseStaticGeometry(StaticGeometryResource &geometry) noexcept;
     void releaseTexture(TextureResource &texture) noexcept;

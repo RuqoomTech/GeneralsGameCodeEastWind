@@ -1886,72 +1886,8 @@ RenderBackendGeometryHandle D3D12Backend::createStaticGeometry(
 
     try
     {
-        vertex_buffer = createDefaultBuffer(m_device, vertex_bytes);
-        index_buffer = createDefaultBuffer(m_device, index_bytes);
-        vertex_upload = createUploadBuffer(m_device, vertex_bytes);
-        index_upload = createUploadBuffer(m_device, index_bytes);
-
-        D3D12_RANGE no_read{0, 0};
-        void *mapped = nullptr;
-        checkHresult("ID3D12Resource::Map(static vertex upload)", vertex_upload->Map(0, &no_read, &mapped));
-        std::memcpy(mapped, vertices, vertex_bytes);
-        vertex_upload->Unmap(0, nullptr);
-
-        mapped = nullptr;
-        checkHresult("ID3D12Resource::Map(static index upload)", index_upload->Map(0, &no_read, &mapped));
-        std::memcpy(mapped, indices, index_bytes);
-        index_upload->Unmap(0, nullptr);
-
-        checkHresult(
-            "ID3D12Device::CreateCommandAllocator(static geometry)",
-            m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&upload_allocator)));
-        checkHresult(
-            "ID3D12Device::CreateCommandList(static geometry)",
-            m_device->CreateCommandList(
-                0,
-                D3D12_COMMAND_LIST_TYPE_DIRECT,
-                upload_allocator,
-                nullptr,
-                IID_PPV_ARGS(&upload_list)));
-
-        upload_list->CopyBufferRegion(vertex_buffer, 0, vertex_upload, 0, vertex_bytes);
-        upload_list->CopyBufferRegion(index_buffer, 0, index_upload, 0, index_bytes);
-
-        D3D12_RESOURCE_BARRIER barriers[2]{};
-        barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        barriers[0].Transition.pResource = vertex_buffer;
-        barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-        barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-        barriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        barriers[1].Transition.pResource = index_buffer;
-        barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-        barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_INDEX_BUFFER;
-        barriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        upload_list->ResourceBarrier(2, barriers);
-
-        checkHresult("ID3D12GraphicsCommandList::Close(static geometry)", upload_list->Close());
-        ID3D12CommandList *lists[] = {upload_list};
-        m_command_queue->ExecuteCommandLists(1, lists);
-
-        const std::uint64_t signal_value = m_next_fence_value++;
-        checkHresult("ID3D12CommandQueue::Signal(static geometry)", m_command_queue->Signal(m_fence, signal_value));
-        if (m_fence->GetCompletedValue() < signal_value)
-        {
-            checkHresult(
-                "ID3D12Fence::SetEventOnCompletion(static geometry)",
-                m_fence->SetEventOnCompletion(signal_value, static_cast<HANDLE>(m_fence_event)));
-            if (WaitForSingleObject(static_cast<HANDLE>(m_fence_event), INFINITE) != WAIT_OBJECT_0)
-            {
-                throw std::runtime_error("WaitForSingleObject failed while uploading static D3D12 geometry");
-            }
-        }
-
-        releaseCom(upload_list);
-        releaseCom(upload_allocator);
-        releaseCom(index_upload);
-        releaseCom(vertex_upload);
-
+        // Reserve the slot first: once a copy is recorded into the open frame,
+        // nothing below may throw and free buffers the GPU will still write.
         std::size_t slot = 0;
         while (slot < m_static_geometry.size() && m_static_geometry[slot].occupied)
         {
@@ -1964,6 +1900,89 @@ RenderBackendGeometryHandle D3D12Backend::createStaticGeometry(
         if (slot == m_static_geometry.size())
         {
             m_static_geometry.push_back(StaticGeometryResource{});
+        }
+
+        vertex_buffer = createDefaultBuffer(m_device, vertex_bytes);
+        index_buffer = createDefaultBuffer(m_device, index_bytes);
+
+        D3D12_RESOURCE_BARRIER barriers[2]{};
+        barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barriers[0].Transition.pResource = vertex_buffer;
+        barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+        barriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barriers[1].Transition.pResource = index_buffer;
+        barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_INDEX_BUFFER;
+        barriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+        if (m_scene_open)
+        {
+            // Mid-frame creation (scorches, tiles, effects) records its copy into the
+            // open frame instead of stalling on a private list; the frame fence
+            // retires the staging space.
+            const UploadAllocation vertex_staging = allocateUpload(vertex_bytes);
+            const UploadAllocation index_staging = allocateUpload(index_bytes);
+            std::memcpy(vertex_staging.cpu, vertices, vertex_bytes);
+            std::memcpy(index_staging.cpu, indices, index_bytes);
+            m_command_list->CopyBufferRegion(vertex_buffer, 0, vertex_staging.resource, vertex_staging.offset, vertex_bytes);
+            m_command_list->CopyBufferRegion(index_buffer, 0, index_staging.resource, index_staging.offset, index_bytes);
+            m_command_list->ResourceBarrier(2, barriers);
+        }
+        else
+        {
+            vertex_upload = createUploadBuffer(m_device, vertex_bytes);
+            index_upload = createUploadBuffer(m_device, index_bytes);
+
+            D3D12_RANGE no_read{0, 0};
+            void *mapped = nullptr;
+            checkHresult("ID3D12Resource::Map(static vertex upload)", vertex_upload->Map(0, &no_read, &mapped));
+            std::memcpy(mapped, vertices, vertex_bytes);
+            vertex_upload->Unmap(0, nullptr);
+
+            mapped = nullptr;
+            checkHresult("ID3D12Resource::Map(static index upload)", index_upload->Map(0, &no_read, &mapped));
+            std::memcpy(mapped, indices, index_bytes);
+            index_upload->Unmap(0, nullptr);
+
+            checkHresult(
+                "ID3D12Device::CreateCommandAllocator(static geometry)",
+                m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&upload_allocator)));
+            checkHresult(
+                "ID3D12Device::CreateCommandList(static geometry)",
+                m_device->CreateCommandList(
+                    0,
+                    D3D12_COMMAND_LIST_TYPE_DIRECT,
+                    upload_allocator,
+                    nullptr,
+                    IID_PPV_ARGS(&upload_list)));
+
+            upload_list->CopyBufferRegion(vertex_buffer, 0, vertex_upload, 0, vertex_bytes);
+            upload_list->CopyBufferRegion(index_buffer, 0, index_upload, 0, index_bytes);
+            upload_list->ResourceBarrier(2, barriers);
+
+            checkHresult("ID3D12GraphicsCommandList::Close(static geometry)", upload_list->Close());
+            ID3D12CommandList *lists[] = {upload_list};
+            m_command_queue->ExecuteCommandLists(1, lists);
+
+            const std::uint64_t signal_value = m_next_fence_value++;
+            checkHresult("ID3D12CommandQueue::Signal(static geometry)", m_command_queue->Signal(m_fence, signal_value));
+            if (m_fence->GetCompletedValue() < signal_value)
+            {
+                checkHresult(
+                    "ID3D12Fence::SetEventOnCompletion(static geometry)",
+                    m_fence->SetEventOnCompletion(signal_value, static_cast<HANDLE>(m_fence_event)));
+                if (WaitForSingleObject(static_cast<HANDLE>(m_fence_event), INFINITE) != WAIT_OBJECT_0)
+                {
+                    throw std::runtime_error("WaitForSingleObject failed while uploading static D3D12 geometry");
+                }
+            }
+
+            releaseCom(upload_list);
+            releaseCom(upload_allocator);
+            releaseCom(index_upload);
+            releaseCom(vertex_upload);
         }
 
         StaticGeometryResource &geometry = m_static_geometry[slot];
@@ -2139,6 +2158,12 @@ RenderBackendTextureHandle D3D12Backend::createStaticTexture(
     try
     {
         ensureTextureDescriptorCapacity(slot + 1);
+        // Reserve the slot first: once a copy is recorded into the open frame,
+        // nothing below may throw and free a texture the GPU will still write.
+        if (slot == m_textures.size())
+        {
+            m_textures.push_back(TextureResource{});
+        }
 
         D3D12_HEAP_PROPERTIES heap_properties{};
         heap_properties.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -2179,34 +2204,55 @@ RenderBackendTextureHandle D3D12Backend::createStaticTexture(
             if (row_counts[index] != levels[index].height || row_sizes[index] < levels[index].width*bytes_per_pixel)
                 throw std::runtime_error("unexpected D3D12 texture mip footprint");
 
-        upload = createUploadBuffer(m_device,static_cast<std::size_t>(upload_size));
-        D3D12_RANGE no_read{0,0};
+        // Mid-frame uploads (shroud, dynamic textures) stage in the frame's upload ring
+        // and record into the open frame instead of stalling on a private list.
+        const bool in_frame = m_scene_open;
+        ID3D12Resource *source = nullptr;
         void *mapped = nullptr;
-        checkHresult("ID3D12Resource::Map(texture upload)",upload->Map(0,&no_read,&mapped));
+        if (in_frame)
+        {
+            const UploadAllocation staging =
+                allocateUpload(static_cast<std::size_t>(upload_size), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
+            source = staging.resource;
+            mapped = staging.cpu;
+            for (auto &footprint : footprints) footprint.Offset += staging.offset;
+        }
+        else
+        {
+            upload = createUploadBuffer(m_device,static_cast<std::size_t>(upload_size));
+            D3D12_RANGE no_read{0,0};
+            checkHresult("ID3D12Resource::Map(texture upload)",upload->Map(0,&no_read,&mapped));
+            source = upload;
+        }
+        const UINT64 mapped_base = in_frame ? footprints[0].Offset : 0;
         for (unsigned int index=0; index<level_count; ++index)
         {
             const auto &level = levels[index];
             const auto &footprint = footprints[index];
-            auto *destination = static_cast<unsigned char *>(mapped) + static_cast<std::size_t>(footprint.Offset);
+            auto *destination = static_cast<unsigned char *>(mapped) +
+                static_cast<std::size_t>(footprint.Offset - mapped_base);
             for (unsigned int row=0; row<level.height; ++row)
                 std::memcpy(destination + static_cast<std::size_t>(row)*footprint.Footprint.RowPitch,
                     level.pixels + static_cast<std::size_t>(row)*level.row_pitch,
                     static_cast<std::size_t>(level.width)*bytes_per_pixel);
         }
-        upload->Unmap(0,nullptr);
+        if (!in_frame)
+        {
+            upload->Unmap(0,nullptr);
+            checkHresult(
+                "ID3D12Device::CreateCommandAllocator(texture upload)",
+                m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&upload_allocator)));
+            checkHresult(
+                "ID3D12Device::CreateCommandList(texture upload)",
+                m_device->CreateCommandList(
+                    0,
+                    D3D12_COMMAND_LIST_TYPE_DIRECT,
+                    upload_allocator,
+                    nullptr,
+                    IID_PPV_ARGS(&upload_list)));
+        }
 
-        checkHresult(
-            "ID3D12Device::CreateCommandAllocator(texture upload)",
-            m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&upload_allocator)));
-        checkHresult(
-            "ID3D12Device::CreateCommandList(texture upload)",
-            m_device->CreateCommandList(
-                0,
-                D3D12_COMMAND_LIST_TYPE_DIRECT,
-                upload_allocator,
-                nullptr,
-                IID_PPV_ARGS(&upload_list)));
-
+        ID3D12GraphicsCommandList *list = in_frame ? m_command_list : upload_list;
         for (unsigned int index=0; index<level_count; ++index)
         {
             D3D12_TEXTURE_COPY_LOCATION destination_location{};
@@ -2214,10 +2260,10 @@ RenderBackendTextureHandle D3D12Backend::createStaticTexture(
             destination_location.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
             destination_location.SubresourceIndex = index;
             D3D12_TEXTURE_COPY_LOCATION source_location{};
-            source_location.pResource = upload;
+            source_location.pResource = source;
             source_location.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
             source_location.PlacedFootprint = footprints[index];
-            upload_list->CopyTextureRegion(&destination_location,0,0,0,&source_location,nullptr);
+            list->CopyTextureRegion(&destination_location,0,0,0,&source_location,nullptr);
         }
 
         D3D12_RESOURCE_BARRIER barrier{};
@@ -2226,21 +2272,24 @@ RenderBackendTextureHandle D3D12Backend::createStaticTexture(
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
         barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        upload_list->ResourceBarrier(1, &barrier);
+        list->ResourceBarrier(1, &barrier);
 
-        checkHresult("ID3D12GraphicsCommandList::Close(texture upload)", upload_list->Close());
-        ID3D12CommandList *lists[] = {upload_list};
-        m_command_queue->ExecuteCommandLists(1, lists);
-        const std::uint64_t signal_value = m_next_fence_value++;
-        checkHresult("ID3D12CommandQueue::Signal(texture upload)", m_command_queue->Signal(m_fence, signal_value));
-        if (m_fence->GetCompletedValue() < signal_value)
+        if (!in_frame)
         {
-            checkHresult(
-                "ID3D12Fence::SetEventOnCompletion(texture upload)",
-                m_fence->SetEventOnCompletion(signal_value, static_cast<HANDLE>(m_fence_event)));
-            if (WaitForSingleObject(static_cast<HANDLE>(m_fence_event), INFINITE) != WAIT_OBJECT_0)
+            checkHresult("ID3D12GraphicsCommandList::Close(texture upload)", upload_list->Close());
+            ID3D12CommandList *lists[] = {upload_list};
+            m_command_queue->ExecuteCommandLists(1, lists);
+            const std::uint64_t signal_value = m_next_fence_value++;
+            checkHresult("ID3D12CommandQueue::Signal(texture upload)", m_command_queue->Signal(m_fence, signal_value));
+            if (m_fence->GetCompletedValue() < signal_value)
             {
-                throw std::runtime_error("WaitForSingleObject failed while uploading D3D12 texture");
+                checkHresult(
+                    "ID3D12Fence::SetEventOnCompletion(texture upload)",
+                    m_fence->SetEventOnCompletion(signal_value, static_cast<HANDLE>(m_fence_event)));
+                if (WaitForSingleObject(static_cast<HANDLE>(m_fence_event), INFINITE) != WAIT_OBJECT_0)
+                {
+                    throw std::runtime_error("WaitForSingleObject failed while uploading D3D12 texture");
+                }
             }
         }
 
@@ -2252,10 +2301,6 @@ RenderBackendTextureHandle D3D12Backend::createStaticTexture(
         releaseCom(upload_allocator);
         releaseCom(upload);
 
-        if (slot == m_textures.size())
-        {
-            m_textures.push_back(TextureResource{});
-        }
         TextureResource &stored = m_textures[slot];
         stored.generation = nextResourceGeneration();
         stored.texture = texture;
@@ -2861,19 +2906,20 @@ void D3D12Backend::waitForFrame(std::uint32_t frame_index)
     releaseFrameUploads(frame_index);
 }
 
-D3D12Backend::UploadAllocation D3D12Backend::allocateUpload(std::size_t byte_count)
+D3D12Backend::UploadAllocation D3D12Backend::allocateUpload(std::size_t byte_count, std::size_t alignment)
 {
-    constexpr std::size_t Alignment = 16;
     constexpr std::size_t ChunkSize = std::size_t(8) << 20;
+    alignment = std::max<std::size_t>(alignment, 16);
     UploadRing &ring = m_upload_rings[m_frame_index];
-    const std::size_t size = (byte_count + Alignment - 1) & ~(Alignment - 1);
+    const std::size_t size = (byte_count + 15) & ~std::size_t(15);
     for (; ring.chunk < ring.chunks.size(); ++ring.chunk, ring.offset = 0)
     {
         const UploadChunk &chunk = ring.chunks[ring.chunk];
-        if (size <= chunk.size - ring.offset)
+        const std::size_t start = (ring.offset + alignment - 1) & ~(alignment - 1);
+        if (start <= chunk.size && size <= chunk.size - start)
         {
-            const UploadAllocation allocation{chunk.resource, ring.offset, chunk.cpu + ring.offset, chunk.gpu + ring.offset};
-            ring.offset += size;
+            const UploadAllocation allocation{chunk.resource, start, chunk.cpu + start, chunk.gpu + start};
+            ring.offset = start + size;
             return allocation;
         }
     }
